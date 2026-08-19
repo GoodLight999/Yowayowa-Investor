@@ -199,8 +199,11 @@
   document.addEventListener('DOMContentLoaded', bootUX);
   window.addEventListener('yowayowa:settings-changed', bootUX);
   document.addEventListener('turbo:load', () => {
-    if (firstTurboLoad) { firstTurboLoad = false; return; }
-    document.dispatchEvent(new Event('DOMContentLoaded'));
+    if (firstTurboLoad) {
+      firstTurboLoad = false;
+      return;
+    }
+    bootUX();
   });
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
