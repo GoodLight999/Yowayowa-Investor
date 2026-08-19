@@ -17,4 +17,5 @@ def settings_status(settings: Settings = Depends(get_settings)) -> dict[str, boo
         "estat": bool(settings.estat_app_id),
         "fred": bool(settings.fred_api_key),
         "bea": bool(settings.bea_api_key),
+        "allow_unlisted_ai_endpoints": settings.allow_unlisted_ai_endpoints,
     }
