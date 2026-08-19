@@ -4,7 +4,7 @@
 
   const META_KEY = 'yowayowa.ai.settings.v2';
   const KEY_KEY = 'yowayowa.ai.key.v2';
-  const LEGACY_KEY = 'yowayowa.ai.byok.session';
+  const LOCAL_PROVIDER_IDS = new Set(['ollama', 'lmstudio', 'vllm']);
   let firstTurboLoad = true;
   let activeSection = null;
   let serverAIReady = null;
@@ -36,31 +36,18 @@
 
   function providerPayload() {
     const meta = settingsMeta();
-    if (meta.providerId === 'server') return null;
+    const providerId = meta.providerId || 'server';
+    if (providerId === 'server') return null;
     let apiKey = '';
     try { apiKey = sessionStorage.getItem(KEY_KEY) || ''; }
     catch (_) {}
-    if (meta.providerId && meta.model && (apiKey || ['ollama', 'lmstudio', 'vllm'].includes(meta.providerId))) {
-      return {
-        provider: meta.adapter === 'anthropic' ? 'anthropic' : 'openai_compatible',
-        model: meta.model,
-        api_key: apiKey || 'local',
-        base_url: meta.baseUrl || null,
-      };
-    }
-    try {
-      const legacy = JSON.parse(sessionStorage.getItem(LEGACY_KEY) || '{}');
-      if (!legacy.provider || legacy.provider === 'server') return null;
-      if (!legacy.model || !legacy.apiKey) return undefined;
-      return {
-        provider: legacy.provider === 'anthropic' ? 'anthropic' : 'openai_compatible',
-        model: legacy.model,
-        api_key: legacy.apiKey,
-        base_url: legacy.baseUrl || null,
-      };
-    } catch (_) {
-      return undefined;
-    }
+    if (!meta.model || (!apiKey && !LOCAL_PROVIDER_IDS.has(providerId))) return undefined;
+    return {
+      provider: meta.adapter === 'anthropic' ? 'anthropic' : 'openai_compatible',
+      model: meta.model,
+      api_key: apiKey || 'local',
+      base_url: meta.baseUrl || null,
+    };
   }
 
   async function serverAIConfigured() {
@@ -165,8 +152,7 @@
     const text = prompt.value.trim();
     if (!text) return;
     const provider = providerPayload();
-    const meta = settingsMeta();
-    if (provider === undefined || (provider === null && meta.providerId && meta.providerId !== 'server')) {
+    if (provider === undefined) {
       showAISettingsRequired(answer);
       return;
     }
