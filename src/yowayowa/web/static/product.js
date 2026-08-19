@@ -20,6 +20,8 @@
     };
   }
 
+  let firstTurboLoad = true;
+
   function installCurrentCompany() {
     if (window.YOWAYOWA_MODE !== 'personal') return;
     let company = null;
@@ -36,6 +38,24 @@
     host.prepend(link);
   }
 
+  function rebindCommonPageUI() {
+    // app.js is intentionally evaluated once. Turbo replaces the body, so the
+    // new controls need listeners, but document-level listeners must not be
+    // registered again. Calling the individual installers avoids the previous
+    // synthetic DOMContentLoaded event, which accumulated global shortcuts.
+    window.installLocaleSwitcher?.();
+    window.installCommandPalette?.();
+    window.updateHealth?.();
+    window.installDashboard?.();
+  }
+
   document.addEventListener('DOMContentLoaded', installCurrentCompany);
-  document.addEventListener('turbo:load', installCurrentCompany);
+  document.addEventListener('turbo:load', () => {
+    installCurrentCompany();
+    if (firstTurboLoad) {
+      firstTurboLoad = false;
+      return;
+    }
+    rebindCommonPageUI();
+  });
 })();
