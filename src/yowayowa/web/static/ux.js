@@ -7,6 +7,7 @@
   const LEGACY_KEY = 'yowayowa.ai.byok.session';
   let firstTurboLoad = true;
   let activeSection = null;
+  let serverAIReady = null;
   const contextMessages = [];
 
   const ja = window.YOWAYOWA_LOCALE === 'ja';
@@ -62,6 +63,19 @@
     }
   }
 
+  async function serverAIConfigured() {
+    if (serverAIReady !== null) return serverAIReady;
+    try {
+      const data = await window.Yowayowa.api('/v1/ai/status');
+      serverAIReady = Object.values(data.configured || {}).some(Boolean);
+      return serverAIReady;
+    } catch (_) {
+      // Status is advisory. If the status endpoint itself is unavailable, let
+      // the chat request report its real error instead of manufacturing one.
+      return true;
+    }
+  }
+
   function pageSymbol() {
     const host = document.querySelector('[data-symbol]');
     if (host?.dataset.symbol) return host.dataset.symbol;
@@ -96,7 +110,10 @@
   }
 
   function injectAIButtons() {
-    if (!contextualEnabled()) return;
+    if (!contextualEnabled()) {
+      document.querySelectorAll('.section-ai-button').forEach(button => button.remove());
+      return;
+    }
     const { t } = window.Yowayowa || {};
     if (!t) return;
     document.querySelectorAll('.section-heading, .page-head, .page-heading').forEach(heading => {
@@ -132,6 +149,13 @@
     }).join('');
   }
 
+  function showAISettingsRequired(answer) {
+    const label = ja
+      ? 'AIプロバイダーが未設定です。設定を開く →'
+      : 'No AI provider is configured. Open Settings →';
+    answer.innerHTML = `<a href="/settings">${window.Yowayowa.escapeHtml(label)}</a>`;
+  }
+
   async function askContextAI(event) {
     event.preventDefault();
     const drawer = ensureDrawer();
@@ -143,7 +167,11 @@
     const provider = providerPayload();
     const meta = settingsMeta();
     if (provider === undefined || (provider === null && meta.providerId && meta.providerId !== 'server')) {
-      answer.innerHTML = `<a href="/settings">${window.Yowayowa.escapeHtml(window.Yowayowa.t('ai.configure', {}, 'Open AI settings'))}</a>`;
+      showAISettingsRequired(answer);
+      return;
+    }
+    if (provider === null && !(await serverAIConfigured())) {
+      showAISettingsRequired(answer);
       return;
     }
     const evidenceInstruction = ja
@@ -197,7 +225,10 @@
   }
 
   document.addEventListener('DOMContentLoaded', bootUX);
-  window.addEventListener('yowayowa:settings-changed', bootUX);
+  window.addEventListener('yowayowa:settings-changed', () => {
+    serverAIReady = null;
+    bootUX();
+  });
   document.addEventListener('turbo:load', () => {
     if (firstTurboLoad) {
       firstTurboLoad = false;
