@@ -20,6 +20,13 @@ def _default_cron_secret() -> str | None:
     return os.getenv("CRON_SECRET")
 
 
+def _default_allow_unlisted_ai_endpoints() -> bool:
+    # Local/self-hosted personal installs intentionally support Ollama, LM Studio,
+    # vLLM and custom gateways. Hosted deployments must opt in explicitly rather
+    # than turning a user-supplied base URL into a generic server-side fetch target.
+    return not bool(os.getenv("VERCEL"))
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="YOWAYOWA_",
@@ -44,6 +51,7 @@ class Settings(BaseSettings):
     cron_secret: str | None = Field(default_factory=_default_cron_secret)
     allow_personal_provider_in_public: bool = False
     local_enrichment_enabled: bool = False
+    allow_unlisted_ai_endpoints: bool = Field(default_factory=_default_allow_unlisted_ai_endpoints)
     openai_compatible_base_url: str | None = None
     openai_compatible_api_key: str | None = None
     openai_compatible_model: str | None = None
@@ -61,6 +69,8 @@ class Settings(BaseSettings):
             )
         if self.mode == "public" and self.local_enrichment_enabled:
             raise ValueError("Local enrichment is personal-mode only and cannot run in public mode")
+        if self.mode == "public" and self.allow_unlisted_ai_endpoints:
+            raise ValueError("Unlisted AI endpoints are forbidden in public mode")
         return self
 
 
