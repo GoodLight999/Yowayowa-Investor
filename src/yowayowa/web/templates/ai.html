@@ -6,6 +6,7 @@
   <aside class="sheet ai-config">
     <div><h2>{{ u('ai.configure') }}</h2><p class="ux-note" style="margin-top:6px">{{ u('ai.configure_note') }}</p></div>
     <a class="ghost button" href="/settings">{{ u('settings.title') }} →</a>
+    <div id="ai-current-provider" class="provider-source-note"></div>
     <div class="ai-quick">
       <button class="ghost ai-quick-prompt" type="button">{{ x('ai.quick1') }}</button>
       <button class="ghost ai-quick-prompt" type="button">{{ x('ai.quick2') }}</button>
@@ -13,10 +14,6 @@
     </div>
     <p class="ux-note">{{ u('ai.context.evidence') }}</p>
     <div id="ai-status" class="provider-source-note"></div>
-    <div hidden aria-hidden="true">
-      <select id="ai-provider"><option value="server">server</option><option value="openai">openai</option><option value="openrouter">openrouter</option><option value="gemini">gemini</option><option value="anthropic">anthropic</option><option value="custom">custom</option></select>
-      <input id="ai-model"><input id="ai-base-url"><input id="ai-api-key" type="password">
-    </div>
   </aside>
   <section class="sheet ai-chat">
     <div class="section-title-line"><h2>{{ x('ai.title') }}</h2><button class="ghost" id="ai-clear" type="button">{{ x('ai.clear') }}</button></div>
