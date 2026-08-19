@@ -26,6 +26,7 @@
         <p class="ux-note">{{ u('settings.key_note') }}</p>
         <div class="toolbar">
           <button class="primary" type="submit">{{ u('settings.save') }}</button>
+          <button id="clear-ai-api-key" class="ghost" type="button">{% if locale == 'ja' %}APIキーを消去{% else %}Clear API key{% endif %}</button>
           <button id="fetch-provider-models" class="ghost" type="button">{{ u('settings.models') }}</button>
           <button id="openrouter-oauth" class="ghost" type="button">{{ u('settings.oauth') }}</button>
         </div>
