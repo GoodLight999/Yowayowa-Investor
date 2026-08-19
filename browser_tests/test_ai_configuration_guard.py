@@ -46,7 +46,7 @@ def test_ai_research_guides_to_settings_when_server_provider_is_missing(page: Pa
     assert chat_calls == []
 
 
-def test_ai_research_accepts_settings_mirrored_byok_when_server_is_missing(page: Page) -> None:
+def test_ai_research_uses_settings_byok_when_server_is_missing(page: Page) -> None:
     page.route("**/v1/ai/status", lambda route: _json(route, _status(False)))
     captured: list[dict[str, object]] = []
 
@@ -67,16 +67,19 @@ def test_ai_research_accepts_settings_mirrored_byok_when_server_is_missing(page:
     page.goto(f"{BASE_URL}/ai?lang=en", wait_until="domcontentloaded")
     page.evaluate(
         """
-        sessionStorage.setItem('yowayowa.ai.byok.session', JSON.stringify({
-          provider: 'openrouter',
+        localStorage.setItem('yowayowa.ai.settings.v2', JSON.stringify({
+          providerId: 'openrouter',
+          adapter: 'openai_compatible',
           model: 'example/model',
           baseUrl: 'https://openrouter.ai/api/v1',
-          apiKey: 'browser-key'
-        }))
+          contextualEnabled: true
+        }));
+        sessionStorage.setItem('yowayowa.ai.key.v2', 'browser-key');
         """
     )
     page.reload(wait_until="networkidle")
 
+    expect(page.locator("#ai-current-provider")).to_contain_text("openrouter · example/model")
     expect(page.locator("#ai-send")).to_be_enabled()
     page.locator("#ai-prompt").fill("Analyze AAPL")
     page.locator("#ai-send").click()
