@@ -15,7 +15,7 @@ from yowayowa.symbols import normalize_symbol
 
 
 class YahooFundamentalsProvider:
-    """Personal-mode financial-statement fallback for non-SEC issuers.
+    """Personal-mode financial statements for non-SEC issuers.
 
     This path is intentionally isolated from public mode. Yahoo provides statement
     period ends and frequency rather than SEC tagged contexts, so approximate period
@@ -79,6 +79,10 @@ class YahooFundamentalsProvider:
         "capex": "Capital expenditure",
     }
 
+    CURRENCY_SUFFIX_HINTS: ClassVar[dict[str, str]] = {
+        ".T": "JPY",
+    }
+
     def __init__(self, settings: Settings) -> None:
         enforce_provider_policy(
             self.descriptor,
@@ -90,9 +94,14 @@ class YahooFundamentalsProvider:
     def company_facts(self, symbol: str) -> Fundamentals:
         normalized = normalize_symbol(symbol)
         ticker = yf.Ticker(normalized)
-        info = self._safe_info(ticker)
-        currency = str(info.get("financialCurrency") or info.get("currency") or "").upper()
-        company_name = str(info.get("longName") or info.get("shortName") or normalized)
+        metadata = self._safe_history_metadata(ticker)
+        currency = str(metadata.get("currency") or self._currency_hint(normalized)).upper()
+        company_name = str(
+            metadata.get("longName")
+            or metadata.get("shortName")
+            or metadata.get("symbol")
+            or normalized
+        )
 
         metrics: dict[str, MetricSeries] = {}
         frames = self._statement_frames(ticker)
@@ -127,12 +136,16 @@ class YahooFundamentalsProvider:
                 ),
                 notes=[
                     (
-                        "Personal-mode fallback for issuers without SEC company facts, "
-                        "including Japanese listings."
+                        "Personal-mode financial statements for issuers outside the SEC "
+                        "company-facts universe, including Japanese listings."
                     ),
                     (
                         "Statement period ends and annual/quarterly frequency come from Yahoo; "
                         "approximate starts are inferred only for normalized ratio/grouping math."
+                    ),
+                    (
+                        "Company identity and currency use Yahoo price-history metadata when "
+                        "available; metadata failure does not invalidate otherwise usable statements."
                     ),
                     (
                         "Capital expenditure is normalized to a positive cash outflow before "
@@ -143,10 +156,17 @@ class YahooFundamentalsProvider:
             ),
         )
 
+    @classmethod
+    def _currency_hint(cls, symbol: str) -> str:
+        return next(
+            (currency for suffix, currency in cls.CURRENCY_SUFFIX_HINTS.items() if symbol.endswith(suffix)),
+            "",
+        )
+
     @staticmethod
-    def _safe_info(ticker: yf.Ticker) -> dict[str, Any]:
+    def _safe_history_metadata(ticker: yf.Ticker) -> dict[str, Any]:
         try:
-            value = ticker.get_info()
+            value = ticker.get_history_metadata()
         except Exception:
             return {}
         return value if isinstance(value, dict) else {}
