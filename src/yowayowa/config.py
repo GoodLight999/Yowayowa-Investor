@@ -69,8 +69,8 @@ class Settings(BaseSettings):
             )
         if self.mode == "public" and self.local_enrichment_enabled:
             raise ValueError("Local enrichment is personal-mode only and cannot run in public mode")
-        if self.mode == "public" and self.allow_unlisted_ai_endpoints:
-            raise ValueError("Unlisted AI endpoints are forbidden in public mode")
+        if self.mode == "public":
+            self.allow_unlisted_ai_endpoints = False
         return self
 
 
