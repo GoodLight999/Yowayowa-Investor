@@ -2,6 +2,7 @@
   const { api, escapeHtml, t } = window.Yowayowa;
   const STORAGE_KEY = 'yowayowa.ai.byok.session';
   const messages = [];
+  let serverReady = null;
   const presets = {
     openai: 'https://api.openai.com/v1',
     openrouter: 'https://openrouter.ai/api/v1',
@@ -165,6 +166,29 @@
     }
   }
 
+  function configuredServerProviders(data) {
+    return Object.entries(data.configured || {}).filter(([, value]) => value).map(([name]) => name);
+  }
+
+  function showServerSetupRequired() {
+    const target = document.querySelector('#ai-status');
+    const label = window.YOWAYOWA_LOCALE === 'ja'
+      ? 'AIプロバイダーが未設定です。設定を開く →'
+      : 'No AI provider is configured. Open Settings →';
+    target.innerHTML = `<a href="/settings">${escapeHtml(label)}</a>`;
+  }
+
+  async function ensureServerReady() {
+    if (serverReady !== null) return serverReady;
+    try {
+      const data = await api('/v1/ai/status');
+      serverReady = configuredServerProviders(data).length > 0;
+    } catch (_) {
+      return true;
+    }
+    return serverReady;
+  }
+
   async function submit(event) {
     event.preventDefault();
     const prompt = document.querySelector('#ai-prompt');
@@ -173,6 +197,10 @@
     let provider;
     try { provider = providerPayload(); } catch (error) {
       document.querySelector('#ai-status').textContent = error.message;
+      return;
+    }
+    if (provider === null && !(await ensureServerReady())) {
+      showServerSetupRequired();
       return;
     }
     addMessage('user', text);
@@ -207,7 +235,14 @@
   async function loadStatus() {
     try {
       const data = await api('/v1/ai/status');
-      const configured = Object.entries(data.configured || {}).filter(([, value]) => value).map(([name]) => name);
+      const configured = configuredServerProviders(data);
+      serverReady = configured.length > 0;
+      const usingServer = currentConfig().provider === 'server';
+      document.querySelector('#ai-send').disabled = usingServer && !serverReady;
+      if (usingServer && !serverReady) {
+        showServerSetupRequired();
+        return;
+      }
       document.querySelector('#ai-status').textContent = `${data.tools?.length || 0} tools · server: ${configured.join(', ') || 'none'}`;
     } catch (error) {
       document.querySelector('#ai-status').textContent = error.message;
@@ -237,6 +272,7 @@
     const symbol = params.get('symbol');
     if (symbols) document.querySelector('#ai-prompt').value = `${symbols} を比較して、成長性・割安さ・需給・アナリスト予想・主要リスクを調べて。`;
     else if (symbol) document.querySelector('#ai-prompt').value = `${symbol} を財務・バリュエーション・アナリスト予想・保有状況・インサイダー・ニュース・今後のイベントまで横断分析して。`;
+    document.querySelector('#ai-send').disabled = true;
     loadStatus();
   });
 })();
