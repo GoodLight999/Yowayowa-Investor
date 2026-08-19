@@ -145,7 +145,8 @@ class YahooFundamentalsProvider:
                     ),
                     (
                         "Company identity and currency use Yahoo price-history metadata when "
-                        "available; metadata failure does not invalidate otherwise usable statements."
+                        "available; metadata failure does not invalidate otherwise usable "
+                        "statements."
                     ),
                     (
                         "Capital expenditure is normalized to a positive cash outflow before "
@@ -159,7 +160,11 @@ class YahooFundamentalsProvider:
     @classmethod
     def _currency_hint(cls, symbol: str) -> str:
         return next(
-            (currency for suffix, currency in cls.CURRENCY_SUFFIX_HINTS.items() if symbol.endswith(suffix)),
+            (
+                currency
+                for suffix, currency in cls.CURRENCY_SUFFIX_HINTS.items()
+                if symbol.endswith(suffix)
+            ),
             "",
         )
 
