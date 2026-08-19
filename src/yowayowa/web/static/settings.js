@@ -9,6 +9,7 @@
   const ja = window.YOWAYOWA_LOCALE === 'ja';
   let providers = [];
   let enabledProviders = [];
+  let dataSourceStatus = {};
 
   const providerSelect = document.querySelector('#settings-provider');
   const modelInput = document.querySelector('#settings-model');
@@ -24,6 +25,7 @@
 
   function readMeta() { return readJson(localStorage, META_KEY, {}); }
   function readKey() { try { return sessionStorage.getItem(KEY_KEY) || ''; } catch (_) { return ''; } }
+  function readEdinetKey() { try { return sessionStorage.getItem(EDINET_KEY) || ''; } catch (_) { return ''; } }
   function selectedProvider() { return providers.find(item => item.id === providerSelect.value) || null; }
   function legacyProviderId(id) { return ['openai', 'openrouter', 'gemini', 'anthropic'].includes(id) ? id : id === 'server' ? 'server' : 'custom'; }
 
@@ -176,13 +178,30 @@
     return true;
   }
 
+  function renderDataStatus() {
+    const target=document.querySelector('#settings-data-sources'); if(!target) return;
+    const labels={sec:'SEC / US filings',yahoo_personal:'Yahoo / personal market data',edinet:'EDINET / Japan official filings',estat:'e-Stat / Japan official statistics',fred:'FRED / personal macro',bea:'BEA / US official macro'};
+    const browserEdinet=Boolean(readEdinetKey());
+    target.innerHTML=Object.entries(labels).map(([key,label])=>{
+      const serverReady=Boolean(dataSourceStatus[key]);
+      const ready=serverReady || (key==='edinet' && browserEdinet);
+      let state=ready?(ja?'利用可能':'Ready'):(ja?'未設定':'Not configured');
+      if(key==='edinet' && serverReady) state=ja?'サーバーで利用可能':'Ready · server';
+      else if(key==='edinet' && browserEdinet) state=ja?'このタブで利用可能':'Ready · browser tab';
+      return `<div class="capability" data-source="${escapeHtml(key)}"><strong>${escapeHtml(label)}</strong><span class="${ready?'badge-ok':'muted'}">${escapeHtml(state)}</span></div>`;
+    }).join('');
+  }
+
   function installEdinetSettings() {
     const target=document.querySelector('#settings-data-sources'); if(!target) return;
-    let saved=''; try { saved=sessionStorage.getItem(EDINET_KEY)||''; } catch (_) {}
+    const saved=readEdinetKey();
     const panel=document.createElement('div'); panel.className='datasource-key-panel';
     panel.innerHTML=`<h3>${ja?'日本企業の公式開示（EDINET）':'Japan official filings (EDINET)'}</h3><p>${ja?'日本株の銘柄ページから自動利用します。キーはこのブラウザタブだけに保持します。':'Used automatically from Japanese company pages. The key stays only in this browser tab.'} <a href="https://api.edinet-fsa.go.jp/api/auth/index.aspx?mode=1" target="_blank" rel="noreferrer">${ja?'EDINETでAPIキーを発行 ↗':'Get an EDINET API key ↗'}</a></p><div class="datasource-key-row"><input id="edinet-browser-key" type="password" autocomplete="off" value="${escapeHtml(saved)}" placeholder="EDINET API key"><button id="save-edinet-browser-key" class="primary" type="button">${ja?'保存':'Save'}</button><button id="clear-edinet-browser-key" class="ghost" type="button">${ja?'消去':'Clear'}</button></div><div id="edinet-browser-key-status" class="ux-note">${saved?(ja?'このタブで利用可能':'Ready in this tab'):(ja?'未設定':'Not configured')}</div>`;
     target.insertAdjacentElement('afterend',panel);
-    const state=value=>{panel.querySelector('#edinet-browser-key-status').textContent=value?(ja?'このタブで利用可能':'Ready in this tab'):(ja?'未設定':'Not configured');};
+    const state=value=>{
+      panel.querySelector('#edinet-browser-key-status').textContent=value?(ja?'このタブで利用可能':'Ready in this tab'):(ja?'未設定':'Not configured');
+      renderDataStatus();
+    };
     panel.querySelector('#save-edinet-browser-key').addEventListener('click',()=>{const value=panel.querySelector('#edinet-browser-key').value.trim();try{if(value)sessionStorage.setItem(EDINET_KEY,value);else sessionStorage.removeItem(EDINET_KEY);}catch(_){}state(value);});
     panel.querySelector('#clear-edinet-browser-key').addEventListener('click',()=>{panel.querySelector('#edinet-browser-key').value='';try{sessionStorage.removeItem(EDINET_KEY);}catch(_){}state('');});
     const advanced=document.createElement('details');advanced.className='advanced-tools';advanced.innerHTML=`<summary>${ja?'詳細データ・開発者向け':'Advanced data & developer tools'}</summary><div class="advanced-tools-links"><a class="ghost button" href="/edinet">${ja?'EDINET原典':'EDINET source'}</a><a class="ghost button" href="/institutional">${ja?'米国機関投資家の保有開示':'US institutional holdings'}</a><a class="ghost button" href="/licenses">${ja?'データライセンス':'Data licenses'}</a><a class="ghost button" href="/docs" data-turbo="false">API</a></div>`;panel.insertAdjacentElement('afterend',advanced);
@@ -191,8 +210,8 @@
   async function loadDataStatus() {
     const target=document.querySelector('#settings-data-sources');
     try {
-      const data=await api('/v1/settings/status'); const labels={sec:'SEC / US filings',yahoo_personal:'Yahoo / personal market data',edinet:'EDINET / Japan official filings',estat:'e-Stat / Japan official statistics',fred:'FRED / personal macro',bea:'BEA / US official macro'};
-      target.innerHTML=Object.entries(labels).map(([key,label])=>`<div class="capability"><strong>${escapeHtml(label)}</strong><span class="${data[key]?'badge-ok':'muted'}">${data[key]?'ready':'not configured'}</span></div>`).join('');
+      dataSourceStatus=await api('/v1/settings/status');
+      renderDataStatus();
       installEdinetSettings();
     } catch(error){target.textContent=error.message;}
   }
