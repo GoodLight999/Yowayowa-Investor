@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ x('ai.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-heading"><div><h1>{{ x('ai.title') }}</h1><p>{{ x('ai.subtitle') }}</p></div></section>
+<section class="ai-grid">
+  <aside class="sheet ai-config">
+    <div><h2>{{ u('ai.configure') }}</h2><p class="ux-note" style="margin-top:6px">{{ u('ai.configure_note') }}</p></div>
+    <a class="ghost button" href="/settings">{{ u('settings.title') }} →</a>
+    <div class="ai-quick">
+      <button class="ghost ai-quick-prompt" type="button">{{ x('ai.quick1') }}</button>
+      <button class="ghost ai-quick-prompt" type="button">{{ x('ai.quick2') }}</button>
+      <button class="ghost ai-quick-prompt" type="button">{{ x('ai.quick3') }}</button>
+    </div>
+    <p class="ux-note">{{ u('ai.context.evidence') }}</p>
+    <div id="ai-status" class="provider-source-note"></div>
+    <div hidden aria-hidden="true">
+      <select id="ai-provider"><option value="server">server</option><option value="openai">openai</option><option value="openrouter">openrouter</option><option value="gemini">gemini</option><option value="anthropic">anthropic</option><option value="custom">custom</option></select>
+      <input id="ai-model"><input id="ai-base-url"><input id="ai-api-key" type="password">
+    </div>
+  </aside>
+  <section class="sheet ai-chat">
+    <div class="section-title-line"><h2>{{ x('ai.title') }}</h2><button class="ghost" id="ai-clear" type="button">{{ x('ai.clear') }}</button></div>
+    <div class="ai-messages" id="ai-messages"></div>
+    <form class="ai-compose" id="ai-form">
+      <textarea id="ai-prompt" placeholder="{{ x('ai.prompt') }}"></textarea>
+      <button class="primary" id="ai-send" type="submit">{{ x('ai.send') }}</button>
+    </form>
+    <div class="ai-side-output">
+      <section><h3>{{ x('ai.tools') }}</h3><div class="ai-trace-list" id="ai-trace"><span class="muted">{{ x('ai.no_tools') }}</span></div></section>
+      <section><h3>{{ x('ai.proposals') }}</h3><div class="ai-proposals-list" id="ai-proposals"><span class="muted">{{ x('ai.no_proposals') }}</span></div></section>
+    </div>
+  </section>
+</section>
+{% endblock %}
+{% block scripts %}<script>{{ inline_ai_js | safe }}</script>{% endblock %}

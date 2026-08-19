@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ x('macro.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><h1>{{ x('macro.title') }}</h1><p>{{ l('macro.public_note') }}</p></div>
+  <a class="ghost button-link" href="/licenses">{{ l('licenses.footer') }}</a>
+</section>
+<section class="sheet">
+  <div class="section-title-line">
+    <div><h2>{{ l('macro.public_title') }}</h2><p class="muted">BLS / BEA / e-Stat</p></div>
+  </div>
+  <div class="macro-layout">
+    <section>
+      <h3>{{ l('macro.bls') }}</h3>
+      <div id="bls-catalog" class="macro-results"><span class="muted">{{ x('macro.loading') }}</span></div>
+    </section>
+    <section>
+      <h3>{{ l('macro.bea') }}</h3>
+      <p class="muted">{{ l('macro.bea_note') }}</p>
+      {% if bea_available %}
+      <div id="bea-catalog" class="macro-results"><span class="muted">{{ x('macro.loading') }}</span></div>
+      {% else %}
+      <div class="muted">{{ l('macro.bea_key') }}</div>
+      {% endif %}
+    </section>
+  </div>
+</section>
+<section class="sheet">
+  <div class="section-title-line">
+    <div><h2>{{ l('macro.estat') }}</h2><p class="muted">{{ l('macro.estat_note') }}</p></div>
+  </div>
+  <form class="research-toolbar" id="estat-search-form">
+    <div class="field">
+      <label for="estat-query">{{ l('macro.estat_query') }}</label>
+      <input id="estat-query" placeholder="{{ l('macro.estat_placeholder') }}" autocomplete="off">
+    </div>
+    <button class="primary" type="submit">{{ l('macro.estat_search') }}</button>
+  </form>
+  <div id="estat-status" class="muted"></div>
+  <div class="macro-layout">
+    <section>
+      <h3>{{ l('macro.estat_results') }}</h3>
+      <div id="estat-results" class="macro-results"><span class="muted">—</span></div>
+    </section>
+    <section>
+      <h3>{{ l('macro.estat_dimensions') }}</h3>
+      <p class="muted">{{ l('macro.estat_filter_hint') }}</p>
+      <form id="estat-filter-form">
+        <div id="estat-filters" class="macro-results"><span class="muted">—</span></div>
+        <button id="estat-load-data" class="primary" type="submit" hidden>{{ l('macro.estat_load') }}</button>
+      </form>
+    </section>
+  </div>
+  <section style="margin-top:12px">
+    <div class="section-title-line">
+      <h3>{{ l('macro.estat_data') }}</h3><span id="estat-data-status" class="muted"></span>
+    </div>
+    <div id="estat-data"><span class="muted">—</span></div>
+  </section>
+</section>
+<section class="sheet">
+  <div class="section-title-line"><h2>{{ x('macro.series') }}</h2><span class="muted" id="macro-series-id"></span></div>
+  <div id="macro-series"><span class="muted">—</span></div>
+  <div id="macro-provenance" class="muted"></div>
+</section>
+{% if app_mode == 'personal' %}
+<section class="sheet">
+  <div class="section-title-line">
+    <div><h2>{{ l('macro.fred_personal') }}</h2><p class="muted">{{ l('macro.fred_rights_note') }}</p></div>
+  </div>
+  <form class="research-toolbar" id="macro-search-form">
+    <div class="field">
+      <label for="macro-query">{{ x('macro.search') }}</label>
+      <input id="macro-query" placeholder="{{ x('macro.placeholder') }}" autocomplete="off">
+    </div>
+    <button class="primary" type="submit">{{ t('common.search') }}</button>
+    <button class="ghost" id="macro-releases-button" type="button">{{ x('macro.load_releases') }}</button>
+  </form>
+  <div id="macro-status" class="muted"></div>
+  <div class="macro-layout">
+    <section>
+      <h3>{{ t('common.results') }}</h3>
+      <div class="macro-results" id="macro-results"><span class="muted">—</span></div>
+    </section>
+    <section>
+      <h3>{{ x('macro.releases') }}</h3>
+      <div id="macro-releases"><span class="muted">—</span></div>
+    </section>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script>{{ inline_macro_js | safe }}</script>{% endblock %}

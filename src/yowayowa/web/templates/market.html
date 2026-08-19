@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ t('markets.title') }} · Yowayowa-Investor{% endblock %}
+{% block head %}
+<style>
+  .sector-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .sector-horizon { display:inline-flex; border:1px solid var(--line-strong); }
+  .sector-horizon button { border:0; border-right:1px solid var(--line); border-radius:0; background:transparent; color:var(--muted); padding:5px 9px; font-family:var(--mono); font-size:9px; cursor:pointer; }
+  .sector-horizon button:last-child { border-right:0; }
+  .sector-horizon button.is-active { background:var(--ink); color:var(--paper); }
+  .sector-heatmap { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-top:1px solid var(--line-strong); border-left:1px solid var(--line-strong); }
+  .sector-tile { min-height:86px; display:flex; flex-direction:column; justify-content:space-between; padding:9px; border-right:1px solid var(--line-strong); border-bottom:1px solid var(--line-strong); color:var(--ink); text-decoration:none; background:var(--sheet); }
+  .sector-tile[data-sign="positive"] { background:color-mix(in srgb,var(--positive) var(--sector-strength),var(--sheet)); }
+  .sector-tile[data-sign="negative"] { background:color-mix(in srgb,var(--negative) var(--sector-strength),var(--sheet)); }
+  .sector-tile strong { font-size:12px; }
+  .sector-tile small { color:inherit; font-family:var(--mono); font-size:9px; opacity:.72; }
+  .sector-return { font-family:var(--mono); font-size:18px; font-weight:650; font-variant-numeric:tabular-nums; }
+  .sector-rank { font-family:var(--mono); font-size:8px; opacity:.68; }
+  @media (max-width:820px) { .sector-heatmap { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:460px) { .sector-heatmap { grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+{% block content %}
+<section class="page-head">
+  <h1>{{ t('markets.title') }}</h1>
+  <div class="toolbar">
+    <span id="market-as-of" class="pill">{{ t('common.loading') }}</span>
+    <button id="refresh-market" class="primary" type="button">{{ t('common.refresh') }}</button>
+  </div>
+</section>
+<section class="panel" style="margin-bottom:12px">
+  <div class="section-heading">
+    <div><h2>{{ s('sector.title') }}</h2><p class="muted">{{ s('sector.subtitle') }}</p></div>
+    <div class="sector-toolbar">
+      <span class="muted">{{ s('sector.horizon') }}</span>
+      <div class="sector-horizon" role="group" aria-label="{{ s('sector.horizon') }}">
+        <button type="button" data-sector-horizon="change_1d">{{ s('sector.1d') }}</button>
+        <button type="button" data-sector-horizon="change_1m" class="is-active">{{ s('sector.1m') }}</button>
+        <button type="button" data-sector-horizon="change_3m">{{ s('sector.3m') }}</button>
+        <button type="button" data-sector-horizon="change_1y">{{ s('sector.1y') }}</button>
+      </div>
+    </div>
+  </div>
+  <div id="sector-heatmap" class="sector-heatmap"><div class="list-state muted">{{ s('sector.loading') }}</div></div>
+  <div id="sector-source" class="source-strip muted"></div>
+</section>
+<section id="market-overview" class="market-overview" aria-live="polite">
+  <div class="panel"><div class="list-state muted">{{ t('markets.loading') }}</div></div>
+</section>
+<section class="panel market-provenance-panel">
+  <div class="section-heading"><h2>{{ t('common.source') }}</h2></div>
+  <div id="market-provenance" class="provenance-card muted">{{ t('common.loading_ellipsis') }}</div>
+</section>
+{% endblock %}
+{% block scripts %}<script>{{ inline_market_js | safe }}</script>{% endblock %}

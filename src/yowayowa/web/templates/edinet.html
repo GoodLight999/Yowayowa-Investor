@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ u('edinet.title') }} · Yowayowa-Investor{% endblock %}
+{% block head %}
+<style>
+  .edinet-controls { display:flex; align-items:end; gap:8px; flex-wrap:wrap; padding:0 11px 11px; }
+  .edinet-controls label { min-width:0; color:var(--muted); font-family:var(--mono); font-size:8px; }
+  .edinet-controls input[type=date], .edinet-controls input[type=text] { display:block; max-width:100%; margin-top:3px; border:1px solid var(--line-strong); border-radius:0; background:var(--sheet); color:var(--ink); padding:7px 8px; font-family:var(--mono); }
+  #edinet-date, #edinet-history-start, #edinet-history-end { width:142px; }
+  #edinet-security-code, #edinet-history-security-code { width:112px; }
+  .edinet-check { display:flex; align-items:center; gap:5px; min-height:32px; padding-bottom:2px; }
+  .edinet-check input { margin:0; }
+  .edinet-warning { margin-bottom:12px; padding:8px 10px; border-left:2px solid var(--negative); background:var(--sheet); color:var(--muted); font-size:10px; }
+  .edinet-meta { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-top:1px solid var(--line-strong); border-left:1px solid var(--line-strong); margin-bottom:12px; }
+  .edinet-meta > div { min-width:0; padding:10px; border-right:1px solid var(--line-strong); border-bottom:1px solid var(--line-strong); }
+  .edinet-meta small { display:block; color:var(--muted); font-family:var(--mono); font-size:8px; }
+  .edinet-meta strong { display:block; overflow:hidden; margin-top:4px; font-family:var(--mono); font-size:11px; text-overflow:ellipsis; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .edinet-doc-button { padding:4px 7px; }
+  .edinet-status-line { color:var(--muted); font-family:var(--mono); font-size:9px; }
+  .edinet-section-note { margin:0; padding:0 11px 10px; color:var(--muted); font-size:10px; }
+  .edinet-coverage { display:flex; gap:8px; flex-wrap:wrap; margin:8px 11px; color:var(--muted); font-family:var(--mono); font-size:9px; }
+  .edinet-coverage strong { color:var(--ink); }
+  .edinet-coverage .partial { color:var(--negative); }
+  .edinet-metric-value { font-family:var(--mono); text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .edinet-element { max-width:260px; overflow:hidden; font-family:var(--mono); font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
+  .edinet-scope { max-width:300px; color:var(--muted); font-family:var(--mono); font-size:9px; }
+  .edinet-notes { display:grid; gap:4px; margin-top:10px; color:var(--muted); font-size:10px; }
+  .edinet-fact-form { display:flex; gap:6px; margin:0 11px 8px; }
+  .edinet-fact-form input { flex:1; min-width:0; border:1px solid var(--line-strong); border-radius:0; background:var(--sheet); color:var(--ink); padding:7px 8px; }
+  .edinet-intro { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(260px,.8fr); gap:12px; margin-bottom:12px; }
+  .edinet-company-search { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px; padding:11px; }
+  .edinet-company-search input { min-width:0; border:1px solid var(--line-strong); background:#fffef9; padding:9px 10px; }
+  #edinet-company-results { max-height:280px; overflow:auto; border-top:1px solid var(--line); }
+  .edinet-advanced > summary { padding:10px 11px; border-bottom:1px solid var(--line); cursor:pointer; font-weight:700; }
+  @media (max-width:760px) {
+    .edinet-intro { grid-template-columns:1fr; }
+    .edinet-meta { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .edinet-controls { align-items:stretch; }
+    .edinet-controls > label:not(.edinet-check) { flex:1 1 130px; }
+    #edinet-date, #edinet-security-code, #edinet-history-start, #edinet-history-end, #edinet-history-security-code { width:100%; box-sizing:border-box; }
+    .edinet-controls button { flex:1 1 100%; min-height:40px; }
+    .edinet-element, .edinet-scope { max-width:180px; }
+    .edinet-company-search { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div><h1>{{ u('edinet.title') }}</h1><p class="ux-subtitle">{{ u('edinet.explainer') }}</p></div>
+</section>
+
+{% if not edinet_available %}<div class="edinet-warning">{{ e('edinet.key_missing') }}</div>{% endif %}
+
+<div class="edinet-intro">
+  <section class="panel">
+    <div class="section-heading"><div><h2>{{ e('edinet.history') }}</h2><small class="term-note">{{ e('edinet.history_note') }}</small></div></div>
+    <form id="edinet-company-search" class="edinet-company-search">
+      <input id="edinet-company-query" autocomplete="off" placeholder="7203 / Toyota">
+      <button class="primary" type="submit">{{ e('edinet.history_search') }}</button>
+    </form>
+    <div id="edinet-company-results" class="muted"><div class="list-state">{{ u('edinet.beginner') }}</div></div>
+  </section>
+  <section class="panel">
+    <div class="section-heading"><h2>EDINET</h2></div>
+    <div style="padding:11px"><p class="ux-note">{{ u('edinet.explainer') }}</p><p class="ux-note" style="margin-top:8px">{{ u('edinet.beginner') }}</p></div>
+  </section>
+</div>
+
+<section class="panel">
+  <div class="section-heading"><div><h2>{{ e('edinet.history') }}</h2><small class="term-note">{{ e('edinet.history_note') }}</small></div><span id="edinet-history-status" class="edinet-status-line">—</span></div>
+  <form id="edinet-history-form" class="edinet-controls">
+    <label>{{ e('edinet.security_code') }}<input id="edinet-history-security-code" type="text" inputmode="numeric" maxlength="5" placeholder="7203" required></label>
+    <label>{{ e('edinet.start_date') }}<input id="edinet-history-start" type="date" required></label>
+    <label>{{ e('edinet.end_date') }}<input id="edinet-history-end" type="date" required></label>
+    <label class="edinet-check"><input id="edinet-history-csv-only" type="checkbox" checked> {{ e('edinet.csv_only') }}</label>
+    <button class="primary" type="submit">{{ e('edinet.history_search') }}</button>
+  </form>
+  <div id="edinet-history-coverage" class="edinet-coverage"></div>
+  <div id="edinet-history-documents" class="table-wrap muted">—</div>
+</section>
+
+<details class="panel edinet-advanced" style="margin-top:12px">
+  <summary>{{ e('edinet.daily_lookup') }}</summary>
+  <p class="edinet-section-note">{{ e('edinet.daily_note') }}</p>
+  <form id="edinet-form" class="edinet-controls">
+    <label>{{ e('edinet.date') }}<input id="edinet-date" type="date" required></label>
+    <label>{{ e('edinet.security_code') }}<input id="edinet-security-code" type="text" inputmode="numeric" maxlength="5" placeholder="7203"></label>
+    <label class="edinet-check"><input id="edinet-csv-only" type="checkbox" checked> {{ e('edinet.csv_only') }}</label>
+    <button class="ghost" type="submit">{{ e('edinet.load') }}</button>
+  </form>
+  <div class="section-heading"><span id="edinet-document-status" class="edinet-status-line">—</span></div>
+  <div id="edinet-documents" class="table-wrap muted" style="margin-top:8px">—</div>
+</details>
+
+<section id="edinet-financial-panel" class="panel" style="margin-top:12px" hidden>
+  <div class="section-heading"><div><h2>{{ e('edinet.financials') }}</h2><small class="term-note">{{ e('edinet.subtitle') }}</small></div><span id="edinet-financial-status" class="edinet-status-line">—</span></div>
+  <div id="edinet-meta" class="edinet-meta"></div>
+  <div id="edinet-metrics" class="table-wrap muted">—</div>
+  <div id="edinet-notes" class="edinet-notes"></div>
+</section>
+
+<details id="edinet-facts-panel" class="panel edinet-advanced" style="margin-top:12px" hidden>
+  <summary>{{ e('edinet.raw_facts') }}</summary>
+  <p class="edinet-section-note">{{ e('edinet.fact_query') }}</p>
+  <form id="edinet-fact-form" class="edinet-fact-form"><input id="edinet-fact-query" type="search" maxlength="100" placeholder="{{ e('edinet.fact_query') }}"><button class="ghost" type="submit">{{ e('edinet.search') }}</button></form>
+  <div id="edinet-fact-status" class="edinet-status-line"></div>
+  <div id="edinet-facts" class="table-wrap muted">—</div>
+</details>
+
+<section class="panel" style="margin-top:12px"><div class="section-heading"><h2>{{ t('common.source') }}</h2></div><div id="edinet-provenance" class="provenance-card muted">EDINET / Financial Services Agency</div></section>
+{% endblock %}
+{% block scripts %}<script>{{ inline_edinet_js | safe }}</script><script>{{ inline_edinet_ux_js | safe }}</script>{% endblock %}

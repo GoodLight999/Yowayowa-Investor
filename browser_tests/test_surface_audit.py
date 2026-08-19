@@ -1,0 +1,34 @@
+from playwright.sync_api import Page, expect
+
+BASE_URL = "http://127.0.0.1:8000"
+PRIMARY_ROUTES = (
+    "/",
+    "/markets",
+    "/discover",
+    "/portfolio",
+    "/compare",
+    "/screener",
+    "/news",
+    "/calendar",
+    "/macro",
+    "/alerts",
+    "/ai",
+)
+
+
+def test_primary_surfaces_have_no_page_overflow_or_static_css_dependency(page: Page) -> None:
+    errors: list[str] = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    overflow_expression = (
+        "document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
+    )
+    for width in (1440, 390):
+        page.set_viewport_size({"width": width, "height": 844})
+        for locale in ("ja", "en"):
+            for route in PRIMARY_ROUTES:
+                page.goto(f"{BASE_URL}{route}?lang={locale}", wait_until="domcontentloaded")
+                expect(page.locator("html")).to_have_attribute("lang", locale)
+                overflow = page.evaluate(overflow_expression)
+                assert overflow is False, f"page overflow at {width}px: {route} ({locale})"
+                assert page.locator('link[rel="stylesheet"][href*="/static/"]').count() == 0
+    assert errors == []

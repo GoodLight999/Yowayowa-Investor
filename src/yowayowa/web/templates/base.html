@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="{{ locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="turbo-cache-control" content="no-preview">
+  <title>{% block title %}Yowayowa-Investor{% endblock %}</title>
+  <script src="https://unpkg.com/@hotwired/turbo@8.0.23/dist/turbo.es2017-umd.js" defer></script>
+  <style>{{ inline_css | safe }}
+{% include "product.css" %}
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% set path = request.url.path %}
+  <div class="app-shell">
+    <aside class="topbar">
+      <a class="brand" href="{% if app_mode == 'public' %}/macro{% else %}/{% endif %}" aria-label="Yowayowa-Investor home">
+        <strong>Yowayowa</strong><small>Investor / {{ version }}</small>
+      </a>
+      <nav class="nav" aria-label="{{ t('nav.main') }}">
+        {% if app_mode == 'public' %}
+        <a class="{% if path == '/compare' %}is-active{% endif %}" href="/compare">{{ t('nav.compare') }}</a>
+        <a class="{% if path == '/screener' %}is-active{% endif %}" href="/screener">{{ t('nav.screener') }}</a>
+        <a class="{% if path == '/macro' %}is-active{% endif %}" href="/macro">{{ u('nav.macro') }}</a>
+        <a class="{% if path == '/rates' %}is-active{% endif %}" href="/rates">{{ q('rates.nav') }}</a>
+        <a class="{% if path == '/licenses' %}is-active{% endif %}" href="/licenses">{{ l('licenses.footer') }}</a>
+        <a href="/docs" data-turbo="false">{{ u('nav.api') }}</a>
+        {% else %}
+        <div class="nav-group"><div class="nav-group-label">{% if locale == 'ja' %}調べる{% else %}Research{% endif %}</div>
+          <a class="{% if path == '/' %}is-active{% endif %}" href="/">{{ u('nav.overview') }}</a>
+          <a class="{% if path == '/discover' %}is-active{% endif %}" href="/discover">{{ x('nav.discover') }}</a>
+        </div>
+        <div class="nav-group"><div class="nav-group-label">{% if locale == 'ja' %}市場・経済{% else %}Markets & economy{% endif %}</div>
+          <a class="{% if path == '/markets' %}is-active{% endif %}" href="/markets">{{ t('nav.markets') }}</a>
+          <a class="{% if path == '/macro' %}is-active{% endif %}" href="/macro">{{ u('nav.macro') }}</a>
+        </div>
+        <div class="nav-group"><div class="nav-group-label">{% if locale == 'ja' %}資産管理{% else %}Portfolio{% endif %}</div>
+          <a class="{% if path == '/portfolio' %}is-active{% endif %}" href="/portfolio">{{ t('nav.portfolio') }}</a>
+        </div>
+        <div class="nav-group"><div class="nav-group-label">{% if locale == 'ja' %}AI・設定{% else %}AI & settings{% endif %}</div>
+          <a class="{% if path == '/ai' %}is-active{% endif %}" href="/ai">{{ x('nav.ai') }}</a>
+          <a class="{% if path == '/settings' %}is-active{% endif %}" href="/settings">{{ u('nav.settings') }}</a>
+        </div>
+        {% endif %}
+      </nav>
+      <div class="topbar-meta">
+        {% if app_mode == 'public' %}<div><span class="status-dot live" aria-hidden="true"></span><span>PUBLIC · {{ t('status.live') }}</span></div>
+        {% else %}<div><span class="status-dot" aria-hidden="true"></span><span id="api-status">API</span></div>{% endif %}
+        <div>{% if app_mode == 'public' %}PUBLIC RESEARCH{% else %}{{ t('workspace.personal') }}{% endif %}</div>
+      </div>
+    </aside>
+    <div class="main-shell">
+      <header class="masthead">
+        <span>YOWAYOWA INVESTOR</span>
+        <div class="masthead-actions">
+          {% if app_mode == 'personal' %}<button id="command-trigger" class="command-trigger" type="button" aria-haspopup="dialog" aria-controls="command-palette"><span>{{ x('command.open') }}</span><kbd>Ctrl K</kbd></button>{% endif %}
+          <span>{{ t('masthead.research') }}</span>
+          <div class="locale-switcher" role="group" aria-label="{{ t('language.switcher') }}">
+            <button class="locale-button {% if locale == 'ja' %}is-active{% endif %}" type="button" data-locale="ja" lang="ja">{{ t('language.ja') }}</button><span aria-hidden="true">/</span><button class="locale-button {% if locale == 'en' %}is-active{% endif %}" type="button" data-locale="en" lang="en">{{ t('language.en') }}</button>
+          </div>
+        </div>
+      </header>
+      <main class="content">{% block content %}{% endblock %}</main>
+      <footer class="footer"><span>Yowayowa-Investor {{ version }} · <a href="/licenses">{{ l('licenses.footer') }}</a></span><span>{{ t('footer.charts') }}: <a href="https://www.tradingview.com/" rel="noreferrer">TradingView Lightweight Charts™</a></span></footer>
+    </div>
+  </div>
+  <dialog id="command-palette" class="command-palette" aria-labelledby="command-title">
+    <div class="command-head"><input id="command-input" type="search" autocomplete="off" spellcheck="false" aria-label="{{ x('command.title') }}" placeholder="{{ x('command.placeholder') }}"><button id="command-close" type="button">ESC</button></div>
+    <div id="command-results" class="command-results" role="listbox" aria-label="{{ x('command.title') }}"></div>
+    <div class="command-foot"><span id="command-title">{{ x('command.title') }}</span><span>{{ x('command.hint') }}</span></div>
+  </dialog>
+  <aside id="context-ai-drawer" class="context-ai-drawer" aria-label="{{ u('ai.context.title') }}">
+    <div class="context-ai-head"><strong>{{ u('ai.context.title') }}</strong><button id="context-ai-close" class="ghost" type="button">×</button></div>
+    <div id="context-ai-section" class="context-ai-section">—</div>
+    <div id="context-ai-answer" class="context-ai-answer"></div>
+    <div id="context-ai-trace" class="context-ai-trace"></div>
+    <div><div class="ai-evidence-note">{{ u('ai.context.evidence') }}</div><form id="context-ai-form" class="context-ai-form"><textarea id="context-ai-prompt" placeholder="{{ u('ai.context.placeholder') }}"></textarea><button id="context-ai-send" class="primary" type="submit">{{ u('ai.context.send') }}</button></form></div>
+  </aside>
+  <script>window.YOWAYOWA_LOCALE = {{ locale | tojson }}; window.YOWAYOWA_MODE = {{ app_mode | tojson }}; window.YOWAYOWA_I18N = {{ i18n_json | replace('Kilo Code / OpenCodex型の考え方を採用し、多くのサービスはOpenAI互換アダプターを共有し、本当にAPI仕様が異なるものだけ専用アダプターに分けます。', '使うAIプロバイダだけ有効にできます。使わないサービスは一覧から隠せます。') | replace('Inspired by coding agents such as Kilo/OpenCodex: many services reuse one OpenAI-compatible adapter, while genuinely different APIs keep a dedicated adapter.', 'Enable only the AI providers you use. Unused providers can stay hidden.') | safe }};</script>
+  <script src="/static/product.js" data-turbo-eval="false"></script>
+  <script data-turbo-eval="false">{{ inline_app_js | safe }}</script>
+  <script data-turbo-eval="false">{{ inline_ux_js | safe }}</script>
+  <script src="/static/instrument_context.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ u('dashboard.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div><h1>{{ u('dashboard.title') }}</h1><p class="ux-subtitle">{{ u('dashboard.subtitle') }}</p></div>
+  <span class="pill">{{ t('common.personal') }}</span>
+</section>
+
+<section aria-labelledby="home-actions-title">
+  <h2 id="home-actions-title" style="margin:0 0 7px">{{ u('dashboard.quick_actions') }}</h2>
+  <div class="home-actions">
+    <a class="home-action" href="#global-search"><strong>{{ u('dashboard.action.find') }}</strong><small>{{ u('dashboard.action.find_note') }}</small></a>
+    <a class="home-action" href="/compare"><strong>{{ u('dashboard.action.compare') }}</strong><small>{{ u('dashboard.action.compare_note') }}</small></a>
+    <a class="home-action" href="/calendar"><strong>{{ u('dashboard.action.events') }}</strong><small>{{ u('dashboard.action.events_note') }}</small></a>
+    <a class="home-action" href="#global-search"><strong>{{ u('dashboard.action.japan') }}</strong><small>{{ u('dashboard.action.japan_note') }}</small></a>
+  </div>
+</section>
+
+<div class="workbar">
+  <form id="global-search" class="search-box" role="search">
+    <label class="sr-only" for="search-input">{{ u('dashboard.search_label') }}</label>
+    <input id="search-input" name="q" autocomplete="off" placeholder="{{ u('dashboard.search_placeholder') }}">
+    <button type="submit">{{ t('common.search') }}</button>
+  </form>
+  <section class="command-panel">
+    <form id="operator-form" class="operator-form">
+      <textarea id="operator-input" rows="1" placeholder="{{ u('dashboard.command_placeholder') }}"></textarea>
+      <button type="submit">{{ t('common.run') }}</button>
+    </form>
+    <div id="operation-plan" class="operation-plan muted"></div>
+  </section>
+</div>
+
+<div class="grid grid-2">
+  <section class="panel">
+    <div class="section-heading"><div><h2>{{ u('dashboard.start_research') }}</h2><small class="term-note">{{ u('dashboard.start_research_note') }}</small></div></div>
+    <div id="search-results" class="list-state muted">{{ t('dashboard.search_hint') }}</div>
+  </section>
+
+  <section class="panel">
+    <div class="section-heading">
+      <h2>{{ t('dashboard.watchlist') }}</h2>
+      <button id="refresh-watchlist" class="ghost" type="button">{{ t('common.refresh') }}</button>
+    </div>
+    <div style="padding:10px 11px 0">
+      <form id="watchlist-add-form" class="inline-form">
+        <input id="watchlist-symbol" maxlength="32" placeholder="{{ u('dashboard.watchlist_add_placeholder') }}">
+        <button type="submit">{{ t('common.add') }}</button>
+      </form>
+    </div>
+    <div id="watchlist" class="symbol-grid"></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}<script src="/static/dashboard_ux.js"></script>{% endblock %}

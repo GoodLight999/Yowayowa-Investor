@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ u('settings.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div><h1>{{ u('settings.title') }}</h1><p class="ux-subtitle">{{ u('settings.subtitle') }}</p></div>
+</section>
+
+<div class="settings-layout">
+  <div>
+    <section class="panel" id="data-sources">
+      <div class="section-heading"><h2>{{ u('settings.data_sources') }}</h2></div>
+      <div id="settings-data-sources" class="capability-grid"><div class="capability"><strong>Loading…</strong></div></div>
+    </section>
+
+    <section class="panel" style="margin-top:12px">
+      <div class="section-heading"><h2>{{ u('settings.ai') }}</h2><span id="settings-status" class="pill">—</span></div>
+      <form id="ai-settings-form" class="settings-form">
+        <label class="settings-toggle">
+          <input id="context-ai-enabled" type="checkbox" checked>
+          <span><strong>{{ u('settings.context_ai') }}</strong><small class="term-note">{{ u('settings.context_ai_note') }}</small></span>
+        </label>
+        <label class="settings-row"><span>{{ u('settings.provider') }}</span><select id="settings-provider"><option value="server">Server configuration</option></select></label>
+        <label class="settings-row"><span>{{ u('settings.model') }}</span><input id="settings-model" autocomplete="off" placeholder="model-id"></label>
+        <label class="settings-row"><span>{{ u('settings.base_url') }}</span><input id="settings-base-url" autocomplete="off" inputmode="url" placeholder="https://…/v1"></label>
+        <label class="settings-row"><span>{{ u('settings.api_key') }}</span><input id="settings-api-key" type="password" autocomplete="off" spellcheck="false"></label>
+        <p class="ux-note">{{ u('settings.key_note') }}</p>
+        <div class="toolbar">
+          <button class="primary" type="submit">{{ u('settings.save') }}</button>
+          <button id="fetch-provider-models" class="ghost" type="button">{{ u('settings.models') }}</button>
+          <button id="openrouter-oauth" class="ghost" type="button">{{ u('settings.oauth') }}</button>
+        </div>
+        <p class="ux-note">{{ u('settings.oauth_note') }}</p>
+        <div id="model-results" class="model-results" hidden></div>
+      </form>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="section-heading"><h2>{{ u('settings.provider_catalog') }}</h2></div>
+    <div style="padding:10px 11px"><p class="ux-note">{% if locale == 'ja' %}使うAIプロバイダだけ有効にしてください。使わないサービスは一覧と選択肢から隠せます。{% else %}Enable only the AI providers you use. Unused services can stay hidden from the list and selector.{% endif %}</p></div>
+    <div id="provider-catalog" class="provider-catalog"><div class="list-state muted">{{ t('common.loading_ellipsis') }}</div></div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script>{{ inline_settings_js | safe }}</script>{% endblock %}

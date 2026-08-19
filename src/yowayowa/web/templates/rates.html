@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{{ q('rates.title') }} · Yowayowa-Investor{% endblock %}
+{% block head %}
+<script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  .rate-controls { display:flex; gap:8px; align-items:end; flex-wrap:wrap; }
+  .rate-controls label { color:var(--muted); font-family:var(--mono); font-size:8px; }
+  .rate-controls input { display:block; margin-top:3px; width:90px; border:1px solid var(--line-strong); border-radius:0; background:var(--sheet); color:var(--ink); padding:7px 8px; font-family:var(--mono); }
+  .yield-curve-layout { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr); gap:12px; }
+  #yield-curve-chart { height:360px; }
+  #yield-spread-chart { height:260px; }
+  .yield-table td, .yield-table th { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .spread-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border-top:1px solid var(--line-strong); border-left:1px solid var(--line-strong); }
+  .spread-cell { padding:12px; border-right:1px solid var(--line-strong); border-bottom:1px solid var(--line-strong); }
+  .spread-cell small { display:block; color:var(--muted); font-family:var(--mono); font-size:9px; }
+  .spread-cell strong { display:block; margin-top:5px; font-family:var(--mono); font-size:22px; font-variant-numeric:tabular-nums; }
+  @media (max-width:860px) { .yield-curve-layout { grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div><h1>{{ q('rates.title') }}</h1><p class="muted">{{ q('rates.subtitle') }}</p></div>
+  <div class="rate-controls">
+    <label>{{ q('rates.year') }}<input id="rate-year" type="number" min="1990" max="2100"></label>
+    <button id="reload-rates" class="primary" type="button">{{ q('rates.reload') }}</button>
+  </div>
+</section>
+<div class="yield-curve-layout">
+  <section class="panel chart-panel">
+    <div class="section-heading"><h2>{{ q('rates.curve') }}</h2><span id="yield-date" class="pill">—</span></div>
+    <div id="yield-curve-chart" role="img" aria-label="{{ q('rates.curve') }}"></div>
+  </section>
+  <section class="panel">
+    <div class="section-heading"><h2>{{ q('rates.points') }}</h2></div>
+    <div id="yield-table" class="table-wrap yield-table muted">{{ q('rates.loading') }}</div>
+  </section>
+</div>
+<section class="panel" style="margin-top:12px">
+  <div class="section-heading"><h2>{{ q('rates.spreads') }}</h2></div>
+  <div class="spread-grid">
+    <div class="spread-cell"><small>{{ q('rates.spread_10y_2y') }}</small><strong id="spread-10y-2y">—</strong></div>
+    <div class="spread-cell"><small>{{ q('rates.spread_10y_3m') }}</small><strong id="spread-10y-3m">—</strong></div>
+  </div>
+  <div id="yield-spread-chart" role="img" aria-label="{{ q('rates.history') }}"></div>
+</section>
+<section class="panel" style="margin-top:12px">
+  <div class="section-heading"><h2>{{ t('common.source') }}</h2></div>
+  <div id="rate-provenance" class="provenance-card muted">{{ q('rates.loading') }}</div>
+  <p class="muted" style="margin-top:8px">{{ q('rates.source_note') }}</p>
+</section>
+{% endblock %}
+{% block scripts %}<script>{{ inline_rates_js | safe }}</script>{% endblock %}

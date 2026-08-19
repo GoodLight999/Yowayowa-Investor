@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{% if locale == 'ja' %}米国機関投資家の保有開示{% else %}US institutional holdings disclosures{% endif %} · Yowayowa-Investor{% endblock %}
+{% block head %}
+<style>
+  .institutional-controls { display:flex; align-items:end; gap:8px; flex-wrap:wrap; }
+  .institutional-controls label { color:var(--muted); font-family:var(--mono); font-size:8px; }
+  .institutional-controls input { display:block; margin-top:3px; border:1px solid var(--line-strong); border-radius:0; background:var(--sheet); color:var(--ink); padding:7px 8px; font-family:var(--mono); }
+  #institutional-cik { width:150px; }
+  #institutional-quarters { width:72px; }
+  .institutional-meta { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-top:1px solid var(--line-strong); border-left:1px solid var(--line-strong); margin-bottom:12px; }
+  .institutional-meta > div { padding:10px; border-right:1px solid var(--line-strong); border-bottom:1px solid var(--line-strong); }
+  .institutional-meta small { display:block; color:var(--muted); font-family:var(--mono); font-size:8px; }
+  .institutional-meta strong { display:block; margin-top:4px; font-family:var(--mono); font-size:12px; font-variant-numeric:tabular-nums; }
+  .change-new, .change-increased { color:var(--positive); }
+  .change-decreased, .change-exited { color:var(--negative); }
+  .institutional-warning { padding:8px 10px; border-left:2px solid var(--negative); background:var(--sheet); color:var(--muted); font-size:10px; margin-bottom:12px; }
+  @media (max-width:760px) { .institutional-meta { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+</style>
+{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div>
+    <h1>{% if locale == 'ja' %}米国機関投資家の保有開示{% else %}US institutional holdings disclosures{% endif %}</h1>
+    <p class="muted">{% if locale == 'ja' %}大手運用会社が四半期末に保有していた米国上場証券を調べます。{% else %}Inspect US-listed securities reported by large investment managers at quarter end.{% endif %}</p>
+  </div>
+  <form id="institutional-form" class="institutional-controls">
+    <label>{{ i('institutional.cik') }}<input id="institutional-cik" required inputmode="numeric" maxlength="10" placeholder="1067983"></label>
+    <label>{{ i('institutional.quarters') }}<input id="institutional-quarters" type="number" min="1" max="8" value="2"></label>
+    <button class="primary" type="submit">{{ i('institutional.load') }}</button>
+  </form>
+</section>
+<div class="institutional-explainer">{% if locale == 'ja' %}<strong>13Fとは：</strong>一定規模以上の米国運用会社が、四半期末に保有していた対象証券をSECへ報告する制度です。過去の保有構成や増減を見るための資料で、リアルタイムの売買状況ではありません。{% else %}<strong>What is Form 13F?</strong> Certain large US investment managers report covered holdings to the SEC after each quarter. It is useful for historical portfolio composition and changes, not live trading activity.{% endif %}</div>
+<div class="institutional-warning">{{ i('institutional.delayed') }}</div>
+<section class="panel">
+  <div class="section-heading"><h2>{{ i('institutional.manager') }}</h2><span id="institutional-status" class="pill">—</span></div>
+  <div id="institutional-meta" class="institutional-meta"><div><small>{{ i('institutional.manager') }}</small><strong>—</strong></div></div>
+</section>
+<section class="panel" style="margin-top:12px"><div class="section-heading"><h2>{{ i('institutional.latest') }}</h2></div><div id="institutional-holdings" class="table-wrap muted">—</div></section>
+<section class="panel" style="margin-top:12px"><div class="section-heading"><h2>{{ i('institutional.changes') }}</h2></div><div id="institutional-changes" class="table-wrap muted">—</div></section>
+<section class="panel" style="margin-top:12px"><div class="section-heading"><h2>{{ t('common.source') }}</h2></div><div id="institutional-provenance" class="provenance-card muted">—</div></section>
+{% endblock %}
+{% block scripts %}<script>{{ inline_institutional_js | safe }}</script>{% endblock %}

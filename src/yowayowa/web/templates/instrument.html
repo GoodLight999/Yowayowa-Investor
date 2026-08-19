@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ symbol }} · Yowayowa-Investor{% endblock %}
+{% block head %}<script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
+{% block content %}
+<section class="instrument-header" data-symbol="{{ symbol }}">
+  <div class="instrument-identity">
+    <div><h1>{{ symbol }}</h1><p id="instrument-name" class="muted">{{ t('common.loading_ellipsis') }}</p></div>
+    <div id="instrument-live-quote" class="instrument-live-quote" aria-live="polite">
+      <strong id="instrument-price">—</strong>
+      <span id="instrument-change" class="muted">—</span>
+    </div>
+  </div>
+  <div class="toolbar">
+    <button id="toggle-watchlist" class="ghost" type="button">{{ t('common.add') }} · {{ t('dashboard.watchlist') }}</button>
+    <select id="period-select" aria-label="{{ t('instrument.chart_period') }}"><option value="3mo">3M</option><option value="6mo">6M</option><option value="1y" selected>1Y</option><option value="2y">2Y</option><option value="5y">5Y</option><option value="max">MAX</option></select>
+    <div class="indicator-controls">
+      <details class="indicator-menu">
+        <summary><span>{{ u('instrument.indicator_title') }}</span><span id="indicator-count" class="indicator-count">—</span></summary>
+        <div class="indicator-popover">
+          <p>{{ u('instrument.indicator_note') }}</p>
+          <div class="indicator-grid">
+            <label class="indicator-option"><input type="checkbox" data-indicator-token="sma20" checked><span><strong>SMA 20</strong><small>Simple Moving Average · 20日単純移動平均</small></span></label>
+            <label class="indicator-option"><input type="checkbox" data-indicator-token="bb20" checked><span><strong>Bollinger Bands 20</strong><small>20日平均の周辺に値動きの幅を表示</small></span></label>
+            <label class="indicator-option"><input type="checkbox" data-indicator-token="rsi14" checked><span><strong>RSI 14</strong><small>Relative Strength Index · 直近14期間の上げ下げの勢い</small></span></label>
+            <label class="indicator-option"><input type="checkbox" data-indicator-token="macd" checked><span><strong>MACD</strong><small>短期・長期の移動平均の差からトレンド変化を見る</small></span></label>
+            <label class="indicator-option"><input type="checkbox" data-indicator-token="atr14"><span><strong>ATR 14</strong><small>Average True Range · 値動きの大きさ（ボラティリティ）</small></span></label>
+            <label class="indicator-option"><input type="checkbox" data-indicator-token="stoch14"><span><strong>Stochastic 14</strong><small>一定期間の高値・安値の中で現在値がどこにいるか</small></span></label>
+            <label class="indicator-option"><input type="checkbox" data-indicator-token="adx14"><span><strong>ADX 14</strong><small>Average Directional Index · トレンドの強さ</small></span></label>
+            <label class="indicator-option"><input type="checkbox" data-indicator-token="willr14"><span><strong>Williams %R 14</strong><small>直近レンジ内での現在値の位置を-100〜0で表示</small></span></label>
+            <label class="indicator-option"><input type="checkbox" data-indicator-token="obv"><span><strong>OBV</strong><small>On-Balance Volume · 出来高を価格方向に累積</small></span></label>
+            <label class="indicator-option"><input type="checkbox" data-indicator-token="supertrend10"><span><strong>Supertrend 10</strong><small>ATRを使ったトレンド追随型の参考線</small></span></label>
+          </div>
+        </div>
+      </details>
+    </div>
+    <input id="indicator-input" type="hidden" value="sma20,bb20,rsi14,macd">
+    <button id="reload-chart" class="primary">{{ t('instrument.apply') }}</button>
+  </div>
+</section>
+<section class="panel chart-panel"><div id="chart" class="chart" role="img" aria-label="{{ t('instrument.price_chart') }}"></div><div id="chart-source" class="source-strip muted"></div></section>
+
+<section class="panel valuation-strip">
+  <div class="section-heading"><h2>{{ t('instrument.valuation') }}</h2><span id="valuation-basis" class="pill">{{ t('instrument.valuation_basis') }}</span></div>
+  <div id="valuation-metrics" class="metrics-strip"><div class="metric-card"><small>{{ t('instrument.valuation') }}</small><strong>{{ t('common.loading_ellipsis') }}</strong></div></div>
+</section>
+<section class="metrics-strip" id="key-metrics"></section>
+
+<div class="finance-ux-grid">
+  <section class="panel">
+    <div class="section-heading"><div><h2>{{ u('instrument.financial_graph') }}</h2><small class="term-note">{{ u('instrument.financial_graph_note') }}</small></div></div>
+    <div id="financial-trend" class="finance-bars"><span class="muted">{{ t('common.loading_ellipsis') }}</span></div>
+  </section>
+  <section class="panel">
+    <div class="section-heading"><div><h2>{{ u('instrument.machine_read') }}</h2><small class="term-note">{{ u('instrument.machine_read_note') }}</small></div></div>
+    <div id="machine-financial-read" class="finance-insights"><div class="list-state muted">{{ t('common.loading_ellipsis') }}</div></div>
+  </section>
+</div>
+
+<section class="panel" style="margin-top:12px">
+  <div class="section-heading">
+    <div><h2>{{ t('instrument.financials') }}</h2><small class="term-note">FY = 年次決算、Q = 四半期決算。数値の出典は画面下部に表示します。</small></div>
+    <div class="metric-picker" role="group" aria-label="{{ t('instrument.financials') }}">
+      <button class="metric-picker-button is-active" type="button" data-financial-view="annual" aria-pressed="true">FY</button>
+      <button class="metric-picker-button" type="button" data-financial-view="quarterly" aria-pressed="false">Q</button>
+    </div>
+  </div>
+  <div id="financial-health-metrics" class="metrics-strip"></div>
+  <div style="padding:0 11px 8px"><small class="term-note"><span class="term-help" title="{{ u('instrument.term.roe') }}">ROE</span> · <span class="term-help" title="{{ u('instrument.term.margin') }}">Operating margin</span> · <span class="term-help" title="{{ u('instrument.term.current_ratio') }}">Current ratio</span> · <span class="term-help" title="{{ u('instrument.term.fcf') }}">FCF</span></small></div>
+  <div id="fundamentals-table" class="table-wrap"></div>
+</section>
+
+<section class="panel" style="margin-top:12px">
+  <div class="section-heading"><div><h2>{{ u('instrument.analyst') }}</h2><small class="term-note">{{ u('instrument.analyst_note') }}</small></div></div>
+  <div id="analyst-consensus" class="muted" style="min-height:70px">{{ t('common.loading_ellipsis') }}</div>
+</section>
+
+<section class="panel" style="margin-top:12px">
+  <div class="section-heading"><div><h2>{{ u('instrument.ai_outlook') }}</h2><small class="term-note">{{ u('instrument.ai_outlook_note') }}</small></div></div>
+  <div style="padding:11px">
+    <button class="ghost" type="button" data-ai-prompt="{{ symbol }} の今後12か月を Bull / Base / Bear の3シナリオで整理して。財務、バリュエーション、アナリスト予想、ニュース、イベントを利用可能なYowayowaツールで検証し、各シナリオの根拠・反証条件・基準時点を示して。価格や業績を断定せず、事実と推論を分けて。">{{ u('instrument.ai_outlook_action') }}</button>
+  </div>
+</section>
+
+<section class="panel" style="margin-top:12px"><div class="section-heading"><h2>{{ t('common.source') }}</h2></div><div id="provenance" class="provenance-card muted">{{ t('common.loading_ellipsis') }}</div></section>
+{% endblock %}
+{% block scripts %}<script>{{ inline_instrument_js | safe }}</script><script>{{ inline_instrument_ux_js | safe }}</script>{% endblock %}

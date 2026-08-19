@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ symbol }} · {{ x('research.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <h1>{{ symbol }}</h1>
+    <p>{{ x('research.deep') }}</p>
+  </div>
+  <div class="inline-link-actions">
+    <a class="ghost button-link" href="/instrument/{{ symbol }}">{{ x('research.instrument') }}</a>
+    <a class="primary button-link" href="/ai?symbol={{ symbol }}">{{ x('research.ask_ai') }}</a>
+  </div>
+</section>
+<section class="sheet" data-symbol="{{ symbol }}" id="research-workspace">
+  <div class="section-tabs" id="research-tabs" role="tablist">
+    <button class="is-active" type="button" data-section="profile">{{ x('research.profile') }}</button>
+    <button type="button" data-section="analyst">{{ x('research.analyst') }}</button>
+    <button type="button" data-section="ownership">{{ x('research.ownership') }}</button>
+    <button type="button" data-section="insiders">{{ x('research.insiders') }}</button>
+    <button type="button" data-section="esg">{{ x('research.esg') }}</button>
+    <button type="button" data-section="actions">{{ x('research.actions') }}</button>
+    <button type="button" data-section="filings">{{ x('research.filings') }}</button>
+    <button type="button" data-section="fund">{{ x('research.fund') }}</button>
+    <button type="button" data-section="options">{{ x('research.options') }}</button>
+  </div>
+  <div id="research-status" class="muted">{{ x('research.loading') }}</div>
+  <div id="research-content"></div>
+  <div class="provider-source-note" id="research-provenance"></div>
+</section>
+<section class="sheet" id="options-workspace" hidden>
+  <div class="research-toolbar">
+    <div class="field">
+      <label for="option-expiration">{{ x('research.expiration') }}</label>
+      <select id="option-expiration"></select>
+    </div>
+    <button class="primary" id="option-load" type="button">{{ x('research.load_chain') }}</button>
+  </div>
+  <div id="option-results"></div>
+</section>
+{% endblock %}
+{% block scripts %}<script>{{ inline_research_js | safe }}</script>{% endblock %}

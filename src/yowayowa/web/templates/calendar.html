@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ u('calendar.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-head"><div><h1>{{ u('calendar.title') }}</h1><p class="ux-subtitle">{{ u('calendar.subtitle') }}</p></div></section>
+
+<div class="calendar-help">
+  <div class="calendar-help-item">{{ u('calendar.term.earnings') }}</div>
+  <div class="calendar-help-item">{{ u('calendar.term.economic') }}</div>
+  <div class="calendar-help-item">{{ u('calendar.term.ipo') }}</div>
+  <div class="calendar-help-item">{{ u('calendar.term.split') }}</div>
+</div>
+
+<section class="panel">
+  <form id="calendar-form" class="screen-form">
+    <div class="calendar-quick">
+      <button class="ghost" type="button" data-calendar-range="week">{{ u('calendar.quick_week') }}</button>
+      <button class="ghost" type="button" data-calendar-range="30">{{ u('calendar.quick_30') }}</button>
+      <button class="ghost" type="button" data-calendar-range="90">{{ u('calendar.quick_90') }}</button>
+    </div>
+    <div class="toolbar">
+      <label class="field">
+        <span>{{ c('calendar.scope') }}</span>
+        <select id="calendar-scope">
+          <option value="market">{{ c('calendar.scope.market') }}</option>
+          <option value="all">{{ c('calendar.scope.saved') }}</option>
+        </select>
+      </label>
+      <label class="field"><span>{{ t('calendar.start') }}</span><input id="calendar-start" type="date" required></label>
+      <label class="field"><span>{{ t('calendar.end') }}</span><input id="calendar-end" type="date" required></label>
+      <label id="calendar-symbol-field" class="field"><span>{{ t('calendar.symbol_optional') }}</span><input id="calendar-symbol" maxlength="32" placeholder="{{ u('calendar.symbol_placeholder') }}"></label>
+    </div>
+    <div id="calendar-market-types" class="metric-picker" aria-label="{{ t('calendar.types') }}">
+      <label class="metric-option" title="{{ u('calendar.term.earnings') }}"><input type="checkbox" name="calendar-market-type" value="earnings" checked> {{ t('calendar.earnings') }} / Earnings</label>
+      <label class="metric-option" title="{{ u('calendar.term.economic') }}"><input type="checkbox" name="calendar-market-type" value="economic" checked> {{ t('calendar.economic') }} / Macro</label>
+      <label class="metric-option" title="{{ u('calendar.term.ipo') }}"><input type="checkbox" name="calendar-market-type" value="ipo" checked> {{ t('calendar.ipo') }}</label>
+      <label class="metric-option" title="{{ u('calendar.term.split') }}"><input type="checkbox" name="calendar-market-type" value="split" checked> {{ t('calendar.split') }} / Split</label>
+    </div>
+    <div id="calendar-tracked-types" class="metric-picker" aria-label="{{ c('calendar.tracked_types') }}" hidden>
+      <label class="metric-option"><input type="checkbox" name="calendar-tracked-type" value="earnings" checked> {{ t('calendar.earnings') }} / Earnings</label>
+      <label class="metric-option"><input type="checkbox" name="calendar-tracked-type" value="dividend" checked> {{ c('calendar.dividend') }} / Dividend</label>
+    </div>
+    <button class="primary" type="submit">{{ t('common.run') }}</button>
+  </form>
+</section>
+<section class="panel" style="margin-top:12px">
+  <div class="section-heading"><div><h2>{{ t('calendar.events') }}</h2><small class="term-note">日時順に表示します。ティッカーを指定すると、その銘柄に絞れます。</small></div><span id="calendar-as-of" class="pill">—</span></div>
+  <div id="calendar-results" class="table-wrap muted" style="padding:12px">{{ t('calendar.loading') }}</div>
+</section>
+<section class="panel" style="margin-top:12px">
+  <div class="section-heading"><h2>{{ t('common.source') }}</h2></div>
+  <div id="calendar-provenance" class="provenance-card muted">—</div>
+</section>
+{% endblock %}
+{% block scripts %}<script>{{ inline_calendar_js | safe }}</script><script>{{ inline_calendar_ux_js | safe }}</script>{% endblock %}
