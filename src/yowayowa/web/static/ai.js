@@ -1,63 +1,49 @@
 (() => {
   const { api, escapeHtml, t } = window.Yowayowa;
-  const STORAGE_KEY = 'yowayowa.ai.byok.session';
+  const META_KEY = 'yowayowa.ai.settings.v2';
+  const KEY_KEY = 'yowayowa.ai.key.v2';
+  const LOCAL_PROVIDER_IDS = new Set(['ollama', 'lmstudio', 'vllm']);
   const messages = [];
   let serverReady = null;
-  const presets = {
-    openai: 'https://api.openai.com/v1',
-    openrouter: 'https://openrouter.ai/api/v1',
-    gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    anthropic: 'https://api.anthropic.com',
-  };
 
-  function currentConfig() {
-    return {
-      provider: document.querySelector('#ai-provider').value,
-      model: document.querySelector('#ai-model').value.trim(),
-      baseUrl: document.querySelector('#ai-base-url').value.trim(),
-      apiKey: document.querySelector('#ai-api-key').value,
-    };
+  function settingsMeta() {
+    try { return JSON.parse(localStorage.getItem(META_KEY) || '{}'); }
+    catch (_) { return {}; }
   }
 
-  function saveConfig() {
-    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(currentConfig())); } catch (_) {}
-  }
-
-  function restoreConfig() {
-    try {
-      const raw = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}');
-      if (raw.provider) document.querySelector('#ai-provider').value = raw.provider;
-      if (raw.model) document.querySelector('#ai-model').value = raw.model;
-      if (raw.baseUrl) document.querySelector('#ai-base-url').value = raw.baseUrl;
-      if (raw.apiKey) document.querySelector('#ai-api-key').value = raw.apiKey;
-    } catch (_) {}
-    updateProviderFields(false);
-  }
-
-  function updateProviderFields(overwriteUrl = true) {
-    const provider = document.querySelector('#ai-provider').value;
-    const model = document.querySelector('#ai-model');
-    const base = document.querySelector('#ai-base-url');
-    const key = document.querySelector('#ai-api-key');
-    const server = provider === 'server';
-    model.disabled = server;
-    base.disabled = server;
-    key.disabled = server;
-    if (!server && overwriteUrl && presets[provider]) base.value = presets[provider];
-    saveConfig();
+  function storedApiKey() {
+    try { return sessionStorage.getItem(KEY_KEY) || ''; }
+    catch (_) { return ''; }
   }
 
   function providerPayload() {
-    const config = currentConfig();
-    if (config.provider === 'server') return null;
-    if (!config.model) throw new Error(`${t('ai.model')}: required`);
-    if (!config.apiKey) throw new Error(`${t('ai.api_key')}: required`);
+    const meta = settingsMeta();
+    const providerId = meta.providerId || 'server';
+    if (providerId === 'server') return null;
+    if (!meta.model) throw new Error(`${t('ai.model')}: required`);
+    const apiKey = storedApiKey();
+    if (!apiKey && !LOCAL_PROVIDER_IDS.has(providerId)) {
+      throw new Error(`${t('ai.api_key')}: required`);
+    }
     return {
-      provider: config.provider === 'anthropic' ? 'anthropic' : 'openai_compatible',
-      model: config.model,
-      api_key: config.apiKey,
-      base_url: config.baseUrl || null,
+      provider: meta.adapter === 'anthropic' ? 'anthropic' : 'openai_compatible',
+      model: meta.model,
+      api_key: apiKey || 'local',
+      base_url: meta.baseUrl || null,
     };
+  }
+
+  function providerSummary() {
+    const meta = settingsMeta();
+    const target = document.querySelector('#ai-current-provider');
+    if (!target) return;
+    if (!meta.providerId || meta.providerId === 'server') {
+      target.textContent = window.YOWAYOWA_LOCALE === 'ja'
+        ? '使用設定: サーバー設定'
+        : 'Using: server configuration';
+      return;
+    }
+    target.textContent = `${window.YOWAYOWA_LOCALE === 'ja' ? '使用設定' : 'Using'}: ${meta.providerId}${meta.model ? ` · ${meta.model}` : ''}`;
   }
 
   function context() {
@@ -189,6 +175,23 @@
     return serverReady;
   }
 
+  function refreshSendAvailability() {
+    const send = document.querySelector('#ai-send');
+    if (!send) return;
+    const meta = settingsMeta();
+    const providerId = meta.providerId || 'server';
+    if (providerId !== 'server') {
+      try {
+        providerPayload();
+        send.disabled = false;
+      } catch (_) {
+        send.disabled = true;
+      }
+      return;
+    }
+    send.disabled = !serverReady;
+  }
+
   async function submit(event) {
     event.preventDefault();
     const prompt = document.querySelector('#ai-prompt');
@@ -196,7 +199,7 @@
     if (!text) return;
     let provider;
     try { provider = providerPayload(); } catch (error) {
-      document.querySelector('#ai-status').textContent = error.message;
+      document.querySelector('#ai-status').innerHTML = `<a href="/settings">${escapeHtml(error.message)} · ${escapeHtml(window.YOWAYOWA_LOCALE === 'ja' ? '設定を開く →' : 'Open Settings →')}</a>`;
       return;
     }
     if (provider === null && !(await ensureServerReady())) {
@@ -227,32 +230,35 @@
       addMessage('assistant', error.message);
       document.querySelector('#ai-status').textContent = error.message;
     } finally {
-      send.disabled = false;
+      refreshSendAvailability();
       prompt.focus();
     }
   }
 
   async function loadStatus() {
+    providerSummary();
     try {
       const data = await api('/v1/ai/status');
       const configured = configuredServerProviders(data);
       serverReady = configured.length > 0;
-      const usingServer = currentConfig().provider === 'server';
-      document.querySelector('#ai-send').disabled = usingServer && !serverReady;
+      const meta = settingsMeta();
+      const usingServer = !meta.providerId || meta.providerId === 'server';
       if (usingServer && !serverReady) {
+        refreshSendAvailability();
         showServerSetupRequired();
         return;
       }
-      document.querySelector('#ai-status').textContent = `${data.tools?.length || 0} tools · server: ${configured.join(', ') || 'none'}`;
+      document.querySelector('#ai-status').textContent = usingServer
+        ? `${data.tools?.length || 0} tools · server: ${configured.join(', ') || 'none'}`
+        : `${data.tools?.length || 0} tools · BYOK`;
+      refreshSendAvailability();
     } catch (error) {
       document.querySelector('#ai-status').textContent = error.message;
+      refreshSendAvailability();
     }
   }
 
   document.addEventListener('DOMContentLoaded', () => {
-    restoreConfig();
-    ['#ai-model', '#ai-base-url', '#ai-api-key'].forEach(selector => document.querySelector(selector)?.addEventListener('input', saveConfig));
-    document.querySelector('#ai-provider')?.addEventListener('change', () => updateProviderFields(true));
     document.querySelector('#ai-form')?.addEventListener('submit', submit);
     document.querySelector('#ai-prompt')?.addEventListener('keydown', event => {
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) document.querySelector('#ai-form').requestSubmit();
