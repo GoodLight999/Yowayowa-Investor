@@ -192,6 +192,21 @@ async function applyPlannedOperation(plan) {
   return true;
 }
 
+function installGlobalCommandShortcut() {
+  if (window.__YOWAYOWA_COMMAND_SHORTCUT_INSTALLED) return;
+  window.__YOWAYOWA_COMMAND_SHORTCUT_INSTALLED = true;
+  document.addEventListener('keydown', event => {
+    const modifier = event.ctrlKey || event.metaKey;
+    if (!modifier || !['k', 'p'].includes(event.key.toLowerCase())) return;
+    const dialog = document.querySelector('#command-palette');
+    const trigger = document.querySelector('#command-trigger');
+    if (!dialog || !trigger) return;
+    event.preventDefault();
+    if (dialog.open) dialog.close();
+    else trigger.click();
+  });
+}
+
 function installCommandPalette() {
   const dialog = document.querySelector('#command-palette');
   const input = document.querySelector('#command-input');
@@ -360,13 +375,6 @@ function installCommandPalette() {
       activate(activeIndex);
     }
   });
-  document.addEventListener('keydown', event => {
-    const modifier = event.ctrlKey || event.metaKey;
-    if (!modifier || !['k', 'p'].includes(event.key.toLowerCase())) return;
-    event.preventDefault();
-    if (dialog.open) dialog.close();
-    else openPalette();
-  });
 }
 
 function installDashboard() {
@@ -415,6 +423,7 @@ function installDashboard() {
 
 document.addEventListener('DOMContentLoaded', () => {
   installLocaleSwitcher();
+  installGlobalCommandShortcut();
   installCommandPalette();
   updateHealth();
   installDashboard();
