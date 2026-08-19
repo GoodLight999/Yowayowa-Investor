@@ -6,7 +6,9 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from yowayowa.ai_network_policy import validate_ai_base_url
 from yowayowa.api.deps import require_api_token
+from yowayowa.config import Settings, get_settings
 from yowayowa.research_models import AIProviderConfig
 
 router = APIRouter(prefix="/v1/ai", dependencies=[Depends(require_api_token)])
@@ -215,10 +217,26 @@ def _model_endpoint(config: AIProviderConfig) -> tuple[str, dict[str, str]]:
 
 
 @router.post("/models", response_model=AIModelCatalogResponse)
-def provider_models(payload: AIModelCatalogRequest) -> AIModelCatalogResponse:
-    endpoint, headers = _model_endpoint(payload.provider)
+def provider_models(
+    payload: AIModelCatalogRequest,
+    settings: Settings = Depends(get_settings),
+) -> AIModelCatalogResponse:
+    provider = payload.provider
+    if provider.base_url:
+        try:
+            provider = provider.model_copy(
+                update={
+                    "base_url": validate_ai_base_url(
+                        provider.base_url,
+                        allow_unlisted=settings.allow_unlisted_ai_endpoints,
+                    )
+                }
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    endpoint, headers = _model_endpoint(provider)
     try:
-        with httpx.Client(timeout=20, follow_redirects=True) as client:
+        with httpx.Client(timeout=20, follow_redirects=False) as client:
             response = client.get(endpoint, headers=headers)
             response.raise_for_status()
             body = response.json()
