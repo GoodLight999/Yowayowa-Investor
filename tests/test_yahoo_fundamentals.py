@@ -54,10 +54,14 @@ class FakeTicker:
         )
 
     def get_history_metadata(self) -> dict[str, object]:
-        return {"currency": "JPY"}
+        return {
+            "longName": "Example Japan Corp",
+            "currency": "JPY",
+            "symbol": self.symbol,
+        }
 
     def get_info(self) -> dict[str, object]:
-        return {"longName": "Example Japan Corp", "currency": "JPY"}
+        raise AssertionError("company_facts must not depend on quoteSummary get_info")
 
 
 def test_yahoo_annual_fundamentals_are_normalized(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -75,6 +79,21 @@ def test_yahoo_annual_fundamentals_are_normalized(monkeypatch) -> None:  # type:
     assert result.metrics["revenue"].points[-1].unit == "JPY"
     assert result.metrics["capex"].points[-1].value == 30
     assert result.metrics["shares_diluted"].points[-1].unit == "shares"
+
+
+def test_yahoo_metadata_failure_does_not_discard_japanese_statements(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    class MetadataFailureTicker(FakeTicker):
+        def get_history_metadata(self) -> dict[str, object]:
+            raise RuntimeError("metadata unavailable")
+
+    monkeypatch.setattr(yahoo_fundamentals.yf, "Ticker", MetadataFailureTicker)
+    provider = YahooFundamentalsProvider(Settings(database_url="sqlite:///:memory:"))
+
+    result = provider.company_facts("7203.T")
+
+    assert result.company_name == "7203.T"
+    assert result.metrics["revenue"].points[-1].unit == "JPY"
+    assert result.metrics["eps_diluted"].points[-1].unit == "JPY/share"
 
 
 class PrimaryMissing:
