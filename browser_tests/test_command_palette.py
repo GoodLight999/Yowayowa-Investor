@@ -109,9 +109,7 @@ def test_command_palette_shortcut_does_not_duplicate_after_turbo_visit(page: Pag
                 "market_provider": "yahoo",
                 "capabilities": {},
             }
-        elif parsed.path == "/v1/watchlists":
-            body = []
-        elif parsed.path == "/v1/ai/providers":
+        elif parsed.path in {"/v1/watchlists", "/v1/ai/providers"}:
             body = []
         elif parsed.path == "/v1/settings/status":
             body = {
