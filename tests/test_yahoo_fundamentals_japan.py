@@ -126,11 +126,11 @@ class JapaneseTickerFixture:
             return self._quarter_cash()
         return self._annual_cash()
 
-    def get_info(self) -> dict[str, object]:
+    def get_history_metadata(self) -> dict[str, object]:
         return {
             "longName": "トヨタ自動車株式会社",
             "currency": "JPY",
-            "financialCurrency": "JPY",
+            "symbol": self.symbol,
         }
 
 
