@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from fastapi import HTTPException
 
 from yowayowa.ai_network_policy import validate_ai_base_url
-from yowayowa.api import ai_integration_routes
+from yowayowa.api import ai_integration_routes, ai_routes
 from yowayowa.api.ai_integration_routes import (
     AIModelCatalogRequest,
     provider_catalog,
     provider_models,
 )
 from yowayowa.config import Settings
-from yowayowa.research_models import AIProviderConfig
+from yowayowa.research_models import AIChatRequest, AIMessage, AIProviderConfig
 
 
 def test_ai_provider_catalog_exposes_shared_and_local_adapters() -> None:
@@ -122,5 +123,30 @@ def test_model_discovery_rejects_unlisted_endpoint_before_http(monkeypatch) -> N
         provider_models(
             request,
             Settings(database_url="sqlite:///:memory:", allow_unlisted_ai_endpoints=False),
+        )
+    assert exc.value.status_code == 422
+
+
+def test_ai_chat_rejects_unlisted_endpoint_before_agent(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    class ForbiddenAgent:
+        def __init__(self, *_: object, **__: object) -> None:
+            raise AssertionError("agent must not be constructed for a rejected endpoint")
+
+    monkeypatch.setattr(ai_routes, "InvestmentResearchAgent", ForbiddenAgent)
+    request = AIChatRequest(
+        messages=[AIMessage(role="user", content="hello")],
+        provider=AIProviderConfig(
+            provider="openai_compatible",
+            model="local-model",
+            api_key="local",
+            base_url="http://127.0.0.1:11434/v1",
+        ),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        ai_routes.ai_chat(
+            request,
+            Settings(database_url="sqlite:///:memory:", allow_unlisted_ai_endpoints=False),
+            Mock(),
         )
     assert exc.value.status_code == 422
