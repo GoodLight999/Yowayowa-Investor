@@ -54,6 +54,7 @@
     try {
       localStorage.setItem(META_KEY, JSON.stringify(meta));
       if (keyInput.value) sessionStorage.setItem(KEY_KEY, keyInput.value);
+      else sessionStorage.removeItem(KEY_KEY);
       sessionStorage.setItem(LEGACY_KEY, JSON.stringify({ provider: legacyProviderId(providerId), model: meta.model, baseUrl: meta.baseUrl, apiKey: effectiveApiKey(provider) }));
     } catch (_) {}
     status.textContent = t('settings.saved', {}, 'Saved.');
@@ -218,6 +219,11 @@
 
   providerSelect?.addEventListener('change',()=>syncProvider(true));
   document.querySelector('#ai-settings-form')?.addEventListener('submit',event=>{event.preventDefault();save();});
+  document.querySelector('#clear-ai-api-key')?.addEventListener('click',()=>{
+    keyInput.value='';
+    save();
+    status.textContent=ja?'APIキーを消去しました。':'API key cleared.';
+  });
   document.querySelector('#fetch-provider-models')?.addEventListener('click',fetchModels);
   document.querySelector('#openrouter-oauth')?.addEventListener('click',()=>startOpenRouterOAuth().catch(error=>{status.textContent=error.message;}));
 
