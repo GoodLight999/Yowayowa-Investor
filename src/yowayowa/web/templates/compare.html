@@ -1,11 +1,5 @@
 {% extends "base.html" %}
 {% block title %}{{ t('compare.title') }} · Yowayowa-Investor{% endblock %}
-{% block head %}
-<style>
-  .metric-group-heading { grid-column:1 / -1; margin-top:5px; padding-top:7px; border-top:1px solid var(--line); color:var(--muted); font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:.06em; }
-  .metric-group-heading:first-child { margin-top:0; padding-top:0; border-top:0; }
-</style>
-{% endblock %}
 {% block content %}
 <section class="page-head"><h1>{{ t('compare.title') }}</h1></section>
 {% if app_mode == 'personal' %}
