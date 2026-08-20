@@ -22,6 +22,10 @@ def test_beginner_ux_pages_explain_actions_and_use_neutral_examples() -> None:
         news = client.get("/news")
         settings = client.get("/settings")
         instrument = client.get("/instrument/AAPL")
+        portfolio = client.get("/portfolio")
+        compare = client.get("/compare")
+        screener = client.get("/screener")
+        alerts = client.get("/alerts")
 
     assert home.status_code == 200
     assert "ホーム" in home.text
@@ -59,6 +63,15 @@ def test_beginner_ux_pages_explain_actions_and_use_neutral_examples() -> None:
     assert "アナリスト予想" in instrument.text
     assert "AI見通し（根拠付き）" in instrument.text
 
+    assert 'placeholder="AAPL"' in portfolio.text
+    assert "RKLB" not in portfolio.text
+    assert 'placeholder="AAPL, MSFT, 7203.T"' in compare.text
+    assert "RKLB" not in compare.text
+    assert ">AAPL, MSFT, 7203.T</textarea>" in screener.text
+    assert "RKLB" not in screener.text
+    assert 'placeholder="AAPL"' in alerts.text
+    assert "RKLB" not in alerts.text
+
 
 def test_global_ux_hardening_and_turbo_use_shared_static_assets() -> None:
     with TestClient(app) as client:
@@ -77,3 +90,31 @@ def test_global_ux_hardening_and_turbo_use_shared_static_assets() -> None:
     assert "max-width: 100%; overflow-x: hidden" not in response.text
     assert ux_css.status_code == 200
     assert "max-width: 100%; overflow-x: hidden" in ux_css.text
+
+
+def test_page_scripts_are_external_static_assets() -> None:
+    pages = {
+        "/instrument/AAPL": ("instrument.js", "instrument_ux.js"),
+        "/settings": ("settings.js",),
+        "/charts": ("charts.js", "charts_ux.js"),
+        "/calendar": ("calendar.js", "calendar_ux.js"),
+        "/ai": ("ai.js",),
+        "/portfolio": ("portfolio.js",),
+        "/markets": ("market.js",),
+        "/discover": ("discover.js",),
+        "/research/AAPL": ("research.js",),
+        "/compare": ("compare.js",),
+        "/screener": ("screener.js",),
+        "/alerts": ("alerts.js",),
+        "/news": ("news.js",),
+        "/macro": ("macro.js",),
+        "/rates": ("rates.js",),
+        "/institutional": ("institutional.js",),
+        "/edinet": ("edinet.js", "edinet_ux.js"),
+    }
+    with TestClient(app) as client:
+        for path, assets in pages.items():
+            response = client.get(path)
+            assert response.status_code == 200, path
+            for asset in assets:
+                assert f'src="/static/{asset}"' in response.text, (path, asset)
