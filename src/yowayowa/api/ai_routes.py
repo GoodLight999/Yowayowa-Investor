@@ -37,9 +37,7 @@ def ai_chat(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         payload = payload.model_copy(
-            update={
-                "provider": payload.provider.model_copy(update={"base_url": safe_url})
-            }
+            update={"provider": payload.provider.model_copy(update={"base_url": safe_url})}
         )
     try:
         return InvestmentResearchAgent(settings, session).chat(payload)
