@@ -197,7 +197,7 @@ def test_primary_web_surfaces_render_without_javascript_errors(page: Page) -> No
     assert page_errors == []
 
 
-def test_overview_inlines_styles_and_search_is_wired(page: Page) -> None:
+def test_overview_loads_shared_styles_and_search_is_wired(page: Page) -> None:
     search_payload = json.dumps(
         [
             {
@@ -219,8 +219,17 @@ def test_overview_inlines_styles_and_search_is_wired(page: Page) -> None:
         ),
     )
     page.goto(BASE_URL, wait_until="networkidle")
-    assert page.locator('link[rel="stylesheet"][href^="/static/"]').count() == 0
-    assert page.locator("head style").count() >= 1
+    loaded_styles = set(
+        page.evaluate(
+            "[...document.styleSheets].map(s => s.href ? new URL(s.href).pathname : null).filter(Boolean)"
+        )
+    )
+    assert {
+        "/static/styles.css",
+        "/static/expansion.css",
+        "/static/ux.css",
+        "/static/product.css",
+    } <= loaded_styles
     page.locator("#search-input").fill("RKLB")
     page.get_by_role("button", name="Search").click()
     expect(page.locator("#search-results").get_by_text("RKLB", exact=True)).to_be_visible()
