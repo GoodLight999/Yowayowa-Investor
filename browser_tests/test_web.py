@@ -220,12 +220,19 @@ def test_overview_loads_shared_styles_and_search_is_wired(page: Page) -> None:
         ".filter(Boolean)"
     )
     loaded_styles = set(page.evaluate(stylesheet_expression))
-    assert loaded_styles >= {
-        "/static/styles.css",
-        "/static/expansion.css",
-        "/static/ux.css",
-        "/static/product.css",
+    loaded_names = {path.rsplit("/", 1)[-1] for path in loaded_styles}
+    assert loaded_names >= {
+        "styles.css",
+        "expansion.css",
+        "ux.css",
+        "product.css",
+        "pages.css",
     }
+    assert all(
+        path.startswith("/assets/static/")
+        for path in loaded_styles
+        if path.rsplit("/", 1)[-1] in loaded_names
+    )
     page.locator("#search-input").fill("RKLB")
     page.get_by_role("button", name="Search").click()
     expect(page.locator("#search-results").get_by_text("RKLB", exact=True)).to_be_visible()
