@@ -10,7 +10,13 @@
   function remember() {
     const nameNode = document.querySelector('#instrument-name');
     const save = () => {
-      const name = nameNode?.textContent?.replace(/\s*·\s*CIK.*$/, '').trim() || '';
+      if (!nameNode) return;
+      const rendered = nameNode.textContent || '';
+      if (/\s*·\s*CIK\s*$/.test(rendered)) {
+        nameNode.textContent = rendered.replace(/\s*·\s*CIK\s*$/, '').trim();
+        return;
+      }
+      const name = rendered.replace(/\s*·\s*CIK.*$/, '').trim();
       if (!name || name.includes('…')) return;
       try { localStorage.setItem(COMPANY_KEY, JSON.stringify({ symbol, name, exchange: '' })); } catch (_) {}
     };
