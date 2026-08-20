@@ -63,12 +63,7 @@ def portfolio_list_payload() -> list[dict[str, object]]:
             "name": "Core",
             "base_currency": "USD",
             "positions": [
-                {
-                    "symbol": "RKLB",
-                    "quantity": "100",
-                    "average_cost": "8",
-                    "currency": "USD",
-                },
+                {"symbol": "RKLB", "quantity": "100", "average_cost": "8", "currency": "USD"},
                 {
                     "symbol": "7203.T",
                     "quantity": "10",
@@ -219,17 +214,18 @@ def test_overview_loads_shared_styles_and_search_is_wired(page: Page) -> None:
         ),
     )
     page.goto(BASE_URL, wait_until="networkidle")
-    loaded_styles = set(
-        page.evaluate(
-            "[...document.styleSheets].map(s => s.href ? new URL(s.href).pathname : null).filter(Boolean)"
-        )
+    stylesheet_expression = (
+        "[...document.styleSheets]"
+        ".map(s => s.href ? new URL(s.href).pathname : null)"
+        ".filter(Boolean)"
     )
-    assert {
+    loaded_styles = set(page.evaluate(stylesheet_expression))
+    assert loaded_styles >= {
         "/static/styles.css",
         "/static/expansion.css",
         "/static/ux.css",
         "/static/product.css",
-    } <= loaded_styles
+    }
     page.locator("#search-input").fill("RKLB")
     page.get_by_role("button", name="Search").click()
     expect(page.locator("#search-results").get_by_text("RKLB", exact=True)).to_be_visible()
