@@ -9,7 +9,7 @@
   <section class="panel">
     <div class="section-heading"><h2>{{ t('alerts.new') }}</h2></div>
     <form id="alert-form" class="stack-form">
-      <label class="field"><span>{{ t('common.symbol') }}</span><input id="alert-symbol" required maxlength="32" placeholder="RKLB"></label>
+      <label class="field"><span>{{ t('common.symbol') }}</span><input id="alert-symbol" required maxlength="32" placeholder="AAPL"></label>
       <label class="field"><span>{{ t('alerts.operator') }}</span><select id="alert-operator"><option value="above">{{ t('alerts.above') }}</option><option value="below">{{ t('alerts.below') }}</option></select></label>
       <label class="field"><span>{{ t('alerts.target') }}</span><input id="alert-target" required type="number" min="0" step="any" placeholder="100"></label>
       <button class="primary" type="submit">{{ t('common.add') }}</button>
@@ -52,4 +52,4 @@
   <div id="alerts-provenance" class="provenance-card muted">{{ t('alerts.not_evaluated') }}</div>
 </section>
 {% endblock %}
-{% block scripts %}<script>{{ inline_alerts_js | safe }}</script>{% endblock %}
+{% block scripts %}<script src="/static/alerts.js"></script>{% endblock %}
