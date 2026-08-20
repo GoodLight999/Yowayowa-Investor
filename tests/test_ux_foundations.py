@@ -109,6 +109,32 @@ def test_global_ux_hardening_and_turbo_use_shared_static_assets() -> None:
     assert "max-width: 100%; overflow-x: hidden" in ux_css.text
 
 
+def test_browser_i18n_is_fingerprinted_external_and_immutable() -> None:
+    pattern = re.compile(r'src="(/assets/i18n/(ja|en)/[0-9a-f]{16}\.js)"')
+    with TestClient(app) as client:
+        ja_page = client.get("/?lang=ja")
+        en_page = client.get("/?lang=en")
+
+        ja_match = pattern.search(ja_page.text)
+        en_match = pattern.search(en_page.text)
+        assert ja_match is not None
+        assert en_match is not None
+        assert ja_match.group(1) != en_match.group(1)
+        assert "window.YOWAYOWA_I18N=" not in ja_page.text
+        assert "window.YOWAYOWA_I18N=" not in en_page.text
+
+        ja_asset = client.get(ja_match.group(1))
+        en_asset = client.get(en_match.group(1))
+        stale_asset = client.get("/assets/i18n/ja/0000000000000000.js")
+
+    for response in (ja_asset, en_asset):
+        assert response.status_code == 200
+        assert response.text.startswith("window.YOWAYOWA_I18N=")
+        assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+        assert response.headers["x-content-type-options"] == "nosniff"
+    assert stale_asset.status_code == 404
+
+
 def test_page_scripts_are_external_static_assets() -> None:
     pages = {
         "/instrument/AAPL": ("instrument.js", "instrument_ux.js"),
