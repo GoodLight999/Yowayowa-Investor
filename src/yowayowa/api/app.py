@@ -33,6 +33,7 @@ from yowayowa.api.risk_routes import router as risk_router
 from yowayowa.api.routes import router
 from yowayowa.api.sector_routes import router as sector_router
 from yowayowa.api.settings_routes import router as settings_router
+from yowayowa.api.web_asset_routes import router as web_asset_router
 from yowayowa.config import Settings, get_settings
 from yowayowa.db import (
     dispose_database,
@@ -58,6 +59,7 @@ from yowayowa.services.portfolios import (
     record_portfolio_snapshot,
 )
 from yowayowa.symbols import InputValidationError
+from yowayowa.web.assets import static_asset_url
 from yowayowa.web.calendar_i18n import messages as calendar_messages
 from yowayowa.web.calendar_i18n import translate as calendar_translate
 from yowayowa.web.chart_i18n import messages as chart_messages
@@ -197,6 +199,7 @@ app.include_router(ai_router)
 app.include_router(ai_integration_router)
 app.include_router(settings_router)
 app.include_router(fundamentals_router)
+app.include_router(web_asset_router)
 app.include_router(router)
 app.mount("/static", StaticFiles(directory=str(STATIC_ROOT)), name="static")
 
@@ -247,6 +250,7 @@ def _render_page(
         "e": partial(edinet_translate, locale),
         "l": partial(licensing_translate, locale),
         "u": partial(ux_translate, locale),
+        "a": static_asset_url,
         "i18n_asset_url": f"/assets/i18n/{locale}/{i18n_digest}.js",
     }
     if context:
