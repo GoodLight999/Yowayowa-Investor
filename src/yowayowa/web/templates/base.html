@@ -79,7 +79,7 @@
     <div id="context-ai-trace" class="context-ai-trace"></div>
     <div><div class="ai-evidence-note">{{ u('ai.context.evidence') }}</div><form id="context-ai-form" class="context-ai-form"><textarea id="context-ai-prompt" placeholder="{{ u('ai.context.placeholder') }}"></textarea><button id="context-ai-send" class="primary" type="submit">{{ u('ai.context.send') }}</button></form></div>
   </aside>
-  <script>window.YOWAYOWA_LOCALE={{ locale | tojson }};window.YOWAYOWA_MODE={{ app_mode | tojson }};</script>
+  <script>window.YOWAYOWA_LOCALE = {{ locale | tojson }}; window.YOWAYOWA_MODE = {{ app_mode | tojson }};</script>
   <script src="{{ i18n_asset_url }}" data-turbo-eval="false"></script>
   <script src="/static/product.js" data-turbo-eval="false"></script>
   <script src="/static/app.js" data-turbo-eval="false"></script>
