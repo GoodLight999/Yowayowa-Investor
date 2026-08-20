@@ -48,9 +48,15 @@ def test_generic_surfaces_do_not_leak_owner_specific_ticker_examples(page: Page)
             assert "Rocket Lab" not in page.content()
 
     page.goto(f"{BASE_URL}/?lang=en", wait_until="domcontentloaded")
-    expect(page.locator("#search-input")).to_have_attribute("placeholder", "AAPL / Apple / 7203.T / Toyota")
-    expect(page.locator("#operator-input")).to_have_attribute("placeholder", "Example: compare AAPL and MSFT")
+    expect(page.locator("#search-input")).to_have_attribute(
+        "placeholder", "AAPL / Apple / 7203.T / Toyota"
+    )
+    expect(page.locator("#operator-input")).to_have_attribute(
+        "placeholder", "Example: compare AAPL and MSFT"
+    )
     expect(page.locator("#watchlist-symbol")).to_have_attribute("placeholder", "AAPL")
 
     page.goto(f"{BASE_URL}/news?lang=en", wait_until="domcontentloaded")
-    expect(page.locator("#news-query")).to_have_attribute("placeholder", "AAPL / Apple / 7203.T / Toyota")
+    expect(page.locator("#news-query")).to_have_attribute(
+        "placeholder", "AAPL / Apple / 7203.T / Toyota"
+    )
