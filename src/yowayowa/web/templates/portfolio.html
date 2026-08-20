@@ -83,7 +83,7 @@
     <section class="panel">
       <div class="section-heading"><h2>{{ t('portfolio.position_heading') }}</h2></div>
       <form id="position-form" class="stack-form">
-        <label class="field"><span>{{ t('common.symbol') }}</span><input id="position-symbol" required maxlength="32" placeholder="RKLB"></label>
+        <label class="field"><span>{{ t('common.symbol') }}</span><input id="position-symbol" required maxlength="32" placeholder="AAPL"></label>
         <label class="field"><span>{{ t('portfolio.quantity') }}</span><input id="position-quantity" required type="number" step="any" placeholder="100"></label>
         <label class="field"><span>{{ t('portfolio.average_cost') }}</span><input id="position-cost" type="number" step="any" placeholder="{{ t('portfolio.optional') }}"></label>
         <label class="field"><span>{{ t('portfolio.currency') }}</span><input id="position-currency" required maxlength="3" value="USD"></label>
@@ -107,4 +107,4 @@
   <div id="portfolio-provenance" class="provenance-card muted">{{ t('portfolio.waiting_for_valuation') }}</div>
 </section>
 {% endblock %}
-{% block scripts %}<script>{{ inline_portfolio_js | safe }}</script>{% endblock %}
+{% block scripts %}<script src="/static/portfolio.js"></script>{% endblock %}
