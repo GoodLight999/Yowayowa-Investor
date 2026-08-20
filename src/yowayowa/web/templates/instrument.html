@@ -40,7 +40,7 @@
 <section class="panel chart-panel"><div id="chart" class="chart" role="img" aria-label="{{ t('instrument.price_chart') }}"></div><div id="chart-source" class="source-strip muted"></div></section>
 
 <section class="panel valuation-strip">
-  <div class="section-heading"><h2>{{ t('instrument.valuation') }}</h2><span id="valuation-basis" class="pill">{{ u('instrument.valuation_basis') }}</span></div>
+  <div class="section-heading"><h2>{{ t('instrument.valuation') }}</h2><span id="valuation-basis" class="pill">{% if locale == 'ja' %}最新年次財務{% else %}Latest annual financials{% endif %}</span></div>
   <div id="valuation-metrics" class="metrics-strip"><div class="metric-card"><small>{{ t('instrument.valuation') }}</small><strong>{{ t('common.loading_ellipsis') }}</strong></div></div>
 </section>
 <section class="metrics-strip" id="key-metrics"></section>
@@ -58,7 +58,7 @@
 
 <section class="panel" style="margin-top:12px">
   <div class="section-heading">
-    <div><h2>{{ t('instrument.financials') }}</h2><small class="term-note">FY = 年次決算、Q = 四半期決算。数値の出典は画面下部に表示します。</small></div>
+    <div><h2>{{ t('instrument.financials') }}</h2><small class="term-note">{% if locale == 'ja' %}FY = 年次決算、Q = 四半期決算。数値の出典は画面下部に表示します。{% else %}FY = annual results; Q = quarterly results. Data sources are shown below.{% endif %}</small></div>
     <div class="metric-picker" role="group" aria-label="{{ t('instrument.financials') }}">
       <button class="metric-picker-button is-active" type="button" data-financial-view="annual" aria-pressed="true">FY</button>
       <button class="metric-picker-button" type="button" data-financial-view="quarterly" aria-pressed="false">Q</button>
