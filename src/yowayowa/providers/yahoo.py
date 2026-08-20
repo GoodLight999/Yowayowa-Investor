@@ -20,6 +20,7 @@ from yowayowa.domain import (
     Provenance,
 )
 from yowayowa.providers.base import ProviderDescriptor, enforce_provider_policy
+from yowayowa.providers.fundamentals import is_non_us_exchange_listing
 from yowayowa.technical import compute_indicators
 
 
@@ -79,15 +80,17 @@ class YahooMarketProvider:
         indicators: list[str] | None = None,
     ) -> MarketHistory:
         indicators = indicators or []
-        cache_key = (symbol.upper(), period, interval, tuple(indicators))
+        normalized_symbol = symbol.upper().strip()
+        provider_symbol = self._provider_symbol(normalized_symbol)
+        cache_key = (normalized_symbol, period, interval, tuple(indicators))
         cached = self._history_cache.get(cache_key)
         if cached is not None:
             return cached
-        frame = yf.Ticker(symbol.upper()).history(
+        frame = yf.Ticker(provider_symbol).history(
             period=period, interval=interval, auto_adjust=False
         )
         if frame.empty:
-            raise LookupError(f"No market history returned for {symbol.upper()}")
+            raise LookupError(f"No market history returned for {normalized_symbol}")
         frame = frame.rename(columns=str.lower)
         bars = [
             PriceBar(
@@ -104,14 +107,14 @@ class YahooMarketProvider:
         computed = compute_indicators(frame, indicators)
         now = datetime.now(UTC)
         result = MarketHistory(
-            symbol=symbol.upper(),
+            symbol=normalized_symbol,
             interval=interval,
             bars=bars,
             indicators=computed,
             provenance=Provenance(
                 provider="yahoo/yfinance",
                 source="Yahoo Finance",
-                source_url=f"https://finance.yahoo.com/quote/{symbol.upper()}",
+                source_url=f"https://finance.yahoo.com/quote/{provider_symbol}",
                 license_class=LicenseClass.PERSONAL_ONLY,
                 retrieved_at=now,
                 as_of=bars[-1].timestamp if bars else now,
@@ -132,8 +135,9 @@ class YahooMarketProvider:
             result = self._quotes_from_frame(pd.DataFrame(), normalized)
             self._quote_cache[normalized] = result
             return result
+        provider_symbols = sorted({self._provider_symbol(symbol) for symbol in normalized})
         frame = yf.download(
-            tickers=list(normalized),
+            tickers=provider_symbols,
             period="5d",
             interval="1d",
             group_by="ticker",
@@ -170,11 +174,24 @@ class YahooMarketProvider:
         return result
 
     @staticmethod
+    def _provider_symbol(symbol: str) -> str:
+        """Translate only US class-share dot notation to Yahoo's dash notation."""
+
+        normalized = symbol.upper().strip()
+        if is_non_us_exchange_listing(normalized):
+            return normalized
+        base, separator, class_code = normalized.rpartition(".")
+        if separator and base and len(class_code) == 1 and class_code.isalpha():
+            return f"{base}-{class_code}"
+        return normalized
+
+    @staticmethod
     def _quotes_from_frame(frame: pd.DataFrame, symbols: tuple[str, ...]) -> MarketQuoteBatch:
         quotes: dict[str, MarketQuote] = {}
         unavailable: list[str] = []
         for symbol in symbols:
-            symbol_frame = YahooMarketProvider._symbol_frame(frame, symbol)
+            provider_symbol = YahooMarketProvider._provider_symbol(symbol)
+            symbol_frame = YahooMarketProvider._symbol_frame(frame, provider_symbol)
             close = YahooMarketProvider._close_series(symbol_frame)
             if close is None or close.empty:
                 unavailable.append(symbol)
