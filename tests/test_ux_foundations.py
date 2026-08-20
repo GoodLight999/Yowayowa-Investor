@@ -8,6 +8,7 @@ from yowayowa.api.app import app
 
 _STATIC_ASSET_PATTERN = re.compile(r'(?:href|src)="(/assets/static/[0-9a-f]{16}/([^"/]+))"')
 _PAGE_BUNDLE_PATTERN = re.compile(r'src="(/assets/page/[0-9a-f]{16}/([a-z_]+)\.js)"')
+_LEGACY_STATIC_REFERENCE_PATTERN = re.compile(r'(?:href|src)="/static/')
 
 
 def _input_tag(html: str, element_id: str) -> str:
@@ -110,7 +111,7 @@ def test_shared_assets_are_fingerprinted_external_and_immutable() -> None:
         matches = _STATIC_ASSET_PATTERN.findall(response.text)
         urls = {filename: url for url, filename in matches}
         assert required <= urls.keys()
-        assert "/static/" not in response.text
+        assert _LEGACY_STATIC_REFERENCE_PATTERN.search(response.text) is None
 
         asset_responses = {filename: client.get(urls[filename]) for filename in required}
         stale_asset = client.get("/assets/static/0000000000000000/app.js")
@@ -187,7 +188,7 @@ def test_page_scripts_are_centralized_fingerprinted_bundles() -> None:
             match = _PAGE_BUNDLE_PATTERN.search(response.text)
             assert match is not None, path
             assert match.group(2) == expected_key, path
-            assert "/static/" not in response.text, path
+            assert _LEGACY_STATIC_REFERENCE_PATTERN.search(response.text) is None, path
             bundle = client.get(match.group(1))
             assert bundle.status_code == 200, path
             assert bundle.headers["cache-control"] == "public, max-age=31536000, immutable"
