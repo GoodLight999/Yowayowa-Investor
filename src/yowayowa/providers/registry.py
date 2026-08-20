@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from yowayowa.config import get_settings
+from yowayowa.config import Settings, get_settings
+from yowayowa.domain import Fundamentals
 from yowayowa.providers.bea import BeaClient
 from yowayowa.providers.bls import BlsClient
 from yowayowa.providers.edinet import EdinetClient
 from yowayowa.providers.fred import FredClient
-from yowayowa.providers.fundamentals import FundamentalsSource, ListingAwareFundamentalsProvider
+from yowayowa.providers.fundamentals import is_non_us_exchange_listing
 from yowayowa.providers.sec import SecClient
 from yowayowa.providers.treasury import TreasuryYieldCurveProvider
 from yowayowa.providers.yahoo import YahooMarketProvider
@@ -19,18 +20,34 @@ from yowayowa.providers.yahoo_sectors import YahooSectorProvider
 from yowayowa.providers.yahoo_tracked_calendar import YahooTrackedCalendarProvider
 
 
+class ListingAwareSecClient(SecClient):
+    """Keep SEC capabilities while routing known international listings before I/O.
+
+    This is intentionally not an error fallback. A US/SEC request that fails stays a
+    SEC failure; only symbols with an explicit non-US exchange suffix use Yahoo, and
+    only in personal mode.
+    """
+
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(settings)
+        self._international = (
+            YahooFundamentalsProvider(settings) if settings.mode == "personal" else None
+        )
+
+    def company_facts(self, symbol: str) -> Fundamentals:
+        if self._international is not None and is_non_us_exchange_listing(symbol):
+            return self._international.company_facts(symbol)
+        return super().company_facts(symbol)
+
+
 @lru_cache(maxsize=1)
 def sec_client() -> SecClient:
-    """Official SEC client only; provider fallback is never hidden inside this boundary."""
-
-    return SecClient(get_settings())
+    return ListingAwareSecClient(get_settings())
 
 
 @lru_cache(maxsize=1)
-def fundamentals_provider() -> FundamentalsSource:
-    settings = get_settings()
-    international = YahooFundamentalsProvider(settings) if settings.mode == "personal" else None
-    return ListingAwareFundamentalsProvider(sec_client(), international)
+def fundamentals_provider() -> SecClient:
+    return sec_client()
 
 
 @lru_cache(maxsize=1)
