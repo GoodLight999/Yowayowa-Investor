@@ -84,4 +84,4 @@
 
 <section class="panel" style="margin-top:12px"><div class="section-heading"><h2>{{ t('common.source') }}</h2></div><div id="provenance" class="provenance-card muted">{{ t('common.loading_ellipsis') }}</div></section>
 {% endblock %}
-{% block scripts %}<script>{{ inline_instrument_js | safe }}</script><script>{{ inline_instrument_ux_js | safe }}</script>{% endblock %}
+{% block scripts %}<script src="/static/instrument.js"></script><script src="/static/instrument_ux.js"></script>{% endblock %}
