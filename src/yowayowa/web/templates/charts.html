@@ -1,32 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ u('chart.title') }} · Yowayowa-Investor{% endblock %}
-{% block head %}
-<script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
-<style>
-  .composer-layout { display:grid; grid-template-columns:minmax(320px,.72fr) minmax(0,1.28fr); gap:12px; }
-  .composer-row { display:grid; grid-template-columns:110px 84px minmax(110px,1fr) minmax(110px,1fr) minmax(90px,.8fr) auto; gap:6px; align-items:end; padding:8px 10px; border-bottom:1px solid var(--line); }
-  .composer-row.formula { grid-template-columns:130px 84px minmax(90px,1fr) minmax(90px,1fr) 74px minmax(90px,.8fr) auto; }
-  .composer-row label { min-width:0; color:var(--muted); font-family:var(--mono); font-size:8px; }
-  .composer-row input, .composer-row select { width:100%; min-width:0; margin-top:3px; border:1px solid var(--line-strong); border-radius:0; background:var(--sheet); color:var(--ink); padding:7px 8px; font-family:var(--mono); font-size:10px; }
-  .composer-row button { align-self:end; }
-  .composer-actions { display:flex; gap:8px; flex-wrap:wrap; margin:10px; }
-  #composer-chart { height:520px; }
-  .composer-errors { display:grid; gap:4px; padding:0 10px 10px; }
-  .composer-error { padding:6px 0; border-bottom:1px solid var(--line); font-family:var(--mono); font-size:9px; }
-  .composer-provenance-row { padding:8px 10px; border-bottom:1px solid var(--line); }
-  .composer-provenance-row strong { font-family:var(--mono); font-size:10px; }
-  .composer-provenance-row small { display:block; margin-top:3px; color:var(--muted); font-family:var(--mono); font-size:9px; }
-  @media (max-width:900px) {
-    .composer-layout { grid-template-columns:1fr; }
-    .composer-row, .composer-row.formula { grid-template-columns:repeat(2,minmax(0,1fr)); }
-    .composer-row button { justify-self:start; }
-  }
-  @media (max-width:480px) {
-    .composer-row, .composer-row.formula { grid-template-columns:1fr; }
-    .composer-row button { width:100%; }
-  }
-</style>
-{% endblock %}
+{% block head %}<script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
 {% block content %}
 <section class="page-head">
   <div><h1>{{ u('chart.title') }}</h1><p class="ux-subtitle">{{ h('chart.subtitle') }}</p></div>
