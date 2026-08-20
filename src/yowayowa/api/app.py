@@ -93,11 +93,13 @@ templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
 _I18N_REPLACEMENTS = (
     (
-        "Kilo Code / OpenCodex型の考え方を採用し、多くのサービスはOpenAI互換アダプターを共有し、本当にAPI仕様が異なるものだけ専用アダプターに分けます。",
+        "Kilo Code / OpenCodex型の考え方を採用し、多くのサービスは"
+        "OpenAI互換アダプターを共有し、本当にAPI仕様が異なるものだけ専用アダプターに分けます。",
         "使うAIプロバイダだけ有効にできます。使わないサービスは一覧から隠せます。",
     ),
     (
-        "Inspired by coding agents such as Kilo/OpenCodex: many services reuse one OpenAI-compatible adapter, while genuinely different APIs keep a dedicated adapter.",
+        "Inspired by coding agents such as Kilo/OpenCodex: many services reuse one "
+        "OpenAI-compatible adapter, while genuinely different APIs keep a dedicated adapter.",
         "Enable only the AI providers you use. Unused providers can stay hidden.",
     ),
     ("Ticker or company name · RKLB / Rocket Lab", "Ticker or company name · AAPL / Apple"),
