@@ -16,6 +16,8 @@ from fastapi import FastAPI, Request
 
 _ARCHIVE_SHA = re.compile(r"/archive/([0-9a-fA-F]{7,40})\.zip(?:$|[?#])")
 _LOGGER = logging.getLogger("yowayowa.vercel")
+_ASSET_PREFIXES = ("/static/", "/assets/")
+_IMMUTABLE_ASSET_CDN_CACHE = "public, max-age=31536000, immutable"
 
 if not _LOGGER.handlers:
     handler = logging.StreamHandler(sys.stdout)
@@ -96,7 +98,7 @@ def _emit(payload: dict[str, object], *, error: bool = False) -> None:
 
 
 def install_vercel_observability(app: FastAPI) -> None:
-    """Install Vercel-oriented request correlation without logging secrets or payloads."""
+    """Install Vercel request correlation and production-specific asset caching."""
 
     if getattr(app.state, "vercel_observability_installed", False):
         return
@@ -127,7 +129,10 @@ def install_vercel_observability(app: FastAPI) -> None:
             raise
 
         response.headers["x-yowayowa-request-id"] = request_id
-        if not request.url.path.startswith("/static/"):
+        is_asset_request = request.url.path.startswith(_ASSET_PREFIXES)
+        if request.url.path.startswith("/assets/") and response.status_code < 400:
+            response.headers["Vercel-CDN-Cache-Control"] = _IMMUTABLE_ASSET_CDN_CACHE
+        if not is_asset_request:
             status_code = response.status_code
             _emit(
                 {
