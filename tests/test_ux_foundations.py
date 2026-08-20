@@ -13,6 +13,16 @@ def _input_tag(html: str, element_id: str) -> str:
     return match.group(0)
 
 
+def _textarea_markup(html: str, element_id: str) -> str:
+    match = re.search(
+        rf'<textarea[^>]*id="{re.escape(element_id)}"[^>]*>.*?</textarea>',
+        html,
+        flags=re.DOTALL,
+    )
+    assert match is not None, element_id
+    return match.group(0)
+
+
 def test_beginner_ux_pages_explain_actions_and_use_neutral_examples() -> None:
     with TestClient(app) as client:
         home = client.get("/")
@@ -63,14 +73,21 @@ def test_beginner_ux_pages_explain_actions_and_use_neutral_examples() -> None:
     assert "アナリスト予想" in instrument.text
     assert "AI見通し（根拠付き）" in instrument.text
 
-    assert 'placeholder="AAPL"' in portfolio.text
-    assert "RKLB" not in portfolio.text
-    assert 'placeholder="AAPL, MSFT, 7203.T"' in compare.text
-    assert "RKLB" not in compare.text
-    assert ">AAPL, MSFT, 7203.T</textarea>" in screener.text
-    assert "RKLB" not in screener.text
-    assert 'placeholder="AAPL"' in alerts.text
-    assert "RKLB" not in alerts.text
+    portfolio_symbol = _input_tag(portfolio.text, "position-symbol")
+    assert 'placeholder="AAPL"' in portfolio_symbol
+    assert "RKLB" not in portfolio_symbol
+
+    compare_symbols = _textarea_markup(compare.text, "compare-symbols")
+    assert 'placeholder="AAPL, MSFT, 7203.T"' in compare_symbols
+    assert "RKLB" not in compare_symbols
+
+    screen_symbols = _textarea_markup(screener.text, "screen-symbols")
+    assert ">AAPL, MSFT, 7203.T</textarea>" in screen_symbols
+    assert "RKLB" not in screen_symbols
+
+    alert_symbol = _input_tag(alerts.text, "alert-symbol")
+    assert 'placeholder="AAPL"' in alert_symbol
+    assert "RKLB" not in alert_symbol
 
 
 def test_global_ux_hardening_and_turbo_use_shared_static_assets() -> None:
