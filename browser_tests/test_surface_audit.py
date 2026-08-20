@@ -48,7 +48,7 @@ def test_surfaces_have_no_page_overflow_and_load_shared_css(page: Page) -> None:
                 overflow = page.evaluate(overflow_expression)
                 assert overflow is False, f"page overflow at {width}px: {route} ({locale})"
                 loaded_styles = set(page.evaluate(stylesheet_expression))
-                assert EXPECTED_SHARED_STYLES <= loaded_styles, (
+                assert loaded_styles >= EXPECTED_SHARED_STYLES, (
                     route,
                     locale,
                     loaded_styles,
