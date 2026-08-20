@@ -1,6 +1,5 @@
 from urllib.parse import urlsplit
 
-
 HOSTED_AI_HOSTS = frozenset(
     {
         "api.anthropic.com",
