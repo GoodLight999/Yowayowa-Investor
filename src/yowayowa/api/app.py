@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from functools import partial
+from functools import lru_cache, partial
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -90,37 +91,59 @@ WEB_ROOT = PACKAGE_ROOT / "web"
 STATIC_ROOT = WEB_ROOT / "static"
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
 
-
-def _asset(name: str) -> str:
-    return (STATIC_ROOT / name).read_text(encoding="utf-8")
-
-
-templates.env.globals.update(
-    inline_css=_asset("styles.css") + "\n" + _asset("expansion.css") + "\n" + _asset("ux.css"),
-    inline_app_js=_asset("app.js"),
-    inline_ux_js=_asset("ux.js"),
-    inline_market_js=_asset("market.js"),
-    inline_portfolio_js=_asset("portfolio.js"),
-    inline_compare_js=_asset("compare.js"),
-    inline_screener_js=_asset("screener.js"),
-    inline_instrument_js=_asset("instrument.js"),
-    inline_instrument_ux_js=_asset("instrument_ux.js"),
-    inline_alerts_js=_asset("alerts.js"),
-    inline_calendar_js=_asset("calendar.js"),
-    inline_calendar_ux_js=_asset("calendar_ux.js"),
-    inline_news_js=_asset("news.js"),
-    inline_discover_js=_asset("discover.js"),
-    inline_research_js=_asset("research.js"),
-    inline_macro_js=_asset("macro.js"),
-    inline_ai_js=_asset("ai.js"),
-    inline_settings_js=_asset("settings.js"),
-    inline_charts_js=_asset("charts.js"),
-    inline_charts_ux_js=_asset("charts_ux.js"),
-    inline_rates_js=_asset("rates.js"),
-    inline_institutional_js=_asset("institutional.js"),
-    inline_edinet_js=_asset("edinet.js"),
-    inline_edinet_ux_js=_asset("edinet_ux.js"),
+_I18N_REPLACEMENTS = (
+    (
+        "Kilo Code / OpenCodex型の考え方を採用し、多くのサービスはOpenAI互換アダプターを共有し、本当にAPI仕様が異なるものだけ専用アダプターに分けます。",
+        "使うAIプロバイダだけ有効にできます。使わないサービスは一覧から隠せます。",
+    ),
+    (
+        "Inspired by coding agents such as Kilo/OpenCodex: many services reuse one OpenAI-compatible adapter, while genuinely different APIs keep a dedicated adapter.",
+        "Enable only the AI providers you use. Unused providers can stay hidden.",
+    ),
+    ("Ticker or company name · RKLB / Rocket Lab", "Ticker or company name · AAPL / Apple"),
+    ("ティッカーまたは企業名 · RKLB / Rocket Lab", "ティッカーまたは企業名 · AAPL / Apple"),
+    ("Example: compare RKLB and ASTS", "Example: compare AAPL and MSFT"),
+    ("例: RKLBとASTSを比較", "例: AAPLとMSFTを比較"),
+    ("Add ticker · RKLB", "Add ticker · AAPL"),
+    ("銘柄を追加 · RKLB", "銘柄を追加 · AAPL"),
+    ("Loading SEC Company Facts…", "Loading financial statements…"),
+    ("SEC財務データを取得中…", "財務データを取得中…"),
+    ("Evaluating SEC fundamentals…", "Evaluating financial statements…"),
+    ("SEC財務データを評価中…", "財務データを評価中…"),
+    ("Latest annual SEC facts", "Latest annual financials"),
+    ("最新年次SEC財務", "最新年次財務"),
 )
+
+
+def _merged_messages(locale: str) -> dict[str, str]:
+    merged = {
+        **dict(messages(locale)),
+        **dict(expansion_messages(locale)),
+        **dict(risk_messages(locale)),
+        **dict(calendar_messages(locale)),
+        **dict(chart_messages(locale)),
+        **dict(sector_messages(locale)),
+        **dict(rate_messages(locale)),
+        **dict(institutional_messages(locale)),
+        **dict(edinet_messages(locale)),
+        **dict(licensing_messages(locale)),
+        **dict(ux_messages(locale)),
+    }
+    normalized: dict[str, str] = {}
+    for key, raw_value in merged.items():
+        value = str(raw_value)
+        for old, new in _I18N_REPLACEMENTS:
+            value = value.replace(old, new)
+        normalized[str(key)] = value
+    return normalized
+
+
+@lru_cache(maxsize=len(SUPPORTED_LOCALES))
+def _i18n_asset(locale: str) -> tuple[str, str]:
+    payload = json.dumps(_merged_messages(locale), ensure_ascii=False, separators=(",", ":"))
+    body = f"window.YOWAYOWA_I18N={payload};"
+    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
+    return digest, body
 
 
 @asynccontextmanager
@@ -181,6 +204,23 @@ async def invalid_market_identifier(_: Request, exc: InputValidationError) -> JS
     return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
+@app.get("/assets/i18n/{locale}/{digest}.js", include_in_schema=False)
+def browser_i18n_asset(locale: str, digest: str) -> Response:
+    if locale not in SUPPORTED_LOCALES:
+        raise HTTPException(status_code=404, detail="Unsupported locale")
+    expected_digest, body = _i18n_asset(locale)
+    if digest != expected_digest:
+        raise HTTPException(status_code=404, detail="Unknown i18n asset")
+    return Response(
+        content=body,
+        media_type="text/javascript",
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 def _render_page(
     request: Request,
     template_name: str,
@@ -188,19 +228,7 @@ def _render_page(
 ) -> Response:
     locale = resolve_locale(request)
     settings = get_settings()
-    merged_messages = {
-        **dict(messages(locale)),
-        **dict(expansion_messages(locale)),
-        **dict(risk_messages(locale)),
-        **dict(calendar_messages(locale)),
-        **dict(chart_messages(locale)),
-        **dict(sector_messages(locale)),
-        **dict(rate_messages(locale)),
-        **dict(institutional_messages(locale)),
-        **dict(edinet_messages(locale)),
-        **dict(licensing_messages(locale)),
-        **dict(ux_messages(locale)),
-    }
+    i18n_digest, _ = _i18n_asset(locale)
     page_context: dict[str, Any] = {
         "version": __version__,
         "locale": locale,
@@ -217,7 +245,7 @@ def _render_page(
         "e": partial(edinet_translate, locale),
         "l": partial(licensing_translate, locale),
         "u": partial(ux_translate, locale),
-        "i18n_json": json.dumps(merged_messages, ensure_ascii=False),
+        "i18n_asset_url": f"/assets/i18n/{locale}/{i18n_digest}.js",
     }
     if context:
         page_context.update(context)
