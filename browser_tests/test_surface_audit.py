@@ -38,3 +38,19 @@ def test_surfaces_have_no_page_overflow_or_static_css_dependency(page: Page) -> 
                 assert overflow is False, f"page overflow at {width}px: {route} ({locale})"
                 assert page.locator('link[rel="stylesheet"][href*="/static/"]').count() == 0
     assert errors == []
+
+
+def test_generic_surfaces_do_not_leak_owner_specific_ticker_examples(page: Page) -> None:
+    for locale in ("ja", "en"):
+        for route in ("/", "/news", "/settings"):
+            page.goto(f"{BASE_URL}{route}?lang={locale}", wait_until="domcontentloaded")
+            assert "RKLB" not in page.content()
+            assert "Rocket Lab" not in page.content()
+
+    page.goto(f"{BASE_URL}/?lang=en", wait_until="domcontentloaded")
+    expect(page.locator("#search-input")).to_have_attribute("placeholder", "AAPL / Apple / 7203.T / Toyota")
+    expect(page.locator("#operator-input")).to_have_attribute("placeholder", "Example: compare AAPL and MSFT")
+    expect(page.locator("#watchlist-symbol")).to_have_attribute("placeholder", "AAPL")
+
+    page.goto(f"{BASE_URL}/news?lang=en", wait_until="domcontentloaded")
+    expect(page.locator("#news-query")).to_have_attribute("placeholder", "AAPL / Apple / 7203.T / Toyota")
