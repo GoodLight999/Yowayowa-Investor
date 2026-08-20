@@ -94,6 +94,7 @@ def test_global_ux_hardening_and_turbo_use_shared_static_assets() -> None:
     with TestClient(app) as client:
         response = client.get("/")
         ux_css = client.get("/static/ux.css")
+        pages_css = client.get("/static/pages.css")
 
     assert response.status_code == 200
     assert "@hotwired/turbo@8.0.23" in response.text
@@ -102,11 +103,23 @@ def test_global_ux_hardening_and_turbo_use_shared_static_assets() -> None:
     assert 'href="/static/expansion.css"' in response.text
     assert 'href="/static/ux.css"' in response.text
     assert 'href="/static/product.css"' in response.text
+    assert 'href="/static/pages.css"' in response.text
     assert 'src="/static/app.js" data-turbo-eval="false"' in response.text
     assert 'src="/static/ux.js" data-turbo-eval="false"' in response.text
     assert "max-width: 100%; overflow-x: hidden" not in response.text
     assert ux_css.status_code == 200
+    assert pages_css.status_code == 200
     assert "max-width: 100%; overflow-x: hidden" in ux_css.text
+    assert ".composer-layout" in pages_css.text
+    assert ".edinet-controls" in pages_css.text
+
+
+def test_page_specific_css_is_not_reembedded_in_html() -> None:
+    with TestClient(app) as client:
+        for path in ("/compare", "/charts", "/markets", "/rates", "/institutional", "/edinet"):
+            response = client.get(path)
+            assert response.status_code == 200, path
+            assert "<style>" not in response.text, path
 
 
 def test_browser_i18n_is_fingerprinted_external_and_immutable() -> None:
