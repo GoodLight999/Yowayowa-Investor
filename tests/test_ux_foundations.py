@@ -6,9 +6,7 @@ from fastapi.testclient import TestClient
 
 from yowayowa.api.app import app
 
-_STATIC_ASSET_PATTERN = re.compile(
-    r'(?:href|src)="(/assets/static/[0-9a-f]{16}/([^"/]+))"'
-)
+_STATIC_ASSET_PATTERN = re.compile(r'(?:href|src)="(/assets/static/[0-9a-f]{16}/([^"/]+))"')
 _PAGE_BUNDLE_PATTERN = re.compile(r'src="(/assets/page/[0-9a-f]{16}/([a-z_]+)\.js)"')
 
 
