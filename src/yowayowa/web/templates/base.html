@@ -7,9 +7,10 @@
   <meta name="turbo-cache-control" content="no-preview">
   <title>{% block title %}Yowayowa-Investor{% endblock %}</title>
   <script src="https://unpkg.com/@hotwired/turbo@8.0.23/dist/turbo.es2017-umd.js" defer></script>
-  <style>{{ inline_css | safe }}
-{% include "product.css" %}
-  </style>
+  <link rel="stylesheet" href="/static/styles.css" data-turbo-track="reload">
+  <link rel="stylesheet" href="/static/expansion.css" data-turbo-track="reload">
+  <link rel="stylesheet" href="/static/ux.css" data-turbo-track="reload">
+  <link rel="stylesheet" href="/static/product.css" data-turbo-track="reload">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -95,8 +96,8 @@
     | replace('最新年次SEC財務', '最新年次財務')
     | safe }};</script>
   <script src="/static/product.js" data-turbo-eval="false"></script>
-  <script data-turbo-eval="false">{{ inline_app_js | safe }}</script>
-  <script data-turbo-eval="false">{{ inline_ux_js | safe }}</script>
+  <script src="/static/app.js" data-turbo-eval="false"></script>
+  <script src="/static/ux.js" data-turbo-eval="false"></script>
   <script src="/static/instrument_context.js"></script>
   {% block scripts %}{% endblock %}
 </body>
