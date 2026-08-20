@@ -7,11 +7,11 @@
   <meta name="turbo-cache-control" content="no-preview">
   <title>{% block title %}Yowayowa-Investor{% endblock %}</title>
   <script src="https://unpkg.com/@hotwired/turbo@8.0.23/dist/turbo.es2017-umd.js" defer></script>
-  <link rel="stylesheet" href="/static/styles.css" data-turbo-track="reload">
-  <link rel="stylesheet" href="/static/expansion.css" data-turbo-track="reload">
-  <link rel="stylesheet" href="/static/ux.css" data-turbo-track="reload">
-  <link rel="stylesheet" href="/static/product.css" data-turbo-track="reload">
-  <link rel="stylesheet" href="/static/pages.css" data-turbo-track="reload">
+  <link rel="stylesheet" href="{{ a('styles.css') }}" data-turbo-track="reload">
+  <link rel="stylesheet" href="{{ a('expansion.css') }}" data-turbo-track="reload">
+  <link rel="stylesheet" href="{{ a('ux.css') }}" data-turbo-track="reload">
+  <link rel="stylesheet" href="{{ a('product.css') }}" data-turbo-track="reload">
+  <link rel="stylesheet" href="{{ a('pages.css') }}" data-turbo-track="reload">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -82,10 +82,10 @@
   </aside>
   <script>window.YOWAYOWA_LOCALE = {{ locale | tojson }}; window.YOWAYOWA_MODE = {{ app_mode | tojson }};</script>
   <script src="{{ i18n_asset_url }}" data-turbo-eval="false"></script>
-  <script src="/static/product.js" data-turbo-eval="false"></script>
-  <script src="/static/app.js" data-turbo-eval="false"></script>
-  <script src="/static/ux.js" data-turbo-eval="false"></script>
-  <script src="/static/instrument_context.js"></script>
+  <script src="{{ a('product.js') }}" data-turbo-eval="false"></script>
+  <script src="{{ a('app.js') }}" data-turbo-eval="false"></script>
+  <script src="{{ a('ux.js') }}" data-turbo-eval="false"></script>
+  <script src="{{ a('instrument_context.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
