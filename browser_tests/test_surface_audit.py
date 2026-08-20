@@ -25,6 +25,7 @@ EXPECTED_SHARED_STYLES = {
     "/static/expansion.css",
     "/static/ux.css",
     "/static/product.css",
+    "/static/pages.css",
 }
 
 
