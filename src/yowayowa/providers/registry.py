@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from yowayowa.config import Settings, get_settings
-from yowayowa.domain import Fundamentals
+from yowayowa.config import get_settings
 from yowayowa.providers.bea import BeaClient
 from yowayowa.providers.bls import BlsClient
 from yowayowa.providers.edinet import EdinetClient
 from yowayowa.providers.fred import FredClient
+from yowayowa.providers.fundamentals import FundamentalsSource, ListingAwareFundamentalsProvider
 from yowayowa.providers.sec import SecClient
 from yowayowa.providers.treasury import TreasuryYieldCurveProvider
 from yowayowa.providers.yahoo import YahooMarketProvider
@@ -19,32 +19,18 @@ from yowayowa.providers.yahoo_sectors import YahooSectorProvider
 from yowayowa.providers.yahoo_tracked_calendar import YahooTrackedCalendarProvider
 
 
-class SecFirstClient(SecClient):
-    """Use official SEC first; Yahoo fallback exists only in personal mode."""
-
-    def __init__(self, settings: Settings) -> None:
-        super().__init__(settings)
-        self._fallback = (
-            YahooFundamentalsProvider(settings) if settings.mode == "personal" else None
-        )
-
-    def company_facts(self, symbol: str) -> Fundamentals:
-        try:
-            return super().company_facts(symbol)
-        except LookupError:
-            if self._fallback is None:
-                raise
-            return self._fallback.company_facts(symbol)
-
-
 @lru_cache(maxsize=1)
 def sec_client() -> SecClient:
-    return SecFirstClient(get_settings())
+    """Official SEC client only; provider fallback is never hidden inside this boundary."""
+
+    return SecClient(get_settings())
 
 
 @lru_cache(maxsize=1)
-def fundamentals_provider() -> SecClient:
-    return sec_client()
+def fundamentals_provider() -> FundamentalsSource:
+    settings = get_settings()
+    international = YahooFundamentalsProvider(settings) if settings.mode == "personal" else None
+    return ListingAwareFundamentalsProvider(sec_client(), international)
 
 
 @lru_cache(maxsize=1)
