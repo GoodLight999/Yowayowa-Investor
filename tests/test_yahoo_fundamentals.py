@@ -6,7 +6,11 @@ import pytest
 from yowayowa.config import Settings
 from yowayowa.domain import Fundamentals, LicenseClass, Provenance
 from yowayowa.providers import yahoo_fundamentals
-from yowayowa.providers.fundamentals import SecFirstFundamentalsProvider
+from yowayowa.providers.fundamentals import (
+    ListingAwareFundamentalsProvider,
+    SecFirstFundamentalsProvider,
+    is_non_us_exchange_listing,
+)
 from yowayowa.providers.yahoo_fundamentals import YahooFundamentalsProvider
 
 
@@ -124,6 +128,28 @@ class Fallback:
                 retrieved_at="2026-08-13T00:00:00Z",
             ),
         )
+
+
+def test_listing_aware_provider_routes_before_network_failure() -> None:
+    international = Fallback()
+    provider = ListingAwareFundamentalsProvider(PrimaryBroken(), international)
+
+    result = provider.company_facts("7203.T")
+
+    assert result.company_name == "Fallback"
+    assert international.calls == ["7203.T"]
+
+
+def test_listing_aware_provider_does_not_treat_us_class_share_as_international() -> None:
+    international = Fallback()
+    provider = ListingAwareFundamentalsProvider(PrimaryMissing(), international)
+
+    with pytest.raises(LookupError):
+        provider.company_facts("BRK.B")
+
+    assert international.calls == []
+    assert is_non_us_exchange_listing("7203.T") is True
+    assert is_non_us_exchange_listing("BRK.B") is False
 
 
 def test_sec_first_provider_falls_back_only_when_issuer_is_not_in_sec() -> None:
