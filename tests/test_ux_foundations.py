@@ -60,12 +60,20 @@ def test_beginner_ux_pages_explain_actions_and_use_neutral_examples() -> None:
     assert "AI見通し（根拠付き）" in instrument.text
 
 
-def test_global_ux_hardening_and_turbo_are_present() -> None:
+def test_global_ux_hardening_and_turbo_use_shared_static_assets() -> None:
     with TestClient(app) as client:
         response = client.get("/")
+        ux_css = client.get("/static/ux.css")
 
     assert response.status_code == 200
     assert "@hotwired/turbo@8.0.23" in response.text
     assert "context-ai-drawer" in response.text
-    assert "max-width: 100%; overflow-x: hidden" in response.text
-    assert 'data-turbo-eval="false"' in response.text
+    assert 'href="/static/styles.css"' in response.text
+    assert 'href="/static/expansion.css"' in response.text
+    assert 'href="/static/ux.css"' in response.text
+    assert 'href="/static/product.css"' in response.text
+    assert 'src="/static/app.js" data-turbo-eval="false"' in response.text
+    assert 'src="/static/ux.js" data-turbo-eval="false"' in response.text
+    assert "max-width: 100%; overflow-x: hidden" not in response.text
+    assert ux_css.status_code == 200
+    assert "max-width: 100%; overflow-x: hidden" in ux_css.text
