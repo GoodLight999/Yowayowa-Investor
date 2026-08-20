@@ -86,6 +86,7 @@
   <script src="{{ a('app.js') }}" data-turbo-eval="false"></script>
   <script src="{{ a('ux.js') }}" data-turbo-eval="false"></script>
   <script src="{{ a('instrument_context.js') }}"></script>
-  {% block scripts %}{% endblock %}
+  {% set page_asset = a('page:' ~ path) %}
+  {% if page_asset %}<script src="{{ page_asset }}"></script>{% endif %}
 </body>
 </html>
