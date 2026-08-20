@@ -78,7 +78,22 @@
     <div id="context-ai-trace" class="context-ai-trace"></div>
     <div><div class="ai-evidence-note">{{ u('ai.context.evidence') }}</div><form id="context-ai-form" class="context-ai-form"><textarea id="context-ai-prompt" placeholder="{{ u('ai.context.placeholder') }}"></textarea><button id="context-ai-send" class="primary" type="submit">{{ u('ai.context.send') }}</button></form></div>
   </aside>
-  <script>window.YOWAYOWA_LOCALE = {{ locale | tojson }}; window.YOWAYOWA_MODE = {{ app_mode | tojson }}; window.YOWAYOWA_I18N = {{ i18n_json | replace('Kilo Code / OpenCodex型の考え方を採用し、多くのサービスはOpenAI互換アダプターを共有し、本当にAPI仕様が異なるものだけ専用アダプターに分けます。', '使うAIプロバイダだけ有効にできます。使わないサービスは一覧から隠せます。') | replace('Inspired by coding agents such as Kilo/OpenCodex: many services reuse one OpenAI-compatible adapter, while genuinely different APIs keep a dedicated adapter.', 'Enable only the AI providers you use. Unused providers can stay hidden.') | safe }};</script>
+  <script>window.YOWAYOWA_LOCALE = {{ locale | tojson }}; window.YOWAYOWA_MODE = {{ app_mode | tojson }}; window.YOWAYOWA_I18N = {{ i18n_json
+    | replace('Kilo Code / OpenCodex型の考え方を採用し、多くのサービスはOpenAI互換アダプターを共有し、本当にAPI仕様が異なるものだけ専用アダプターに分けます。', '使うAIプロバイダだけ有効にできます。使わないサービスは一覧から隠せます。')
+    | replace('Inspired by coding agents such as Kilo/OpenCodex: many services reuse one OpenAI-compatible adapter, while genuinely different APIs keep a dedicated adapter.', 'Enable only the AI providers you use. Unused providers can stay hidden.')
+    | replace('Ticker or company name · RKLB / Rocket Lab', 'Ticker or company name · AAPL / Apple')
+    | replace('ティッカーまたは企業名 · RKLB / Rocket Lab', 'ティッカーまたは企業名 · AAPL / Apple')
+    | replace('Example: compare RKLB and ASTS', 'Example: compare AAPL and MSFT')
+    | replace('例: RKLBとASTSを比較', '例: AAPLとMSFTを比較')
+    | replace('Add ticker · RKLB', 'Add ticker · AAPL')
+    | replace('銘柄を追加 · RKLB', '銘柄を追加 · AAPL')
+    | replace('Loading SEC Company Facts…', 'Loading financial statements…')
+    | replace('SEC財務データを取得中…', '財務データを取得中…')
+    | replace('Evaluating SEC fundamentals…', 'Evaluating financial statements…')
+    | replace('SEC財務データを評価中…', '財務データを評価中…')
+    | replace('Latest annual SEC facts', 'Latest annual financials')
+    | replace('最新年次SEC財務', '最新年次財務')
+    | safe }};</script>
   <script src="/static/product.js" data-turbo-eval="false"></script>
   <script data-turbo-eval="false">{{ inline_app_js | safe }}</script>
   <script data-turbo-eval="false">{{ inline_ux_js | safe }}</script>
