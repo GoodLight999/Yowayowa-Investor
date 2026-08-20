@@ -6,6 +6,11 @@ from fastapi.testclient import TestClient
 
 from yowayowa.api.app import app
 
+_STATIC_ASSET_PATTERN = re.compile(
+    r'(?:href|src)="(/assets/static/[0-9a-f]{16}/([^"/]+))"'
+)
+_PAGE_BUNDLE_PATTERN = re.compile(r'src="(/assets/page/[0-9a-f]{16}/([a-z_]+)\.js)"')
+
 
 def _input_tag(html: str, element_id: str) -> str:
     match = re.search(rf'<input[^>]*id="{re.escape(element_id)}"[^>]*>', html)
@@ -90,28 +95,36 @@ def test_beginner_ux_pages_explain_actions_and_use_neutral_examples() -> None:
     assert "RKLB" not in alert_symbol
 
 
-def test_global_ux_hardening_and_turbo_use_shared_static_assets() -> None:
+def test_shared_assets_are_fingerprinted_external_and_immutable() -> None:
+    required = {
+        "styles.css",
+        "expansion.css",
+        "ux.css",
+        "product.css",
+        "pages.css",
+        "product.js",
+        "app.js",
+        "ux.js",
+        "instrument_context.js",
+    }
     with TestClient(app) as client:
         response = client.get("/")
-        ux_css = client.get("/static/ux.css")
-        pages_css = client.get("/static/pages.css")
+        matches = _STATIC_ASSET_PATTERN.findall(response.text)
+        urls = {filename: url for url, filename in matches}
+        assert required <= urls.keys()
+        assert "/static/" not in response.text
 
-    assert response.status_code == 200
-    assert "@hotwired/turbo@8.0.23" in response.text
-    assert "context-ai-drawer" in response.text
-    assert 'href="/static/styles.css"' in response.text
-    assert 'href="/static/expansion.css"' in response.text
-    assert 'href="/static/ux.css"' in response.text
-    assert 'href="/static/product.css"' in response.text
-    assert 'href="/static/pages.css"' in response.text
-    assert 'src="/static/app.js" data-turbo-eval="false"' in response.text
-    assert 'src="/static/ux.js" data-turbo-eval="false"' in response.text
-    assert "max-width: 100%; overflow-x: hidden" not in response.text
-    assert ux_css.status_code == 200
-    assert pages_css.status_code == 200
-    assert "max-width: 100%; overflow-x: hidden" in ux_css.text
-    assert ".composer-layout" in pages_css.text
-    assert ".edinet-controls" in pages_css.text
+        asset_responses = {filename: client.get(urls[filename]) for filename in required}
+        stale_asset = client.get("/assets/static/0000000000000000/app.js")
+
+    for asset_response in asset_responses.values():
+        assert asset_response.status_code == 200
+        assert asset_response.headers["cache-control"] == "public, max-age=31536000, immutable"
+        assert asset_response.headers["x-content-type-options"] == "nosniff"
+    assert "max-width: 100%; overflow-x: hidden" in asset_responses["ux.css"].text
+    assert ".composer-layout" in asset_responses["pages.css"].text
+    assert ".edinet-controls" in asset_responses["pages.css"].text
+    assert stale_asset.status_code == 404
 
 
 def test_page_specific_css_is_not_reembedded_in_html() -> None:
@@ -148,29 +161,44 @@ def test_browser_i18n_is_fingerprinted_external_and_immutable() -> None:
     assert stale_asset.status_code == 404
 
 
-def test_page_scripts_are_external_static_assets() -> None:
+def test_page_scripts_are_centralized_fingerprinted_bundles() -> None:
     pages = {
-        "/instrument/AAPL": ("instrument.js", "instrument_ux.js"),
-        "/settings": ("settings.js",),
-        "/charts": ("charts.js", "charts_ux.js"),
-        "/calendar": ("calendar.js", "calendar_ux.js"),
-        "/ai": ("ai.js",),
-        "/portfolio": ("portfolio.js",),
-        "/markets": ("market.js",),
-        "/discover": ("discover.js",),
-        "/research/AAPL": ("research.js",),
-        "/compare": ("compare.js",),
-        "/screener": ("screener.js",),
-        "/alerts": ("alerts.js",),
-        "/news": ("news.js",),
-        "/macro": ("macro.js",),
-        "/rates": ("rates.js",),
-        "/institutional": ("institutional.js",),
-        "/edinet": ("edinet.js", "edinet_ux.js"),
+        "/": "dashboard",
+        "/instrument/AAPL": "instrument",
+        "/settings": "settings",
+        "/charts": "charts",
+        "/calendar": "calendar",
+        "/ai": "ai",
+        "/portfolio": "portfolio",
+        "/markets": "market",
+        "/discover": "discover",
+        "/research/AAPL": "research",
+        "/compare": "compare",
+        "/screener": "screener",
+        "/alerts": "alerts",
+        "/news": "news",
+        "/macro": "macro",
+        "/rates": "rates",
+        "/institutional": "institutional",
+        "/edinet": "edinet",
     }
     with TestClient(app) as client:
-        for path, assets in pages.items():
+        for path, expected_key in pages.items():
             response = client.get(path)
             assert response.status_code == 200, path
-            for asset in assets:
-                assert f'src="/static/{asset}"' in response.text, (path, asset)
+            match = _PAGE_BUNDLE_PATTERN.search(response.text)
+            assert match is not None, path
+            assert match.group(2) == expected_key, path
+            assert "/static/" not in response.text, path
+            bundle = client.get(match.group(1))
+            assert bundle.status_code == 200, path
+            assert bundle.headers["cache-control"] == "public, max-age=31536000, immutable"
+            assert bundle.headers["x-content-type-options"] == "nosniff"
+
+        no_bundle = client.get("/licenses")
+        assert _PAGE_BUNDLE_PATTERN.search(no_bundle.text) is None
+        stale_bundle = client.get("/assets/page/0000000000000000/instrument.js")
+        unknown_bundle = client.get("/assets/page/0000000000000000/unknown.js")
+
+    assert stale_bundle.status_code == 404
+    assert unknown_bundle.status_code == 404
