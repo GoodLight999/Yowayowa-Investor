@@ -20,14 +20,25 @@ SURFACE_ROUTES = (
     "/edinet",
     "/licenses",
 )
+EXPECTED_SHARED_STYLES = {
+    "/static/styles.css",
+    "/static/expansion.css",
+    "/static/ux.css",
+    "/static/product.css",
+}
 
 
-def test_surfaces_have_no_page_overflow_or_static_css_dependency(page: Page) -> None:
+def test_surfaces_have_no_page_overflow_and_load_shared_css(page: Page) -> None:
     errors: list[str] = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     overflow_expression = (
         "document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
     )
+    stylesheet_expression = """
+        [...document.styleSheets]
+          .map(sheet => sheet.href ? new URL(sheet.href).pathname : null)
+          .filter(Boolean)
+    """
     for width in (1440, 390):
         page.set_viewport_size({"width": width, "height": 844})
         for locale in ("ja", "en"):
@@ -36,7 +47,12 @@ def test_surfaces_have_no_page_overflow_or_static_css_dependency(page: Page) -> 
                 expect(page.locator("html")).to_have_attribute("lang", locale)
                 overflow = page.evaluate(overflow_expression)
                 assert overflow is False, f"page overflow at {width}px: {route} ({locale})"
-                assert page.locator('link[rel="stylesheet"][href*="/static/"]').count() == 0
+                loaded_styles = set(page.evaluate(stylesheet_expression))
+                assert EXPECTED_SHARED_STYLES <= loaded_styles, (
+                    route,
+                    locale,
+                    loaded_styles,
+                )
     assert errors == []
 
 
