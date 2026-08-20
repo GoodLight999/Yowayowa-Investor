@@ -1,3 +1,5 @@
+import re
+
 from playwright.sync_api import Page, expect
 
 BASE_URL = "http://127.0.0.1:8000"
@@ -20,13 +22,14 @@ SURFACE_ROUTES = (
     "/edinet",
     "/licenses",
 )
-EXPECTED_SHARED_STYLES = {
-    "/static/styles.css",
-    "/static/expansion.css",
-    "/static/ux.css",
-    "/static/product.css",
-    "/static/pages.css",
+EXPECTED_SHARED_STYLE_NAMES = {
+    "styles.css",
+    "expansion.css",
+    "ux.css",
+    "product.css",
+    "pages.css",
 }
+FINGERPRINTED_STYLE_PATH = re.compile(r"^/assets/static/[0-9a-f]{16}/[^/]+\.css$")
 
 
 def test_surfaces_have_no_page_overflow_and_load_shared_css(page: Page) -> None:
@@ -49,11 +52,18 @@ def test_surfaces_have_no_page_overflow_and_load_shared_css(page: Page) -> None:
                 overflow = page.evaluate(overflow_expression)
                 assert overflow is False, f"page overflow at {width}px: {route} ({locale})"
                 loaded_styles = set(page.evaluate(stylesheet_expression))
-                assert loaded_styles >= EXPECTED_SHARED_STYLES, (
+                loaded_names = {path.rsplit("/", 1)[-1] for path in loaded_styles}
+                assert loaded_names >= EXPECTED_SHARED_STYLE_NAMES, (
                     route,
                     locale,
                     loaded_styles,
                 )
+                shared_paths = {
+                    path
+                    for path in loaded_styles
+                    if path.rsplit("/", 1)[-1] in EXPECTED_SHARED_STYLE_NAMES
+                }
+                assert all(FINGERPRINTED_STYLE_PATH.fullmatch(path) for path in shared_paths)
     assert errors == []
 
 
