@@ -172,9 +172,14 @@ class SecClient:
         cached = self._facts_cache.get(normalized_symbol)
         if cached is not None:
             return cached
-        instrument = self.ticker_map().get(normalized_symbol)
+        ticker_map = self.ticker_map()
+        instrument = ticker_map.get(normalized_symbol)
+        if instrument is None and "." in normalized_symbol:
+            # SEC uses hyphens for class-share tickers (for example BRK-B), while
+            # common market notation and Yahoo-style symbols use dots (BRK.B).
+            instrument = ticker_map.get(normalized_symbol.replace(".", "-"))
         if not instrument or not instrument.cik:
-            raise LookupError(f"SEC ticker mapping not found for {symbol.upper()}")
+            raise LookupError(f"SEC ticker mapping not found for {normalized_symbol}")
         payload = self._get_json(f"{self.base_url}/api/xbrl/companyfacts/CIK{instrument.cik}.json")
         metrics: dict[str, MetricSeries] = {}
         us_gaap = payload.get("facts", {}).get("us-gaap", {})
@@ -184,7 +189,7 @@ class SecClient:
                 metrics[key] = series
         retrieved = datetime.now(UTC)
         result = Fundamentals(
-            symbol=instrument.symbol,
+            symbol=normalized_symbol,
             cik=instrument.cik,
             company_name=str(payload.get("entityName") or instrument.name),
             metrics=metrics,
