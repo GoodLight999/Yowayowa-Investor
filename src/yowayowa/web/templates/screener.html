@@ -18,7 +18,7 @@
   <form id="screen-form" class="screen-form">
     <div class="field">
       <label for="screen-symbols">{{ t('screener.universe') }}</label>
-      <textarea id="screen-symbols" rows="2">RKLB, ASTS, SOFI, HOOD</textarea>
+      <textarea id="screen-symbols" rows="2">AAPL, MSFT, 7203.T</textarea>
       <div class="field-actions">
         <small>{{ t('screener.max_symbols') }}</small>
         {% if app_mode == 'personal' %}<button id="screen-use-watchlist" class="ghost" type="button">{{ t('compare.use_watchlist') }}</button>{% endif %}
@@ -86,4 +86,4 @@
   <div id="screen-results" class="table-wrap muted" style="padding:12px">{{ t('screener.prompt') }}</div>
 </section>
 {% endblock %}
-{% block scripts %}<script>{{ inline_screener_js | safe }}</script>{% endblock %}
+{% block scripts %}<script src="/static/screener.js"></script>{% endblock %}
