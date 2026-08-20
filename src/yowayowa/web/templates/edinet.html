@@ -108,4 +108,4 @@
 
 <section class="panel" style="margin-top:12px"><div class="section-heading"><h2>{{ t('common.source') }}</h2></div><div id="edinet-provenance" class="provenance-card muted">EDINET / Financial Services Agency</div></section>
 {% endblock %}
-{% block scripts %}<script>{{ inline_edinet_js | safe }}</script><script>{{ inline_edinet_ux_js | safe }}</script>{% endblock %}
+{% block scripts %}<script src="/static/edinet.js"></script><script src="/static/edinet_ux.js"></script>{% endblock %}
