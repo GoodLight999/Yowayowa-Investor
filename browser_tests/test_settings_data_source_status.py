@@ -27,7 +27,7 @@ def test_edinet_browser_key_updates_data_source_status(page: Page) -> None:
 
     page.goto(f"{BASE_URL}/settings?lang=ja", wait_until="networkidle")
 
-    edinet_status = page.locator('[data-source="edinet"] span')
+    edinet_status = page.locator('[data-source="edinet"] .ux-note')
     expect(edinet_status).to_have_text("未設定")
 
     page.locator("#edinet-browser-key").fill("browser-edinet-key")
@@ -36,12 +36,12 @@ def test_edinet_browser_key_updates_data_source_status(page: Page) -> None:
     expect(edinet_status).to_have_text("このタブで利用可能")
 
     page.reload(wait_until="networkidle")
-    expect(page.locator('[data-source="edinet"] span')).to_have_text("このタブで利用可能")
+    expect(page.locator('[data-source="edinet"] .ux-note')).to_have_text("このタブで利用可能")
     expect(page.locator("#edinet-browser-key")).to_have_value("browser-edinet-key")
 
     page.locator("#clear-edinet-browser-key").click()
     expect(page.locator("#edinet-browser-key-status")).to_have_text("未設定")
-    expect(page.locator('[data-source="edinet"] span')).to_have_text("未設定")
+    expect(page.locator('[data-source="edinet"] .ux-note')).to_have_text("未設定")
 
 
 def test_ai_api_key_can_be_removed_without_closing_the_tab(page: Page) -> None:
