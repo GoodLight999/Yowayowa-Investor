@@ -109,7 +109,7 @@ def test_visible_interactive_controls_keep_readable_type_and_target_size(page: P
                 if (!visible) return [];
                 const fontSize = Number.parseFloat(style.fontSize);
                 if (fontSize >= 11) return [];
-                const text = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+                const text = (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 80);
                 if (!text) return [];
                 return [{
                     tag: el.tagName.toLowerCase(),
