@@ -28,6 +28,7 @@ EXPECTED_SHARED_STYLE_NAMES = {
     "ux.css",
     "product.css",
     "pages.css",
+    "interface.css",
 }
 FINGERPRINTED_STYLE_PATH = re.compile(r"^/assets/static/[0-9a-f]{16}/[^/]+\.css$")
 
@@ -65,6 +66,29 @@ def test_surfaces_have_no_page_overflow_and_load_shared_css(page: Page) -> None:
                 }
                 assert all(FINGERPRINTED_STYLE_PATH.fullmatch(path) for path in shared_paths)
     assert errors == []
+
+
+def test_core_interface_does_not_shrink_primary_text_into_microcopy(page: Page) -> None:
+    for width in (1440, 390):
+        page.set_viewport_size({"width": width, "height": 844})
+        page.goto(f"{BASE_URL}/?lang=ja", wait_until="domcontentloaded")
+        sizes = page.evaluate(
+            """() => {
+                const px = selector => parseFloat(getComputedStyle(document.querySelector(selector)).fontSize);
+                return {
+                    body: px('body'),
+                    nav: px('.nav a'),
+                    search: px('#search-input'),
+                    searchButton: px('#global-search button'),
+                    subtitle: px('.ux-subtitle'),
+                };
+            }"""
+        )
+        assert sizes["body"] >= 14, sizes
+        assert sizes["nav"] >= 11, sizes
+        assert sizes["search"] >= 14, sizes
+        assert sizes["searchButton"] >= 12, sizes
+        assert sizes["subtitle"] >= 12, sizes
 
 
 def test_generic_surfaces_do_not_leak_owner_specific_ticker_examples(page: Page) -> None:
