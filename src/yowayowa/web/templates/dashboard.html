@@ -1,56 +1,66 @@
 {% extends "base.html" %}
 {% block title %}{{ u('dashboard.title') }} · Yowayowa-Investor{% endblock %}
 {% block content %}
-<section class="page-head">
-  <div><h1>{{ u('dashboard.title') }}</h1><p class="ux-subtitle">{{ u('dashboard.subtitle') }}</p></div>
-  <span class="pill">{{ t('common.personal') }}</span>
-</section>
-
-<section aria-labelledby="home-actions-title">
-  <h2 id="home-actions-title" style="margin:0 0 7px">{{ u('dashboard.quick_actions') }}</h2>
-  <div class="home-actions">
-    <a class="home-action" href="#global-search"><strong>{{ u('dashboard.action.find') }}</strong><small>{{ u('dashboard.action.find_note') }}</small></a>
-    <a class="home-action" href="/compare"><strong>{{ u('dashboard.action.compare') }}</strong><small>{{ u('dashboard.action.compare_note') }}</small></a>
-    <a class="home-action" href="/calendar"><strong>{{ u('dashboard.action.events') }}</strong><small>{{ u('dashboard.action.events_note') }}</small></a>
-    <a class="home-action" href="#global-search"><strong>{{ u('dashboard.action.japan') }}</strong><small>{{ u('dashboard.action.japan_note') }}</small></a>
+<section class="page-head home-head">
+  <div>
+    <h1>{{ u('dashboard.title') }}</h1>
+    <p class="ux-subtitle">{{ u('dashboard.subtitle') }}</p>
   </div>
 </section>
 
-<div class="workbar">
-  <form id="global-search" class="search-box" role="search">
-    <label class="sr-only" for="search-input">{{ u('dashboard.search_label') }}</label>
-    <input id="search-input" name="q" autocomplete="off" placeholder="{{ u('dashboard.search_placeholder') }}">
-    <button type="submit">{{ t('common.search') }}</button>
-  </form>
-  <section class="command-panel">
+<section class="home-primary" aria-labelledby="home-research-title">
+  <div class="home-primary-copy">
+    <h2 id="home-research-title">{{ u('dashboard.start_research') }}</h2>
+    <p>{{ u('dashboard.start_research_note') }}</p>
+    <form id="global-search" class="search-box home-search" role="search">
+      <label class="sr-only" for="search-input">{{ u('dashboard.search_label') }}</label>
+      <input id="search-input" name="q" autocomplete="off" placeholder="{{ u('dashboard.search_placeholder') }}">
+      <button type="submit">{{ t('common.search') }}</button>
+    </form>
+    <nav class="home-shortcuts" aria-label="{{ u('dashboard.quick_actions') }}">
+      <a class="home-shortcut" href="/discover">{{ u('dashboard.action.find') }}</a>
+      <a class="home-shortcut" href="/compare">{{ u('dashboard.action.compare') }}</a>
+      <a class="home-shortcut" href="/calendar">{{ u('dashboard.action.events') }}</a>
+      <a class="home-shortcut" href="/edinet">{{ u('dashboard.action.japan') }}</a>
+    </nav>
+  </div>
+
+  <details class="home-operator">
+    <summary>{% if locale == 'ja' %}自然文で操作{% else %}Natural-language command{% endif %}</summary>
     <form id="operator-form" class="operator-form">
-      <textarea id="operator-input" rows="1" placeholder="{{ u('dashboard.command_placeholder') }}"></textarea>
+      <textarea id="operator-input" rows="2" placeholder="{{ u('dashboard.command_placeholder') }}"></textarea>
       <button type="submit">{{ t('common.run') }}</button>
     </form>
     <div id="operation-plan" class="operation-plan muted"></div>
-  </section>
-</div>
+  </details>
+</section>
 
-<div class="grid grid-2">
-  <section class="panel">
-    <div class="section-heading"><div><h2>{{ u('dashboard.start_research') }}</h2><small class="term-note">{{ u('dashboard.start_research_note') }}</small></div></div>
-    <div id="search-results" class="list-state muted">{{ t('dashboard.search_hint') }}</div>
-  </section>
-
+<div class="home-workspace">
   <section class="panel">
     <div class="section-heading">
-      <h2>{{ t('dashboard.watchlist') }}</h2>
+      <div>
+        <h2>{{ t('dashboard.watchlist') }}</h2>
+        <small class="term-note">{% if locale == 'ja' %}追っている銘柄の現在値と前日比をすぐ確認できます。{% else %}Check the latest price and daily move for the names you follow.{% endif %}</small>
+      </div>
       <button id="refresh-watchlist" class="ghost" type="button">{{ t('common.refresh') }}</button>
     </div>
-    <div style="padding:10px 11px 0">
+    <div style="padding:12px 13px 0">
       <form id="watchlist-add-form" class="inline-form">
-        <input id="watchlist-symbol" maxlength="32" placeholder="{{ u('dashboard.watchlist_add_placeholder') }}">
+        <input id="watchlist-symbol" maxlength="32" placeholder="{{ u('dashboard.watchlist_add_placeholder') }}" aria-label="{{ t('dashboard.watchlist') }}">
         <button type="submit">{{ t('common.add') }}</button>
       </form>
     </div>
     <div id="watchlist" class="symbol-grid"></div>
   </section>
+
+  <section class="panel home-results-panel">
+    <div class="section-heading">
+      <div>
+        <h2>{% if locale == 'ja' %}検索結果{% else %}Search results{% endif %}</h2>
+        <small class="term-note">{% if locale == 'ja' %}同じ企業に複数の上場先がある場合は、利用地域に合う候補を先頭に表示します。{% else %}When a company has multiple listings, the most relevant local listing is shown first.{% endif %}</small>
+      </div>
+    </div>
+    <div id="search-results" class="list-state home-empty-copy">{{ t('dashboard.search_hint') }}</div>
+  </section>
 </div>
 {% endblock %}
-
-{% block scripts %}<script src="/static/dashboard_ux.js"></script>{% endblock %}
