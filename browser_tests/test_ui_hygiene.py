@@ -60,10 +60,13 @@ def test_primary_surfaces_do_not_create_root_horizontal_overflow_on_phone(page: 
 
 def test_visible_interactive_controls_keep_readable_type_and_target_size(page: Page) -> None:
     page.set_viewport_size({"width": 1280, "height": 900})
-    selector = "button, input:not([type='hidden']), select, textarea, .nav a, details > summary"
+    control_selector = (
+        "button, input:not([type='hidden']), select, textarea, .nav a, details > summary"
+    )
+    supporting_text_selector = "main small, main label, main p, main .muted"
     for path in _SURFACES:
         _settle(page, path)
-        violations = page.locator(selector).evaluate_all(
+        violations = page.locator(control_selector).evaluate_all(
             """elements => elements.flatMap(el => {
                 const style = getComputedStyle(el);
                 const rect = el.getBoundingClientRect();
@@ -93,3 +96,28 @@ def test_visible_interactive_controls_keep_readable_type_and_target_size(page: P
             })"""
         )
         assert violations == [], (path, violations)
+
+        readability_violations = page.locator(supporting_text_selector).evaluate_all(
+            """elements => elements.flatMap(el => {
+                const style = getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                const visible = style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && Number(style.opacity) !== 0
+                    && rect.width > 0
+                    && rect.height > 0;
+                if (!visible) return [];
+                const fontSize = Number.parseFloat(style.fontSize);
+                if (fontSize >= 11) return [];
+                const text = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+                if (!text) return [];
+                return [{
+                    tag: el.tagName.toLowerCase(),
+                    id: el.id || null,
+                    className: typeof el.className === 'string' ? el.className : '',
+                    text,
+                    fontSize,
+                }];
+            })"""
+        )
+        assert readability_violations == [], (path, readability_violations)
