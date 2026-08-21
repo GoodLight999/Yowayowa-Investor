@@ -128,7 +128,7 @@
     document.querySelector('.provider-manager')?.remove();
     const manager = document.createElement('details');
     manager.className = 'provider-manager';
-    manager.innerHTML = `<summary><span>${ja ? '利用するプロバイダを管理' : 'Manage enabled providers'}</span><span class="pill">${enabledProviders.length}/${providers.length}</span></summary><div class="provider-toggle-grid">${providers.map(item => {
+    manager.innerHTML = `<summary class="section-heading"><span>${ja ? '利用するプロバイダを管理' : 'Manage enabled providers'}</span><span class="pill">${enabledProviders.length}/${providers.length}</span></summary><div class="provider-toggle-grid">${providers.map(item => {
       const allowed = providerAllowed(item);
       const suffix = allowed ? '' : (ja ? ' · セルフホスト専用' : ' · self-host only');
       return `<label class="provider-toggle ${allowed ? '' : 'muted'}"><input type="checkbox" value="${escapeHtml(item.id)}" ${enabledProviders.includes(item.id) ? 'checked' : ''} ${allowed ? '' : 'disabled'}><span>${escapeHtml(item.label + suffix)}</span></label>`;
@@ -337,7 +337,7 @@
     });
     const advanced = document.createElement('details');
     advanced.className = 'advanced-tools';
-    advanced.innerHTML = `<summary>${ja ? '詳細データ・開発者向け' : 'Advanced data & developer tools'}</summary><div class="advanced-tools-links"><a class="ghost button" href="/edinet">${ja ? 'EDINET原典' : 'EDINET source'}</a><a class="ghost button" href="/institutional">${ja ? '米国機関投資家の保有開示' : 'US institutional holdings'}</a><a class="ghost button" href="/licenses">${ja ? 'データライセンス' : 'Data licenses'}</a><a class="ghost button" href="/docs" data-turbo="false">API</a></div>`;
+    advanced.innerHTML = `<summary class="section-heading">${ja ? '詳細データ・開発者向け' : 'Advanced data & developer tools'}</summary><div class="advanced-tools-links"><a class="ghost button" href="/edinet">${ja ? 'EDINET原典' : 'EDINET source'}</a><a class="ghost button" href="/institutional">${ja ? '米国機関投資家の保有開示' : 'US institutional holdings'}</a><a class="ghost button" href="/licenses">${ja ? 'データライセンス' : 'Data licenses'}</a><a class="ghost button" href="/docs" data-turbo="false">API</a></div>`;
     panel.insertAdjacentElement('afterend',advanced);
   }
 
