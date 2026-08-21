@@ -40,7 +40,7 @@
 </section>
 <section class="panel chart-panel"><div id="chart" class="chart" role="img" aria-label="{{ t('instrument.price_chart') }}"></div><div id="chart-source" class="source-strip muted"></div></section>
 
-<section class="panel valuation-strip">
+<section class="panel valuation-strip instrument-section">
   <div class="section-heading"><h2>{{ t('instrument.valuation') }}</h2><span id="valuation-basis" class="pill">{% if ja %}最新年次財務{% else %}Latest annual financials{% endif %}</span></div>
   <div id="valuation-metrics" class="metrics-strip"><div class="metric-card"><small>{{ t('instrument.valuation') }}</small><strong>{{ t('common.loading_ellipsis') }}</strong></div></div>
 </section>
@@ -57,7 +57,7 @@
   </section>
 </div>
 
-<section class="panel" style="margin-top:12px">
+<section class="panel instrument-section">
   <div class="section-heading">
     <div><h2>{{ t('instrument.financials') }}</h2><small class="term-note">{% if ja %}FY = 年次決算、Q = 四半期決算。数値の出典は画面下部に表示します。{% else %}FY = annual results; Q = quarterly results. Data sources are shown below.{% endif %}</small></div>
     <div class="metric-picker" role="group" aria-label="{{ t('instrument.financials') }}">
@@ -66,22 +66,18 @@
     </div>
   </div>
   <div id="financial-health-metrics" class="metrics-strip"></div>
-  <div style="padding:0 11px 8px"><small class="term-note"><span class="term-help" title="{{ u('instrument.term.roe') }}">ROE</span> · <span class="term-help" title="{{ u('instrument.term.margin') }}">Operating margin</span> · <span class="term-help" title="{{ u('instrument.term.current_ratio') }}">Current ratio</span> · <span class="term-help" title="{{ u('instrument.term.fcf') }}">FCF</span></small></div>
+  <div class="financial-term-strip"><small class="term-note"><span class="term-help" title="{{ u('instrument.term.roe') }}">ROE</span> · <span class="term-help" title="{{ u('instrument.term.margin') }}">Operating margin</span> · <span class="term-help" title="{{ u('instrument.term.current_ratio') }}">Current ratio</span> · <span class="term-help" title="{{ u('instrument.term.fcf') }}">FCF</span></small></div>
   <div id="fundamentals-table" class="table-wrap"></div>
 </section>
 
-<section class="panel" style="margin-top:12px">
-  <div class="section-heading"><div><h2>{{ u('instrument.analyst') }}</h2><small class="term-note">{{ u('instrument.analyst_note') }}</small></div></div>
-  <div id="analyst-consensus" class="muted" style="min-height:70px">{{ t('common.loading_ellipsis') }}</div>
-</section>
-
-<section class="panel" style="margin-top:12px">
-  <div class="section-heading"><div><h2>{{ u('instrument.ai_outlook') }}</h2><small class="term-note">{{ u('instrument.ai_outlook_note') }}</small></div></div>
-  <div style="padding:11px">
-    <button class="ghost" type="button" data-ai-prompt="{% if ja %}{{ symbol }} の今後12か月を Bull / Base / Bear の3シナリオで整理して。財務、バリュエーション、アナリスト予想、ニュース、イベントを利用可能なYowayowaツールで検証し、各シナリオの根拠・反証条件・基準時点を示して。価格や業績を断定せず、事実と推論を分けて。{% else %}Build Bull / Base / Bear scenarios for {{ symbol }} over the next 12 months. Verify the financials, valuation, analyst expectations, news and events with available Yowayowa tools. Show the evidence, invalidation conditions and data as-of for each scenario. Separate sourced facts from inference and do not present prices or results as certain.{% endif %}">{{ u('instrument.ai_outlook_action') }}</button>
+<section class="panel instrument-section">
+  <div class="section-heading">
+    <div><h2>{{ u('instrument.analyst') }}</h2><small class="term-note">{{ u('instrument.analyst_note') }}</small></div>
+    <button class="ghost analyst-ai-action" type="button" data-ai-prompt="{% if ja %}{{ symbol }} の今後12か月を Bull / Base / Bear の3シナリオで整理して。財務、バリュエーション、アナリスト予想、ニュース、イベントを利用可能なYowayowaツールで検証し、各シナリオの根拠・反証条件・基準時点を示して。価格や業績を断定せず、事実と推論を分けて。{% else %}Build Bull / Base / Bear scenarios for {{ symbol }} over the next 12 months. Verify the financials, valuation, analyst expectations, news and events with available Yowayowa tools. Show the evidence, invalidation conditions and data as-of for each scenario. Separate sourced facts from inference and do not present prices or results as certain.{% endif %}">{{ u('instrument.ai_outlook_action') }}</button>
   </div>
+  <div id="analyst-consensus" class="analyst-consensus muted">{{ t('common.loading_ellipsis') }}</div>
+  <p class="ai-evidence-boundary">{{ u('instrument.ai_outlook_note') }}</p>
 </section>
 
-<section class="panel" style="margin-top:12px"><div class="section-heading"><h2>{{ t('common.source') }}</h2></div><div id="provenance" class="provenance-card muted">{{ t('common.loading_ellipsis') }}</div></section>
+<section class="panel instrument-section instrument-source-panel"><div class="section-heading"><h2>{{ t('common.source') }}</h2></div><div id="provenance" class="provenance-card muted">{{ t('common.loading_ellipsis') }}</div></section>
 {% endblock %}
-{% block scripts %}<script src="/static/instrument.js"></script><script src="/static/instrument_ux.js"></script>{% endblock %}
