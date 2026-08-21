@@ -42,6 +42,18 @@ def test_mobile_navigation_is_grouped_and_not_a_tool_dump(page: Page) -> None:
     for href in ADVANCED_PATHS:
         expect(nav.locator(f'a[href="{href}"]')).to_have_count(0)
 
+    metrics = nav.evaluate(
+        """node => ({
+            scrollWidth: node.scrollWidth,
+            clientWidth: node.clientWidth,
+            overflowX: getComputedStyle(node).overflowX,
+            display: getComputedStyle(node).display,
+        })"""
+    )
+    assert metrics["scrollWidth"] <= metrics["clientWidth"] + 1, metrics
+    assert metrics["overflowX"] not in {"auto", "scroll"}, metrics
+    assert metrics["display"] == "grid", metrics
+
 
 def test_mobile_app_routes_have_no_page_level_horizontal_overflow(page: Page) -> None:
     page.set_viewport_size({"width": 390, "height": 844})
