@@ -36,7 +36,7 @@
   <div id="ai-status" class="provider-source-note"></div>
 
   <details class="ai-diagnostics">
-    <summary>{% if locale == 'ja' %}根拠・ツール実行を確認{% else %}Inspect evidence and tool activity{% endif %}</summary>
+    <summary class="section-heading">{% if locale == 'ja' %}根拠・ツール実行を確認{% else %}Inspect evidence and tool activity{% endif %}</summary>
     <div class="ai-side-output">
       <section><h3>{{ x('ai.tools') }}</h3><div class="ai-trace-list" id="ai-trace"><span class="muted">{{ x('ai.no_tools') }}</span></div></section>
       <section><h3>{{ x('ai.proposals') }}</h3><div class="ai-proposals-list" id="ai-proposals"><span class="muted">{{ x('ai.no_proposals') }}</span></div></section>
