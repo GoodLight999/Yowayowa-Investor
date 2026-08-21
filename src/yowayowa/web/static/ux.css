@@ -41,7 +41,7 @@ td:not(.numeric), th { overflow-wrap: anywhere; }
 
 .indicator-controls { display:flex; align-items:stretch; gap:5px; min-width:0; }
 .indicator-menu { position:relative; min-width:0; }
-.indicator-menu > summary { list-style:none; min-height:32px; display:flex; align-items:center; gap:7px; border:1px solid var(--line-strong); padding:6px 9px; background:var(--sheet); font-size:10px; font-weight:700; cursor:pointer; }
+.indicator-menu > summary { list-style:none; min-height:38px; display:flex; align-items:center; gap:7px; border:1px solid var(--line-strong); padding:7px 10px; background:var(--sheet); font-size:12px; font-weight:700; cursor:pointer; }
 .indicator-menu > summary::-webkit-details-marker { display:none; }
 .indicator-popover { position:absolute; right:0; z-index:45; width:min(440px,calc(100vw - 24px)); max-height:min(520px,72vh); overflow:auto; margin-top:4px; border:1px solid var(--ink); background:var(--sheet); box-shadow:0 10px 34px rgba(20,20,18,.16); padding:10px; }
 .indicator-popover > p { margin:0 0 8px; color:var(--muted); font-size:10px; }
