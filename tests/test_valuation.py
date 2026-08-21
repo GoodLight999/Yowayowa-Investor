@@ -100,9 +100,7 @@ def test_valuation_provenance_does_not_claim_sec_for_non_sec_provider() -> None:
         ),
     )
     quotes = MarketQuoteBatch(
-        quotes={
-            "7203.T": MarketQuote(symbol="7203.T", price=20, as_of="2026-08-12T00:00:00Z")
-        },
+        quotes={"7203.T": MarketQuote(symbol="7203.T", price=20, as_of="2026-08-12T00:00:00Z")},
         provenance=Provenance(
             provider="yahoo/yfinance",
             source="Yahoo Finance",
