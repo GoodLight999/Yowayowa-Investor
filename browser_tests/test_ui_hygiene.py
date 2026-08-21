@@ -53,8 +53,8 @@ def test_primary_surfaces_do_not_create_root_horizontal_overflow_on_phone(page: 
             path,
             metrics,
         )
-        visible_text = page.locator("body").inner_text()
-        leaked_key = _RAW_TRANSLATION_KEY_RE.search(visible_text)
+        surface_text = page.locator("main").text_content() or ""
+        leaked_key = _RAW_TRANSLATION_KEY_RE.search(surface_text)
         assert leaked_key is None, (path, leaked_key.group(0) if leaked_key else None)
 
 
@@ -66,6 +66,8 @@ def test_visible_interactive_controls_keep_readable_type_and_target_size(page: P
     supporting_text_selector = "main small, main label, main p, main .muted"
     for path in _SURFACES:
         _settle(page, path)
+        page.locator("details").evaluate_all("elements => elements.forEach(el => { el.open = true; })")
+        page.wait_for_timeout(20)
         violations = page.locator(control_selector).evaluate_all(
             """elements => elements.flatMap(el => {
                 const style = getComputedStyle(el);
