@@ -36,7 +36,7 @@
 </section>
 
 <details class="panel edinet-advanced" style="margin-top:12px">
-  <summary>{{ e('edinet.daily_lookup') }}</summary>
+  <summary class="section-heading">{{ e('edinet.daily_lookup') }}</summary>
   <p class="edinet-section-note">{{ e('edinet.daily_note') }}</p>
   <form id="edinet-form" class="edinet-controls">
     <label>{{ e('edinet.date') }}<input id="edinet-date" type="date" required></label>
@@ -56,7 +56,7 @@
 </section>
 
 <details id="edinet-facts-panel" class="panel edinet-advanced" style="margin-top:12px" hidden>
-  <summary>{{ e('edinet.raw_facts') }}</summary>
+  <summary class="section-heading">{{ e('edinet.raw_facts') }}</summary>
   <p class="edinet-section-note">{{ e('edinet.fact_query') }}</p>
   <form id="edinet-fact-form" class="edinet-fact-form"><input id="edinet-fact-query" type="search" maxlength="100" placeholder="{{ e('edinet.fact_query') }}"><button class="ghost" type="submit">{{ e('edinet.search') }}</button></form>
   <div id="edinet-fact-status" class="edinet-status-line"></div>
