@@ -75,7 +75,7 @@ def test_beginner_ux_pages_explain_actions_and_use_neutral_examples() -> None:
     assert 'data-indicator-token="rsi14"' in instrument.text
     assert "財務から機械的に読めること" in instrument.text
     assert "アナリスト予想" in instrument.text
-    assert instrument.text.count('data-ai-prompt=') == 1
+    assert instrument.text.count("data-ai-prompt=") == 1
     assert 'class="ghost analyst-ai-action"' in instrument.text
     assert "Bull / Base / Bear" in instrument.text
     assert "事実と推論を分けて" in instrument.text
