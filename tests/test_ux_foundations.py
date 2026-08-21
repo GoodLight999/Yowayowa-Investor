@@ -75,7 +75,10 @@ def test_beginner_ux_pages_explain_actions_and_use_neutral_examples() -> None:
     assert 'data-indicator-token="rsi14"' in instrument.text
     assert "財務から機械的に読めること" in instrument.text
     assert "アナリスト予想" in instrument.text
-    assert "AI見通し（根拠付き）" in instrument.text
+    assert instrument.text.count('data-ai-prompt=') == 1
+    assert 'class="ghost analyst-ai-action"' in instrument.text
+    assert "Bull / Base / Bear" in instrument.text
+    assert "事実と推論を分けて" in instrument.text
 
     portfolio_symbol = _input_tag(portfolio.text, "position-symbol")
     assert 'placeholder="AAPL"' in portfolio_symbol
@@ -101,6 +104,7 @@ def test_shared_assets_are_fingerprinted_external_and_immutable() -> None:
         "ux.css",
         "product.css",
         "pages.css",
+        "interface.css",
         "product.js",
         "app.js",
         "ux.js",
@@ -123,6 +127,8 @@ def test_shared_assets_are_fingerprinted_external_and_immutable() -> None:
     assert "max-width: 100%; overflow-x: hidden" in asset_responses["ux.css"].text
     assert ".composer-layout" in asset_responses["pages.css"].text
     assert ".edinet-controls" in asset_responses["pages.css"].text
+    assert ".home-primary" in asset_responses["interface.css"].text
+    assert ".nav-group" in asset_responses["interface.css"].text
     assert stale_asset.status_code == 404
 
 
