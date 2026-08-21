@@ -387,6 +387,13 @@ th,
   text-transform: none;
 }
 
+th small,
+.research-table th small {
+  display: block;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 td,
 .research-table td {
   padding: 10px;
