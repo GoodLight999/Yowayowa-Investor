@@ -32,7 +32,7 @@ def _series(key: str, values: list[tuple[int, str]], unit: str = "USD") -> Metri
     )
 
 
-def test_valuation_uses_current_price_and_latest_annual_sec_facts() -> None:
+def test_valuation_uses_current_price_and_latest_annual_financial_facts() -> None:
     facts = Fundamentals(
         symbol="AAA",
         cik="0001",
@@ -80,6 +80,42 @@ def test_valuation_uses_current_price_and_latest_annual_sec_facts() -> None:
     assert result.metrics["earnings_yield"] == 0.05
     assert result.metrics["free_cash_flow_yield"] == 0.1
     assert result.metrics["revenue_growth_yoy"] == 0.25
+    assert "financial-statement facts from this provider" in result.provenance[0].notes[-1]
+
+
+def test_valuation_provenance_does_not_claim_sec_for_non_sec_provider() -> None:
+    facts = Fundamentals(
+        symbol="7203.T",
+        cik=None,
+        company_name="Toyota Motor Corporation",
+        metrics={
+            "revenue": _series("revenue", [(2025, "100")], "JPY"),
+            "shares_diluted": _series("shares_diluted", [(2025, "10")], "shares"),
+        },
+        provenance=Provenance(
+            provider="yahoo/yfinance",
+            source="Yahoo Finance financial statements",
+            license_class=LicenseClass.PERSONAL_ONLY,
+            retrieved_at="2026-08-13T00:00:00Z",
+        ),
+    )
+    quotes = MarketQuoteBatch(
+        quotes={
+            "7203.T": MarketQuote(symbol="7203.T", price=20, as_of="2026-08-12T00:00:00Z")
+        },
+        provenance=Provenance(
+            provider="yahoo/yfinance",
+            source="Yahoo Finance",
+            license_class=LicenseClass.PERSONAL_ONLY,
+            retrieved_at="2026-08-13T00:00:00Z",
+        ),
+    )
+
+    result = valuation_snapshot(facts, quotes)
+
+    valuation_note = result.provenance[0].notes[-1]
+    assert "SEC" not in valuation_note
+    assert "this provider" in valuation_note
 
 
 def test_valuation_does_not_report_misleading_negative_multiple() -> None:
