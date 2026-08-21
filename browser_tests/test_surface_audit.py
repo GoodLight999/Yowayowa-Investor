@@ -74,7 +74,10 @@ def test_core_interface_does_not_shrink_primary_text_into_microcopy(page: Page) 
         page.goto(f"{BASE_URL}/?lang=ja", wait_until="domcontentloaded")
         sizes = page.evaluate(
             """() => {
-                const px = selector => parseFloat(getComputedStyle(document.querySelector(selector)).fontSize);
+                const px = selector => {
+                    const node = document.querySelector(selector);
+                    return parseFloat(getComputedStyle(node).fontSize);
+                };
                 return {
                     body: px('body'),
                     nav: px('.nav a'),
