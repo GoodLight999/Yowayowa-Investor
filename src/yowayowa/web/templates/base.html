@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="{{ a('ux.css') }}" data-turbo-track="reload">
   <link rel="stylesheet" href="{{ a('product.css') }}" data-turbo-track="reload">
   <link rel="stylesheet" href="{{ a('pages.css') }}" data-turbo-track="reload">
+  <link rel="stylesheet" href="{{ a('interface.css') }}" data-turbo-track="reload">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -48,17 +49,20 @@
         {% endif %}
       </nav>
       <div class="topbar-meta">
-        {% if app_mode == 'public' %}<div><span class="status-dot live" aria-hidden="true"></span><span>PUBLIC · {{ t('status.live') }}</span></div>
-        {% else %}<div><span class="status-dot" aria-hidden="true"></span><span id="api-status">API</span></div>{% endif %}
         <div>{% if app_mode == 'public' %}PUBLIC RESEARCH{% else %}{{ t('workspace.personal') }}{% endif %}</div>
       </div>
     </aside>
     <div class="main-shell">
       <header class="masthead">
-        <span>YOWAYOWA INVESTOR</span>
+        <div class="masthead-primary">
+          {% if app_mode == 'personal' %}
+          <button id="command-trigger" class="command-trigger" type="button" aria-haspopup="dialog" aria-controls="command-palette"><span>{{ x('command.open') }}</span><kbd>Ctrl K</kbd></button>
+          {% else %}
+          <span>PUBLIC RESEARCH</span>
+          {% endif %}
+        </div>
         <div class="masthead-actions">
-          {% if app_mode == 'personal' %}<button id="command-trigger" class="command-trigger" type="button" aria-haspopup="dialog" aria-controls="command-palette"><span>{{ x('command.open') }}</span><kbd>Ctrl K</kbd></button>{% endif %}
-          <span>{{ t('masthead.research') }}</span>
+          <span class="masthead-status"><span class="status-dot {% if app_mode == 'public' %}live{% endif %}" aria-hidden="true"></span>{% if app_mode == 'personal' %}<span id="api-status">API</span>{% else %}<span>PUBLIC · {{ t('status.live') }}</span>{% endif %}</span>
           <div class="locale-switcher" role="group" aria-label="{{ t('language.switcher') }}">
             <button class="locale-button {% if locale == 'ja' %}is-active{% endif %}" type="button" data-locale="ja" lang="ja">{{ t('language.ja') }}</button><span aria-hidden="true">/</span><button class="locale-button {% if locale == 'en' %}is-active{% endif %}" type="button" data-locale="en" lang="en">{{ t('language.en') }}</button>
           </div>
