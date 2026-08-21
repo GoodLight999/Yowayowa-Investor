@@ -46,12 +46,14 @@
   </section>
 </div>
 
-<details class="panel advanced-tools settings-provider-panel">
-  <summary>
-    <span>{{ u('settings.provider_catalog') }}</span>
-    <span class="muted">{% if locale == 'ja' %}必要なときだけ開く{% else %}Open when needed{% endif %}</span>
-  </summary>
-  <div class="settings-provider-copy"><p class="ux-note">{% if locale == 'ja' %}使うAIプロバイダだけ有効にしてください。使わないサービスは一覧と選択肢から隠せます。{% else %}Enable only the AI providers you use. Unused services can stay hidden from the list and selector.{% endif %}</p></div>
+<section class="panel settings-provider-panel">
+  <div class="section-heading">
+    <div>
+      <h2>{{ u('settings.provider_catalog') }}</h2>
+      <small class="term-note">{% if locale == 'ja' %}現在有効な接続先だけを表示します。追加・削除は下の「利用するプロバイダを管理」から行います。{% else %}Only enabled providers are shown here. Add or remove providers from Manage enabled providers below.{% endif %}</small>
+    </div>
+  </div>
+  <div class="settings-provider-copy"><p class="ux-note">{% if locale == 'ja' %}普段使わないサービスは選択肢から隠せます。セルフホスト専用の接続先は、ホスト版では有効化できません。{% else %}Hide services you do not use from normal selectors. Self-host-only endpoints cannot be enabled on the hosted deployment.{% endif %}</p></div>
   <div id="provider-catalog" class="provider-catalog"><div class="list-state muted">{{ t('common.loading_ellipsis') }}</div></div>
-</details>
+</section>
 {% endblock %}
