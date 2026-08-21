@@ -26,7 +26,7 @@
   </div>
 
   <details class="home-operator">
-    <summary>{% if locale == 'ja' %}自然文で操作{% else %}Natural-language command{% endif %}</summary>
+    <summary class="section-heading">{% if locale == 'ja' %}自然文で操作{% else %}Natural-language command{% endif %}</summary>
     <form id="operator-form" class="operator-form">
       <textarea id="operator-input" rows="2" placeholder="{{ u('dashboard.command_placeholder') }}"></textarea>
       <button type="submit">{{ t('common.run') }}</button>
