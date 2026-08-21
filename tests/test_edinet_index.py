@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -66,10 +68,15 @@ class FakeEdinetClient:
         }
 
 
-def _session() -> Session:
+@contextmanager
+def _session() -> Iterator[Session]:
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
-    return Session(engine)
+    try:
+        with Session(engine) as session:
+            yield session
+    finally:
+        engine.dispose()
 
 
 def test_edinet_index_sync_and_company_history_are_idempotent_and_coverage_aware() -> None:
