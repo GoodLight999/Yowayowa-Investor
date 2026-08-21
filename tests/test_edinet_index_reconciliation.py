@@ -32,28 +32,31 @@ class EmptyEdinetClient:
 def test_edinet_resync_removes_filing_no_longer_present_in_official_day() -> None:
     filing_date = date(2026, 6, 20)
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    with Session(engine) as session:
-        session.add(
-            EdinetFilingRecord(
-                doc_id="S100TEST",
-                filing_date=filing_date,
-                edinet_code="E00001",
-                security_code="72030",
-                filer_name="株式会社テスト",
-                xbrl_available=True,
-                csv_available=True,
-                indexed_at=datetime.now(UTC),
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add(
+                EdinetFilingRecord(
+                    doc_id="S100TEST",
+                    filing_date=filing_date,
+                    edinet_code="E00001",
+                    security_code="72030",
+                    filer_name="株式会社テスト",
+                    xbrl_available=True,
+                    csv_available=True,
+                    indexed_at=datetime.now(UTC),
+                )
             )
-        )
-        session.commit()
+            session.commit()
 
-        synced = sync_filing_day(  # type: ignore[arg-type]
-            session,
-            EmptyEdinetClient(),
-            filing_date,
-        )
-        rows = list(session.scalars(select(EdinetFilingRecord)).all())
+            synced = sync_filing_day(  # type: ignore[arg-type]
+                session,
+                EmptyEdinetClient(),
+                filing_date,
+            )
+            rows = list(session.scalars(select(EdinetFilingRecord)).all())
 
-    assert synced == 0
-    assert rows == []
+        assert synced == 0
+        assert rows == []
+    finally:
+        engine.dispose()
