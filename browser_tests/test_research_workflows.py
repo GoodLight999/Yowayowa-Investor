@@ -142,6 +142,10 @@ def test_alert_create_evaluate_and_delete_flow(page: Page) -> None:
     )
 
     page.goto(f"{BASE_URL}/alerts?lang=en", wait_until="networkidle")
+    manage = page.locator(".alerts-manage-panel")
+    expect(manage).not_to_have_attribute("open", "")
+    manage.locator("summary").click()
+    expect(page.locator("#alert-symbol")).to_be_visible()
     page.locator("#alert-symbol").fill("RKLB")
     page.locator("#alert-target").fill("100")
     page.get_by_role("button", name="Add", exact=True).click()
