@@ -67,13 +67,16 @@ def test_visible_interactive_controls_keep_readable_type_and_target_size(page: P
                 const fontSize = Number.parseFloat(style.fontSize);
                 const problems = [];
                 if (!compact && fontSize < 12) problems.push(`font ${fontSize}px`);
-                if (!compact && rect.height < 36) problems.push(`height ${rect.height.toFixed(1)}px`);
+                if (!compact && rect.height < 36) {
+                    problems.push(`height ${rect.height.toFixed(1)}px`);
+                }
                 if (problems.length === 0) return [];
+                const label = el.textContent || el.getAttribute('aria-label') || '';
                 return [{
                     tag: el.tagName.toLowerCase(),
                     id: el.id || null,
                     className: typeof el.className === 'string' ? el.className : '',
-                    text: (el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 80),
+                    text: label.trim().slice(0, 80),
                     problems,
                 }];
             })"""
