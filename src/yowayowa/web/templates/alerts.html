@@ -2,51 +2,70 @@
 {% block title %}{{ t('alerts.title') }} · Yowayowa-Investor{% endblock %}
 {% block content %}
 <section class="page-head">
-  <h1>{{ t('alerts.title') }}</h1>
+  <div>
+    <h1>{{ t('alerts.title') }}</h1>
+    <p class="ux-subtitle">{% if locale == 'ja' %}価格条件と今後の企業イベントを、まず確認してから必要な監視条件を追加します。{% else %}Review price conditions and upcoming company events first, then add monitoring rules when needed.{% endif %}</p>
+  </div>
   <button id="evaluate-alerts" class="primary" type="button">{{ t('alerts.evaluate') }}</button>
 </section>
+
+<section class="panel alerts-inbox-panel">
+  <div class="section-heading">
+    <div>
+      <h2>{{ x('events.inbox') }}</h2>
+      <small class="term-note">{% if locale == 'ja' %}監視対象で近づいている決算・配当などを時系列で確認します。{% else %}Upcoming earnings, dividends and other tracked events appear here in time order.{% endif %}</small>
+    </div>
+    <span id="event-inbox-count" class="pill">—</span>
+  </div>
+  <div id="event-inbox" class="table-wrap muted" style="padding:12px">{{ t('common.loading_ellipsis') }}</div>
+</section>
+
 <div class="grid grid-2 alerts-layout">
-  <section class="panel">
-    <div class="section-heading"><h2>{{ t('alerts.new') }}</h2></div>
-    <form id="alert-form" class="stack-form">
-      <label class="field"><span>{{ t('common.symbol') }}</span><input id="alert-symbol" required maxlength="32" placeholder="AAPL"></label>
-      <label class="field"><span>{{ t('alerts.operator') }}</span><select id="alert-operator"><option value="above">{{ t('alerts.above') }}</option><option value="below">{{ t('alerts.below') }}</option></select></label>
-      <label class="field"><span>{{ t('alerts.target') }}</span><input id="alert-target" required type="number" min="0" step="any" placeholder="100"></label>
-      <button class="primary" type="submit">{{ t('common.add') }}</button>
-    </form>
-    <p id="alert-message" class="form-message muted"></p>
-  </section>
   <section class="panel">
     <div class="section-heading"><h2>{{ t('alerts.list') }}</h2><span id="alerts-as-of" class="pill">—</span></div>
     <div id="alerts-list" class="table-wrap muted" style="padding:12px">{{ t('common.loading_ellipsis') }}</div>
-  </section>
-</div>
-<div class="grid grid-2 alerts-layout">
-  <section class="panel">
-    <div class="section-heading"><h2>{{ x('events.new_subscription') }}</h2></div>
-    <form id="event-subscription-form" class="stack-form">
-      <label class="field"><span>{{ x('events.scope') }}</span><select id="event-scope"><option value="all">{{ c('calendar.scope.saved') }}</option></select></label>
-      <div class="field">
-        <span>{{ x('events.types') }}</span>
-        <div class="metric-picker" id="event-types">
-          <label class="metric-option"><input type="checkbox" value="earnings" checked> {{ c('calendar.earnings') }}</label>
-          <label class="metric-option"><input type="checkbox" value="dividend" checked> {{ c('calendar.dividend') }}</label>
-        </div>
-      </div>
-      <label class="field"><span>{{ x('events.lead_days') }}</span><input id="event-lead-days" type="number" min="0" max="30" value="7" required></label>
-      <button class="primary" type="submit">{{ x('events.create') }}</button>
-    </form>
-    <p id="event-message" class="form-message muted"></p>
   </section>
   <section class="panel">
     <div class="section-heading"><h2>{{ x('events.subscriptions') }}</h2></div>
     <div id="event-subscriptions" class="table-wrap muted" style="padding:12px">{{ t('common.loading_ellipsis') }}</div>
   </section>
 </div>
-<section class="panel" style="margin-top:12px">
-  <div class="section-heading"><h2>{{ x('events.inbox') }}</h2><span id="event-inbox-count" class="pill">—</span></div>
-  <div id="event-inbox" class="table-wrap muted" style="padding:12px">{{ t('common.loading_ellipsis') }}</div>
-</section>
+
+<details class="panel advanced-tools alerts-manage-panel">
+  <summary>
+    <span>{% if locale == 'ja' %}監視条件を追加・管理{% else %}Add or manage monitoring rules{% endif %}</span>
+    <span class="muted">{% if locale == 'ja' %}必要なときだけ開く{% else %}Open when needed{% endif %}</span>
+  </summary>
+  <div class="grid grid-2 alerts-layout alerts-manage-grid">
+    <section>
+      <div class="section-heading"><h2>{{ t('alerts.new') }}</h2></div>
+      <form id="alert-form" class="stack-form">
+        <label class="field"><span>{{ t('common.symbol') }}</span><input id="alert-symbol" required maxlength="32" placeholder="AAPL"></label>
+        <label class="field"><span>{{ t('alerts.operator') }}</span><select id="alert-operator"><option value="above">{{ t('alerts.above') }}</option><option value="below">{{ t('alerts.below') }}</option></select></label>
+        <label class="field"><span>{{ t('alerts.target') }}</span><input id="alert-target" required type="number" min="0" step="any" placeholder="100"></label>
+        <button class="primary" type="submit">{{ t('common.add') }}</button>
+      </form>
+      <p id="alert-message" class="form-message muted"></p>
+    </section>
+    <section>
+      <div class="section-heading"><h2>{{ x('events.new_subscription') }}</h2></div>
+      <form id="event-subscription-form" class="stack-form">
+        <label class="field"><span>{{ x('events.scope') }}</span><select id="event-scope"><option value="all">{{ c('calendar.scope.saved') }}</option></select></label>
+        <div class="field">
+          <span>{{ x('events.types') }}</span>
+          <div class="metric-picker" id="event-types">
+            <label class="metric-option"><input type="checkbox" value="earnings" checked> {{ c('calendar.earnings') }}</label>
+            <label class="metric-option"><input type="checkbox" value="dividend" checked> {{ c('calendar.dividend') }}</label>
+          </div>
+        </div>
+        <label class="field"><span>{{ x('events.lead_days') }}</span><input id="event-lead-days" type="number" min="0" max="30" value="7" required></label>
+        <button class="primary" type="submit">{{ x('events.create') }}</button>
+      </form>
+      <p id="event-message" class="form-message muted"></p>
+    </section>
+  </div>
+</details>
+
 <section class="panel" style="margin-top:12px">
   <div class="section-heading"><h2>{{ t('common.source') }}</h2></div>
   <div id="alerts-provenance" class="provenance-card muted">{{ t('alerts.not_evaluated') }}</div>
