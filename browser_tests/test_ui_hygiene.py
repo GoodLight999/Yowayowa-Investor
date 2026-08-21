@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from playwright.sync_api import Page
 
 BASE_URL = "http://127.0.0.1:8000"
@@ -24,6 +26,12 @@ _SURFACES = (
     "/instrument/AAPL",
 )
 
+_RAW_TRANSLATION_KEY_RE = re.compile(
+    r"\b(?:common|nav|dashboard|market|discover|portfolio|settings|ai|alerts|events|calendar|"
+    r"instrument|compare|screener|chart|charts|news|macro|rate|rates|institutional|edinet|"
+    r"licensing|risk|sector)\.[A-Za-z0-9_.-]+\b"
+)
+
 
 def _settle(page: Page, path: str) -> None:
     response = page.goto(f"{BASE_URL}{path}", wait_until="domcontentloaded")
@@ -45,6 +53,9 @@ def test_primary_surfaces_do_not_create_root_horizontal_overflow_on_phone(page: 
             path,
             metrics,
         )
+        visible_text = page.locator("body").inner_text()
+        leaked_key = _RAW_TRANSLATION_KEY_RE.search(visible_text)
+        assert leaked_key is None, (path, leaked_key.group(0) if leaked_key else None)
 
 
 def test_visible_interactive_controls_keep_readable_type_and_target_size(page: Page) -> None:
