@@ -77,7 +77,7 @@
     <div id="command-results" class="command-results" role="listbox" aria-label="{{ x('command.title') }}"></div>
     <div class="command-foot"><span id="command-title">{{ x('command.title') }}</span><span>{{ x('command.hint') }}</span></div>
   </dialog>
-  <aside id="context-ai-drawer" class="context-ai-drawer" aria-label="{{ u('ai.context.title') }}">
+  <aside id="context-ai-drawer" class="context-ai-drawer" aria-label="{{ u('ai.context.title') }}" aria-hidden="true" inert>
     <div class="context-ai-head"><strong>{{ u('ai.context.title') }}</strong><button id="context-ai-close" class="ghost" type="button" aria-label="{% if locale == 'ja' %}AIパネルを閉じる{% else %}Close AI panel{% endif %}">×</button></div>
     <div id="context-ai-section" class="context-ai-section">—</div>
     <div id="context-ai-answer" class="context-ai-answer"></div>
