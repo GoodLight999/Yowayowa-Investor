@@ -8,6 +8,7 @@
   let firstTurboLoad = true;
   let activeSection = null;
   let serverAIReady = null;
+  let drawerOpener = null;
   const contextMessages = [];
 
   const ja = window.YOWAYOWA_LOCALE === 'ja';
@@ -72,7 +73,17 @@
   }
 
   function ensureDrawer() { return document.querySelector('#context-ai-drawer'); }
-  function closeDrawer() { ensureDrawer()?.classList.remove('is-open'); }
+
+  function closeDrawer() {
+    const drawer = ensureDrawer();
+    if (!drawer) return;
+    const wasOpen = drawer.classList.contains('is-open');
+    drawer.classList.remove('is-open');
+    drawer.setAttribute('aria-hidden', 'true');
+    drawer.inert = true;
+    if (wasOpen && drawerOpener?.isConnected) drawerOpener.focus();
+    drawerOpener = null;
+  }
 
   function sectionContext(element) {
     const container = element.closest('.panel, .sheet, section, article, main') || element;
@@ -86,12 +97,15 @@
   function openDrawer(element, preset = '') {
     const drawer = ensureDrawer();
     if (!drawer) return;
+    drawerOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     activeSection = sectionContext(element);
     drawer.querySelector('#context-ai-section').textContent = activeSection.heading;
     const prompt = drawer.querySelector('#context-ai-prompt');
     if (preset) prompt.value = preset;
     drawer.querySelector('#context-ai-answer').textContent = '';
     drawer.querySelector('#context-ai-trace').textContent = '';
+    drawer.inert = false;
+    drawer.setAttribute('aria-hidden', 'false');
     drawer.classList.add('is-open');
     window.requestAnimationFrame(() => prompt.focus());
   }
@@ -99,6 +113,7 @@
   function injectAIButtons() {
     if (!contextualEnabled()) {
       document.querySelectorAll('.section-ai-button').forEach(button => button.remove());
+      closeDrawer();
       return;
     }
     const { t } = window.Yowayowa || {};
@@ -198,6 +213,8 @@
     const drawer = ensureDrawer();
     if (!drawer || drawer.dataset.bound === 'true') return;
     drawer.dataset.bound = 'true';
+    drawer.inert = !drawer.classList.contains('is-open');
+    drawer.setAttribute('aria-hidden', drawer.classList.contains('is-open') ? 'false' : 'true');
     drawer.querySelector('#context-ai-close')?.addEventListener('click', closeDrawer);
     drawer.querySelector('#context-ai-form')?.addEventListener('submit', askContextAI);
     drawer.querySelector('#context-ai-prompt')?.addEventListener('keydown', event => {
