@@ -306,7 +306,7 @@
       let state = ready ? (ja ? '利用可能' : 'Ready') : (ja ? '未設定' : 'Not configured');
       if (key === 'edinet' && serverReady) state = ja ? 'サーバーで利用可能' : 'Ready · server';
       else if (key === 'edinet' && browserEdinet) state = ja ? 'このタブで利用可能' : 'Ready · browser tab';
-      return `<div class="capability" data-source="${escapeHtml(key)}"><strong>${escapeHtml(label)}</strong><span class="ux-note ${ready ? 'badge-ok' : 'muted'}">${escapeHtml(state)}</span></div>`;
+      return `<div class="capability" data-source="${escapeHtml(key)}"><strong>${escapeHtml(label)}</strong><small class="ux-note ${ready ? 'badge-ok' : 'muted'}">${escapeHtml(state)}</small></div>`;
     }).join('');
   }
 
