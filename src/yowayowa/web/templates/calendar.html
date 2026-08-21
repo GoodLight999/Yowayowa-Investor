@@ -1,18 +1,13 @@
 {% extends "base.html" %}
 {% block title %}{{ u('calendar.title') }} · Yowayowa-Investor{% endblock %}
 {% block content %}
-<section class="page-head"><div><h1>{{ u('calendar.title') }}</h1><p class="ux-subtitle">{{ u('calendar.subtitle') }}</p></div></section>
+<section class="page-head">
+  <div><h1>{{ u('calendar.title') }}</h1><p class="ux-subtitle">{{ u('calendar.subtitle') }}</p></div>
+</section>
 
-<div class="calendar-help">
-  <div class="calendar-help-item">{{ u('calendar.term.earnings') }}</div>
-  <div class="calendar-help-item">{{ u('calendar.term.economic') }}</div>
-  <div class="calendar-help-item">{{ u('calendar.term.ipo') }}</div>
-  <div class="calendar-help-item">{{ u('calendar.term.split') }}</div>
-</div>
-
-<section class="panel">
+<section class="panel calendar-query-panel">
   <form id="calendar-form" class="screen-form">
-    <div class="calendar-quick">
+    <div class="calendar-quick" aria-label="{% if locale == 'ja' %}期間プリセット{% else %}Date range presets{% endif %}">
       <button class="ghost" type="button" data-calendar-range="week">{{ u('calendar.quick_week') }}</button>
       <button class="ghost" type="button" data-calendar-range="30">{{ u('calendar.quick_30') }}</button>
       <button class="ghost" type="button" data-calendar-range="90">{{ u('calendar.quick_90') }}</button>
@@ -39,11 +34,22 @@
       <label class="metric-option"><input type="checkbox" name="calendar-tracked-type" value="earnings" checked> {{ t('calendar.earnings') }} / Earnings</label>
       <label class="metric-option"><input type="checkbox" name="calendar-tracked-type" value="dividend" checked> {{ c('calendar.dividend') }} / Dividend</label>
     </div>
-    <button class="primary" type="submit">{{ t('common.run') }}</button>
+    <div class="toolbar calendar-query-actions">
+      <button class="primary" type="submit">{{ t('common.run') }}</button>
+      <details class="calendar-terms">
+        <summary>{% if locale == 'ja' %}イベント用語を確認{% else %}Event terminology{% endif %}</summary>
+        <div class="calendar-help">
+          <div class="calendar-help-item">{{ u('calendar.term.earnings') }}</div>
+          <div class="calendar-help-item">{{ u('calendar.term.economic') }}</div>
+          <div class="calendar-help-item">{{ u('calendar.term.ipo') }}</div>
+          <div class="calendar-help-item">{{ u('calendar.term.split') }}</div>
+        </div>
+      </details>
+    </div>
   </form>
 </section>
 <section class="panel" style="margin-top:12px">
-  <div class="section-heading"><div><h2>{{ t('calendar.events') }}</h2><small class="term-note">日時順に表示します。ティッカーを指定すると、その銘柄に絞れます。</small></div><span id="calendar-as-of" class="pill">—</span></div>
+  <div class="section-heading"><div><h2>{{ t('calendar.events') }}</h2><small class="term-note">{% if locale == 'ja' %}日時順に表示します。ティッカーを指定すると、その銘柄に絞れます。{% else %}Events are ordered by time. Add a ticker above to focus on one security.{% endif %}</small></div><span id="calendar-as-of" class="pill">—</span></div>
   <div id="calendar-results" class="table-wrap muted" style="padding:12px">{{ t('calendar.loading') }}</div>
 </section>
 <section class="panel" style="margin-top:12px">
