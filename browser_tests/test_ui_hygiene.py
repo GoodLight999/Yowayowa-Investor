@@ -66,7 +66,9 @@ def test_visible_interactive_controls_keep_readable_type_and_target_size(page: P
     supporting_text_selector = "main small, main label, main p, main .muted"
     for path in _SURFACES:
         _settle(page, path)
-        page.locator("details").evaluate_all("elements => elements.forEach(el => { el.open = true; })")
+        page.locator("details").evaluate_all(
+            "elements => elements.forEach(el => { el.open = true; })"
+        )
         page.wait_for_timeout(20)
         violations = page.locator(control_selector).evaluate_all(
             """elements => elements.flatMap(el => {
