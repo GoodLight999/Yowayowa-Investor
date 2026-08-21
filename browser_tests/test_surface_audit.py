@@ -88,10 +88,10 @@ def test_core_interface_does_not_shrink_primary_text_into_microcopy(page: Page) 
             }"""
         )
         assert sizes["body"] >= 14, sizes
-        assert sizes["nav"] >= 11, sizes
+        assert sizes["nav"] >= 13, sizes
         assert sizes["search"] >= 14, sizes
-        assert sizes["searchButton"] >= 12, sizes
-        assert sizes["subtitle"] >= 12, sizes
+        assert sizes["searchButton"] >= 13, sizes
+        assert sizes["subtitle"] >= 13, sizes
 
 
 def test_generic_surfaces_do_not_leak_owner_specific_ticker_examples(page: Page) -> None:
