@@ -84,6 +84,13 @@
 #edinet-company-results { max-height:280px; overflow:auto; border-top:1px solid var(--line); }
 .edinet-advanced > summary { padding:10px 11px; border-bottom:1px solid var(--line); cursor:pointer; font-weight:700; }
 
+.portfolio-history-state { min-height:96px; padding:12px 13px; }
+.settings-provider-panel { margin-top:16px; }
+.settings-provider-panel > summary { display:flex; justify-content:space-between; gap:12px; align-items:center; min-height:44px; padding:10px 13px; cursor:pointer; }
+.settings-provider-copy { padding:0 13px 10px; }
+.settings-ai-actions { align-items:center; }
+.discover-run-actions { margin-top:14px; }
+
 @media (max-width:900px) {
   .composer-layout { grid-template-columns:1fr; }
   .composer-row, .composer-row.formula { grid-template-columns:repeat(2,minmax(0,1fr)); }
