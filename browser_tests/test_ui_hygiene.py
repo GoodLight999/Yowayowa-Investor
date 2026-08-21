@@ -49,7 +49,7 @@ def test_primary_surfaces_do_not_create_root_horizontal_overflow_on_phone(page: 
 
 def test_visible_interactive_controls_keep_readable_type_and_target_size(page: Page) -> None:
     page.set_viewport_size({"width": 1280, "height": 900})
-    selector = "button, input:not([type='hidden']), select, textarea, .nav a"
+    selector = "button, input:not([type='hidden']), select, textarea, .nav a, details > summary"
     for path in _SURFACES:
         _settle(page, path)
         violations = page.locator(selector).evaluate_all(
