@@ -4,9 +4,10 @@
 <section class="page-heading">
   <div>
     <h1>{{ x('discover.title') }}</h1>
-    <p>{{ x('discover.subtitle') }}</p>
+    <p class="ux-subtitle">{{ x('discover.subtitle') }}</p>
   </div>
 </section>
+
 <section class="sheet">
   <form id="discover-form">
     <div class="research-toolbar">
@@ -18,33 +19,45 @@
         <label for="discover-region">{{ x('discover.region') }}</label>
         <select id="discover-region"><option value="">ALL</option></select>
       </div>
-      <div class="field">
-        <label for="discover-sort">{{ x('discover.sort') }}</label>
-        <select id="discover-sort"><option value="">—</option></select>
-      </div>
-      <div class="field compact">
-        <label for="discover-order">{{ x('discover.order') }}</label>
-        <select id="discover-order">
-          <option value="desc">{{ x('discover.desc') }}</option>
-          <option value="asc">{{ x('discover.asc') }}</option>
-        </select>
-      </div>
-      <div class="field compact">
-        <label for="discover-size">{{ x('discover.size') }}</label>
-        <select id="discover-size"><option>25</option><option selected>100</option><option>250</option></select>
-      </div>
     </div>
+
     <div class="section-title-line">
-      <h2>{{ x('discover.filters') }}</h2>
+      <div>
+        <h2>{{ x('discover.filters') }}</h2>
+        <p class="ux-note">{% if locale == 'ja' %}必要な条件だけ追加してください。並び順や取得件数は「表示設定」から変更できます。{% else %}Add only the conditions that matter. Sorting and result count live under Display settings.{% endif %}</p>
+      </div>
       <button class="ghost" id="discover-add-filter" type="button">{{ x('discover.add_filter') }}</button>
     </div>
     <div class="research-filter-list" id="discover-filters"></div>
-    <div class="research-actions">
+
+    <details class="advanced-tools discover-display-settings">
+      <summary>{% if locale == 'ja' %}表示設定{% else %}Display settings{% endif %}</summary>
+      <div class="advanced-tools-links research-toolbar">
+        <div class="field">
+          <label for="discover-sort">{{ x('discover.sort') }}</label>
+          <select id="discover-sort"><option value="">—</option></select>
+        </div>
+        <div class="field compact">
+          <label for="discover-order">{{ x('discover.order') }}</label>
+          <select id="discover-order">
+            <option value="desc">{{ x('discover.desc') }}</option>
+            <option value="asc">{{ x('discover.asc') }}</option>
+          </select>
+        </div>
+        <div class="field compact">
+          <label for="discover-size">{{ x('discover.size') }}</label>
+          <select id="discover-size"><option selected>25</option><option>100</option><option>250</option></select>
+        </div>
+      </div>
+    </details>
+
+    <div class="research-actions" style="margin-top:14px">
       <button class="primary" type="submit">{{ x('discover.run') }}</button>
       <span class="muted" id="discover-status">{{ x('discover.catalog_loading') }}</span>
     </div>
   </form>
 </section>
+
 <section class="sheet">
   <div class="section-title-line">
     <h2>{{ x('discover.results') }}</h2>
@@ -59,4 +72,3 @@
   <div class="provider-source-note" id="discover-provenance"></div>
 </section>
 {% endblock %}
-{% block scripts %}<script src="/static/discover.js"></script>{% endblock %}
