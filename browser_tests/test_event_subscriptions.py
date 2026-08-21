@@ -98,6 +98,11 @@ def test_event_subscription_inbox_workflow(page: Page) -> None:
     response = page.goto(f"{BASE_URL}/alerts?lang=en", wait_until="networkidle")
     assert response is not None and response.ok
 
+    expect(page.get_by_role("heading", name="Event inbox")).to_be_visible()
+    expect(page.get_by_role("heading", name="Event subscriptions")).to_be_visible()
+    manage = page.locator(".alerts-manage-panel")
+    expect(manage).not_to_have_attribute("open", "")
+    manage.locator("summary").click()
     expect(page.get_by_role("heading", name="New event subscription")).to_be_visible()
     page.get_by_role("button", name="Subscribe").click()
     expect(page.locator("#event-message")).to_contain_text("Event subscription saved")
