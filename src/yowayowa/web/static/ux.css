@@ -32,6 +32,18 @@ td:not(.numeric), th { overflow-wrap: anywhere; }
 .term-help { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
 .term-note { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; line-height: 1.45; }
 
+/* Disclosure summaries are controls, not miniature metadata. */
+.provider-manager > summary,
+.advanced-tools > summary,
+.ai-diagnostics > summary,
+.calendar-terms > summary,
+.edinet-advanced > summary,
+.home-operator > summary {
+  min-height: 38px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 .home-actions { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border:1px solid var(--line); background:var(--sheet); margin-bottom:14px; }
 .home-action { min-width:0; display:block; padding:13px 12px; border-right:1px solid var(--line); color:var(--ink); }
 .home-action:last-child { border-right:0; }
