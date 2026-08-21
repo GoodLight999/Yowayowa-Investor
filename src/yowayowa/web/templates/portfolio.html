@@ -2,7 +2,10 @@
 {% block title %}{{ t('portfolio.title') }} · Yowayowa-Investor{% endblock %}
 {% block content %}
 <section class="page-head">
-  <h1>{{ t('portfolio.title') }}</h1>
+  <div>
+    <h1>{{ t('portfolio.title') }}</h1>
+    <p class="ux-subtitle">{% if locale == 'ja' %}保有状況と損益を先に確認し、必要なときだけリスク分析や編集へ進みます。{% else %}Review holdings and performance first, then move into risk analysis or editing when needed.{% endif %}</p>
+  </div>
   <div class="portfolio-selector-row">
     <label class="field compact-field">
       <span>{{ t('portfolio.select') }}</span>
@@ -23,6 +26,10 @@
     <section class="panel portfolio-exposure-panel">
       <div class="section-heading"><h2>{{ t('portfolio.currency_exposure') }}</h2></div>
       <div id="currency-exposure" class="exposure-list muted">{{ t('portfolio.no_valuation') }}</div>
+    </section>
+    <section class="panel">
+      <div class="section-heading"><h2>{{ t('portfolio.history') }}</h2></div>
+      <div id="portfolio-history" class="portfolio-history-state muted">{{ t('portfolio.history_empty') }}</div>
     </section>
     <section class="panel portfolio-risk-panel">
       <div class="section-heading">
@@ -66,20 +73,8 @@
         <div id="risk-provenance" class="muted"></div>
       </div>
     </section>
-    <section class="panel">
-      <div class="section-heading"><h2>{{ t('portfolio.history') }}</h2></div>
-      <div id="portfolio-history" class="muted" style="padding:12px">{{ t('portfolio.history_empty') }}</div>
-    </section>
   </div>
-  <aside class="portfolio-side">
-    <section class="panel">
-      <div class="section-heading"><h2>{{ t('portfolio.create') }}</h2></div>
-      <form id="portfolio-create-form" class="stack-form">
-        <label class="field"><span>{{ t('portfolio.name') }}</span><input id="portfolio-name" required maxlength="100" placeholder="{{ t('portfolio.name_placeholder') }}"></label>
-        <label class="field"><span>{{ t('portfolio.base_currency') }}</span><input id="portfolio-base" required maxlength="3" value="USD"></label>
-        <button class="primary" type="submit">{{ t('portfolio.create') }}</button>
-      </form>
-    </section>
+  <aside class="portfolio-side" aria-label="{% if locale == 'ja' %}ポートフォリオ編集{% else %}Portfolio editing{% endif %}">
     <section class="panel">
       <div class="section-heading"><h2>{{ t('portfolio.position_heading') }}</h2></div>
       <form id="position-form" class="stack-form">
@@ -90,6 +85,14 @@
         <button class="primary" type="submit">{{ t('portfolio.save_position') }}</button>
       </form>
       <p id="portfolio-message" class="muted form-message"></p>
+    </section>
+    <section class="panel">
+      <div class="section-heading"><h2>{{ t('portfolio.create') }}</h2></div>
+      <form id="portfolio-create-form" class="stack-form">
+        <label class="field"><span>{{ t('portfolio.name') }}</span><input id="portfolio-name" required maxlength="100" placeholder="{{ t('portfolio.name_placeholder') }}"></label>
+        <label class="field"><span>{{ t('portfolio.base_currency') }}</span><input id="portfolio-base" required maxlength="3" value="USD"></label>
+        <button class="primary" type="submit">{{ t('portfolio.create') }}</button>
+      </form>
     </section>
     <section class="panel">
       <div class="section-heading"><h2>{{ t('portfolio.import_export') }}</h2></div>
@@ -107,4 +110,3 @@
   <div id="portfolio-provenance" class="provenance-card muted">{{ t('portfolio.waiting_for_valuation') }}</div>
 </section>
 {% endblock %}
-{% block scripts %}<script src="/static/portfolio.js"></script>{% endblock %}
