@@ -98,12 +98,13 @@ def valuation_snapshot(
     if fcf_period is not None:
         annual_periods.append(fcf_period)
 
-    sec_provenance = fundamentals.provenance.model_copy(
+    fundamentals_provenance = fundamentals.provenance.model_copy(
         update={
             "notes": [
                 *fundamentals.provenance.notes,
-                "Valuation denominators use the latest available annual SEC facts; they are not "
-                "consensus estimates or trailing-twelve-month reconstructions.",
+                "Valuation denominators use the latest available annual financial-statement facts "
+                "from this provider; they are not consensus estimates or trailing-twelve-month "
+                "reconstructions.",
             ]
         }
     )
@@ -124,6 +125,6 @@ def valuation_snapshot(
         market_cap=market_cap,
         annual_period_end=max(annual_periods) if annual_periods else None,
         metrics=metrics,
-        provenance=[sec_provenance, market_provenance],
+        provenance=[fundamentals_provenance, market_provenance],
         evaluated_at=datetime.now(UTC),
     )
