@@ -86,7 +86,7 @@ def test_valuation_uses_current_price_and_latest_annual_financial_facts() -> Non
 def test_valuation_provenance_does_not_claim_sec_for_non_sec_provider() -> None:
     facts = Fundamentals(
         symbol="7203.T",
-        cik=None,
+        cik="",
         company_name="Toyota Motor Corporation",
         metrics={
             "revenue": _series("revenue", [(2025, "100")], "JPY"),
