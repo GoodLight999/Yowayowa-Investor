@@ -54,7 +54,7 @@ button,
 .inline-form button {
   min-height: var(--control-height);
   padding: 8px 13px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.25;
   transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out, transform 90ms ease-out;
 }
@@ -106,12 +106,12 @@ h1 {
 }
 
 h2 {
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.25;
 }
 
 h3 {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.35;
 }
 
@@ -190,7 +190,7 @@ h3 {
   padding: 0 30px;
   color: var(--muted);
   background: rgba(243, 241, 235, .97);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0;
 }
 
@@ -216,17 +216,17 @@ h3 {
   padding: 5px 9px;
   border-color: var(--line-strong);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .command-trigger kbd {
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .locale-button {
   min-height: 28px;
   padding: 4px 0;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .content {
@@ -237,7 +237,7 @@ h3 {
 
 .footer {
   padding: 16px 28px 22px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .page-head,
@@ -262,7 +262,7 @@ h3 {
 .provider-source-note,
 .edinet-section-note,
 .ai-key-note {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -277,7 +277,7 @@ h3 {
 .institutional-controls label,
 .edinet-controls label,
 .composer-row label {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .panel,
@@ -325,7 +325,7 @@ h3 {
 .symbol-card strong,
 .symbol-row a,
 .company-search-primary strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .result-row small,
@@ -333,12 +333,12 @@ h3 {
 .company-context-item small,
 .company-context-row small,
 .listing-alternatives summary {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .watchlist-price,
 .watchlist-change {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .search-box,
@@ -362,7 +362,7 @@ h3 {
 .institutional-meta small,
 .edinet-meta small,
 .spread-cell small {
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .metric-card strong {
@@ -382,7 +382,7 @@ table,
 th,
 .research-table th {
   padding: 9px 10px;
-  font-size: 10.5px;
+  font-size: 11px;
   letter-spacing: .015em;
   text-transform: none;
 }
@@ -426,7 +426,7 @@ td,
 }
 
 .market-change-grid strong {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .sector-tile {
@@ -440,7 +440,7 @@ td,
 
 .sector-tile small,
 .sector-rank {
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .sector-return {
@@ -475,7 +475,7 @@ td,
   max-width: 760px;
   margin: 0 0 13px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .home-search {
@@ -538,7 +538,7 @@ td,
   margin-bottom: 8px;
   color: var(--ink);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -561,7 +561,7 @@ td,
 }
 
 .home-operator .operation-plan {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .home-workspace {
@@ -600,7 +600,7 @@ td,
 
 .command-group-label {
   padding: 10px 14px 5px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .command-item {
@@ -614,7 +614,7 @@ td,
 
 .command-item small,
 .command-item > span:last-child {
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .command-empty {
@@ -624,7 +624,7 @@ td,
 
 .command-foot {
   padding: 8px 14px;
-  font-size: 9.5px;
+  font-size: 10px;
 }
 
 /* AI remains a secondary evidence-aware drawer. */
@@ -645,7 +645,7 @@ td,
 .ai-evidence-note {
   padding-left: 14px;
   padding-right: 14px;
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .context-ai-answer {
@@ -655,7 +655,7 @@ td,
 }
 
 .context-ai-trace {
-  font-size: 9.5px;
+  font-size: 10px;
 }
 
 .context-ai-form {
@@ -670,7 +670,7 @@ td,
 
 .section-ai-button {
   min-height: 30px;
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 /* Settings: plumbing is readable, but intentionally visually secondary. */
@@ -684,7 +684,7 @@ td,
 }
 
 .provider-row strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .provider-row small,
@@ -695,7 +695,7 @@ td,
 .datasource-key-panel p,
 .advanced-tools > summary,
 .institutional-explainer {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .model-result {
@@ -708,7 +708,7 @@ td,
 .rate-controls label,
 .institutional-controls label,
 .edinet-controls label {
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 .composer-row input,
@@ -724,7 +724,7 @@ td,
 .edinet-coverage,
 .edinet-element,
 .edinet-scope {
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 @media (hover: hover) {
@@ -797,14 +797,14 @@ td,
 
   .nav a {
     min-width: 0;
-    min-height: 44px;
+    min-height: 46px;
     justify-content: center;
     padding: 7px 5px;
     border-left: 0;
     border-right: 1px solid #2d2f2a;
     border-bottom: 2px solid transparent;
     color: #d2d3cd;
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.2;
     text-align: center;
     white-space: normal;
@@ -858,8 +858,8 @@ td,
   }
 
   .nav a {
-    min-height: 46px;
-    font-size: 11.5px;
+    min-height: 48px;
+    font-size: 13px;
   }
 
   .masthead {
@@ -895,7 +895,7 @@ td,
   }
 
   .ux-subtitle {
-    font-size: 12.5px;
+    font-size: 13px;
   }
 
   .home-primary {
@@ -936,7 +936,7 @@ td,
 
   th,
   .research-table th {
-    font-size: 10.5px;
+    font-size: 11px;
   }
 
   .command-palette {
@@ -956,7 +956,7 @@ td,
 
   .nav a {
     padding-inline: 3px;
-    font-size: 11px;
+    font-size: 13px;
   }
 
   .command-trigger span {
