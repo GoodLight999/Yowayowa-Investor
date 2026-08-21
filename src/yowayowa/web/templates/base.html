@@ -24,27 +24,27 @@
       </a>
       <nav class="nav" aria-label="{{ t('nav.main') }}">
         {% if app_mode == 'public' %}
-        <a class="{% if path == '/compare' %}is-active{% endif %}" href="/compare">{{ t('nav.compare') }}</a>
-        <a class="{% if path == '/screener' %}is-active{% endif %}" href="/screener">{{ t('nav.screener') }}</a>
-        <a class="{% if path == '/macro' %}is-active{% endif %}" href="/macro">{{ u('nav.macro') }}</a>
-        <a class="{% if path == '/rates' %}is-active{% endif %}" href="/rates">{{ q('rates.nav') }}</a>
-        <a class="{% if path == '/licenses' %}is-active{% endif %}" href="/licenses">{{ l('licenses.footer') }}</a>
+        <a class="{% if path == '/compare' %}is-active{% endif %}" href="/compare"{% if path == '/compare' %} aria-current="page"{% endif %}>{{ t('nav.compare') }}</a>
+        <a class="{% if path == '/screener' %}is-active{% endif %}" href="/screener"{% if path == '/screener' %} aria-current="page"{% endif %}>{{ t('nav.screener') }}</a>
+        <a class="{% if path == '/macro' %}is-active{% endif %}" href="/macro"{% if path == '/macro' %} aria-current="page"{% endif %}>{{ u('nav.macro') }}</a>
+        <a class="{% if path == '/rates' %}is-active{% endif %}" href="/rates"{% if path == '/rates' %} aria-current="page"{% endif %}>{{ q('rates.nav') }}</a>
+        <a class="{% if path == '/licenses' %}is-active{% endif %}" href="/licenses"{% if path == '/licenses' %} aria-current="page"{% endif %}>{{ l('licenses.footer') }}</a>
         <a href="/docs" data-turbo="false">{{ u('nav.api') }}</a>
         {% else %}
         <div class="nav-group"><div class="nav-group-label">{% if locale == 'ja' %}調べる{% else %}Research{% endif %}</div>
-          <a class="{% if path == '/' %}is-active{% endif %}" href="/">{{ u('nav.overview') }}</a>
-          <a class="{% if path == '/discover' %}is-active{% endif %}" href="/discover">{{ x('nav.discover') }}</a>
+          <a class="{% if path == '/' %}is-active{% endif %}" href="/"{% if path == '/' %} aria-current="page"{% endif %}>{{ u('nav.overview') }}</a>
+          <a class="{% if path == '/discover' %}is-active{% endif %}" href="/discover"{% if path == '/discover' %} aria-current="page"{% endif %}>{{ x('nav.discover') }}</a>
         </div>
         <div class="nav-group"><div class="nav-group-label">{% if locale == 'ja' %}市場・経済{% else %}Markets & economy{% endif %}</div>
-          <a class="{% if path == '/markets' %}is-active{% endif %}" href="/markets">{{ t('nav.markets') }}</a>
-          <a class="{% if path == '/macro' %}is-active{% endif %}" href="/macro">{{ u('nav.macro') }}</a>
+          <a class="{% if path == '/markets' %}is-active{% endif %}" href="/markets"{% if path == '/markets' %} aria-current="page"{% endif %}>{{ t('nav.markets') }}</a>
+          <a class="{% if path == '/macro' %}is-active{% endif %}" href="/macro"{% if path == '/macro' %} aria-current="page"{% endif %}>{{ u('nav.macro') }}</a>
         </div>
         <div class="nav-group"><div class="nav-group-label">{% if locale == 'ja' %}資産管理{% else %}Portfolio{% endif %}</div>
-          <a class="{% if path == '/portfolio' %}is-active{% endif %}" href="/portfolio">{{ t('nav.portfolio') }}</a>
+          <a class="{% if path == '/portfolio' %}is-active{% endif %}" href="/portfolio"{% if path == '/portfolio' %} aria-current="page"{% endif %}>{{ t('nav.portfolio') }}</a>
         </div>
         <div class="nav-group"><div class="nav-group-label">{% if locale == 'ja' %}AI・設定{% else %}AI & settings{% endif %}</div>
-          <a class="{% if path == '/ai' %}is-active{% endif %}" href="/ai">{{ x('nav.ai') }}</a>
-          <a class="{% if path == '/settings' %}is-active{% endif %}" href="/settings">{{ u('nav.settings') }}</a>
+          <a class="{% if path == '/ai' %}is-active{% endif %}" href="/ai"{% if path == '/ai' %} aria-current="page"{% endif %}>{{ x('nav.ai') }}</a>
+          <a class="{% if path == '/settings' %}is-active{% endif %}" href="/settings"{% if path == '/settings' %} aria-current="page"{% endif %}>{{ u('nav.settings') }}</a>
         </div>
         {% endif %}
       </nav>
@@ -64,7 +64,7 @@
         <div class="masthead-actions">
           <span class="masthead-status"><span class="status-dot {% if app_mode == 'public' %}live{% endif %}" aria-hidden="true"></span>{% if app_mode == 'personal' %}<span id="api-status">API</span>{% else %}<span>PUBLIC · {{ t('status.live') }}</span>{% endif %}</span>
           <div class="locale-switcher" role="group" aria-label="{{ t('language.switcher') }}">
-            <button class="locale-button {% if locale == 'ja' %}is-active{% endif %}" type="button" data-locale="ja" lang="ja">{{ t('language.ja') }}</button><span aria-hidden="true">/</span><button class="locale-button {% if locale == 'en' %}is-active{% endif %}" type="button" data-locale="en" lang="en">{{ t('language.en') }}</button>
+            <button class="locale-button {% if locale == 'ja' %}is-active{% endif %}" type="button" data-locale="ja" lang="ja" aria-pressed="{% if locale == 'ja' %}true{% else %}false{% endif %}">{{ t('language.ja') }}</button><span aria-hidden="true">/</span><button class="locale-button {% if locale == 'en' %}is-active{% endif %}" type="button" data-locale="en" lang="en" aria-pressed="{% if locale == 'en' %}true{% else %}false{% endif %}">{{ t('language.en') }}</button>
           </div>
         </div>
       </header>
@@ -73,12 +73,12 @@
     </div>
   </div>
   <dialog id="command-palette" class="command-palette" aria-labelledby="command-title">
-    <div class="command-head"><input id="command-input" type="search" autocomplete="off" spellcheck="false" aria-label="{{ x('command.title') }}" placeholder="{{ x('command.placeholder') }}"><button id="command-close" type="button">ESC</button></div>
+    <div class="command-head"><input id="command-input" type="search" autocomplete="off" spellcheck="false" aria-label="{{ x('command.title') }}" placeholder="{{ x('command.placeholder') }}"><button id="command-close" type="button" aria-label="{% if locale == 'ja' %}コマンドパレットを閉じる{% else %}Close command palette{% endif %}">ESC</button></div>
     <div id="command-results" class="command-results" role="listbox" aria-label="{{ x('command.title') }}"></div>
     <div class="command-foot"><span id="command-title">{{ x('command.title') }}</span><span>{{ x('command.hint') }}</span></div>
   </dialog>
   <aside id="context-ai-drawer" class="context-ai-drawer" aria-label="{{ u('ai.context.title') }}">
-    <div class="context-ai-head"><strong>{{ u('ai.context.title') }}</strong><button id="context-ai-close" class="ghost" type="button">×</button></div>
+    <div class="context-ai-head"><strong>{{ u('ai.context.title') }}</strong><button id="context-ai-close" class="ghost" type="button" aria-label="{% if locale == 'ja' %}AIパネルを閉じる{% else %}Close AI panel{% endif %}">×</button></div>
     <div id="context-ai-section" class="context-ai-section">—</div>
     <div id="context-ai-answer" class="context-ai-answer"></div>
     <div id="context-ai-trace" class="context-ai-trace"></div>
