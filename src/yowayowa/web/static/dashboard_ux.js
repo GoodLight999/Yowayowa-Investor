@@ -14,7 +14,7 @@
     const exchange = String(row.exchange || '').toUpperCase();
     const rawQuery = String(query || '').trim();
     const needle = rawQuery.toUpperCase();
-    const looksLikeTicker = /^[A-Z0-9.^=-]{1,12}(?:\.[A-Z0-9]{1,5})?$/.test(rawQuery);
+    const looksLikeTicker = /^[A-Z0-9.^=-]{1,12}(?:\.[A-Z0-9]{1,5})?$/.test(needle);
     let value = 0;
     if (looksLikeTicker && symbol === needle) value += 200;
     if (row.instrument_type === 'equity') value += 10;
