@@ -727,6 +727,32 @@ td,
   font-size: 11px;
 }
 
+/* Secondary evidence is allowed to be dense, never miniature. */
+.provenance-card,
+.source-strip,
+.form-message,
+.finance-bar-label,
+.finance-bar-cell small,
+.finance-insight small,
+.analyst-source,
+.indicator-popover > p,
+.indicator-option small,
+.ai-evidence-boundary,
+.portfolio-history-meta {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.metric-option,
+.indicator-option strong,
+.finance-insight strong {
+  font-size: 12px;
+}
+
+.indicator-count {
+  font-size: 11px;
+}
+
 @media (hover: hover) {
   .result-row:hover,
   .symbol-card:hover,
