@@ -32,9 +32,7 @@ def test_settings_browser_byok_is_scoped_to_matching_data_source(page: Page) -> 
     expect(panel.locator('[data-role="status"]')).to_contain_text("Ready in this tab")
     expect(page.locator('[data-source="fred"]')).to_contain_text("Ready · browser tab")
 
-    stored = page.evaluate(
-        "sessionStorage.getItem('yowayowa.datasource.fred.key.v1')"
-    )
+    stored = page.evaluate("sessionStorage.getItem('yowayowa.datasource.fred.key.v1')")
     assert stored == "browser-fred-secret"
 
     page.evaluate(
