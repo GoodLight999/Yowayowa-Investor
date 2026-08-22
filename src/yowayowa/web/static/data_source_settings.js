@@ -94,6 +94,21 @@
     }
   }
 
+  function updateDisclosureStatus(status) {
+    for (const source of sources) {
+      const label = document.querySelector(
+        `[data-browser-source="${source.id}"] [data-role="status"]`,
+      );
+      if (!label) continue;
+      label.textContent = readinessText(Boolean(status[source.id]), browserReady(source));
+    }
+  }
+
+  function updateReadiness(status) {
+    updateStatusCards(status);
+    updateDisclosureStatus(status);
+  }
+
   function panelMarkup(source) {
     const saved = readKey(source);
     return `<details class="datasource-key-panel datasource-key-disclosure" data-browser-source="${escapeHtml(source.id)}">
@@ -122,7 +137,7 @@
     host.append(group);
 
     let status = await serverStatus();
-    updateStatusCards(status);
+    updateReadiness(status);
     const observer = new MutationObserver(() => updateStatusCards(status));
     observer.observe(cards, { childList: true });
 
@@ -136,11 +151,7 @@
       const value = button.dataset.action === 'save' ? input.value.trim() : '';
       if (!value) input.value = '';
       writeKey(source, value);
-      panel.querySelector('[data-role="status"]').textContent = readinessText(
-        Boolean(status[source.id]),
-        Boolean(value),
-      );
-      updateStatusCards(status);
+      updateReadiness(status);
       window.dispatchEvent(new CustomEvent('yowayowa:data-source-settings-changed', {
         detail: { source: source.id, configured: Boolean(value) },
       }));
@@ -148,7 +159,7 @@
 
     window.addEventListener('yowayowa:data-source-settings-refresh', async () => {
       status = await serverStatus();
-      updateStatusCards(status);
+      updateReadiness(status);
     });
   }
 
