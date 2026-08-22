@@ -25,7 +25,7 @@ PAGE_SCRIPT_ASSETS: dict[str, tuple[str, ...]] = {
     "macro": ("macro.js",),
     "alerts": ("alerts.js",),
     "ai": ("ai.js",),
-    "settings": ("settings.js",),
+    "settings": ("settings.js", "data_source_settings.js"),
 }
 
 
