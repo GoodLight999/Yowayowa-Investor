@@ -96,16 +96,17 @@
 
   function panelMarkup(source) {
     const saved = readKey(source);
-    return `<div class="datasource-key-panel" data-browser-source="${escapeHtml(source.id)}">
-      <h3>${escapeHtml(source.title)}</h3>
-      <p>${escapeHtml(source.description)} <a href="${escapeHtml(source.docs)}" target="_blank" rel="noreferrer">${escapeHtml(source.docsLabel)}</a></p>
-      <div class="datasource-key-row">
-        <input type="password" autocomplete="off" value="${escapeHtml(saved)}" placeholder="${escapeHtml(source.placeholder)}" aria-label="${escapeHtml(source.placeholder)}">
-        <button class="primary" type="button" data-action="save">${ja ? '保存' : 'Save'}</button>
-        <button class="ghost" type="button" data-action="clear">${ja ? '消去' : 'Clear'}</button>
+    return `<details class="datasource-key-panel datasource-key-disclosure" data-browser-source="${escapeHtml(source.id)}">
+      <summary><span><strong>${escapeHtml(source.title)}</strong><small class="ux-note" data-role="status">${escapeHtml(readinessText(false, Boolean(saved)))}</small></span></summary>
+      <div class="datasource-key-body">
+        <p>${escapeHtml(source.description)} <a href="${escapeHtml(source.docs)}" target="_blank" rel="noreferrer">${escapeHtml(source.docsLabel)}</a></p>
+        <div class="datasource-key-row">
+          <input type="password" autocomplete="off" value="${escapeHtml(saved)}" placeholder="${escapeHtml(source.placeholder)}" aria-label="${escapeHtml(source.placeholder)}">
+          <button class="primary" type="button" data-action="save">${ja ? '保存' : 'Save'}</button>
+          <button class="ghost" type="button" data-action="clear">${ja ? '消去' : 'Clear'}</button>
+        </div>
       </div>
-      <div class="ux-note" data-role="status">${escapeHtml(readinessText(false, Boolean(saved)))}</div>
-    </div>`;
+    </details>`;
   }
 
   async function install() {
