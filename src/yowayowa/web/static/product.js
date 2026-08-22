@@ -2,18 +2,49 @@
   if (!window.__YOWAYOWA_FETCH_WRAPPED) {
     window.__YOWAYOWA_FETCH_WRAPPED = true;
     const rawFetch = window.fetch.bind(window);
+    const credentials = [
+      {
+        prefix: '/v1/filings/edinet',
+        storageKey: 'yowayowa.datasource.edinet.key.v1',
+        header: 'X-Yowayowa-EDINET-Key',
+      },
+      {
+        prefix: '/v1/macro/estat',
+        storageKey: 'yowayowa.datasource.estat.key.v1',
+        header: 'X-Yowayowa-Estat-Key',
+      },
+      {
+        prefix: '/v1/macro/fred',
+        storageKey: 'yowayowa.datasource.fred.key.v1',
+        header: 'X-Yowayowa-FRED-Key',
+      },
+      {
+        prefix: '/v1/macro/bea',
+        storageKey: 'yowayowa.datasource.bea.key.v1',
+        header: 'X-Yowayowa-BEA-Key',
+      },
+      {
+        prefix: '/v1/macro/bls',
+        storageKey: 'yowayowa.datasource.bls.key.v1',
+        header: 'X-Yowayowa-BLS-Key',
+      },
+    ];
+
     window.fetch = (input, init = {}) => {
       const rawUrl = typeof input === 'string' ? input : input?.url;
       if (!rawUrl) return rawFetch(input, init);
       const url = new URL(rawUrl, window.location.origin);
-      if (url.origin === window.location.origin && url.pathname.startsWith('/v1/filings/edinet')) {
-        let key = '';
-        try { key = sessionStorage.getItem('yowayowa.datasource.edinet.key.v1') || ''; } catch (_) {}
-        if (key) {
-          const inherited = typeof input === 'string' ? undefined : input.headers;
-          const headers = new Headers(init.headers || inherited);
-          headers.set('X-Yowayowa-EDINET-Key', key);
-          init = { ...init, headers };
+      if (url.origin === window.location.origin) {
+        const credential = credentials.find(item => url.pathname.startsWith(item.prefix));
+        if (credential) {
+          let key = '';
+          try { key = sessionStorage.getItem(credential.storageKey) || ''; } catch (_) {}
+          if (key) {
+            const inherited = typeof input === 'string' ? undefined : input.headers;
+            const headers = new Headers(init.headers || inherited);
+            headers.set(credential.header, key);
+            init = { ...init, headers };
+          }
         }
       }
       return rawFetch(input, init);
