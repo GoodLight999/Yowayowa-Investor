@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import date
 from typing import cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from yowayowa.api.deps import db_session, require_api_token
+from yowayowa.api.deps import db_session, request_data_source_settings, require_api_token
 from yowayowa.calendar_models import TrackedScope
 from yowayowa.config import Settings, get_settings
 from yowayowa.news_models import SavedNewsFeed
@@ -203,13 +203,15 @@ def discover_screen(
 
 @router.get("/macro/fred/search")
 def fred_search(
+    request: Request,
     q: str = Query(min_length=1, max_length=200),
     limit: int = Query(default=30, ge=1, le=100),
     offset: int = Query(default=0, ge=0, le=100000),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, object]:
     try:
-        return cast(dict[str, object], FredClient(settings).search(q, limit, offset))
+        scoped = request_data_source_settings(request, settings, "fred")
+        return cast(dict[str, object], FredClient(scoped).search(q, limit, offset))
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -220,12 +222,14 @@ def fred_search(
 
 @router.get("/macro/fred/releases")
 def fred_releases(
+    request: Request,
     limit: int = Query(default=50, ge=1, le=1000),
     offset: int = Query(default=0, ge=0, le=100000),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, object]:
     try:
-        return cast(dict[str, object], FredClient(settings).release_dates(limit, offset))
+        scoped = request_data_source_settings(request, settings, "fred")
+        return cast(dict[str, object], FredClient(scoped).release_dates(limit, offset))
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -236,6 +240,7 @@ def fred_releases(
 
 @router.get("/macro/fred/{series_id}")
 def fred_series(
+    request: Request,
     series_id: str,
     observation_start: date | None = None,
     observation_end: date | None = None,
@@ -246,9 +251,10 @@ def fred_series(
     settings: Settings = Depends(get_settings),
 ) -> dict[str, object]:
     try:
+        scoped = request_data_source_settings(request, settings, "fred")
         return cast(
             dict[str, object],
-            FredClient(settings).series(
+            FredClient(scoped).series(
                 series_id,
                 limit=limit,
                 observation_start=observation_start,
