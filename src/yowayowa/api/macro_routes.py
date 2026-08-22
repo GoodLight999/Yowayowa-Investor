@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from yowayowa.api.deps import require_api_token
+from yowayowa.api.deps import request_data_source_settings, require_api_token
 from yowayowa.bea_models import BeaNipaCatalog, BeaNipaTable
 from yowayowa.bls_models import BlsCatalog, BlsSeries
 from yowayowa.config import Settings, get_settings
@@ -36,22 +36,27 @@ def _estat_filters(values: list[str] | None) -> dict[str, str]:
 
 
 @router.get("/bls/catalog", response_model=BlsCatalog)
-def bls_catalog(settings: Settings = Depends(get_settings)) -> BlsCatalog:
+def bls_catalog(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> BlsCatalog:
     try:
-        return BlsClient(settings).catalog()
+        return BlsClient(request_data_source_settings(request, settings, "bls")).catalog()
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.get("/bls/{series_id}", response_model=BlsSeries)
 def bls_series(
+    request: Request,
     series_id: str,
     start_year: int | None = Query(default=None, ge=1900, le=9999),
     end_year: int | None = Query(default=None, ge=1900, le=9999),
     settings: Settings = Depends(get_settings),
 ) -> BlsSeries:
     try:
-        return BlsClient(settings).series(
+        scoped = request_data_source_settings(request, settings, "bls")
+        return BlsClient(scoped).series(
             series_id,
             start_year=start_year,
             end_year=end_year,
@@ -67,15 +72,19 @@ def bls_series(
 
 
 @router.get("/bea/nipa/catalog", response_model=BeaNipaCatalog)
-def bea_nipa_catalog(settings: Settings = Depends(get_settings)) -> BeaNipaCatalog:
+def bea_nipa_catalog(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> BeaNipaCatalog:
     try:
-        return BeaClient(settings).catalog()
+        return BeaClient(request_data_source_settings(request, settings, "bea")).catalog()
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.get("/bea/nipa/{table_name}", response_model=BeaNipaTable)
 def bea_nipa_table(
+    request: Request,
     table_name: str,
     frequency: str = Query(default="Q", pattern=r"^[AQMaqm]$"),
     years: list[int] | None = Query(default=None),
@@ -83,7 +92,8 @@ def bea_nipa_table(
     settings: Settings = Depends(get_settings),
 ) -> BeaNipaTable:
     try:
-        return BeaClient(settings).nipa(
+        scoped = request_data_source_settings(request, settings, "bea")
+        return BeaClient(scoped).nipa(
             table_name,
             frequency=frequency,
             years=years,
@@ -103,13 +113,15 @@ def bea_nipa_table(
 
 @router.get("/estat/tables", response_model=EstatTableSearch)
 def estat_tables(
+    request: Request,
     q: str = Query(min_length=1, max_length=200),
     lang: str = Query(default="J", pattern=r"^[JEje]$"),
     limit: int = Query(default=50, ge=1, le=100),
     settings: Settings = Depends(get_settings),
 ) -> EstatTableSearch:
     try:
-        return EstatClient(settings).search_tables(q, lang=lang, limit=limit)
+        scoped = request_data_source_settings(request, settings, "estat")
+        return EstatClient(scoped).search_tables(q, lang=lang, limit=limit)
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -124,12 +136,14 @@ def estat_tables(
 
 @router.get("/estat/{stats_data_id}/meta", response_model=EstatMetadata)
 def estat_metadata(
+    request: Request,
     stats_data_id: str,
     lang: str = Query(default="J", pattern=r"^[JEje]$"),
     settings: Settings = Depends(get_settings),
 ) -> EstatMetadata:
     try:
-        return EstatClient(settings).metadata(stats_data_id, lang=lang)
+        scoped = request_data_source_settings(request, settings, "estat")
+        return EstatClient(scoped).metadata(stats_data_id, lang=lang)
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -144,6 +158,7 @@ def estat_metadata(
 
 @router.get("/estat/{stats_data_id}/data", response_model=EstatData)
 def estat_data(
+    request: Request,
     stats_data_id: str,
     lang: str = Query(default="J", pattern=r"^[JEje]$"),
     filter: list[str] | None = Query(default=None),
@@ -152,7 +167,8 @@ def estat_data(
     settings: Settings = Depends(get_settings),
 ) -> EstatData:
     try:
-        return EstatClient(settings).data(
+        scoped = request_data_source_settings(request, settings, "estat")
+        return EstatClient(scoped).data(
             stats_data_id,
             lang=lang,
             filters=_estat_filters(filter),
