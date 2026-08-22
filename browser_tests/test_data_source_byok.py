@@ -27,6 +27,7 @@ def test_settings_browser_byok_is_scoped_to_matching_data_source(page: Page) -> 
 
     panel = page.locator('[data-browser-source="fred"]')
     expect(panel).to_be_visible()
+    panel.locator("summary").click()
     panel.locator("input").fill("browser-fred-secret")
     panel.locator('button[data-action="save"]').click()
     expect(panel.locator('[data-role="status"]')).to_contain_text("Ready in this tab")
@@ -78,6 +79,7 @@ def test_each_macro_browser_key_uses_its_own_header(page: Page) -> None:
     for source in routes:
         panel = page.locator(f'[data-browser-source="{source}"]')
         expect(panel).to_be_visible()
+        panel.locator("summary").click()
         panel.locator("input").fill(f"{source}-secret")
         panel.locator('button[data-action="save"]').click()
 
