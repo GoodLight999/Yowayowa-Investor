@@ -11,7 +11,9 @@ def _missing_module(name: str) -> ModuleNotFoundError:
     return error
 
 
-def test_cli_shim_explains_missing_optional_cli_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_shim_explains_missing_optional_cli_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def missing_cli() -> object:
         raise _missing_module("typer")
 
@@ -20,7 +22,9 @@ def test_cli_shim_explains_missing_optional_cli_dependencies(monkeypatch: pytest
         cli_shim.main()
 
 
-def test_cli_shim_does_not_hide_unrelated_import_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_shim_does_not_hide_unrelated_import_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def broken_cli() -> object:
         raise _missing_module("some_runtime_dependency")
 
