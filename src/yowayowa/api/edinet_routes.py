@@ -6,7 +6,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from yowayowa.api.deps import db_session, require_api_token
+from yowayowa.api.deps import db_session, request_data_source_settings, require_api_token
 from yowayowa.config import get_settings
 from yowayowa.edinet_models import (
     EdinetDocumentList,
@@ -47,12 +47,9 @@ def _translate_error(exc: Exception) -> HTTPException:
 
 
 def _request_client(request: Request) -> EdinetClient:
-    """Use a request-scoped browser BYOK key when supplied, otherwise server config."""
-
-    browser_key = request.headers.get("x-yowayowa-edinet-key", "").strip()
-    if not browser_key:
+    settings = request_data_source_settings(request, get_settings(), "edinet")
+    if settings is get_settings():
         return edinet_client()
-    settings = get_settings().model_copy(update={"edinet_api_key": browser_key})
     return EdinetClient(settings)
 
 
