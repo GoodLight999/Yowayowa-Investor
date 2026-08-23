@@ -17,6 +17,8 @@ def settings_status(settings: Settings = Depends(get_settings)) -> dict[str, boo
         "estat": bool(settings.estat_app_id),
         "fred": bool(settings.fred_api_key),
         "bea": bool(settings.bea_api_key),
-        "bls": bool(settings.bls_api_key),
+        # BLS Public Data API v1 works without a registration key. A key only upgrades
+        # request limits/range through v2, so the source itself is always available.
+        "bls": True,
         "allow_unlisted_ai_endpoints": settings.allow_unlisted_ai_endpoints,
     }
