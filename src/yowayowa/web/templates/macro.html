@@ -19,7 +19,11 @@
       <p class="muted">{{ l('macro.bea_note') }}</p>
       {% if not bea_available %}
       <p class="muted">
-        {% if locale == 'ja' %}実データ取得には無料のBEA UserIDが必要です。<a href="/settings#data-sources">設定 → データソース</a>でこのブラウザタブに保存するか、サーバーに設定できます。{% else %}Loading real BEA data requires a free BEA UserID. Add it under <a href="/settings#data-sources">Settings → Data sources</a> for this browser tab, or configure it on the server.{% endif %}
+        {% if app_mode == 'personal' %}
+          {% if locale == 'ja' %}実データ取得には無料のBEA UserIDが必要です。<a href="/settings#data-sources">設定 → データソース</a>でこのブラウザタブに保存するか、サーバーに設定できます。{% else %}Loading real BEA data requires a free BEA UserID. Add it under <a href="/settings#data-sources">Settings → Data sources</a> for this browser tab, or configure it on the server.{% endif %}
+        {% else %}
+          {{ l('macro.bea_key') }}
+        {% endif %}
       </p>
       {% endif %}
       <div id="bea-catalog" class="macro-results"><span class="muted">{{ x('macro.loading') }}</span></div>
