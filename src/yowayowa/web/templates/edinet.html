@@ -5,7 +5,15 @@
   <div><h1>{{ u('edinet.title') }}</h1><p class="ux-subtitle">{{ u('edinet.explainer') }}</p></div>
 </section>
 
-{% if not edinet_available %}<div class="edinet-warning">{{ e('edinet.key_missing') }}</div>{% endif %}
+{% if not edinet_available %}
+<div class="edinet-warning">
+  {% if app_mode == 'personal' %}
+    {% if locale == 'ja' %}サーバーにはEDINET APIキーがありません。直接アクセスは<a href="/settings#data-sources">設定 → データソース</a>でこのブラウザタブに無料キーを保存するか、サーバーに設定すると利用できます。既に蓄積済みの履歴インデックスはキーなしでも検索できます。{% else %}The server has no EDINET API key. For live access, save a free key for this browser tab under <a href="/settings#data-sources">Settings → Data sources</a>, or configure it on the server. Already indexed filing history remains searchable without a key.{% endif %}
+  {% else %}
+    {{ e('edinet.key_missing') }}
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="edinet-intro">
   <section class="panel">
