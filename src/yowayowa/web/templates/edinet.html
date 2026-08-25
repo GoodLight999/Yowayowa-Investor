@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ u('edinet.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div><h1>{{ u('edinet.title') }}</h1><p class="ux-subtitle">{{ u('edinet.explainer') }}</p></div>
+</section>
+
+{% if not edinet_available %}
+<div class="edinet-warning">
+  {% if app_mode == 'personal' %}
+    {% if locale == 'ja' %}サーバーにはEDINET APIキーがありません。直接アクセスは<a href="/settings#data-sources">設定 → データソース</a>でこのブラウザタブに無料キーを保存するか、サーバーに設定すると利用できます。既に蓄積済みの履歴インデックスはキーなしでも検索できます。{% else %}The server has no EDINET API key. For live access, save a free key for this browser tab under <a href="/settings#data-sources">Settings → Data sources</a>, or configure it on the server. Already indexed filing history remains searchable without a key.{% endif %}
+  {% else %}
+    {{ e('edinet.key_missing') }}
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="edinet-intro">
+  <section class="panel">
+    <div class="section-heading"><div><h2>{{ e('edinet.history') }}</h2><small class="term-note">{{ e('edinet.history_note') }}</small></div></div>
+    <form id="edinet-company-search" class="edinet-company-search">
+      <input id="edinet-company-query" autocomplete="off" placeholder="7203 / Toyota">
+      <button class="primary" type="submit">{{ e('edinet.history_search') }}</button>
+    </form>
+    <div id="edinet-company-results" class="muted"><div class="list-state">{{ u('edinet.beginner') }}</div></div>
+  </section>
+  <section class="panel">
+    <div class="section-heading"><h2>EDINET</h2></div>
+    <div style="padding:11px"><p class="ux-note">{{ u('edinet.explainer') }}</p><p class="ux-note" style="margin-top:8px">{{ u('edinet.beginner') }}</p></div>
+  </section>
+</div>
+
+<section class="panel">
+  <div class="section-heading"><div><h2>{{ e('edinet.history') }}</h2><small class="term-note">{{ e('edinet.history_note') }}</small></div><span id="edinet-history-status" class="edinet-status-line">—</span></div>
+  <form id="edinet-history-form" class="edinet-controls">
+    <label>{{ e('edinet.security_code') }}<input id="edinet-history-security-code" type="text" inputmode="numeric" maxlength="5" placeholder="7203" required></label>
+    <label>{{ e('edinet.start_date') }}<input id="edinet-history-start" type="date" required></label>
+    <label>{{ e('edinet.end_date') }}<input id="edinet-history-end" type="date" required></label>
+    <label class="edinet-check"><input id="edinet-history-csv-only" type="checkbox" checked> {{ e('edinet.csv_only') }}</label>
+    <button class="primary" type="submit">{{ e('edinet.history_search') }}</button>
+  </form>
+  <div id="edinet-history-coverage" class="edinet-coverage"></div>
+  <div id="edinet-history-documents" class="table-wrap muted">—</div>
+</section>
+
+<details class="panel edinet-advanced" style="margin-top:12px">
+  <summary class="section-heading">{{ e('edinet.daily_lookup') }}</summary>
+  <p class="edinet-section-note">{{ e('edinet.daily_note') }}</p>
+  <form id="edinet-form" class="edinet-controls">
+    <label>{{ e('edinet.date') }}<input id="edinet-date" type="date" required></label>
+    <label>{{ e('edinet.security_code') }}<input id="edinet-security-code" type="text" inputmode="numeric" maxlength="5" placeholder="7203"></label>
+    <label class="edinet-check"><input id="edinet-csv-only" type="checkbox" checked> {{ e('edinet.csv_only') }}</label>
+    <button class="ghost" type="submit">{{ e('edinet.load') }}</button>
+  </form>
+  <div class="section-heading"><span id="edinet-document-status" class="edinet-status-line">—</span></div>
+  <div id="edinet-documents" class="table-wrap muted" style="margin-top:8px">—</div>
+</details>
+
+<section id="edinet-financial-panel" class="panel" style="margin-top:12px" hidden>
+  <div class="section-heading"><div><h2>{{ e('edinet.financials') }}</h2><small class="term-note">{{ e('edinet.subtitle') }}</small></div><span id="edinet-financial-status" class="edinet-status-line">—</span></div>
+  <div id="edinet-meta" class="edinet-meta"></div>
+  <div id="edinet-metrics" class="table-wrap muted">—</div>
+  <div id="edinet-notes" class="edinet-notes"></div>
+</section>
+
+<details id="edinet-facts-panel" class="panel edinet-advanced" style="margin-top:12px" hidden>
+  <summary class="section-heading">{{ e('edinet.raw_facts') }}</summary>
+  <p class="edinet-section-note">{{ e('edinet.fact_query') }}</p>
+  <form id="edinet-fact-form" class="edinet-fact-form"><input id="edinet-fact-query" type="search" maxlength="100" placeholder="{{ e('edinet.fact_query') }}"><button class="ghost" type="submit">{{ e('edinet.search') }}</button></form>
+  <div id="edinet-fact-status" class="edinet-status-line"></div>
+  <div id="edinet-facts" class="table-wrap muted">—</div>
+</details>
+
+<section class="panel" style="margin-top:12px"><div class="section-heading"><h2>{{ t('common.source') }}</h2></div><div id="edinet-provenance" class="provenance-card muted">EDINET / Financial Services Agency</div></section>
+{% endblock %}
+{% block scripts %}<script src="/static/edinet.js"></script><script src="/static/edinet_ux.js"></script>{% endblock %}

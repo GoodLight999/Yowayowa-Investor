@@ -1,0 +1,194 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
+
+from yowayowa.api.deps import db_session, request_data_source_settings, require_api_token
+from yowayowa.config import get_settings
+from yowayowa.domain import (
+    ComparisonRequest,
+    ComparisonResponse,
+    Fundamentals,
+    ScreenRequest,
+    ScreenResponse,
+    ScreenRow,
+    ValuationSnapshot,
+)
+from yowayowa.providers.base import ProviderPolicyError
+from yowayowa.providers.edinet import EdinetClient
+from yowayowa.providers.registry import fundamentals_provider, yahoo_market_provider
+from yowayowa.services.comparison import compare
+from yowayowa.services.screening import screen
+from yowayowa.services.strategy_edinet import (
+    StrategyBalanceSheetSupplement,
+    balance_sheet_supplement,
+    tokyo_security_code,
+)
+from yowayowa.services.strategy_presets import (
+    KIYOHARA_GLOBAL_ID,
+    evaluate_kiyohara_candidate,
+    evaluated_at,
+    get_builtin_strategy,
+    list_builtin_strategies,
+)
+from yowayowa.services.valuation import valuation_snapshot
+from yowayowa.strategy_models import (
+    StrategyEvaluationRequest,
+    StrategyEvaluationResponse,
+    StrategyPresetDefinition,
+)
+from yowayowa.symbols import normalize_symbol
+
+router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_token)])
+
+
+def _fundamentals(symbol: str) -> Fundamentals:
+    return fundamentals_provider().company_facts(normalize_symbol(symbol))
+
+
+def _strategy_edinet_supplement(
+    request: Request,
+    session: Session,
+    symbol: str,
+) -> StrategyBalanceSheetSupplement | None:
+    if tokyo_security_code(symbol) is None:
+        return None
+    settings = request_data_source_settings(request, get_settings(), "edinet")
+    if not settings.edinet_api_key:
+        return None
+    return balance_sheet_supplement(session, EdinetClient(settings), symbol)
+
+
+@router.get("/fundamentals/{symbol}", response_model=Fundamentals)
+def fundamentals_anywhere(symbol: str) -> Fundamentals:
+    try:
+        return _fundamentals(symbol)
+    except ProviderPolicyError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/valuation/{symbol}", response_model=ValuationSnapshot)
+def valuation_anywhere(symbol: str) -> ValuationSnapshot:
+    normalized = normalize_symbol(symbol)
+    try:
+        facts = _fundamentals(normalized)
+        quotes = yahoo_market_provider().quotes([normalized])
+        return valuation_snapshot(facts, quotes)
+    except ProviderPolicyError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/screen", response_model=ScreenResponse)
+def screen_anywhere(payload: ScreenRequest) -> ScreenResponse:
+    data: list[Fundamentals] = []
+    failures: list[str] = []
+    for symbol in payload.symbols:
+        try:
+            data.append(_fundamentals(symbol))
+        except Exception:
+            failures.append(normalize_symbol(symbol))
+    result = screen(data, payload.filters)
+    for symbol in failures:
+        result.rows.append(
+            ScreenRow(symbol=symbol, metrics={}, matched=False, failures=["data_unavailable"])
+        )
+    return result
+
+
+@router.post("/compare", response_model=ComparisonResponse)
+def compare_anywhere(payload: ComparisonRequest) -> ComparisonResponse:
+    data: list[Fundamentals] = []
+    unavailable: list[str] = []
+    for symbol in dict.fromkeys(normalize_symbol(item) for item in payload.symbols):
+        try:
+            data.append(_fundamentals(symbol))
+        except Exception:
+            unavailable.append(symbol)
+    if len(data) < 2:
+        detail = "At least two issuers with comparable financial statements are required"
+        if unavailable:
+            detail += f"; unavailable: {', '.join(unavailable)}"
+        raise HTTPException(status_code=422, detail=detail)
+    return compare(data, payload.metrics or None)
+
+
+@router.get("/strategy-presets", response_model=list[StrategyPresetDefinition])
+def builtin_strategy_presets() -> list[StrategyPresetDefinition]:
+    return list_builtin_strategies()
+
+
+@router.get("/strategy-presets/{strategy_id}", response_model=StrategyPresetDefinition)
+def builtin_strategy_preset(strategy_id: str) -> StrategyPresetDefinition:
+    try:
+        return get_builtin_strategy(strategy_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/strategy-presets/{strategy_id}/evaluate",
+    response_model=StrategyEvaluationResponse,
+)
+def evaluate_builtin_strategy(
+    strategy_id: str,
+    payload: StrategyEvaluationRequest,
+    request: Request,
+    session: Session = Depends(db_session),
+) -> StrategyEvaluationResponse:
+    try:
+        get_builtin_strategy(strategy_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if strategy_id != KIYOHARA_GLOBAL_ID:
+        raise HTTPException(
+            status_code=501,
+            detail=f"Strategy evaluator not implemented: {strategy_id}",
+        )
+
+    evaluations = []
+    errors: dict[str, str] = {}
+    supplement_errors: dict[str, str] = {}
+    seen: set[str] = set()
+    for candidate in payload.candidates:
+        symbol = normalize_symbol(candidate.symbol)
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        normalized_candidate = candidate.model_copy(update={"symbol": symbol})
+        try:
+            facts = _fundamentals(symbol)
+        except Exception as exc:
+            errors[symbol] = f"{type(exc).__name__}: {exc}"
+            continue
+
+        supplement = None
+        try:
+            supplement = _strategy_edinet_supplement(request, session, symbol)
+        except Exception as exc:
+            supplement_errors[symbol] = f"{type(exc).__name__}: {exc}"
+        evaluations.append(evaluate_kiyohara_candidate(facts, normalized_candidate, supplement))
+
+    evaluations.sort(
+        key=lambda item: (
+            item.net_cash_ratio is None,
+            -item.net_cash_ratio if item.net_cash_ratio is not None else float("inf"),
+            item.cash_neutral_pe is None,
+            item.cash_neutral_pe if item.cash_neutral_pe is not None else float("inf"),
+            item.symbol,
+        )
+    )
+    return StrategyEvaluationResponse(
+        strategy_id=strategy_id,
+        evaluations=evaluations,
+        errors=errors,
+        supplement_errors=supplement_errors,
+        evaluated_at=evaluated_at(),
+    )

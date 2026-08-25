@@ -1,0 +1,1002 @@
+/*
+ * Canonical application interface layer.
+ *
+ * Yowayowa is an analyst workstation, not a marketing dashboard. This file owns
+ * shell hierarchy, typography, interaction sizing, home information architecture,
+ * and responsive behavior. Keep component-specific visualization rules in their
+ * existing stylesheets; do not add another global override layer.
+ */
+
+:root {
+  --paper: #f3f1eb;
+  --sheet: #fdfcf8;
+  --ink: #1b1b19;
+  --muted: #65625c;
+  --faint: #7d7971;
+  --line: #d6d1c7;
+  --line-strong: #aaa49a;
+  --rail: #171815;
+  --rail-line: #363832;
+  --rail-text: #f3f2ed;
+  --rail-muted: #a6a79f;
+  --accent: #2456d8;
+  --positive: #087a54;
+  --negative: #b72f43;
+  --control-height: 38px;
+  --rail-width: 224px;
+}
+
+html {
+  background: var(--paper);
+  scroll-padding-top: 16px;
+}
+
+body {
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font-size: 14px;
+}
+
+button,
+.button,
+.primary,
+.secondary,
+.ghost,
+.search-box button,
+.operator-form button,
+.inline-form button {
+  min-height: var(--control-height);
+  padding: 8px 13px;
+  font-size: 13px;
+  line-height: 1.25;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out, transform 90ms ease-out;
+}
+
+button:active,
+.button:active,
+.primary:active,
+.secondary:active,
+.ghost:active {
+  transform: translateY(1px);
+}
+
+input,
+select,
+textarea,
+.search-box input,
+.operator-form textarea,
+.inline-form input,
+.toolbar input,
+.toolbar select,
+.screen-form textarea,
+.filter-row select,
+.filter-row input,
+.stack-form input,
+.stack-form select,
+.portfolio-selector-row select,
+.research-toolbar input,
+.research-toolbar select,
+.research-filter-row input,
+.research-filter-row select,
+.settings-row input,
+.settings-row select {
+  min-height: var(--control-height);
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+input::placeholder,
+textarea::placeholder,
+.search-box input::placeholder {
+  color: #8d8981;
+  opacity: 1;
+}
+
+h1 {
+  font-size: clamp(28px, 3vw, 36px);
+  line-height: 1.05;
+  letter-spacing: -.035em;
+}
+
+h2 {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+h3 {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.topbar {
+  width: var(--rail-width);
+}
+
+.brand {
+  padding: 22px 20px 18px;
+}
+
+.brand strong {
+  font-size: 13px;
+  letter-spacing: .09em;
+}
+
+.brand small {
+  margin-top: 4px;
+  font-size: 10px;
+}
+
+.nav {
+  gap: 0;
+  padding: 14px 10px 18px;
+}
+
+.nav-group {
+  gap: 2px;
+  margin-bottom: 14px;
+}
+
+.nav-group-label {
+  padding: 6px 11px 5px;
+  color: #888b83;
+  font-size: 10px;
+  letter-spacing: .06em;
+}
+
+.nav a {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 8px 11px 8px 14px;
+  color: #c3c4be;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.nav a:hover {
+  color: #fff;
+  background: #23251f;
+}
+
+.nav a.is-active {
+  color: #fff;
+  background: #20221e;
+  border-left-color: #89a7ff;
+}
+
+.topbar-meta {
+  padding: 14px 20px 20px;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.main-shell {
+  margin-left: var(--rail-width);
+}
+
+.masthead {
+  height: 52px;
+  padding: 0 30px;
+  color: var(--muted);
+  background: rgba(243, 241, 235, .97);
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.masthead-primary,
+.masthead-actions,
+.masthead-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.masthead-status {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.command-trigger {
+  min-height: var(--control-height);
+  gap: 8px;
+  padding: 6px 10px;
+  border-color: var(--line-strong);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.command-trigger kbd {
+  font-size: 10px;
+}
+
+.locale-button {
+  min-height: 36px;
+  padding: 6px 2px;
+  font-size: 12px;
+}
+
+.content {
+  width: min(1320px, calc(100% - 56px));
+  margin: 0 auto;
+  padding: 30px 0 64px;
+}
+
+.footer {
+  padding: 16px 28px 22px;
+  font-size: 11px;
+}
+
+.page-head,
+.page-heading,
+.hero,
+.instrument-header {
+  margin-bottom: 22px;
+  padding-bottom: 15px;
+}
+
+.ux-subtitle {
+  max-width: 780px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ux-note,
+.term-note,
+.field small,
+.provider-source-note,
+.edinet-section-note,
+.ai-key-note {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.eyebrow,
+.pill,
+.field label,
+.field > span,
+.settings-row > span,
+.research-toolbar label,
+.research-filter-row label,
+.rate-controls label,
+.institutional-controls label,
+.edinet-controls label,
+.composer-row label {
+  font-size: 12px;
+}
+
+.panel,
+.sheet,
+.market-category {
+  border-color: var(--line);
+  background: var(--sheet);
+}
+
+.section-heading,
+.section-title-line {
+  min-height: 44px;
+}
+
+.section-heading {
+  padding: 8px 13px;
+}
+
+.grid {
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.grid-2 {
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr);
+}
+
+.list-state {
+  min-height: 132px;
+  padding: 13px;
+}
+
+.result-row,
+.symbol-card,
+.symbol-row,
+.company-search-primary,
+.company-search-alternative,
+.company-context-item,
+.company-context-row {
+  padding-top: 11px;
+  padding-bottom: 11px;
+}
+
+.result-row strong,
+.symbol-card strong,
+.symbol-row a,
+.company-search-primary strong {
+  font-size: 13px;
+}
+
+.result-row small,
+.company-search-primary small,
+.company-context-item small,
+.company-context-row small,
+.listing-alternatives summary {
+  font-size: 12px;
+}
+
+.watchlist-price,
+.watchlist-change {
+  font-size: 13px;
+}
+
+.search-box,
+.operator-form,
+.inline-form {
+  padding: 5px;
+}
+
+.metrics-strip {
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+}
+
+.metric-card {
+  padding: 12px 13px;
+}
+
+.metric-card small,
+.analyst-metric small,
+.market-card-heading small,
+.market-change-grid small,
+.institutional-meta small,
+.edinet-meta small,
+.spread-cell small {
+  font-size: 11px;
+}
+
+.metric-card strong {
+  font-size: 16px;
+}
+
+.table-wrap,
+.research-table-wrap {
+  scrollbar-gutter: stable;
+}
+
+table,
+.research-table {
+  font-size: 12px;
+}
+
+th,
+.research-table th {
+  padding: 9px 10px;
+  font-size: 11px;
+  letter-spacing: .015em;
+  text-transform: none;
+}
+
+th small,
+.research-table th small {
+  display: block;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+td,
+.research-table td {
+  padding: 10px;
+}
+
+.research-toolbar {
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.research-filter-list {
+  gap: 9px;
+  margin: 10px 0 16px;
+}
+
+.research-actions {
+  gap: 8px;
+}
+
+.research-kv dt,
+.research-kv dd {
+  padding: 9px 10px;
+  font-size: 12px;
+}
+
+.market-overview {
+  gap: 18px;
+}
+
+.market-card {
+  padding: 14px;
+}
+
+.market-value {
+  margin: 14px 0 10px;
+  font-size: 20px;
+}
+
+.market-change-grid strong {
+  font-size: 12px;
+}
+
+.sector-tile {
+  min-height: 102px;
+  padding: 12px;
+}
+
+.sector-tile strong {
+  font-size: 13px;
+}
+
+.sector-tile small,
+.sector-rank {
+  font-size: 11px;
+}
+
+.sector-return {
+  font-size: 19px;
+}
+
+/* Home: one obvious entry point, then working context. */
+.home-head {
+  margin-bottom: 18px;
+}
+
+.home-primary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, .38fr);
+  gap: 20px;
+  align-items: end;
+  margin-bottom: 20px;
+  padding: 18px 0 20px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.home-primary-copy {
+  min-width: 0;
+}
+
+.home-primary-copy h2 {
+  margin-bottom: 6px;
+  font-size: 18px;
+}
+
+.home-primary-copy p {
+  max-width: 760px;
+  margin: 0 0 13px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.home-search {
+  width: 100%;
+  border: 1px solid var(--ink);
+  background: var(--sheet);
+}
+
+.home-search input {
+  min-height: 46px;
+  font-size: 15px;
+}
+
+.home-search button {
+  min-height: 46px;
+  min-width: 86px;
+  font-size: 13px;
+}
+
+.home-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.home-shortcut {
+  padding: 8px 11px 8px 0;
+  margin-right: 11px;
+  color: var(--muted);
+  border-right: 1px solid var(--line);
+  font-size: 12px;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+}
+
+.home-shortcut:last-child {
+  border-right: 0;
+}
+
+.home-shortcut:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
+}
+
+.home-operator {
+  min-width: 0;
+  border-left: 1px solid var(--line-strong);
+  padding-left: 20px;
+}
+
+.home-operator > summary {
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.home-operator > summary::-webkit-details-marker {
+  display: none;
+}
+
+.home-operator > summary::after {
+  content: '+';
+  color: var(--faint);
+  font: 400 15px var(--mono);
+}
+
+.home-operator[open] > summary::after {
+  content: '−';
+}
+
+.home-operator .operator-form {
+  background: var(--sheet);
+}
+
+.home-operator .operation-plan {
+  font-size: 12px;
+}
+
+.home-workspace {
+  display: grid;
+  grid-template-columns: minmax(320px, .72fr) minmax(0, 1.28fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.home-workspace .panel {
+  min-height: 250px;
+}
+
+.home-results-panel:focus-within {
+  border-color: var(--line-strong);
+}
+
+.home-empty-copy {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Command palette: searchable utility, not a miniature terminal. */
+.command-palette {
+  width: min(720px, calc(100vw - 32px));
+  margin-top: 10vh;
+}
+
+.command-head {
+  padding: 14px;
+}
+
+.command-head input {
+  font-size: 16px;
+}
+
+.command-group-label {
+  padding: 10px 14px 5px;
+  font-size: 11px;
+}
+
+.command-item {
+  min-height: 48px;
+  padding: 9px 14px;
+}
+
+.command-item strong {
+  font-size: 13px;
+}
+
+.command-item small,
+.command-item > span:last-child {
+  font-size: 11px;
+}
+
+.command-empty {
+  padding: 20px 14px;
+  font-size: 12px;
+}
+
+.command-foot {
+  padding: 8px 14px;
+  font-size: 10px;
+}
+
+/* AI remains a secondary evidence-aware drawer. */
+.context-ai-drawer {
+  width: min(520px, 100vw);
+  transition: transform 160ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.context-ai-head {
+  padding: 13px 14px;
+}
+
+.context-ai-head strong {
+  font-size: 14px;
+}
+
+.context-ai-section,
+.ai-evidence-note {
+  padding-left: 14px;
+  padding-right: 14px;
+  font-size: 11px;
+}
+
+.context-ai-answer {
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.context-ai-trace {
+  font-size: 10px;
+}
+
+.context-ai-form {
+  gap: 8px;
+  padding: 10px 14px 14px;
+}
+
+.context-ai-form textarea {
+  min-height: 86px;
+  font-size: 13px;
+}
+
+.section-ai-button {
+  min-height: 36px;
+  font-size: 12px;
+}
+
+/* Settings: plumbing is readable, but intentionally visually secondary. */
+.settings-form {
+  gap: 13px;
+  padding: 14px;
+}
+
+.provider-row {
+  padding: 11px 12px;
+}
+
+.provider-row strong {
+  font-size: 13px;
+}
+
+.provider-row small,
+.provider-auth,
+.model-result,
+.model-filter-count,
+.provider-toggle,
+.datasource-key-panel p,
+.advanced-tools > summary,
+.institutional-explainer {
+  font-size: 12px;
+}
+
+.model-result {
+  min-height: 36px;
+  padding: 8px 10px;
+}
+
+/* Specialist pages should be dense, never miniature. */
+.composer-row label,
+.rate-controls label,
+.institutional-controls label,
+.edinet-controls label {
+  font-size: 11px;
+}
+
+.composer-row input,
+.composer-row select,
+.rate-controls input,
+.institutional-controls input,
+.edinet-controls input[type=date],
+.edinet-controls input[type=text] {
+  font-size: 12px;
+}
+
+.edinet-status-line,
+.edinet-coverage,
+.edinet-element,
+.edinet-scope {
+  font-size: 11px;
+}
+
+/* Secondary evidence is allowed to be dense, never miniature. */
+.provenance-card,
+.source-strip,
+.form-message,
+.finance-bar-label,
+.finance-bar-cell small,
+.finance-insight small,
+.analyst-source,
+.indicator-popover > p,
+.indicator-option small,
+.ai-evidence-boundary,
+.portfolio-history-meta {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.metric-option,
+.indicator-option strong,
+.finance-insight strong {
+  font-size: 12px;
+}
+
+.indicator-count {
+  font-size: 11px;
+}
+
+@media (hover: hover) {
+  .result-row:hover,
+  .symbol-card:hover,
+  .company-search-primary:hover,
+  .market-card:hover {
+    background: #f1efe9;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-ai-drawer,
+  button,
+  .button,
+  .primary,
+  .secondary,
+  .ghost {
+    transition: none !important;
+  }
+}
+
+@media (max-width: 1100px) {
+  .home-primary {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, .48fr);
+  }
+
+  .home-workspace {
+    grid-template-columns: minmax(280px, .82fr) minmax(0, 1.18fr);
+  }
+}
+
+@media (max-width: 900px) {
+  :root {
+    --control-height: 40px;
+  }
+
+  .topbar {
+    position: sticky;
+    inset: auto;
+    top: 0;
+    width: 100%;
+    height: auto;
+    display: block;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid #050505;
+  }
+
+  .brand,
+  .topbar-meta,
+  .nav-group-label {
+    display: none;
+  }
+
+  .nav {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    width: 100%;
+    padding: 0;
+    overflow: visible;
+    overscroll-behavior: auto;
+  }
+
+  .nav-group {
+    display: contents;
+    margin: 0;
+  }
+
+  .nav a {
+    min-width: 0;
+    min-height: 46px;
+    justify-content: center;
+    padding: 7px 5px;
+    border-left: 0;
+    border-right: 1px solid #2d2f2a;
+    border-bottom: 2px solid transparent;
+    color: #d2d3cd;
+    font-size: 13px;
+    line-height: 1.2;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .nav a:nth-child(4n) {
+    border-right: 0;
+  }
+
+  .nav a.is-active {
+    border-left: 0;
+    border-bottom-color: #89a7ff;
+    background: #242620;
+  }
+
+  .main-shell {
+    margin-left: 0;
+  }
+
+  .masthead {
+    height: 46px;
+    padding: 0 14px;
+  }
+
+  .content {
+    width: min(100% - 24px, 1320px);
+    padding-top: 22px;
+  }
+
+  .home-primary,
+  .home-workspace,
+  .grid-2,
+  .portfolio-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .home-operator {
+    padding: 14px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .footer {
+    padding-inline: 14px;
+  }
+}
+
+@media (max-width: 620px) {
+  body {
+    font-size: 14px;
+  }
+
+  .nav a {
+    min-height: 48px;
+    font-size: 13px;
+  }
+
+  .masthead {
+    min-height: 44px;
+    height: auto;
+    gap: 8px;
+  }
+
+  .masthead-status {
+    display: none;
+  }
+
+  .masthead-actions {
+    margin-left: auto;
+    gap: 9px;
+  }
+
+  .content {
+    width: calc(100% - 20px);
+    padding-top: 20px;
+  }
+
+  .page-head,
+  .page-heading,
+  .hero,
+  .instrument-header {
+    gap: 9px;
+    margin-bottom: 18px;
+  }
+
+  h1 {
+    font-size: 28px;
+  }
+
+  .ux-subtitle {
+    font-size: 13px;
+  }
+
+  .home-primary {
+    gap: 14px;
+    padding-top: 10px;
+  }
+
+  .home-search {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .home-search input,
+  .home-search button {
+    min-height: 46px;
+  }
+
+  .home-shortcuts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+
+  .home-shortcut {
+    margin: 0;
+    padding: 9px 8px 9px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .section-heading {
+    min-height: 46px;
+  }
+
+  table,
+  .research-table {
+    font-size: 12px;
+  }
+
+  th,
+  .research-table th {
+    font-size: 11px;
+  }
+
+  .command-palette {
+    width: calc(100vw - 16px);
+    margin-top: 3vh;
+  }
+
+  .context-ai-drawer {
+    width: 100vw;
+  }
+}
+
+@media (max-width: 420px) {
+  .nav {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .nav a {
+    padding-inline: 3px;
+    font-size: 13px;
+  }
+
+  .command-trigger span {
+    display: none;
+  }
+
+  .locale-switcher {
+    font-size: 10px;
+  }
+}

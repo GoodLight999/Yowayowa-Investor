@@ -1,0 +1,39 @@
+@media (max-width: 800px) {
+  .topbar {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "brand meta"
+      "nav nav";
+    gap: 0 12px;
+    min-height: auto;
+    padding: 8px 10px 0;
+  }
+
+  .brand { grid-area: brand; padding-bottom: 8px; }
+  .topbar-meta { grid-area: meta; padding-bottom: 8px; }
+
+  .nav {
+    grid-area: nav;
+    display: flex;
+    width: calc(100% + 20px);
+    max-width: none;
+    height: 38px;
+    margin-inline: -10px;
+    padding-inline: 10px;
+    justify-content: flex-start;
+    gap: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    border-top: 1px solid var(--line);
+  }
+
+  .nav::-webkit-scrollbar { display: none; }
+  .nav a {
+    flex: 0 0 auto;
+    height: 38px;
+    padding: 0 10px;
+    border-bottom-width: 2px;
+  }
+}

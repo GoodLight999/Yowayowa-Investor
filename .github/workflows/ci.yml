@@ -1,0 +1,89 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.3"
+          enable-cache: true
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+      - run: uv sync --extra dev
+      - run: uv run ruff check src tests browser_tests
+      - run: uv run ruff format --check --diff src tests browser_tests
+      - run: uv run mypy src/yowayowa
+      - name: Expansion contracts
+        continue-on-error: true
+        run: >-
+          uv run pytest tests/test_ai_agent.py tests/test_yahoo_deep_research.py
+          tests/test_yahoo_screener.py
+      - name: Legacy core API and lifecycle
+        continue-on-error: true
+        run: >-
+          uv run pytest tests/test_api.py tests/test_cron.py tests/test_provider_policy.py
+          tests/test_symbols.py tests/test_watchlists.py
+      - name: Legacy market and analysis
+        continue-on-error: true
+        run: >-
+          uv run pytest tests/test_market_overview.py tests/test_market_quotes_api.py
+          tests/test_comparison.py tests/test_screening.py tests/test_valuation.py
+      - name: Legacy portfolio
+        continue-on-error: true
+        run: >-
+          uv run pytest tests/test_portfolio_csv.py tests/test_portfolio_analytics.py
+          tests/test_portfolio_persistence.py tests/test_portfolio_short.py
+      - name: Legacy source normalization
+        continue-on-error: true
+        run: >-
+          uv run pytest tests/test_sec_normalization.py tests/test_yahoo_fundamentals.py
+          tests/test_yahoo_research.py tests/test_operations.py
+      - run: uv run pytest --cov=yowayowa --cov-report=term-missing
+      - run: uv run yowayowa export-openapi
+      - name: Confirm OpenAPI generated
+        run: test -s openapi.json
+
+  browser:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.3"
+          enable-cache: true
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+      - run: uv sync --extra dev
+      - name: Verify runner Chrome
+        run: google-chrome --version
+      - name: Start web application
+        run: |
+          YOWAYOWA_DATABASE_URL=sqlite:////tmp/yowayowa-browser.db \
+            uv run uvicorn yowayowa.api.app:app --host 127.0.0.1 --port 8000 \
+            >/tmp/yowayowa-browser.log 2>&1 &
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/v1/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/yowayowa-browser.log
+          exit 1
+      - name: Browser E2E
+        run: uv run pytest browser_tests --browser chromium --browser-channel chrome
