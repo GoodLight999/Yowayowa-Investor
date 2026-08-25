@@ -92,7 +92,15 @@ def balance_sheet_supplement(
         for item in (current_assets, liabilities, investment_securities)
         if item.unit_id
     }
-    if len(unit_ids) > 1:
+    if unit_ids != {"JPY"}:
+        return None
+
+    values = (
+        float(current_assets.numeric_value),
+        float(liabilities.numeric_value),
+        float(investment_securities.numeric_value),
+    )
+    if any(value < 0 for value in values):
         return None
 
     provenance = data.provenance.model_copy(
@@ -103,14 +111,14 @@ def balance_sheet_supplement(
                 f"Kiyohara-mode balance-sheet supplement from EDINET document {filing.doc_id}.",
                 (
                     "Current assets, liabilities, and investment securities come from the same "
-                    "annual filing; mixed-source balance-sheet arithmetic is not used."
+                    "annual filing in JPY; mixed-source or mixed-currency arithmetic is not used."
                 ),
             ],
         }
     )
     return StrategyBalanceSheetSupplement(
-        current_assets=float(current_assets.numeric_value),
-        liabilities=float(liabilities.numeric_value),
-        investment_securities=float(investment_securities.numeric_value),
+        current_assets=values[0],
+        liabilities=values[1],
+        investment_securities=values[2],
         provenance=provenance,
     )
