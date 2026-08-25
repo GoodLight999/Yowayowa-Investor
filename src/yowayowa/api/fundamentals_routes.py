@@ -19,7 +19,11 @@ from yowayowa.providers.edinet import EdinetClient
 from yowayowa.providers.registry import fundamentals_provider, yahoo_market_provider
 from yowayowa.services.comparison import compare
 from yowayowa.services.screening import screen
-from yowayowa.services.strategy_edinet import balance_sheet_supplement, tokyo_security_code
+from yowayowa.services.strategy_edinet import (
+    StrategyBalanceSheetSupplement,
+    balance_sheet_supplement,
+    tokyo_security_code,
+)
 from yowayowa.services.strategy_presets import (
     KIYOHARA_GLOBAL_ID,
     evaluate_kiyohara_candidate,
@@ -46,7 +50,7 @@ def _strategy_edinet_supplement(
     request: Request,
     session: Session,
     symbol: str,
-):
+) -> StrategyBalanceSheetSupplement | None:
     if tokyo_security_code(symbol) is None:
         return None
     settings = request_data_source_settings(request, get_settings(), "edinet")
@@ -170,9 +174,7 @@ def evaluate_builtin_strategy(
             supplement = _strategy_edinet_supplement(request, session, symbol)
         except Exception as exc:
             supplement_errors[symbol] = f"{type(exc).__name__}: {exc}"
-        evaluations.append(
-            evaluate_kiyohara_candidate(facts, normalized_candidate, supplement)
-        )
+        evaluations.append(evaluate_kiyohara_candidate(facts, normalized_candidate, supplement))
 
     evaluations.sort(
         key=lambda item: (
