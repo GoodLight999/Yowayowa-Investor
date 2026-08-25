@@ -63,6 +63,7 @@ def _fundamentals(symbol: str = "TEST") -> Fundamentals:
 def test_kiyohara_builtin_is_global_regional_workflow_not_fixed_jpy_cap() -> None:
     strategy = get_builtin_strategy(KIYOHARA_GLOBAL_ID)
 
+    assert strategy.name_ja == "清原達郎モード"
     assert strategy.default_region == "jp"
     assert strategy.region_required is True
     assert strategy.discovery.sort_field == "intradaymarketcap"
@@ -72,6 +73,7 @@ def test_kiyohara_builtin_is_global_regional_workflow_not_fixed_jpy_cap() -> Non
         item.field == "intradaymarketcap" and item.operator in {"lt", "lte"}
         for item in strategy.discovery.filters
     )
+    assert "yowayowa_conservative_net_cash_ratio" in strategy.research_metrics
     assert any("net-cash" in source.note.lower() for source in strategy.sources)
 
 
@@ -86,6 +88,8 @@ def test_kiyohara_formula_uses_seventy_percent_of_investment_securities() -> Non
         ),
     )
 
+    assert result.yowayowa_conservative_net_cash == 80
+    assert result.yowayowa_conservative_net_cash_ratio == 0.8
     assert result.net_cash == 101
     assert result.net_cash_ratio == 1.01
     assert result.deep_value_net_cash is True
@@ -100,6 +104,8 @@ def test_missing_investment_securities_produces_conservative_bounds() -> None:
         StrategyCandidateInput(symbol="TEST", market_cap=100, pe_ratio=10),
     )
 
+    assert result.yowayowa_conservative_net_cash == 80
+    assert result.yowayowa_conservative_net_cash_ratio == 0.8
     assert result.net_cash == 80
     assert result.net_cash_ratio == 0.8
     assert result.net_cash_ratio_is_lower_bound is True
@@ -138,4 +144,5 @@ def test_strategy_api_returns_partial_results_and_preserves_errors(monkeypatch) 
     assert response.status_code == 200
     payload = response.json()
     assert [item["symbol"] for item in payload["evaluations"]] == ["GOOD"]
+    assert payload["evaluations"][0]["yowayowa_conservative_net_cash_ratio"] == 0.8
     assert "MISS" in payload["errors"]
