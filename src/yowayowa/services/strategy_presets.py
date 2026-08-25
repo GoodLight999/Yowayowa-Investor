@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from yowayowa.domain import Fundamentals
 from yowayowa.research_models import MarketScreenFilter, MarketScreenRequest
 from yowayowa.services.screening import derived_metrics
+from yowayowa.services.strategy_edinet import StrategyBalanceSheetSupplement
 from yowayowa.strategy_models import (
     StrategyCandidateEvaluation,
     StrategyCandidateInput,
@@ -122,10 +123,13 @@ def _finite_positive(value: float | None) -> float | None:
 def evaluate_kiyohara_candidate(
     fundamentals: Fundamentals,
     candidate: StrategyCandidateInput,
+    supplement: StrategyBalanceSheetSupplement | None = None,
 ) -> StrategyCandidateEvaluation:
     metrics = derived_metrics(fundamentals)
-    current_assets = metrics.get("current_assets")
-    liabilities = metrics.get("liabilities")
+    current_assets = (
+        supplement.current_assets if supplement is not None else metrics.get("current_assets")
+    )
+    liabilities = supplement.liabilities if supplement is not None else metrics.get("liabilities")
     missing: list[str] = []
 
     if current_assets is None:
@@ -142,6 +146,8 @@ def evaluate_kiyohara_candidate(
         )
 
     investment_securities = candidate.investment_securities
+    if investment_securities is None and supplement is not None:
+        investment_securities = supplement.investment_securities
     exact_formula = investment_securities is not None
     if not exact_formula:
         missing.append("investment_securities")
@@ -187,6 +193,7 @@ def evaluate_kiyohara_candidate(
         ),
         missing=missing,
         provenance=fundamentals.provenance,
+        supplemental_provenance=[supplement.provenance] if supplement is not None else [],
     )
 
 
