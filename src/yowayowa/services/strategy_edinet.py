@@ -83,9 +83,9 @@ def balance_sheet_supplement(
     current_assets = observations["current_assets"]
     liabilities = observations["liabilities"]
     investment_securities = observations["investment_securities"]
-    assert current_assets is not None
-    assert liabilities is not None
-    assert investment_securities is not None
+    assert current_assets is not None and current_assets.numeric_value is not None
+    assert liabilities is not None and liabilities.numeric_value is not None
+    assert investment_securities is not None and investment_securities.numeric_value is not None
 
     unit_ids = {
         item.unit_id
