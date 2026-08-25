@@ -9,6 +9,11 @@
         header: 'X-Yowayowa-EDINET-Key',
       },
       {
+        prefix: '/v1/strategy-presets/kiyohara_global_value_growth/evaluate',
+        storageKey: 'yowayowa.datasource.edinet.key.v1',
+        header: 'X-Yowayowa-EDINET-Key',
+      },
+      {
         prefix: '/v1/macro/estat',
         storageKey: 'yowayowa.datasource.estat.key.v1',
         header: 'X-Yowayowa-Estat-Key',
