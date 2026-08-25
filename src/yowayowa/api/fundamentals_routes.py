@@ -146,9 +146,9 @@ def evaluate_builtin_strategy(
     evaluations.sort(
         key=lambda item: (
             item.net_cash_ratio is None,
-            -(item.net_cash_ratio or float("-inf")),
+            -item.net_cash_ratio if item.net_cash_ratio is not None else float("inf"),
             item.cash_neutral_pe is None,
-            item.cash_neutral_pe or float("inf"),
+            item.cash_neutral_pe if item.cash_neutral_pe is not None else float("inf"),
             item.symbol,
         )
     )
