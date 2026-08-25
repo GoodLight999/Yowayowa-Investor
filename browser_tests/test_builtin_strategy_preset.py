@@ -166,9 +166,9 @@ def test_builtin_kiyohara_strategy_applies_region_and_renders_bounds(page: Page)
 
     results = page.locator("#discover-results")
     expect(results.get_by_text("7203.T", exact=True)).to_be_visible()
-    expect(results.get_by_text("0.80×", exact=True)).to_be_visible()
-    expect(results.get_by_text("≥0.80×", exact=True)).to_be_visible()
-    expect(results.get_by_text("≤2.00×", exact=True)).to_be_visible()
+    expect(results.get_by_text("0.80\u00d7", exact=True)).to_be_visible()
+    expect(results.get_by_text("\u22650.80\u00d7", exact=True)).to_be_visible()
+    expect(results.get_by_text("\u22642.00\u00d7", exact=True)).to_be_visible()
     assert submitted[-1]["sort_field"] == "intradaymarketcap"
     assert submitted[-1]["sort_ascending"] is True
     assert submitted[-1]["filters"][0] == {
