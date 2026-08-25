@@ -3,7 +3,13 @@ from decimal import Decimal
 
 from starlette.testclient import TestClient
 
-from yowayowa.domain import Fundamentals, LicenseClass, MetricPoint, MetricSeries, Provenance
+from yowayowa.domain import (
+    Fundamentals,
+    LicenseClass,
+    MetricPoint,
+    MetricSeries,
+    Provenance,
+)
 from yowayowa.services.strategy_presets import (
     KIYOHARA_GLOBAL_ID,
     evaluate_kiyohara_candidate,
