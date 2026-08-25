@@ -141,9 +141,7 @@ def evaluate_kiyohara_candidate(
     yowayowa_conservative_net_cash_ratio: float | None = None
     if current_assets is not None and liabilities is not None:
         yowayowa_conservative_net_cash = current_assets - liabilities
-        yowayowa_conservative_net_cash_ratio = (
-            yowayowa_conservative_net_cash / candidate.market_cap
-        )
+        yowayowa_conservative_net_cash_ratio = yowayowa_conservative_net_cash / candidate.market_cap
 
     investment_securities = candidate.investment_securities
     if investment_securities is None and supplement is not None:
