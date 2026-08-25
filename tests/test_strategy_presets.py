@@ -173,7 +173,5 @@ def test_strategy_api_returns_partial_results_and_preserves_errors(monkeypatch) 
     assert response.status_code == 200
     payload = response.json()
     assert [item["symbol"] for item in payload["evaluations"]] == ["GOOD"]
-    assert payload["evaluations"][0]["yowayowa_conservative_net_cash_ratio"] == pytest.approx(
-        0.8
-    )
+    assert payload["evaluations"][0]["yowayowa_conservative_net_cash_ratio"] == pytest.approx(0.8)
     assert "MISS" in payload["errors"]
