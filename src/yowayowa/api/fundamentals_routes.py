@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
 
-from yowayowa.api.deps import require_api_token
+from yowayowa.api.deps import db_session, request_data_source_settings, require_api_token
+from yowayowa.config import get_settings
 from yowayowa.domain import (
     ComparisonRequest,
     ComparisonResponse,
@@ -13,9 +15,11 @@ from yowayowa.domain import (
     ValuationSnapshot,
 )
 from yowayowa.providers.base import ProviderPolicyError
+from yowayowa.providers.edinet import EdinetClient
 from yowayowa.providers.registry import fundamentals_provider, yahoo_market_provider
 from yowayowa.services.comparison import compare
 from yowayowa.services.screening import screen
+from yowayowa.services.strategy_edinet import balance_sheet_supplement, tokyo_security_code
 from yowayowa.services.strategy_presets import (
     KIYOHARA_GLOBAL_ID,
     evaluate_kiyohara_candidate,
@@ -36,6 +40,19 @@ router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_token)])
 
 def _fundamentals(symbol: str) -> Fundamentals:
     return fundamentals_provider().company_facts(normalize_symbol(symbol))
+
+
+def _strategy_edinet_supplement(
+    request: Request,
+    session: Session,
+    symbol: str,
+):
+    if tokyo_security_code(symbol) is None:
+        return None
+    settings = request_data_source_settings(request, get_settings(), "edinet")
+    if not settings.edinet_api_key:
+        return None
+    return balance_sheet_supplement(session, EdinetClient(settings), symbol)
 
 
 @router.get("/fundamentals/{symbol}", response_model=Fundamentals)
@@ -119,6 +136,8 @@ def builtin_strategy_preset(strategy_id: str) -> StrategyPresetDefinition:
 def evaluate_builtin_strategy(
     strategy_id: str,
     payload: StrategyEvaluationRequest,
+    request: Request,
+    session: Session = Depends(db_session),
 ) -> StrategyEvaluationResponse:
     try:
         get_builtin_strategy(strategy_id)
@@ -132,6 +151,7 @@ def evaluate_builtin_strategy(
 
     evaluations = []
     errors: dict[str, str] = {}
+    supplement_errors: dict[str, str] = {}
     seen: set[str] = set()
     for candidate in payload.candidates:
         symbol = normalize_symbol(candidate.symbol)
@@ -140,11 +160,19 @@ def evaluate_builtin_strategy(
         seen.add(symbol)
         normalized_candidate = candidate.model_copy(update={"symbol": symbol})
         try:
-            evaluations.append(
-                evaluate_kiyohara_candidate(_fundamentals(symbol), normalized_candidate)
-            )
+            facts = _fundamentals(symbol)
         except Exception as exc:
             errors[symbol] = f"{type(exc).__name__}: {exc}"
+            continue
+
+        supplement = None
+        try:
+            supplement = _strategy_edinet_supplement(request, session, symbol)
+        except Exception as exc:
+            supplement_errors[symbol] = f"{type(exc).__name__}: {exc}"
+        evaluations.append(
+            evaluate_kiyohara_candidate(facts, normalized_candidate, supplement)
+        )
 
     evaluations.sort(
         key=lambda item: (
@@ -159,5 +187,6 @@ def evaluate_builtin_strategy(
         strategy_id=strategy_id,
         evaluations=evaluations,
         errors=errors,
+        supplement_errors=supplement_errors,
         evaluated_at=evaluated_at(),
     )
