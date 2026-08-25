@@ -34,11 +34,10 @@ def test_builtin_kiyohara_strategy_applies_region_and_renders_bounds(page: Page)
     strategies = [
         {
             "id": STRATEGY_ID,
-            "name_ja": "清原達郎モード (非公式)",
-            "name_en": "Tatsuro Kiyohara style (unofficial)",
+            "name_ja": "清原達郎モード",
+            "name_en": "Tatsuro Kiyohara mode",
             "description_ja": "公開手法を使った候補発掘。",
             "description_en": "Candidate discovery based on published methodology.",
-            "unofficial": True,
             "default_region": "jp",
             "region_required": True,
             "discovery": {
@@ -56,7 +55,10 @@ def test_builtin_kiyohara_strategy_applies_region_and_renders_bounds(page: Page)
                 "offset": 0,
                 "size": 25,
             },
-            "research_metrics": ["net_cash_ratio"],
+            "research_metrics": [
+                "yowayowa_conservative_net_cash_ratio",
+                "net_cash_ratio",
+            ],
             "qualitative_review_ja": [],
             "qualitative_review_en": [],
             "sources": [],
@@ -124,6 +126,8 @@ def test_builtin_kiyohara_strategy_applies_region_and_renders_bounds(page: Page)
                             "current_assets": 120,
                             "liabilities": 40,
                             "investment_securities": None,
+                            "yowayowa_conservative_net_cash": 80,
+                            "yowayowa_conservative_net_cash_ratio": 0.8,
                             "net_cash": 80,
                             "net_cash_ratio": 0.8,
                             "net_cash_ratio_is_lower_bound": True,
@@ -152,20 +156,19 @@ def test_builtin_kiyohara_strategy_applies_region_and_renders_bounds(page: Page)
     page.locator("#discover-preset").select_option(f"builtin:{STRATEGY_ID}")
     expect(page.locator("#discover-region")).to_have_value("jp")
     expect(page.locator("#discover-strategy-note")).to_be_visible()
-    expect(page.locator("#discover-strategy-note")).to_contain_text("not an official")
+    expect(page.locator("#discover-strategy-note")).to_contain_text("conservative")
     expect(page.locator(".research-filter-row")).to_have_count(2)
-    expect(page.locator(".filter-field").nth(0)).to_have_value(
-        "peratio.lasttwelvemonths"
-    )
+    expect(page.locator(".filter-field").nth(0)).to_have_value("peratio.lasttwelvemonths")
     expect(page.locator(".filter-operator").nth(0)).to_have_value("btwn")
     expect(page.locator(".filter-value input").nth(0)).to_have_value("0.01, 20")
 
-    page.get_by_role("button", name="Run", exact=True).click()
+    page.locator('#discover-form button[type="submit"]').click()
 
     results = page.locator("#discover-results")
     expect(results.get_by_text("7203.T", exact=True)).to_be_visible()
-    expect(results.get_by_text("\u22650.80\u00d7", exact=True)).to_be_visible()
-    expect(results.get_by_text("\u22642.00\u00d7", exact=True)).to_be_visible()
+    expect(results.get_by_text("0.80×", exact=True)).to_be_visible()
+    expect(results.get_by_text("≥0.80×", exact=True)).to_be_visible()
+    expect(results.get_by_text("≤2.00×", exact=True)).to_be_visible()
     assert submitted[-1]["sort_field"] == "intradaymarketcap"
     assert submitted[-1]["sort_ascending"] is True
     assert submitted[-1]["filters"][0] == {
