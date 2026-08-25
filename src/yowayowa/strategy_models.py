@@ -77,4 +77,5 @@ class StrategyEvaluationResponse(BaseModel):
     strategy_id: str
     evaluations: list[StrategyCandidateEvaluation]
     errors: dict[str, str] = Field(default_factory=dict)
+    supplement_errors: dict[str, str] = Field(default_factory=dict)
     evaluated_at: datetime
