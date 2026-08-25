@@ -75,7 +75,11 @@ class FakeEdinetClient:
                 value="2026-03-31",
             ),
         ]
-        return EdinetCsvPayload(facts=facts, source_files=["XBRL_TO_CSV/jppfs.csv"], parse_warnings=[])
+        return EdinetCsvPayload(
+            facts=facts,
+            source_files=["XBRL_TO_CSV/jppfs.csv"],
+            parse_warnings=[],
+        )
 
     def provenance_for_document(self, doc_id: str) -> Provenance:
         return Provenance(
