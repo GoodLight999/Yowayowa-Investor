@@ -125,7 +125,10 @@ def evaluate_builtin_strategy(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if strategy_id != KIYOHARA_GLOBAL_ID:
-        raise HTTPException(status_code=501, detail=f"Strategy evaluator not implemented: {strategy_id}")
+        raise HTTPException(
+            status_code=501,
+            detail=f"Strategy evaluator not implemented: {strategy_id}",
+        )
 
     evaluations = []
     errors: dict[str, str] = {}
