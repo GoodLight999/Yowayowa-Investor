@@ -17,7 +17,7 @@ KIYOHARA_GLOBAL_ID = "kiyohara_global_value_growth"
 
 _KIYOHARA_GLOBAL = StrategyPresetDefinition(
     id=KIYOHARA_GLOBAL_ID,
-    name_ja="清原達郎モード（非公式）",
+    name_ja="清原達郎モード (非公式)",
     name_en="Tatsuro Kiyohara style (unofficial)",
     description_ja=(
         "公開されている『割安小型成長株』の考え方を世界の各市場へ移植した調査プリセット。"
@@ -86,7 +86,7 @@ _KIYOHARA_GLOBAL = StrategyPresetDefinition(
             label="Diamond Online — 2026 net-cash methodology",
             url="https://diamond.jp/articles/-/386599",
             note=(
-                "Published formula: current assets + investment securities × 70% − liabilities, "
+                "Published formula: current assets + investment securities x 70% - liabilities, "
                 "divided by market capitalization."
             ),
         ),
@@ -140,7 +140,9 @@ def evaluate_kiyohara_candidate(
     net_cash: float | None = None
     net_cash_ratio: float | None = None
     if current_assets is not None and liabilities is not None:
-        investment_component = 0.7 * investment_securities if investment_securities is not None else 0.0
+        investment_component = (
+            0.7 * investment_securities if investment_securities is not None else 0.0
+        )
         net_cash = current_assets + investment_component - liabilities
         net_cash_ratio = net_cash / candidate.market_cap
 
@@ -161,9 +163,7 @@ def evaluate_kiyohara_candidate(
         net_cash_ratio=net_cash_ratio,
         net_cash_ratio_is_lower_bound=not exact_formula and net_cash_ratio is not None,
         cash_neutral_pe=cash_neutral_pe,
-        cash_neutral_pe_is_upper_bound=(
-            not exact_formula and cash_neutral_pe is not None
-        ),
+        cash_neutral_pe_is_upper_bound=(not exact_formula and cash_neutral_pe is not None),
         revenue_growth_yoy=metrics.get("revenue_growth_yoy"),
         net_income_growth_yoy=metrics.get("net_income_growth_yoy"),
         free_cash_flow=metrics.get("free_cash_flow"),
