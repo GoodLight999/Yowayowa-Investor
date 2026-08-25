@@ -21,7 +21,6 @@ class StrategyPresetDefinition(BaseModel):
     name_en: str
     description_ja: str
     description_en: str
-    unofficial: bool = True
     default_region: str
     region_required: bool = True
     discovery: MarketScreenRequest
@@ -52,6 +51,8 @@ class StrategyCandidateEvaluation(BaseModel):
     current_assets: float | None = None
     liabilities: float | None = None
     investment_securities: float | None = None
+    yowayowa_conservative_net_cash: float | None = None
+    yowayowa_conservative_net_cash_ratio: float | None = None
     net_cash: float | None = None
     net_cash_ratio: float | None = None
     net_cash_ratio_is_lower_bound: bool = False
