@@ -10,6 +10,7 @@ from yowayowa.domain import (
     MetricSeries,
     Provenance,
 )
+from yowayowa.services.strategy_edinet import StrategyBalanceSheetSupplement
 from yowayowa.services.strategy_presets import (
     KIYOHARA_GLOBAL_ID,
     evaluate_kiyohara_candidate,
@@ -18,14 +19,18 @@ from yowayowa.services.strategy_presets import (
 from yowayowa.strategy_models import StrategyCandidateInput
 
 
-def _fundamentals(symbol: str = "TEST") -> Fundamentals:
-    provenance = Provenance(
+def _provenance(source: str = "fixture statements") -> Provenance:
+    return Provenance(
         provider="fixture",
-        source="fixture statements",
+        source=source,
         license_class=LicenseClass.OFFICIAL_PUBLIC,
         retrieved_at=datetime(2026, 8, 25, tzinfo=UTC),
         as_of=date(2025, 12, 31),
     )
+
+
+def _fundamentals(symbol: str = "TEST") -> Fundamentals:
+    provenance = _provenance()
 
     def series(key: str, value: float) -> MetricSeries:
         return MetricSeries(
@@ -96,6 +101,29 @@ def test_kiyohara_formula_uses_seventy_percent_of_investment_securities() -> Non
     assert result.cash_neutral_pe is None
     assert result.net_cash_ratio_is_lower_bound is False
     assert result.basis == "kiyohara_formula_with_investment_securities"
+
+
+def test_edinet_supplement_replaces_all_three_balance_sheet_inputs_together() -> None:
+    supplement = StrategyBalanceSheetSupplement(
+        current_assets=200,
+        liabilities=50,
+        investment_securities=50,
+        provenance=_provenance("EDINET annual filing"),
+    )
+    result = evaluate_kiyohara_candidate(
+        _fundamentals("7203.T"),
+        StrategyCandidateInput(symbol="7203.T", market_cap=250, pe_ratio=10),
+        supplement,
+    )
+
+    assert result.current_assets == 200
+    assert result.liabilities == 50
+    assert result.investment_securities == 50
+    assert result.yowayowa_conservative_net_cash_ratio == 0.6
+    assert result.net_cash_ratio == 0.74
+    assert result.cash_neutral_pe == 2.6
+    assert result.net_cash_ratio_is_lower_bound is False
+    assert result.supplemental_provenance[0].source == "EDINET annual filing"
 
 
 def test_missing_investment_securities_produces_conservative_bounds() -> None:
