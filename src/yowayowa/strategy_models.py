@@ -66,6 +66,7 @@ class StrategyCandidateEvaluation(BaseModel):
     basis: NetCashBasis
     missing: list[str] = Field(default_factory=list)
     provenance: Provenance
+    supplemental_provenance: list[Provenance] = Field(default_factory=list)
 
 
 class StrategyEvaluationRequest(BaseModel):
