@@ -16,7 +16,19 @@ from yowayowa.providers.base import ProviderPolicyError
 from yowayowa.providers.registry import fundamentals_provider, yahoo_market_provider
 from yowayowa.services.comparison import compare
 from yowayowa.services.screening import screen
+from yowayowa.services.strategy_presets import (
+    KIYOHARA_GLOBAL_ID,
+    evaluate_kiyohara_candidate,
+    evaluated_at,
+    get_builtin_strategy,
+    list_builtin_strategies,
+)
 from yowayowa.services.valuation import valuation_snapshot
+from yowayowa.strategy_models import (
+    StrategyEvaluationRequest,
+    StrategyEvaluationResponse,
+    StrategyPresetDefinition,
+)
 from yowayowa.symbols import normalize_symbol
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_token)])
@@ -85,3 +97,64 @@ def compare_anywhere(payload: ComparisonRequest) -> ComparisonResponse:
             detail += f"; unavailable: {', '.join(unavailable)}"
         raise HTTPException(status_code=422, detail=detail)
     return compare(data, payload.metrics or None)
+
+
+@router.get("/strategy-presets", response_model=list[StrategyPresetDefinition])
+def builtin_strategy_presets() -> list[StrategyPresetDefinition]:
+    return list_builtin_strategies()
+
+
+@router.get("/strategy-presets/{strategy_id}", response_model=StrategyPresetDefinition)
+def builtin_strategy_preset(strategy_id: str) -> StrategyPresetDefinition:
+    try:
+        return get_builtin_strategy(strategy_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/strategy-presets/{strategy_id}/evaluate",
+    response_model=StrategyEvaluationResponse,
+)
+def evaluate_builtin_strategy(
+    strategy_id: str,
+    payload: StrategyEvaluationRequest,
+) -> StrategyEvaluationResponse:
+    try:
+        get_builtin_strategy(strategy_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if strategy_id != KIYOHARA_GLOBAL_ID:
+        raise HTTPException(status_code=501, detail=f"Strategy evaluator not implemented: {strategy_id}")
+
+    evaluations = []
+    errors: dict[str, str] = {}
+    seen: set[str] = set()
+    for candidate in payload.candidates:
+        symbol = normalize_symbol(candidate.symbol)
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        normalized_candidate = candidate.model_copy(update={"symbol": symbol})
+        try:
+            evaluations.append(
+                evaluate_kiyohara_candidate(_fundamentals(symbol), normalized_candidate)
+            )
+        except Exception as exc:
+            errors[symbol] = f"{type(exc).__name__}: {exc}"
+
+    evaluations.sort(
+        key=lambda item: (
+            item.net_cash_ratio is None,
+            -(item.net_cash_ratio or float("-inf")),
+            item.cash_neutral_pe is None,
+            item.cash_neutral_pe or float("inf"),
+            item.symbol,
+        )
+    )
+    return StrategyEvaluationResponse(
+        strategy_id=strategy_id,
+        evaluations=evaluations,
+        errors=errors,
+        evaluated_at=evaluated_at(),
+    )
