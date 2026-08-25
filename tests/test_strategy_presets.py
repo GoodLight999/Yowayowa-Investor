@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+import pytest
 from starlette.testclient import TestClient
 
 from yowayowa.domain import (
@@ -119,9 +120,9 @@ def test_edinet_supplement_replaces_all_three_balance_sheet_inputs_together() ->
     assert result.current_assets == 200
     assert result.liabilities == 50
     assert result.investment_securities == 50
-    assert result.yowayowa_conservative_net_cash_ratio == 0.6
-    assert result.net_cash_ratio == 0.74
-    assert result.cash_neutral_pe == 2.6
+    assert result.yowayowa_conservative_net_cash_ratio == pytest.approx(0.6)
+    assert result.net_cash_ratio == pytest.approx(0.74)
+    assert result.cash_neutral_pe == pytest.approx(2.6)
     assert result.net_cash_ratio_is_lower_bound is False
     assert result.supplemental_provenance[0].source == "EDINET annual filing"
 
@@ -133,11 +134,11 @@ def test_missing_investment_securities_produces_conservative_bounds() -> None:
     )
 
     assert result.yowayowa_conservative_net_cash == 80
-    assert result.yowayowa_conservative_net_cash_ratio == 0.8
+    assert result.yowayowa_conservative_net_cash_ratio == pytest.approx(0.8)
     assert result.net_cash == 80
-    assert result.net_cash_ratio == 0.8
+    assert result.net_cash_ratio == pytest.approx(0.8)
     assert result.net_cash_ratio_is_lower_bound is True
-    assert result.cash_neutral_pe == 2
+    assert result.cash_neutral_pe == pytest.approx(2)
     assert result.cash_neutral_pe_is_upper_bound is True
     assert result.basis == "conservative_floor_ex_investment_securities"
     assert "investment_securities" in result.missing
@@ -172,5 +173,7 @@ def test_strategy_api_returns_partial_results_and_preserves_errors(monkeypatch) 
     assert response.status_code == 200
     payload = response.json()
     assert [item["symbol"] for item in payload["evaluations"]] == ["GOOD"]
-    assert payload["evaluations"][0]["yowayowa_conservative_net_cash_ratio"] == 0.8
+    assert payload["evaluations"][0]["yowayowa_conservative_net_cash_ratio"] == pytest.approx(
+        0.8
+    )
     assert "MISS" in payload["errors"]
