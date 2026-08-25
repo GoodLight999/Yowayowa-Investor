@@ -105,13 +105,12 @@ def list_builtins(
 ) -> None:
     with _client(base_url, token) as client:
         payload = client.get("/v1/strategy-presets").raise_for_status().json()
-    table = Table("ID", "Name", "Default region", "Unofficial")
+    table = Table("ID", "Name", "Default region")
     for item in payload:
         table.add_row(
             item["id"],
             item["name_en"],
             item["default_region"].upper(),
-            "yes" if item.get("unofficial") else "no",
         )
     print(table)
 
@@ -121,6 +120,7 @@ def run_builtin(
     strategy_id: str,
     region: str | None = typer.Option(None, help="Yahoo screener region such as jp or us"),
     size: int = typer.Option(25, min=1, max=50),
+    edinet_key: str | None = typer.Option(None, envvar="YOWAYOWA_EDINET_API_KEY", hidden=True),
     base_url: str = typer.Option("http://127.0.0.1:8000"),
     token: str | None = typer.Option(None, envvar="YOWAYOWA_API_TOKEN"),
 ) -> None:
@@ -153,10 +153,12 @@ def run_builtin(
         if not candidates:
             print("No candidates with market-cap data were returned.")
             raise typer.Exit(code=0)
+        headers = {"X-Yowayowa-EDINET-Key": edinet_key} if edinet_key else None
         evaluation = (
             client.post(
                 f"/v1/strategy-presets/{strategy_id}/evaluate",
                 json={"candidates": candidates},
+                headers=headers,
             )
             .raise_for_status()
             .json()
@@ -166,13 +168,16 @@ def run_builtin(
         "Symbol",
         "Market cap",
         "P/E",
-        "Net cash ratio",
+        "Yowayowa NCR",
+        "Kiyohara NCR",
         "Cash-neutral P/E",
         "Revenue YoY",
         "FCF",
         "Basis",
     )
     for item in evaluation["evaluations"]:
+        conservative = item.get("yowayowa_conservative_net_cash_ratio")
+        conservative_text = "—" if conservative is None else f"{conservative:.2f}x"
         ratio = item.get("net_cash_ratio")
         ratio_text = "—" if ratio is None else f"{ratio:.2f}x"
         if ratio is not None and item.get("net_cash_ratio_is_lower_bound"):
@@ -187,6 +192,7 @@ def run_builtin(
             item["symbol"],
             f"{item['market_cap']:.6g}",
             "—" if item.get("pe_ratio") is None else f"{item['pe_ratio']:.2f}x",
+            conservative_text,
             ratio_text,
             cnpe_text,
             "—" if growth is None else f"{growth:+.1%}",
@@ -196,3 +202,5 @@ def run_builtin(
     print(table)
     if evaluation.get("errors"):
         print(f"Unavailable: {', '.join(evaluation['errors'])}")
+    if evaluation.get("supplement_errors"):
+        print(f"EDINET supplement unavailable: {', '.join(evaluation['supplement_errors'])}")
