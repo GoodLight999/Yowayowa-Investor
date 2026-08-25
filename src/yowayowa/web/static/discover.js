@@ -148,8 +148,8 @@
       return;
     }
     const boundary = localeTag.startsWith('ja')
-      ? '投資有価証券を自動取得できない銘柄では、ネットキャッシュ比率は投資有価証券を除いた保守的な下限として表示します。清原氏・出版社の公式機能ではありません。'
-      : 'Where investment securities are unavailable, net-cash ratio is shown as a conservative lower bound excluding them. This is not an official or endorsed feature of Kiyohara or the publisher.';
+      ? '投資有価証券を自動取得できない銘柄では、清原式ネットキャッシュ比率を投資有価証券抜きの下限として表示します。Yowayowa保守NC比率は常に同じ保守式で併記します。'
+      : 'Where investment securities are unavailable, the Kiyohara net-cash ratio is shown as a lower bound excluding them. Yowayowa conservative NCR is always shown using the same conservative formula.';
     note.textContent = `${strategyDescription(strategy)} ${boundary}`;
     note.hidden = false;
   }
@@ -229,6 +229,12 @@
     return null;
   };
 
+  const conservativeRatioText = (evaluation) => {
+    const value = evaluation?.yowayowa_conservative_net_cash_ratio;
+    if (value === null || value === undefined) return '—';
+    return `${Number(value).toFixed(2)}×`;
+  };
+
   const ratioText = (evaluation) => {
     const value = evaluation?.net_cash_ratio;
     if (value === null || value === undefined) return '—';
@@ -299,7 +305,7 @@
       return;
     }
     const strategyHeaders = activeStrategy
-      ? `<th>${escapeHtml(localeTag.startsWith('ja') ? 'ネットキャッシュ比率' : 'Net cash ratio')}</th><th>${escapeHtml(localeTag.startsWith('ja') ? 'キャッシュ中立PER' : 'Cash-neutral P/E')}</th>`
+      ? `<th>${escapeHtml(localeTag.startsWith('ja') ? 'Yowayowa保守NC比率' : 'Yowayowa conservative NCR')}</th><th>${escapeHtml(localeTag.startsWith('ja') ? '清原NC比率' : 'Kiyohara NCR')}</th><th>${escapeHtml(localeTag.startsWith('ja') ? 'キャッシュ中立PER' : 'Cash-neutral P/E')}</th>`
       : '';
     const tableRows = rows.map((row, index) => {
       const symbol = String(row.symbol || '');
@@ -313,7 +319,7 @@
       const revenueGrowth = cell(row, ['revenueGrowth', 'totalrevenues1yrgrowth.lasttwelvemonths']);
       const shortFloat = cell(row, ['shortPercentOfFloat', 'short_percentage_of_float.value']);
       const strategyCells = activeStrategy
-        ? `<td>${escapeHtml(ratioText(row.__strategy))}</td><td>${escapeHtml(cashNeutralPeText(row.__strategy))}</td>`
+        ? `<td>${escapeHtml(conservativeRatioText(row.__strategy))}</td><td>${escapeHtml(ratioText(row.__strategy))}</td><td>${escapeHtml(cashNeutralPeText(row.__strategy))}</td>`
         : '';
       return `<tr>
         <td><input type="checkbox" class="discover-select" data-index="${index}" aria-label="${escapeHtml(symbol)}"></td>
@@ -398,6 +404,8 @@
     const exportRows = rows.map(row => {
       const copy = { ...row };
       if (copy.__strategy) {
+        copy.yowayowa_conservative_net_cash = copy.__strategy.yowayowa_conservative_net_cash;
+        copy.yowayowa_conservative_net_cash_ratio = copy.__strategy.yowayowa_conservative_net_cash_ratio;
         copy.strategy_net_cash_ratio = copy.__strategy.net_cash_ratio;
         copy.strategy_net_cash_ratio_is_lower_bound = copy.__strategy.net_cash_ratio_is_lower_bound;
         copy.strategy_cash_neutral_pe = copy.__strategy.cash_neutral_pe;
