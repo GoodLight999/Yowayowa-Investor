@@ -34,7 +34,7 @@ def test_builtin_kiyohara_strategy_applies_region_and_renders_bounds(page: Page)
     strategies = [
         {
             "id": STRATEGY_ID,
-            "name_ja": "清原達郎モード（非公式）",
+            "name_ja": "清原達郎モード (非公式)",
             "name_en": "Tatsuro Kiyohara style (unofficial)",
             "description_ja": "公開手法を使った候補発掘。",
             "description_en": "Candidate discovery based on published methodology.",
@@ -154,15 +154,18 @@ def test_builtin_kiyohara_strategy_applies_region_and_renders_bounds(page: Page)
     expect(page.locator("#discover-strategy-note")).to_be_visible()
     expect(page.locator("#discover-strategy-note")).to_contain_text("not an official")
     expect(page.locator(".research-filter-row")).to_have_count(2)
-    expect(page.locator(".filter-field").nth(0)).to_have_value("peratio.lasttwelvemonths")
+    expect(page.locator(".filter-field").nth(0)).to_have_value(
+        "peratio.lasttwelvemonths"
+    )
     expect(page.locator(".filter-operator").nth(0)).to_have_value("btwn")
     expect(page.locator(".filter-value input").nth(0)).to_have_value("0.01, 20")
 
     page.get_by_role("button", name="Run", exact=True).click()
 
-    expect(page.locator("#discover-results").get_by_text("7203.T", exact=True)).to_be_visible()
-    expect(page.locator("#discover-results").get_by_text("≥0.80×", exact=True)).to_be_visible()
-    expect(page.locator("#discover-results").get_by_text("≤2.00×", exact=True)).to_be_visible()
+    results = page.locator("#discover-results")
+    expect(results.get_by_text("7203.T", exact=True)).to_be_visible()
+    expect(results.get_by_text("\u22650.80\u00d7", exact=True)).to_be_visible()
+    expect(results.get_by_text("\u22642.00\u00d7", exact=True)).to_be_visible()
     assert submitted[-1]["sort_field"] == "intradaymarketcap"
     assert submitted[-1]["sort_ascending"] is True
     assert submitted[-1]["filters"][0] == {
