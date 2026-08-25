@@ -17,18 +17,18 @@ KIYOHARA_GLOBAL_ID = "kiyohara_global_value_growth"
 
 _KIYOHARA_GLOBAL = StrategyPresetDefinition(
     id=KIYOHARA_GLOBAL_ID,
-    name_ja="清原達郎モード (非公式)",
-    name_en="Tatsuro Kiyohara style (unofficial)",
+    name_ja="清原達郎モード",
+    name_en="Tatsuro Kiyohara mode",
     description_ja=(
         "公開されている『割安小型成長株』の考え方を世界の各市場へ移植した調査プリセット。"
         "地域ごとに低PERの小型株候補を拾い、ネットキャッシュ比率、成長性、FCFを追加確認します。"
         "PER上限20倍は候補数を抑えるためのYowayowa既定値であり、清原氏の固定ルールを意味しません。"
     ),
     description_en=(
-        "An unofficial research preset adapting the published small-cap value-growth approach "
-        "to regional equity markets. It discovers smaller low-P/E candidates within one region, "
-        "then adds net-cash, growth and free-cash-flow checks. The 20x P/E ceiling is a Yowayowa "
-        "discovery default, not a claimed fixed rule from Kiyohara."
+        "A research preset adapting the published small-cap value-growth approach to regional "
+        "equity markets. It discovers smaller low-P/E candidates within one region, then adds "
+        "net-cash, growth and free-cash-flow checks. The 20x P/E ceiling is a Yowayowa discovery "
+        "default, not a claimed fixed rule from Kiyohara."
     ),
     default_region="jp",
     region_required=True,
@@ -46,6 +46,7 @@ _KIYOHARA_GLOBAL = StrategyPresetDefinition(
         size=25,
     ),
     research_metrics=[
+        "yowayowa_conservative_net_cash_ratio",
         "net_cash_ratio",
         "cash_neutral_pe",
         "revenue_growth_yoy",
@@ -132,6 +133,14 @@ def evaluate_kiyohara_candidate(
     if liabilities is None:
         missing.append("liabilities")
 
+    yowayowa_conservative_net_cash: float | None = None
+    yowayowa_conservative_net_cash_ratio: float | None = None
+    if current_assets is not None and liabilities is not None:
+        yowayowa_conservative_net_cash = current_assets - liabilities
+        yowayowa_conservative_net_cash_ratio = (
+            yowayowa_conservative_net_cash / candidate.market_cap
+        )
+
     investment_securities = candidate.investment_securities
     exact_formula = investment_securities is not None
     if not exact_formula:
@@ -139,11 +148,11 @@ def evaluate_kiyohara_candidate(
 
     net_cash: float | None = None
     net_cash_ratio: float | None = None
-    if current_assets is not None and liabilities is not None:
+    if yowayowa_conservative_net_cash is not None:
         investment_component = (
             0.7 * investment_securities if investment_securities is not None else 0.0
         )
-        net_cash = current_assets + investment_component - liabilities
+        net_cash = yowayowa_conservative_net_cash + investment_component
         net_cash_ratio = net_cash / candidate.market_cap
 
     pe_ratio = _finite_positive(candidate.pe_ratio)
@@ -159,6 +168,8 @@ def evaluate_kiyohara_candidate(
         current_assets=current_assets,
         liabilities=liabilities,
         investment_securities=investment_securities,
+        yowayowa_conservative_net_cash=yowayowa_conservative_net_cash,
+        yowayowa_conservative_net_cash_ratio=yowayowa_conservative_net_cash_ratio,
         net_cash=net_cash,
         net_cash_ratio=net_cash_ratio,
         net_cash_ratio_is_lower_bound=not exact_formula and net_cash_ratio is not None,
