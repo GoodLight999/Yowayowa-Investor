@@ -23,13 +23,11 @@ _KIYOHARA_GLOBAL = StrategyPresetDefinition(
     description_ja=(
         "公開されている『割安小型成長株』の考え方を世界の各市場へ移植した調査プリセット。"
         "地域ごとに低PERの小型株候補を拾い、ネットキャッシュ比率、成長性、FCFを追加確認します。"
-        "PER上限20倍は候補数を抑えるためのYowayowa既定値であり、清原氏の固定ルールを意味しません。"
     ),
     description_en=(
         "A research preset adapting the published small-cap value-growth approach to regional "
         "equity markets. It discovers smaller low-P/E candidates within one region, then adds "
-        "net-cash, growth and free-cash-flow checks. The 20x P/E ceiling is a Yowayowa discovery "
-        "default, not a claimed fixed rule from Kiyohara."
+        "net-cash, growth and free-cash-flow checks."
     ),
     default_region="jp",
     region_required=True,
