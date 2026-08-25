@@ -52,6 +52,9 @@ _CANONICAL_ALIASES: dict[str, tuple[str, ...]] = {
         "CashAndCashEquivalents",
         "CashAndCashEquivalentsIFRS",
     ),
+    # Japan-GAAP standard taxonomy element used by the published Kiyohara net-cash formula.
+    # Keep this deliberately narrow rather than summing vaguely similar investment accounts.
+    "investment_securities": ("InvestmentSecurities",),
     "operating_cash_flow": (
         "NetCashProvidedByUsedInOperatingActivities",
         "CashFlowsFromUsedInOperatingActivities",
