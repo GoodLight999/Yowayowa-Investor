@@ -12,11 +12,14 @@ https://github.com/GoodLight999/Yowayowa-Investor/pull/1
 At the time this handoff was written:
 - active branch: `agent/commercial-foundation`
 - base: `main`
-- latest known product head: `7e7417f55372d846684e4e1999c55c959d429696`
+- latest verified product head: `5865c1c1a03d5e8105bbbc3ae7f47d0bbea45418`
 - production: https://yowayowa-investor.vercel.app
-- production deploy for that head was verified READY
-- `/v1/health`, `/`, `/discover`, and `/v1/strategy-presets` returned HTTP 200 after deployment
+- GitHub Actions run #948: verify SUCCESS, real-Chrome browser E2E SUCCESS (64 browser tests), deploy-production SUCCESS
+- Vercel deployment `dpl_AJbzxxR9io6h9u88V7Xx72i3STJw`: READY and promoted to the production alias
+- production `/v1/health` and `/v1/settings/status` returned HTTP 200 after deployment
 - recent Vercel runtime-error scan after deployment was clean
+- production currently reports `edinet: false`: the automatic EDINET cron bootstrap code is deployed but cannot run unattended until a server-side EDINET key is configured
+- durable production database status is not proven by the current health surface; do not assume the EDINET filing index persists across Vercel instances until `DATABASE_URL`/storage is verified
 
 Always re-resolve the PR head before editing; the SHA above is a checkpoint, not a branch pin.
 
@@ -57,38 +60,52 @@ Vercel was not natively Git-connected. A gated GitHub Actions production deploym
 
 This path was exercised end to end successfully.
 
+## Recently completed engineering task
+
+### EDINET shared recent-history bootstrap and stale-index guard
+
+Implemented and verified:
+- shared EDINET daily-list index bootstrap; no per-candidate historical scanning;
+- default target: latest 550 completed Japan calendar days;
+- each maintenance run fills at most 31 missing days, newest-first;
+- repeated runs are resumable and only fetch still-missing dates;
+- manual `edinet index-sync` remains the fast explicit bootstrap path;
+- exact Kiyohara strategy enrichment refuses to call an annual report “latest” unless every calendar day from that filing date through the latest completed Japan day has been indexed;
+- incomplete coverage falls back to conservative strategy metrics rather than silently using a stale report;
+- coverage state is exposed in cron operation output and documented in `docs/EDINET.md`.
+
+Operational activation is still external:
+- production currently has no server-side EDINET API key;
+- durable database configuration must be verified before relying on unattended hosted index persistence.
+
 ## Current highest-priority engineering task
 
-### P0 — Make exact EDINET strategy enrichment automatic at scale
+### P0 — US exact strategy enrichment from SEC filings
 
-Current limitation:
-`strategy_edinet.py` can compute exact Japanese Kiyohara NCR only when the relevant annual report is already present in the local `EdinetFilingRecord` index.
+Goal:
+extend the strategy evaluator so U.S. issuers can receive an exact or defensibly bounded Kiyohara-style net-cash enrichment from SEC Company Facts / filings without double-counting assets.
 
-Do **not** solve this by scanning 365 dates for every candidate. EDINET documents API is date-oriented, so naive per-candidate historical scans are an unacceptable N×days request pattern.
+Correctness constraints:
+- do not add “marketable securities” values already included in current assets;
+- distinguish current vs non-current investments and securities;
+- require compatible filing period, scope, units/currency, and provenance for arithmetic;
+- taxonomy aliases must be evidence-backed and narrow; do not sum vaguely similar concepts merely to improve coverage;
+- if a clean exact mapping is unavailable, preserve the existing conservative NCR and expose a bound rather than guessing;
+- derived cash-neutral P/E must preserve the exact/bound semantics already implemented for Japan.
 
-Desired outcome:
-- deterministic historical/backfill mechanism for the EDINET filing index;
-- efficient issuer/security-code -> latest annual report lookup after bootstrap;
-- durable storage, resumability/idempotence, provenance, and clear freshness semantics;
-- compatible with local development and hosted/serverless deployment constraints;
-- exact Kiyohara NCR becomes automatic for a large fraction of Japanese screened stocks when EDINET credentials/data are available;
-- failures remain partial/fail-closed rather than corrupting the broader screen.
+Execution:
+1. inspect current SEC normalization and canonical financial definitions;
+2. research official US-GAAP concepts and representative issuer filings;
+3. design a typed supplement boundary analogous to EDINET rather than embedding SEC quirks in strategy math;
+4. implement service/API/CLI/UI behavior only where it adds user value;
+5. test overlapping concepts, missing facts, differing periods, units, restatements, and duplicate contexts;
+6. pass full verify + Chrome E2E + production verification.
 
-Before implementing, inspect:
-- EDINET DB models and indexing commands/services;
-- cron/maintenance paths;
-- `docs/EDINET.md`;
-- deployment storage assumptions (Vercel filesystem is ephemeral; durable indexes require the configured database);
-- current request-scoped BYOK EDINET key flow.
+## Queue after US exact enrichment
 
-Then implement the smallest robust architecture, tests, CLI/operations surface if needed, docs, CI, and production verification.
-
-## Next queue after EDINET bootstrap
-
-1. **US exact strategy enrichment** — map SEC concepts for non-current investments/marketable securities without double-counting current assets. Preserve filing/period/currency consistency and provenance.
-2. **World/IFRS strategy enrichment** — taxonomy/provider-specific mappings with fail-closed semantics; never invent a universal accounting mapping.
-3. **Public market-data licensing path** — personal Yahoo/yfinance remains personal-only. Public launch needs redistributable/licensed market data without weakening provenance.
-4. Continue product completeness work from the canonical Notion specification: research/news/calendars/alerts, portfolio analytics, valuation/KPI depth, and cross-asset support where still incomplete.
+1. **World/IFRS strategy enrichment** — taxonomy/provider-specific mappings with fail-closed semantics; never invent a universal accounting mapping.
+2. **Public market-data licensing path** — personal Yahoo/yfinance remains personal-only. Public launch needs redistributable/licensed market data without weakening provenance.
+3. Continue product completeness work from the canonical Notion specification: research/news/calendars/alerts, portfolio analytics, valuation/KPI depth, and cross-asset support where still incomplete.
 
 Do not interpret this queue as permission to ignore a higher-severity defect discovered in the active path.
 
@@ -120,3 +137,12 @@ For each major task:
 10. Leave this handoff with a precise next task.
 
 Do not stop merely because code compiles, tests are green, an endpoint returns 200, or Vercel says READY.
+
+## Minimal launch instruction for a fresh autonomous agent
+
+Give the agent repository access and this instruction:
+
+```text
+Work autonomously on Yowayowa-Investor. First read AGENTS.md and docs/AUTONOMOUS_AGENT_HANDOFF.md, then resolve the current Draft PR #1 head and verify repository/deployment state. Execute the current P0 end-to-end without waiting for micromanagement: research authoritative sources, make correctness constraints explicit, implement, test, debug, verify real browser behavior, deploy through the existing gated pipeline when appropriate, verify production, update canonical docs/Notion, and rewrite the handoff so the next agent can continue. Ask the user only for genuinely external credentials/authorization or an irreducible product decision.
+```
+
