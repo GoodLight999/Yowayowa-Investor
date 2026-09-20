@@ -7,12 +7,15 @@ from typing import Protocol
 from pydantic import BaseModel
 
 from yowayowa.broker_models import (
+    BrokerAccountSnapshot,
     BrokerOrder,
     BrokerOrderIntent,
     BrokerOrderPreview,
     BrokerOrderSide,
     BrokerOrderStatus,
     BrokerOrderType,
+    BrokerPosition,
+    BrokerQuote,
     BrokerTransport,
 )
 
@@ -200,6 +203,80 @@ class RakutenRssInquiry:
                 )
             )
         return orders
+
+    def list_positions(self) -> list[BrokerPosition]:
+        table = self._reader.read_table_formula("RssPositionList()")
+        rows = _table_rows(
+            table,
+            {
+                "銘柄コード",
+                "口座区分",
+                "保有数量",
+                "平均取得価額",
+                "時価",
+                "時価評価額",
+                "評価損益額",
+            },
+        )
+        positions: list[BrokerPosition] = []
+        for row in rows:
+            symbol = str(row.get("銘柄コード") or "").strip()
+            if not symbol:
+                continue
+            positions.append(
+                BrokerPosition(
+                    broker="rakuten-securities",
+                    symbol=symbol,
+                    quantity=Decimal(_to_int(row.get("保有数量"))),
+                    average_cost=_to_decimal(row.get("平均取得価額")),
+                    market_price=_to_decimal(row.get("時価")),
+                    market_value=_to_decimal(row.get("時価評価額")),
+                    unrealized_pnl=_to_decimal(row.get("評価損益額")),
+                    currency="JPY",
+                    account_type=_id_text(row.get("口座区分")),
+                )
+            )
+        return positions
+
+    def account_snapshot(self) -> BrokerAccountSnapshot:
+        table = self._reader.read_table_formula("RssCapacityList()")
+        rows = _table_rows(table, {"現物買付可能額"})
+        buying_power = (
+            _to_decimal(rows[0].get("現物買付可能額"))
+            if rows
+            else None
+        )
+        from datetime import UTC, datetime
+
+        return BrokerAccountSnapshot(
+            broker="rakuten-securities",
+            currency="JPY",
+            buying_power=buying_power,
+            cash_balance=None,
+            captured_at=datetime.now(UTC),
+        )
+
+    def quote(self, symbol: str) -> BrokerQuote:
+        normalized = symbol.strip().upper()
+        if not normalized or any(
+            char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-" for char in normalized
+        ):
+            raise ValueError("symbol contains characters unsafe for an Excel RSS formula")
+        raw = self._reader.read_scalar_formula(
+            f'RssMarket("{normalized}","現在値")'
+        )
+        price = _to_decimal(raw)
+        if price is None or price <= 0:
+            raise LookupError(f"Rakuten RSS quote unavailable for {normalized}")
+        from datetime import UTC, datetime
+
+        return BrokerQuote(
+            broker="rakuten-securities",
+            symbol=normalized,
+            price=price,
+            currency="JPY",
+            captured_at=datetime.now(UTC),
+        )
 
 
 class RakutenAccountType(IntEnum):
