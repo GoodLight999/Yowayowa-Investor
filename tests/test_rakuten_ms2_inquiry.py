@@ -99,3 +99,55 @@ def test_rakuten_cancel_vba_args_require_numeric_broker_order_number() -> None:
         rss_order_id=8,
         broker_order_id="123456",
     ) == (8, 123456)
+
+
+def test_rakuten_inquiry_reads_positions_and_capacity() -> None:
+    reader = FakeWorksheetRunner(
+        tables={
+            "RssPositionList()": [
+                ["formula"],
+                [
+                    "銘柄コード",
+                    "口座区分",
+                    "保有数量",
+                    "平均取得価額",
+                    "時価",
+                    "時価評価額",
+                    "評価損益額",
+                ],
+                ["4755", "特定", 100, 850.5, 900, 90000, 4950],
+            ],
+            "RssCapacityList()": [
+                ["formula"],
+                ["現物買付可能額", "信用口座_保証金余裕額"],
+                [1234567, 500000],
+            ],
+        }
+    )
+    inquiry = RakutenRssInquiry(reader)
+
+    positions = inquiry.list_positions()
+    account = inquiry.account_snapshot()
+
+    assert len(positions) == 1
+    assert positions[0].symbol == "4755"
+    assert str(positions[0].quantity) == "100"
+    assert str(positions[0].average_cost) == "850.5"
+    assert str(positions[0].market_price) == "900"
+    assert str(positions[0].market_value) == "90000"
+    assert str(positions[0].unrealized_pnl) == "4950"
+    assert account.currency == "JPY"
+    assert str(account.buying_power) == "1234567"
+
+
+def test_rakuten_inquiry_reads_current_quote_without_html_scraping() -> None:
+    reader = FakeWorksheetRunner(
+        scalars={'RssMarket("4755.T","現在値")': 912.5}
+    )
+    inquiry = RakutenRssInquiry(reader)
+
+    quote = inquiry.quote("4755.T")
+
+    assert quote.symbol == "4755.T"
+    assert str(quote.price) == "912.5"
+    assert quote.currency == "JPY"
