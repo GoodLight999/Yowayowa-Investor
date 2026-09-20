@@ -107,7 +107,12 @@ def parse_rss_order_status(value: object) -> BrokerOrderStatus:
     }.get(code, BrokerOrderStatus.UNKNOWN)
 
 
-def parse_order_text_status(text: object, *, filled_quantity: int, quantity: int) -> BrokerOrderStatus:
+def parse_order_text_status(
+    text: object,
+    *,
+    filled_quantity: int,
+    quantity: int,
+) -> BrokerOrderStatus:
     value = str(text or "").strip()
     if value == "約定":
         return BrokerOrderStatus.FILLED
