@@ -1,6 +1,6 @@
 # Yowayowa-Investor
 
-Yowayowa-Investor is an API-first investment research workspace for turning investment ideas into transparent, reproducible analysis without hopping between several finance sites.
+Yowayowa-Investor is a private-operator-first investment research and execution workspace. Its primary Full / Operator profile is built for aggressive personal automation; the general-public profile is intentionally safer and more limited.
 
 The canonical product specification lives in Notion. This repository implements it as a provider-agnostic modular monolith: one domain model powers the browser UI, REST API, CLI, automated tests, and future agent operations.
 
@@ -17,7 +17,8 @@ The canonical product specification lives in Notion. This repository implements 
 - Generic FRED BYOK access in personal mode only because underlying series rights vary by source.
 - Natural-language operation planning: deterministic commands first, optional OpenAI-compatible BYOK fallback, and transparent operation plans.
 - Strict market-symbol and currency normalization at persistence boundaries.
-- Provider license policy that fails closed for unknown or personal-only sources in public mode.
+- Full / Operator private connectors: personal-only data, authenticated scraping, private-protocol integrations, and local broker-control bridges; public mode fails closed.
+- Broker-control foundation with explicit live-order interlocks and a Rakuten Securities MARKET SPEED II RSS transport model.
 - Responsive dark UI, generated OpenAPI document, Typer CLI, Docker image, and GitHub Actions verification.
 
 ## Data policy
@@ -28,7 +29,7 @@ SEC data is obtained from official `data.sec.gov` endpoints. Configure a real co
 
 Japanese government statistics use e-Stat's official REST API. The normal path is discovery -> metadata/dimensions -> bounded fact retrieval, rather than hard-coding statistics-table IDs that may change during revisions. See [`docs/ESTAT.md`](docs/ESTAT.md).
 
-See [`docs/DATA_POLICY.md`](docs/DATA_POLICY.md) and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+See [`docs/DATA_POLICY.md`](docs/DATA_POLICY.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and [`docs/OPERATOR_MODE.md`](docs/OPERATOR_MODE.md).
 
 ## Run
 
@@ -90,3 +91,16 @@ yowayowa plan 'RKLB、ASTS、SOFI、HOODをウォッチリストに入れて'
 - OpenBB's provider abstraction is a useful reference, but its AGPL code is not copied or linked into this commercial codebase.
 
 See [`AGENTS.md`](AGENTS.md) for implementation invariants.
+
+
+## Full / Operator mode
+
+`YOWAYOWA_MODE=personal` is the primary profile. It may use private/authenticated scraping, non-public application protocols, local AI/CLI tools, and local broker bridges. `public` is the constrained safe profile and forcibly disables scraping/private connectors/broker control.
+
+For Windows broker execution experiments:
+
+```bash
+uv sync --extra dev --extra operator-windows
+```
+
+Live order submission is off by default and requires explicit notional and daily-order limits. See `docs/OPERATOR_MODE.md`.
