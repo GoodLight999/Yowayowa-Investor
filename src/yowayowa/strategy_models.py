@@ -60,6 +60,7 @@ class StrategyPriorityFactor(BaseModel):
 
 
 class StrategyResearchPriority(BaseModel):
+    scoring_version: Literal["kiyohara_priority_v1"] = "kiyohara_priority_v1"
     score: float = Field(ge=0, le=100)
     max_score: float = 100
     confidence: float = Field(ge=0, le=1)
