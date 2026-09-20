@@ -90,9 +90,7 @@ def list_strategy_snapshots(
     if strategy_id:
         statement = statement.where(StrategyResearchSnapshotRecord.strategy_id == strategy_id)
     if region:
-        statement = statement.where(
-            StrategyResearchSnapshotRecord.region == region.strip().lower()
-        )
+        statement = statement.where(StrategyResearchSnapshotRecord.region == region.strip().lower())
     if symbol:
         statement = statement.where(
             StrategyResearchSnapshotRecord.symbol == normalize_symbol(symbol)
