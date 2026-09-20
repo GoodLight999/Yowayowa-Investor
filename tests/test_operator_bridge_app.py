@@ -119,7 +119,7 @@ def test_operator_bridge_retry_reuses_same_rss_order_id(tmp_path: Path) -> None:
         broker_max_single_order_notional=Decimal("100000"),
         broker_max_orders_per_day=5,
     )
-    client, runner, _ = _app(tmp_path, settings)
+    client, runner, state = _app(tmp_path, settings)
     headers = {"Authorization": "Bearer bridge-secret"}
 
     first = client.post("/v1/brokers/rakuten/orders", headers=headers, json=_intent())
@@ -130,4 +130,5 @@ def test_operator_bridge_retry_reuses_same_rss_order_id(tmp_path: Path) -> None:
     assert first.json()["broker_order_id"] == "1"
     assert second.json()["broker_order_id"] == "1"
     assert runner.calls[0][1][0] == 1
-    assert runner.calls[1][1][0] == 1
+    assert len(runner.calls) == 1
+    assert state.count_submission_attempts_today() == 1
