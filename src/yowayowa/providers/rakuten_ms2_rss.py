@@ -10,7 +10,6 @@ from yowayowa.broker_models import (
     BrokerTransport,
 )
 
-
 RSS_STOCK_ORDER_V_FUNCTION = "RssStockOrder_V"
 
 
