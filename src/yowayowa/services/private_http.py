@@ -18,6 +18,10 @@ class PrivateProtocolViolation(RuntimeError):
     pass
 
 
+def _provenance_url(url: httpx.URL) -> str:
+    return str(url.copy_with(query=None, fragment=None))
+
+
 def _same_origin(base_url: str, candidate: str) -> bool:
     base = urlsplit(base_url)
     target = urlsplit(candidate)
@@ -120,7 +124,7 @@ class AuthenticatedPrivateHttpClient:
             raise PrivateProtocolViolation("expected a JSON object response")
         return PrivateConnectorResult(
             descriptor=self.descriptor,
-            source_url=str(response.request.url),
+            source_url=_provenance_url(response.request.url),
             retrieved_at=datetime.now(UTC),
             payload=payload,
         )
@@ -138,7 +142,7 @@ class AuthenticatedPrivateHttpClient:
             raise PrivateProtocolViolation("expected a JSON object response")
         return PrivateConnectorResult(
             descriptor=self.descriptor,
-            source_url=str(response.request.url),
+            source_url=_provenance_url(response.request.url),
             retrieved_at=datetime.now(UTC),
             payload=payload,
         )
@@ -155,7 +159,7 @@ class AuthenticatedPrivateHttpClient:
         payload = parser(response.text)
         return PrivateConnectorResult(
             descriptor=self.descriptor,
-            source_url=str(response.request.url),
+            source_url=_provenance_url(response.request.url),
             retrieved_at=datetime.now(UTC),
             payload=payload,
         )
