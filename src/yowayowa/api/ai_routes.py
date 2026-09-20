@@ -115,15 +115,14 @@ async def codex_device_auth(
 
     async def stream() -> AsyncIterator[bytes]:
         try:
-            async with httpx.AsyncClient(timeout=None) as client:
-                async with client.stream(
-                    "POST",
-                    bridge_url,
-                    headers={"x-yowayowa-codex-session": session_id},
-                ) as upstream:
-                    upstream.raise_for_status()
-                    async for chunk in upstream.aiter_bytes():
-                        yield chunk
+            async with httpx.AsyncClient(timeout=None) as client, client.stream(
+                "POST",
+                bridge_url,
+                headers={"x-yowayowa-codex-session": session_id},
+            ) as upstream:
+                upstream.raise_for_status()
+                async for chunk in upstream.aiter_bytes():
+                    yield chunk
         except httpx.HTTPStatusError as exc:
             yield (
                 '{"type":"error","message":"Hosted Codex auth returned HTTP '
