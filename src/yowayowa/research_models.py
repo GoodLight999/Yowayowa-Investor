@@ -68,6 +68,7 @@ class AIProviderConfig(BaseModel):
     model: str = Field(min_length=1, max_length=200)
     api_key: str = Field(min_length=1, max_length=1000, repr=False)
     base_url: str | None = Field(default=None, max_length=1000)
+    credential: str | None = Field(default=None, max_length=100000, repr=False)
 
 
 class AIMessage(BaseModel):
@@ -96,6 +97,7 @@ class AIChatResponse(BaseModel):
     model: str
     tool_trace: list[AIToolTrace] = Field(default_factory=list)
     proposed_operations: list[Operation] = Field(default_factory=list)
+    provider_credential: str | None = Field(default=None, repr=False)
 
 
 class CodexCLIStatus(BaseModel):
@@ -106,6 +108,14 @@ class CodexCLIStatus(BaseModel):
     auth_summary: str | None = None
     login_command: str = "codex login"
     reason: str | None = None
+    mode: Literal["local_cli", "hosted_bridge", "disabled"] = "local_cli"
+    plan_type: str | None = None
+    email: str | None = None
+    credential: str | None = Field(default=None, repr=False)
+
+
+class CodexSessionRequest(BaseModel):
+    credential: str = Field(min_length=20, max_length=100000, repr=False)
 
 
 class AIPromptPacketRequest(BaseModel):
