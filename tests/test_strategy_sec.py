@@ -105,8 +105,8 @@ def test_sec_strategy_supplement_only_accepts_sec_fundamentals() -> None:
 
 def test_sec_strategy_supplement_rejects_negative_balance_values() -> None:
     data = _fundamentals()
-    current_assets = data.metrics["current_assets"].points[0].model_copy(
-        update={"value": Decimal("-1")}
+    current_assets = (
+        data.metrics["current_assets"].points[0].model_copy(update={"value": Decimal("-1")})
     )
     data.metrics["current_assets"] = _series("current_assets", current_assets)
 
