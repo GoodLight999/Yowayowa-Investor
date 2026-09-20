@@ -17,23 +17,16 @@ const BILLING_ENV = [
   "OPENAI_FEDERATION_RULE_ID",
 ];
 
-function sealKey(): Buffer {
-  const secret =
-    process.env.YOWAYOWA_CODEX_CREDENTIAL_KEY ||
-    process.env.VERCEL_TOKEN ||
-    process.env.YOWAYOWA_API_TOKEN ||
-    process.env.CRON_SECRET;
-  if (!secret) {
-    throw new Error(
-      "No credential-sealing secret is configured. Set YOWAYOWA_CODEX_CREDENTIAL_KEY."
-    );
-  }
-  return createHash("sha256").update("yowayowa-codex-credential-v1\0").update(secret).digest();
+function sealKey(sessionId: string): Buffer {
+  return createHash("sha256")
+    .update("yowayowa-codex-browser-session-v1\0")
+    .update(sessionId)
+    .digest();
 }
 
 function sealCredential(raw: string, sessionId: string): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", sealKey(), iv);
+  const cipher = createCipheriv("aes-256-gcm", sealKey(sessionId), iv);
   cipher.setAAD(Buffer.from(sessionId, "utf8"));
   const ciphertext = Buffer.concat([cipher.update(raw, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
@@ -46,7 +39,7 @@ function openCredential(envelope: string, sessionId: string): string {
   const iv = packed.subarray(0, 12);
   const tag = packed.subarray(12, 28);
   const ciphertext = packed.subarray(28);
-  const decipher = createDecipheriv("aes-256-gcm", sealKey(), iv);
+  const decipher = createDecipheriv("aes-256-gcm", sealKey(sessionId), iv);
   decipher.setAAD(Buffer.from(sessionId, "utf8"));
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
@@ -128,7 +121,6 @@ function sendRpc(proc: ReturnType<typeof spawn>, message: unknown): void {
 
 async function deviceAuth(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const sid = sessionId(req);
-  sealKey();
   const home = await createHome();
   const proc = spawn(CODEX, ["app-server"], {
     cwd: home,
@@ -383,16 +375,10 @@ const server = createServer((req, res) => {
     try {
       const url = new URL(req.url || "/", "http://internal");
       if (req.method === "GET" && url.pathname === "/health") {
-        let sealConfigured = true;
-        try {
-          sealKey();
-        } catch {
-          sealConfigured = false;
-        }
         writeJson(res, 200, {
           ok: true,
           codex_binary: CODEX,
-          credential_seal_configured: sealConfigured,
+          credential_seal: "browser_session_bound_aes256gcm",
         });
         return;
       }
