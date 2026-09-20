@@ -101,6 +101,20 @@ class StrategyCandidateEvaluation(BaseModel):
 
 class StrategyEvaluationRequest(BaseModel):
     candidates: list[StrategyCandidateInput] = Field(min_length=1, max_length=50)
+    region: str | None = Field(default=None, min_length=2, max_length=16)
+    record: bool = False
+
+
+class StrategyResearchSnapshot(BaseModel):
+    id: int
+    strategy_id: str
+    scoring_version: str
+    region: str
+    symbol: str
+    score: float
+    confidence: float
+    evaluation: StrategyCandidateEvaluation
+    captured_at: datetime
 
 
 class StrategyEvaluationResponse(BaseModel):
@@ -108,4 +122,5 @@ class StrategyEvaluationResponse(BaseModel):
     evaluations: list[StrategyCandidateEvaluation]
     errors: dict[str, str] = Field(default_factory=dict)
     supplement_errors: dict[str, str] = Field(default_factory=dict)
+    snapshot_ids: list[int] = Field(default_factory=list)
     evaluated_at: datetime
