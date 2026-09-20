@@ -43,18 +43,18 @@ class RakutenMs2RssLocalConnector:
         self,
         macro_runner: MacroRunner,
         *,
-        next_rss_order_id: Callable[[], int],
+        allocate_rss_order_id: Callable[[str], int],
         order_reader: OrderReader | None = None,
     ) -> None:
         self._macro_runner = macro_runner
-        self._next_rss_order_id = next_rss_order_id
+        self._allocate_rss_order_id = allocate_rss_order_id
         self._order_reader = order_reader
 
     def preview_order(self, intent: BrokerOrderIntent) -> BrokerOrderPreview:
         return preview_cash_stock_order(intent)
 
     def submit_order(self, intent: BrokerOrderIntent) -> BrokerOrderReceipt:
-        rss_order_id = self._next_rss_order_id()
+        rss_order_id = self._allocate_rss_order_id(intent.client_order_id)
         args = build_cash_stock_order_v_args(intent, rss_order_id=rss_order_id)
         raw = self._macro_runner.run_macro(RSS_STOCK_ORDER_V_FUNCTION, args)
         message = None if raw is None else str(raw)
