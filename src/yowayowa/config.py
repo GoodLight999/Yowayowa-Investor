@@ -98,7 +98,9 @@ class Settings(BaseSettings):
             self.codex_cli_enabled = False
         if self.broker_live_orders_enabled:
             if self.mode != "personal" or not self.broker_control_enabled:
-                raise ValueError("Live broker orders require personal mode with broker control enabled")
+                raise ValueError(
+                    "Live broker orders require personal mode with broker control enabled"
+                )
             if self.broker_max_single_order_notional is None:
                 raise ValueError(
                     "YOWAYOWA_BROKER_MAX_SINGLE_ORDER_NOTIONAL is required for live broker orders"
