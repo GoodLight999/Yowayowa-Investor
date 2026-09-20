@@ -279,9 +279,12 @@
       showServerSetupRequired();
       return;
     }
-    if (provider?.provider === 'codex_cli' && !(await codexReady())) {
-      document.querySelector('#ai-status').innerHTML = `<a href="/settings">${escapeHtml(window.YOWAYOWA_LOCALE === 'ja' ? 'CodexをChatGPTで接続してください →' : 'Connect Codex with ChatGPT →')}</a>`;
-      return;
+    if (provider?.provider === 'codex_cli') {
+      if (!(await codexReady())) {
+        document.querySelector('#ai-status').innerHTML = `<a href="/settings">${escapeHtml(window.YOWAYOWA_LOCALE === 'ja' ? 'CodexをChatGPTで接続してください →' : 'Connect Codex with ChatGPT →')}</a>`;
+        return;
+      }
+      provider = providerPayload();
     }
     addMessage('user', text);
     prompt.value = '';
