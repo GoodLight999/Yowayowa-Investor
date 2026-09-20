@@ -31,6 +31,9 @@ from yowayowa.services.strategy_presets import (
     list_builtin_strategies,
 )
 from yowayowa.services.strategy_sec import balance_sheet_supplement as sec_balance_sheet_supplement
+from yowayowa.services.strategy_yahoo import (
+    balance_sheet_supplement as yahoo_balance_sheet_supplement,
+)
 from yowayowa.services.valuation import valuation_snapshot
 from yowayowa.strategy_models import (
     StrategyBalanceSheetSupplement,
@@ -70,7 +73,9 @@ def _strategy_balance_sheet_supplement(
         edinet = _strategy_edinet_supplement(request, session, symbol)
         if edinet is not None:
             return edinet
-    return sec_balance_sheet_supplement(fundamentals) or yahoo_balance_sheet_supplement(fundamentals)
+    return sec_balance_sheet_supplement(fundamentals) or yahoo_balance_sheet_supplement(
+        fundamentals
+    )
 
 
 @router.get("/fundamentals/{symbol}", response_model=Fundamentals)
