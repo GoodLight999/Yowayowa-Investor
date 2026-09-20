@@ -64,7 +64,7 @@ class MarketScreenResponse(BaseModel):
 
 
 class AIProviderConfig(BaseModel):
-    provider: Literal["openai_compatible", "anthropic"] = "openai_compatible"
+    provider: Literal["openai_compatible", "anthropic", "codex_cli"] = "openai_compatible"
     model: str = Field(min_length=1, max_length=200)
     api_key: str = Field(min_length=1, max_length=1000, repr=False)
     base_url: str | None = Field(default=None, max_length=1000)
@@ -96,3 +96,27 @@ class AIChatResponse(BaseModel):
     model: str
     tool_trace: list[AIToolTrace] = Field(default_factory=list)
     proposed_operations: list[Operation] = Field(default_factory=list)
+
+
+
+class CodexCLIStatus(BaseModel):
+    enabled: bool
+    installed: bool
+    authenticated: bool
+    version: str | None = None
+    auth_summary: str | None = None
+    login_command: str = "codex login"
+    reason: str | None = None
+
+
+class AIPromptPacketRequest(BaseModel):
+    messages: list[AIMessage] = Field(default_factory=list, max_length=40)
+    context: dict[str, Any] = Field(default_factory=dict)
+    user_prompt: str | None = Field(default=None, max_length=50000)
+
+
+class AIPromptPacketResponse(BaseModel):
+    prompt: str
+    included_tools: list[str] = Field(default_factory=list)
+    generated_at: str
+    characters: int
