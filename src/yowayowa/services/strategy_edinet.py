@@ -61,9 +61,7 @@ def latest_indexed_annual_report(
     filing = session.scalar(statement)
     if filing is None:
         return None
-    completed_through = completed_through or (
-        datetime.now(_JST).date() - timedelta(days=1)
-    )
+    completed_through = completed_through or (datetime.now(_JST).date() - timedelta(days=1))
     if filing.filing_date > completed_through:
         return None
     if not index_coverage_complete(session, filing.filing_date, completed_through):
