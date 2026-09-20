@@ -1,28 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from yowayowa.domain import Provenance
 from yowayowa.edinet_index_db import EdinetFilingRecord
 from yowayowa.edinet_models import EdinetFinancials, EdinetMetricObservation
 from yowayowa.providers.edinet import EdinetClient
 from yowayowa.services.edinet import financials, normalize_security_code
 from yowayowa.services.edinet_index import index_coverage_complete
+from yowayowa.strategy_models import StrategyBalanceSheetSupplement
 
 _JST = ZoneInfo("Asia/Tokyo")
-
-
-@dataclass(frozen=True)
-class StrategyBalanceSheetSupplement:
-    current_assets: float
-    liabilities: float
-    investment_securities: float
-    provenance: Provenance
 
 
 def tokyo_security_code(symbol: str) -> str | None:
