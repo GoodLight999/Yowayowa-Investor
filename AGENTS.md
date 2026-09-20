@@ -73,6 +73,7 @@ Read these before changing the corresponding subsystem:
 - `docs/DATA_POLICY.md` — provenance and data-rights policy
 - `LICENSE_POLICY.md` — dependency/source licensing constraints
 - `docs/EDINET.md` — Japanese disclosure ingestion/normalization
+- `docs/SEC.md` — U.S. EDGAR normalization and same-filing strategy enrichment
 - `docs/ESTAT.md` — Japanese government statistics integration
 - `docs/AUTONOMOUS_AGENT_HANDOFF.md` — current execution queue and handoff state
 
