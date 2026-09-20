@@ -20,10 +20,10 @@ from yowayowa.providers.registry import fundamentals_provider, yahoo_market_prov
 from yowayowa.services.comparison import compare
 from yowayowa.services.screening import screen
 from yowayowa.services.strategy_edinet import (
-    StrategyBalanceSheetSupplement,
-    balance_sheet_supplement,
+    balance_sheet_supplement as edinet_balance_sheet_supplement,
     tokyo_security_code,
 )
+from yowayowa.services.strategy_sec import balance_sheet_supplement as sec_balance_sheet_supplement
 from yowayowa.services.strategy_presets import (
     KIYOHARA_GLOBAL_ID,
     evaluate_kiyohara_candidate,
@@ -33,6 +33,7 @@ from yowayowa.services.strategy_presets import (
 )
 from yowayowa.services.valuation import valuation_snapshot
 from yowayowa.strategy_models import (
+    StrategyBalanceSheetSupplement,
     StrategyEvaluationRequest,
     StrategyEvaluationResponse,
     StrategyPresetDefinition,
@@ -56,7 +57,18 @@ def _strategy_edinet_supplement(
     settings = request_data_source_settings(request, get_settings(), "edinet")
     if not settings.edinet_api_key:
         return None
-    return balance_sheet_supplement(session, EdinetClient(settings), symbol)
+    return edinet_balance_sheet_supplement(session, EdinetClient(settings), symbol)
+
+
+def _strategy_balance_sheet_supplement(
+    request: Request,
+    session: Session,
+    symbol: str,
+    fundamentals: Fundamentals,
+) -> StrategyBalanceSheetSupplement | None:
+    if tokyo_security_code(symbol) is not None:
+        return _strategy_edinet_supplement(request, session, symbol)
+    return sec_balance_sheet_supplement(fundamentals)
 
 
 @router.get("/fundamentals/{symbol}", response_model=Fundamentals)
@@ -171,7 +183,12 @@ def evaluate_builtin_strategy(
 
         supplement = None
         try:
-            supplement = _strategy_edinet_supplement(request, session, symbol)
+            supplement = _strategy_balance_sheet_supplement(
+                request,
+                session,
+                symbol,
+                facts,
+            )
         except Exception as exc:
             supplement_errors[symbol] = f"{type(exc).__name__}: {exc}"
         evaluations.append(evaluate_kiyohara_candidate(facts, normalized_candidate, supplement))
