@@ -202,6 +202,7 @@ def evaluate_builtin_strategy(
 
     evaluations.sort(
         key=lambda item: (
+            -(item.research_priority.score if item.research_priority is not None else -1.0),
             item.net_cash_ratio is None,
             -item.net_cash_ratio if item.net_cash_ratio is not None else float("inf"),
             item.cash_neutral_pe is None,
