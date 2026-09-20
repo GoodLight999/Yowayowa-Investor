@@ -174,7 +174,7 @@ def create_operator_bridge_app(
             raise HTTPException(status_code=502, detail="Broker cancellation failed") from exc
 
         state.append_audit(
-            "order_submit_result",
+            "order_cancel_result",
             client_order_id=payload.client_order_id,
             broker_order_id=receipt.broker_order_id,
             payload=receipt.model_dump(mode="json"),
