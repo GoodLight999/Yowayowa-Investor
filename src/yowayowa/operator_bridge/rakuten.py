@@ -10,6 +10,8 @@ from yowayowa.broker_models import (
     BrokerOrderPreview,
     BrokerOrderReceipt,
     BrokerOrderStatus,
+    BrokerPosition,
+    BrokerQuote,
     BrokerTransport,
 )
 from yowayowa.operator_bridge.excel import MacroRunner, WorksheetRunner
@@ -29,7 +31,7 @@ class RakutenMs2RssLocalConnector:
         transport=BrokerTransport.LOCAL_PROGRAMMABLE_INTERFACE,
         account_snapshot=False,
         positions=False,
-        orders=True,
+        orders=False,
         order_submission=True,
         order_cancel=True,
         quotes=False,
@@ -47,6 +49,15 @@ class RakutenMs2RssLocalConnector:
         self._allocate_rss_order_id = allocate_rss_order_id
         self._inquiry = (
             RakutenRssInquiry(worksheet_runner) if worksheet_runner is not None else None
+        )
+        inquiry_available = self._inquiry is not None
+        self.capabilities = self.capabilities.model_copy(
+            update={
+                "account_snapshot": inquiry_available,
+                "positions": inquiry_available,
+                "orders": inquiry_available,
+                "quotes": inquiry_available,
+            }
         )
 
     def preview_order(self, intent: BrokerOrderIntent) -> BrokerOrderPreview:
@@ -90,6 +101,16 @@ class RakutenMs2RssLocalConnector:
             return []
         return self._inquiry.list_orders()
 
+    def list_positions(self) -> list[BrokerPosition]:
+        if self._inquiry is None:
+            return []
+        return self._inquiry.list_positions()
+
+    def quote(self, symbol: str) -> BrokerQuote:
+        if self._inquiry is None:
+            raise RuntimeError("Rakuten RSS worksheet inquiry is not configured")
+        return self._inquiry.quote(symbol)
+
     def order_status(self, transport_order_id: str) -> BrokerOrderStatus:
         if self._inquiry is None:
             return BrokerOrderStatus.UNKNOWN
@@ -131,4 +152,6 @@ class RakutenMs2RssLocalConnector:
         )
 
     def account_snapshot(self) -> BrokerAccountSnapshot:
-        raise NotImplementedError("Rakuten RSS account snapshot is not implemented yet")
+        if self._inquiry is None:
+            raise RuntimeError("Rakuten RSS worksheet inquiry is not configured")
+        return self._inquiry.account_snapshot()
