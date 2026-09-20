@@ -46,7 +46,7 @@ function openCredential(envelope: string, sessionId: string): string {
 }
 
 function codexEnv(home: string): NodeJS.ProcessEnv {
-  const env = { ...process.env, CODEX_HOME: home };
+  const env: NodeJS.ProcessEnv = { ...process.env, CODEX_HOME: home };
   for (const key of BILLING_ENV) delete env[key];
   return env;
 }
@@ -116,6 +116,7 @@ function sessionId(req: IncomingMessage): string {
 }
 
 function sendRpc(proc: ReturnType<typeof spawn>, message: unknown): void {
+  if (!proc.stdin) throw new Error("Codex app-server stdin is unavailable");
   proc.stdin.write(JSON.stringify(message) + "\n");
 }
 
