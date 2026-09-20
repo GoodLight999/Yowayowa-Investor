@@ -41,3 +41,23 @@ Natural-language requests compile into an `OperationPlan`, not a prose investmen
 - pandas-ta-classic for technical indicators.
 - Arelle is an optional Apache-2.0 XBRL engine boundary for deeper EDINET/iXBRL processing.
 - OpenBB is studied for its provider abstraction but is not linked into the application because its current platform is AGPL-3.0-only.
+
+
+## Product profiles
+
+The runtime keeps the existing configuration names for compatibility:
+
+- `personal` = Full / Operator mode and is the primary product profile.
+- `public` = Safe / Limited mode for deliberately constrained general access.
+
+Full / Operator mode may use authenticated scraping, personal-only providers, private protocols, local application bridges, and broker control. Public mode forces private connectors, scraping, broker control, live order submission, local AI endpoints, and Codex CLI execution off.
+
+## Private connector and broker architecture
+
+Broker/data transport selection is capability-driven, not UI-driven:
+
+`official API/local interface -> private authenticated protocol -> structured scraping -> local application automation -> UI automation fallback`
+
+A broker connector is isolated behind the provider-neutral models in `broker_models.py`. Live execution has a separate gate in `services/broker_execution.py`; read-only account connectivity does not imply permission to submit orders.
+
+Rakuten Securities domestic trading initially targets MARKET SPEED II RSS through a Windows-local Operator Bridge. The hosted FastAPI service must not hold the broker login password or trading password. Other no-API brokers may use authorized private HTTP/WebSocket protocols or authenticated scraping under the same connector boundary.
