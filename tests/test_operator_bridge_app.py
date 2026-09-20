@@ -134,3 +134,38 @@ def test_operator_bridge_retry_reuses_same_rss_order_id(tmp_path: Path) -> None:
     assert runner.calls[0][1][0] == 1
     assert len(runner.calls) == 1
     assert state.count_submission_attempts_today() == 1
+
+
+def test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    client, runner, state = _app(tmp_path, Settings(mode="personal"))
+    headers = {"Authorization": "Bearer bridge-secret"}
+    payload = {
+        "client_order_id": "cancel-123456",
+        "broker_order_id": "123456",
+    }
+
+    first = client.post(
+        "/v1/brokers/rakuten/orders/cancel",
+        headers=headers,
+        json=payload,
+    )
+    second = client.post(
+        "/v1/brokers/rakuten/orders/cancel",
+        headers=headers,
+        json=payload,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["broker_order_id"] == "123456"
+    assert first.json()["transport_order_id"] == "1"
+    assert second.json() == first.json()
+    assert len(runner.calls) == 1
+    assert runner.calls[0][0] == "RssCancelOrder_V"
+    assert runner.calls[0][1] == (1, 123456)
+    assert [event["event_type"] for event in state.audit_events()] == [
+        "order_cancel_attempt",
+        "order_cancel_result",
+    ]
