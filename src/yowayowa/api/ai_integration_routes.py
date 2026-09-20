@@ -17,9 +17,9 @@ router = APIRouter(prefix="/v1/ai", dependencies=[Depends(require_api_token)])
 class AIProviderCatalogItem(BaseModel):
     id: str
     label: str
-    adapter: Literal["openai_compatible", "anthropic"]
+    adapter: Literal["openai_compatible", "anthropic", "codex_cli"]
     base_url: str
-    auth_modes: list[Literal["api_key", "oauth_pkce", "none"]]
+    auth_modes: list[Literal["api_key", "oauth_pkce", "chatgpt_oauth", "none"]]
     model_discovery: bool = True
     category: Literal["cloud", "local", "custom"] = "cloud"
     docs_url: str | None = None
@@ -37,6 +37,20 @@ class AIModelCatalogResponse(BaseModel):
 
 
 PROVIDERS: tuple[AIProviderCatalogItem, ...] = (
+    AIProviderCatalogItem(
+        id="codex",
+        label="Codex · ChatGPT subscription",
+        adapter="codex_cli",
+        base_url="",
+        auth_modes=["chatgpt_oauth"],
+        model_discovery=False,
+        category="local",
+        docs_url="https://developers.openai.com/docs/auth",
+        note=(
+            "Uses the local Codex CLI authenticated with ChatGPT. ChatGPT plan allowance is used; "
+            "no OpenAI API key is required."
+        ),
+    ),
     AIProviderCatalogItem(
         id="openai",
         label="OpenAI",
@@ -202,6 +216,8 @@ def provider_catalog() -> list[AIProviderCatalogItem]:
 
 
 def _model_endpoint(config: AIProviderConfig) -> tuple[str, dict[str, str]]:
+    if config.provider == "codex_cli":
+        raise ValueError("Codex CLI models are selected by the local Codex client")
     base = (config.base_url or "").rstrip("/")
     if config.provider == "anthropic":
         if not base:
@@ -234,7 +250,10 @@ def provider_models(
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-    endpoint, headers = _model_endpoint(provider)
+    try:
+        endpoint, headers = _model_endpoint(provider)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
         with httpx.Client(timeout=20, follow_redirects=False) as client:
             response = client.get(endpoint, headers=headers)
