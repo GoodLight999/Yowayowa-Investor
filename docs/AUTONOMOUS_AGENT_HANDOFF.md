@@ -78,36 +78,63 @@ Operational activation is still external:
 - production currently has no server-side EDINET API key;
 - durable database configuration must be verified before relying on unattended hosted index persistence.
 
+## Recently completed strategy enrichment
+
+### SEC exact/bounded enrichment
+
+U.S. issuers now use a typed SEC strategy supplement:
+- current assets and total liabilities must share the same period end, accession, USD unit, and instant balance-sheet scope;
+- only direct `us-gaap:MarketableSecuritiesNoncurrent` is accepted as the exact investment-securities add-on;
+- current marketable securities are never added because they are already inside current assets;
+- vague or overlapping investment concepts are not summed to improve apparent coverage;
+- absence of the direct noncurrent fact preserves the conservative NCR lower bound and cash-neutral P/E upper bound.
+
+The API integration and source-isolation behavior are covered by tests.
+
+### International Yahoo conservative enrichment
+
+Personal-mode non-SEC listings now receive a period-consistent Yahoo strategy supplement:
+- current assets and total liabilities must share one statement period, currency, and frequency;
+- a newer unmatched statement value is not mixed with an older balance-sheet counterpart;
+- Yahoo's broad investment rows are deliberately not treated as a universal IFRS/non-US equivalent of Kiyohara investment securities;
+- where an evidence-backed exact mapping is unavailable, the evaluator exposes the conservative net-cash lower bound rather than guessing.
+
+This also gives Japanese listings a safe conservative fallback when an exact EDINET supplement is unavailable.
+
 ## Current highest-priority engineering task
 
-### P0 — US exact strategy enrichment from SEC filings
+### P0 — product completion audit and closure
 
-Goal:
-extend the strategy evaluator so U.S. issuers can receive an exact or defensibly bounded Kiyohara-style net-cash enrichment from SEC Company Facts / filings without double-counting assets.
-
-Correctness constraints:
-- do not add “marketable securities” values already included in current assets;
-- distinguish current vs non-current investments and securities;
-- require compatible filing period, scope, units/currency, and provenance for arithmetic;
-- taxonomy aliases must be evidence-backed and narrow; do not sum vaguely similar concepts merely to improve coverage;
-- if a clean exact mapping is unavailable, preserve the existing conservative NCR and expose a bound rather than guessing;
-- derived cash-neutral P/E must preserve the exact/bound semantics already implemented for Japan.
+The project has accumulated substantial vertical functionality. Do not keep extending infrastructure or accounting aliases indefinitely while the product remains perceived as unfinished.
 
 Execution:
-1. inspect current SEC normalization and canonical financial definitions;
-2. research official US-GAAP concepts and representative issuer filings;
-3. design a typed supplement boundary analogous to EDINET rather than embedding SEC quirks in strategy math;
-4. implement service/API/CLI/UI behavior only where it adds user value;
-5. test overlapping concepts, missing facts, differing periods, units, restatements, and duplicate contexts;
-6. pass full verify + Chrome E2E + production verification.
+1. compare the canonical Notion specification with the actual current browser/API/CLI surfaces;
+2. identify missing, weak, disconnected, or duplicated user workflows;
+3. prioritize gaps that materially reduce the need to jump between external finance sites;
+4. complete each selected workflow end-to-end, including failure behavior and real-browser verification;
+5. keep financial/provider correctness boundaries intact while avoiding speculative framework work;
+6. update this handoff after each completed vertical so the remaining completion queue shrinks visibly.
 
-## Queue after US exact enrichment
+## Scheduled high-priority data integration
 
-1. **World/IFRS strategy enrichment** — taxonomy/provider-specific mappings with fail-closed semantics; never invent a universal accounting mapping.
+### JPX daily margin balances — available from 2026-09-28 if migration proceeds
+
+Tokyo Stock Exchange has announced that the all-issue margin-balance publication currently available weekly will become daily, with prior-business-day balances published around 16:00 each business day. The announced output includes sales/purchase balances, daily changes, ratio to listed shares, negotiable/standardized margin breakdowns, and balance values as well as share counts.
+
+Once the production format is live:
+1. inspect the real JPX output and usage/redistribution terms;
+2. implement a provenance-aware JPX margin provider and persistent daily history;
+3. surface margin supply/demand on Japanese instrument pages;
+4. add useful screener/comparison fields and abrupt-change alerts;
+5. keep personal-use acquisition rights distinct from public redistribution rights.
+
+Canonical product/roadmap details are also recorded in Notion.
+
+## Remaining strategic constraints
+
+1. **Evidence-backed world/IFRS exact enrichment only** — add provider/taxonomy-specific exact mappings when semantics are demonstrably compatible; never invent a universal investment-securities mapping.
 2. **Public market-data licensing path** — personal Yahoo/yfinance remains personal-only. Public launch needs redistributable/licensed market data without weakening provenance.
-3. Continue product completeness work from the canonical Notion specification: research/news/calendars/alerts, portfolio analytics, valuation/KPI depth, and cross-asset support where still incomplete.
-
-Do not interpret this queue as permission to ignore a higher-severity defect discovered in the active path.
+3. Higher-severity defects discovered in active workflows outrank planned feature work.
 
 ## UI constraint that is easy to regress
 
