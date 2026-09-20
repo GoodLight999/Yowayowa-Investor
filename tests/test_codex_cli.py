@@ -92,7 +92,7 @@ def test_codex_structured_exec_strips_api_billing_environment(monkeypatch) -> No
         model="default",
     )
 
-    assert result["answer"] == "ok"
+    assert result.result["answer"] == "ok"
     env = captured["env"]
     assert isinstance(env, dict)
     assert "OPENAI_API_KEY" not in env
@@ -102,3 +102,58 @@ def test_codex_structured_exec_strips_api_billing_environment(monkeypatch) -> No
     assert "--model" not in command
     assert "--sandbox" in command
     assert "read-only" in command
+
+
+
+def test_codex_status_uses_hosted_bridge_without_local_binary() -> None:
+    status = codex_cli.codex_cli_status(
+        Settings(
+            database_url="sqlite:///:memory:",
+            codex_cli_enabled=False,
+            codex_bridge_url="https://codex.internal",
+        )
+    )
+
+    assert status.enabled is True
+    assert status.installed is True
+    assert status.authenticated is False
+    assert status.mode == "hosted_bridge"
+
+
+def test_hosted_codex_carries_refreshed_sealed_credential(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    captured: dict[str, object] = {}
+
+    class BridgeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "result": {"answer": "hosted", "tool_calls": []},
+                "credential": "sealed-refreshed",
+            }
+
+    def fake_post(url: str, **kwargs: object) -> BridgeResponse:
+        captured["url"] = url
+        captured.update(kwargs)
+        return BridgeResponse()
+
+    monkeypatch.setattr(codex_cli.httpx, "post", fake_post)
+    result = codex_cli.run_codex_structured(
+        Settings(
+            database_url="sqlite:///:memory:",
+            codex_bridge_url="https://codex.internal",
+        ),
+        prompt="hello",
+        schema={"type": "object"},
+        model="default",
+        credential="sealed-old",
+        session_id="browser-session-0123456789",
+    )
+
+    assert result.result["answer"] == "hosted"
+    assert result.credential == "sealed-refreshed"
+    assert captured["url"] == "https://codex.internal/structured"
+    assert captured["headers"] == {
+        "x-yowayowa-codex-session": "browser-session-0123456789"
+    }
