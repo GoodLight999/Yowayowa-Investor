@@ -4,7 +4,6 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from yowayowa.broker_models import BrokerOrderIntent, BrokerOrderSide, BrokerOrderType
 from yowayowa.config import Settings
 from yowayowa.operator_bridge.app import create_operator_bridge_app
 from yowayowa.operator_bridge.rakuten import RakutenMs2RssLocalConnector
