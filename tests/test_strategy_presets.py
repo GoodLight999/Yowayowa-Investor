@@ -336,3 +336,46 @@ def test_strategy_api_uses_period_aligned_yahoo_conservative_bound(monkeypatch) 
     assert result["cash_neutral_pe"] == pytest.approx(4.0)
     assert result["cash_neutral_pe_is_upper_bound"] is True
     assert result["supplemental_provenance"][0]["provider"] == "yahoo/yfinance"
+
+
+
+def test_strategy_api_can_record_and_list_point_in_time_research(monkeypatch) -> None:
+    from yowayowa.api import fundamentals_routes
+    from yowayowa.api.app import app
+
+    monkeypatch.setattr(
+        fundamentals_routes,
+        "_fundamentals",
+        lambda symbol: _fundamentals(symbol),
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/v1/strategy-presets/{KIYOHARA_GLOBAL_ID}/evaluate",
+            json={
+                "candidates": [
+                    {"symbol": "TEST", "market_cap": 100, "pe_ratio": 10},
+                ],
+                "region": "us",
+                "record": True,
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert len(payload["snapshot_ids"]) == 1
+
+        listed = client.get(
+            "/v1/strategy-research/snapshots",
+            params={
+                "strategy_id": KIYOHARA_GLOBAL_ID,
+                "region": "us",
+                "symbol": "TEST",
+            },
+        )
+
+    assert listed.status_code == 200
+    rows = listed.json()
+    assert len(rows) == 1
+    assert rows[0]["id"] == payload["snapshot_ids"][0]
+    assert rows[0]["scoring_version"] == "kiyohara_priority_v1"
+    assert rows[0]["evaluation"]["research_priority"]["score"] > 0
