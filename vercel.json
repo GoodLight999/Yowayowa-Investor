@@ -1,10 +1,30 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "app.py": {
-      "maxDuration": 60
+  "services": {
+    "app": {
+      "root": ".",
+      "entrypoint": "app:app",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "codex",
+          "format": "url",
+          "env": "CODEX_BRIDGE_URL"
+        }
+      ]
+    },
+    "codex": {
+      "root": "codex_service/"
     }
   },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "app"
+      }
+    }
+  ],
   "crons": [
     {
       "path": "/internal/cron/daily",
