@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-import pytest
 
 from yowayowa.domain import (
     Fundamentals,
