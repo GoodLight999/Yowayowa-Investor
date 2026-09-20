@@ -310,7 +310,7 @@ def test_external_prompt_packet_works_without_any_ai_provider() -> None:
 
 
 
-def test_hosted_codex_refreshes_browser_credential_between_tool_rounds(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_hosted_codex_refreshes_browser_credential(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     seen_credentials: list[str | None] = []
     replies = iter(
         [
