@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from yowayowa.api.deps import db_session, request_data_source_settings, require_api_token
@@ -31,6 +31,10 @@ from yowayowa.services.strategy_presets import (
     list_builtin_strategies,
 )
 from yowayowa.services.strategy_sec import balance_sheet_supplement as sec_balance_sheet_supplement
+from yowayowa.services.strategy_tracking import (
+    list_strategy_snapshots,
+    record_strategy_snapshots,
+)
 from yowayowa.services.strategy_yahoo import (
     balance_sheet_supplement as yahoo_balance_sheet_supplement,
 )
@@ -40,6 +44,7 @@ from yowayowa.strategy_models import (
     StrategyEvaluationRequest,
     StrategyEvaluationResponse,
     StrategyPresetDefinition,
+    StrategyResearchSnapshot,
 )
 from yowayowa.symbols import normalize_symbol
 
@@ -152,6 +157,26 @@ def builtin_strategy_preset(strategy_id: str) -> StrategyPresetDefinition:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.get(
+    "/strategy-research/snapshots",
+    response_model=list[StrategyResearchSnapshot],
+)
+def strategy_research_snapshots(
+    strategy_id: str | None = Query(default=None, max_length=80),
+    region: str | None = Query(default=None, max_length=16),
+    symbol: str | None = Query(default=None, max_length=32),
+    limit: int = Query(default=200, ge=1, le=1000),
+    session: Session = Depends(db_session),
+) -> list[StrategyResearchSnapshot]:
+    return list_strategy_snapshots(
+        session,
+        strategy_id=strategy_id,
+        region=region,
+        symbol=symbol,
+        limit=limit,
+    )
+
+
 @router.post(
     "/strategy-presets/{strategy_id}/evaluate",
     response_model=StrategyEvaluationResponse,
@@ -210,10 +235,22 @@ def evaluate_builtin_strategy(
             item.symbol,
         )
     )
+    evaluation_time = evaluated_at()
+    snapshot_ids: list[int] = []
+    if payload.record and evaluations:
+        snapshots = record_strategy_snapshots(
+            session,
+            strategy_id,
+            payload.region or "unknown",
+            evaluations,
+            captured_at=evaluation_time,
+        )
+        snapshot_ids = [item.id for item in snapshots]
     return StrategyEvaluationResponse(
         strategy_id=strategy_id,
         evaluations=evaluations,
         errors=errors,
         supplement_errors=supplement_errors,
-        evaluated_at=evaluated_at(),
+        snapshot_ids=snapshot_ids,
+        evaluated_at=evaluation_time,
     )
