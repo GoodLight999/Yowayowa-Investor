@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     cron_secret: str | None = Field(default_factory=_default_cron_secret)
     allow_personal_provider_in_public: bool = False
     local_enrichment_enabled: bool = False
+    private_connectors_enabled: bool = True
+    scraping_enabled: bool = True
+    broker_control_enabled: bool = True
+    broker_live_orders_enabled: bool = False
+    broker_risk_currency: str = Field(default="JPY", min_length=3, max_length=3)
+    broker_max_single_order_notional: float | None = Field(default=None, gt=0)
+    broker_max_orders_per_day: int | None = Field(default=None, ge=1, le=10000)
     allow_unlisted_ai_endpoints: bool = Field(default_factory=_default_allow_unlisted_ai_endpoints)
     codex_cli_enabled: bool = Field(default_factory=_default_codex_cli_enabled)
     codex_bridge_url: str | None = Field(default_factory=_default_codex_bridge_url)
@@ -83,8 +90,23 @@ class Settings(BaseSettings):
         if self.mode == "public" and self.local_enrichment_enabled:
             raise ValueError("Local enrichment is personal-mode only and cannot run in public mode")
         if self.mode == "public":
+            self.private_connectors_enabled = False
+            self.scraping_enabled = False
+            self.broker_control_enabled = False
+            self.broker_live_orders_enabled = False
             self.allow_unlisted_ai_endpoints = False
             self.codex_cli_enabled = False
+        if self.broker_live_orders_enabled:
+            if self.mode != "personal" or not self.broker_control_enabled:
+                raise ValueError("Live broker orders require personal mode with broker control enabled")
+            if self.broker_max_single_order_notional is None:
+                raise ValueError(
+                    "YOWAYOWA_BROKER_MAX_SINGLE_ORDER_NOTIONAL is required for live broker orders"
+                )
+            if self.broker_max_orders_per_day is None:
+                raise ValueError(
+                    "YOWAYOWA_BROKER_MAX_ORDERS_PER_DAY is required for live broker orders"
+                )
         return self
 
 
