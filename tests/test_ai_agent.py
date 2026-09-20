@@ -148,6 +148,7 @@ def test_ai_status_never_returns_configured_keys() -> None:
     assert "discover_stocks" in status["tools"]
     assert "triage_strategy" in status["tools"]
     assert "get_strategy_history" in status["tools"]
+    assert "get_strategy_outcomes" in status["tools"]
 
 
 def test_ai_strategy_triage_returns_interpretable_priority(monkeypatch) -> None:  # type: ignore[no-untyped-def]
