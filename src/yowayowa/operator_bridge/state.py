@@ -124,7 +124,7 @@ class SQLiteOperatorState:
                 """
                 SELECT payload_json
                 FROM broker_audit
-                WHERE event_type = 'order_submit_result'
+                WHERE event_type IN ('order_submit_result', 'order_cancel_result')
                   AND client_order_id = ?
                 ORDER BY id DESC
                 LIMIT 1
