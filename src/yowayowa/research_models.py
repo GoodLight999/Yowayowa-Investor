@@ -98,7 +98,6 @@ class AIChatResponse(BaseModel):
     proposed_operations: list[Operation] = Field(default_factory=list)
 
 
-
 class CodexCLIStatus(BaseModel):
     enabled: bool
     installed: bool
