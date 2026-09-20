@@ -58,10 +58,17 @@ class RakutenMs2RssLocalConnector:
         args = build_cash_stock_order_v_args(intent, rss_order_id=rss_order_id)
         raw = self._macro_runner.run_macro(RSS_STOCK_ORDER_V_FUNCTION, args)
         message = None if raw is None else str(raw)
+        rejected_markers = (
+            "エラー",
+            "キャンセル",
+            "使用済",
+            "発注ロック",
+            "接続待ち",
+        )
         accepted = not (
             raw is False
             or raw is None
-            or (isinstance(raw, str) and ("エラー" in raw or "キャンセル" in raw))
+            or (isinstance(raw, str) and any(marker in raw for marker in rejected_markers))
         )
         return BrokerOrderReceipt(
             broker="rakuten-securities",
