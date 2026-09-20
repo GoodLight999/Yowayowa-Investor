@@ -101,10 +101,8 @@
     baseInput.disabled = server || codex;
     keyInput.disabled = server || codex;
     document.querySelector('#fetch-provider-models').disabled = server || codex || provider?.model_discovery === false;
-    if (provider && overwrite) {
-      baseInput.value = provider.base_url;
-      if (codex && !modelInput.value.trim()) modelInput.value = 'default';
-    }
+    if (provider && overwrite) baseInput.value = provider.base_url;
+    if (codex && !modelInput.value.trim()) modelInput.value = 'default';
     const oauth = document.querySelector('#openrouter-oauth');
     oauth.hidden = providerSelect.value !== 'openrouter';
     const codexLogin = document.querySelector('#codex-chatgpt-login');
