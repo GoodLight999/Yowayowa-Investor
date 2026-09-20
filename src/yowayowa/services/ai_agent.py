@@ -40,6 +40,10 @@ from yowayowa.services.strategy_presets import (
     get_builtin_strategy,
 )
 from yowayowa.services.strategy_sec import balance_sheet_supplement as sec_strategy_supplement
+from yowayowa.services.strategy_tracking import (
+    list_strategy_snapshots,
+    record_strategy_snapshots,
+)
 from yowayowa.services.strategy_yahoo import balance_sheet_supplement as yahoo_strategy_supplement
 from yowayowa.services.valuation import valuation_snapshot
 from yowayowa.services.watchlists import list_watchlists
@@ -389,6 +393,25 @@ class InvestmentResearchAgent:
                 self._tool_triage_strategy,
             ),
             ToolSpec(
+                "get_strategy_history",
+                "Read point-in-time strategy research snapshots. Use this to compare today's "
+                "candidate evidence with earlier AI/Discover triage runs without rewriting history.",
+                self._object_schema(
+                    {
+                        "strategy_id": {"type": "string"},
+                        "region": {"type": "string"},
+                        "symbol": {"type": "string"},
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200,
+                            "default": 50,
+                        },
+                    }
+                ),
+                self._tool_strategy_history,
+            ),
+            ToolSpec(
                 "compare_symbols",
                 "Compare normalized fundamentals for 2-20 symbols.",
                 self._object_schema(
@@ -692,12 +715,19 @@ class InvestmentResearchAgent:
                 item.symbol,
             )
         )
+        snapshots = record_strategy_snapshots(
+            self.session,
+            strategy.id,
+            region,
+            evaluations,
+        )
         return {
             "strategy_id": strategy.id,
             "strategy_name": strategy.name_en,
             "region": region,
             "evaluations": [item.model_dump(mode="json") for item in evaluations],
             "errors": errors,
+            "snapshot_ids": [item.id for item in snapshots],
             "screen_provenance": screen.provenance.model_dump(mode="json"),
             "notes": [
                 "Research-priority score is deterministic and interpretable; it is not an "
@@ -708,6 +738,22 @@ class InvestmentResearchAgent:
                 "the conservative Yahoo lower-bound semantics.",
             ],
         }
+
+    def _tool_strategy_history(self, args: dict[str, Any]) -> Any:
+        strategy_id = str(args.get("strategy_id") or "").strip() or None
+        region = str(args.get("region") or "").strip() or None
+        symbol = str(args.get("symbol") or "").strip() or None
+        limit = min(max(int(args.get("limit") or 50), 1), 200)
+        return [
+            item.model_dump(mode="json")
+            for item in list_strategy_snapshots(
+                self.session,
+                strategy_id=strategy_id,
+                region=region,
+                symbol=symbol,
+                limit=limit,
+            )
+        ]
 
     def _tool_compare(self, args: dict[str, Any]) -> Any:
         symbols = [normalize_symbol(str(item)) for item in args.get("symbols", [])][:20]
