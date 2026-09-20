@@ -175,6 +175,7 @@
     }
     sizeSelect.value = size;
     setStrategyNote(strategy);
+    updateActions();
   }
 
   function onPresetChange() {
@@ -187,6 +188,7 @@
     }
     activeStrategy = null;
     setStrategyNote(null);
+    updateActions();
   }
 
   function requestBody() {
@@ -253,6 +255,23 @@
     return `${prefix}${Number(value).toFixed(2)}×`;
   };
 
+  const priorityCell = (evaluation) => {
+    const priority = evaluation?.research_priority;
+    if (!priority) return '—';
+    const factorLabel = {
+      value: 'V',
+      growth: 'G',
+      quality: 'Q',
+      evidence: 'E',
+    };
+    const factors = (priority.factors || [])
+      .map(item => `${factorLabel[item.key] || item.key} ${Number(item.score).toFixed(0)}/${Number(item.max_score).toFixed(0)}`)
+      .join(' · ');
+    const flags = (priority.flags || []).join(', ');
+    const detail = flags ? `${factors} · ${flags}` : factors;
+    return `<div class="strategy-priority" title="${escapeHtml(detail)}"><strong>${escapeHtml(Number(priority.score).toFixed(0))}</strong><small>${escapeHtml(factors)}</small></div>`;
+  };
+
   function attachStrategyEvaluation(data, evaluation) {
     const bySymbol = new Map((evaluation?.evaluations || []).map(item => [String(item.symbol).toUpperCase(), item]));
     data.quotes = (data.quotes || []).map(row => ({
@@ -262,6 +281,11 @@
     data.quotes.sort((left, right) => {
       const a = left.__strategy;
       const b = right.__strategy;
+      const ap = a?.research_priority?.score;
+      const bp = b?.research_priority?.score;
+      if (ap !== null && ap !== undefined && bp !== null && bp !== undefined && ap !== bp) return bp - ap;
+      if (ap !== null && ap !== undefined) return -1;
+      if (bp !== null && bp !== undefined) return 1;
       const ar = a?.net_cash_ratio;
       const br = b?.net_cash_ratio;
       if (ar !== null && ar !== undefined && br !== null && br !== undefined && ar !== br) return br - ar;
@@ -305,7 +329,7 @@
       return;
     }
     const strategyHeaders = activeStrategy
-      ? `<th>${escapeHtml(localeTag.startsWith('ja') ? 'Yowayowa保守NC比率' : 'Yowayowa conservative NCR')}</th><th>${escapeHtml(localeTag.startsWith('ja') ? '清原NC比率' : 'Kiyohara NCR')}</th><th>${escapeHtml(localeTag.startsWith('ja') ? 'キャッシュ中立PER' : 'Cash-neutral P/E')}</th>`
+      ? `<th>${escapeHtml(localeTag.startsWith('ja') ? '研究優先度' : 'Research priority')}</th><th>${escapeHtml(localeTag.startsWith('ja') ? 'Yowayowa保守NC比率' : 'Yowayowa conservative NCR')}</th><th>${escapeHtml(localeTag.startsWith('ja') ? '清原NC比率' : 'Kiyohara NCR')}</th><th>${escapeHtml(localeTag.startsWith('ja') ? 'キャッシュ中立PER' : 'Cash-neutral P/E')}</th>`
       : '';
     const tableRows = rows.map((row, index) => {
       const symbol = String(row.symbol || '');
@@ -319,7 +343,7 @@
       const revenueGrowth = cell(row, ['revenueGrowth', 'totalrevenues1yrgrowth.lasttwelvemonths']);
       const shortFloat = cell(row, ['shortPercentOfFloat', 'short_percentage_of_float.value']);
       const strategyCells = activeStrategy
-        ? `<td>${escapeHtml(conservativeRatioText(row.__strategy))}</td><td>${escapeHtml(ratioText(row.__strategy))}</td><td>${escapeHtml(cashNeutralPeText(row.__strategy))}</td>`
+        ? `<td>${priorityCell(row.__strategy)}</td><td>${escapeHtml(conservativeRatioText(row.__strategy))}</td><td>${escapeHtml(ratioText(row.__strategy))}</td><td>${escapeHtml(cashNeutralPeText(row.__strategy))}</td>`
         : '';
       return `<tr>
         <td><input type="checkbox" class="discover-select" data-index="${index}" aria-label="${escapeHtml(symbol)}"></td>
@@ -361,7 +385,7 @@
     const count = selected.size;
     document.querySelector('#discover-compare').disabled = count < 2;
     document.querySelector('#discover-watchlist').disabled = count < 1;
-    document.querySelector('#discover-ai').disabled = count < 1;
+    document.querySelector('#discover-ai').disabled = count < 1 && !activeStrategy;
   }
 
   async function run(event) {
@@ -411,6 +435,10 @@
         copy.strategy_cash_neutral_pe = copy.__strategy.cash_neutral_pe;
         copy.strategy_cash_neutral_pe_is_upper_bound = copy.__strategy.cash_neutral_pe_is_upper_bound;
         copy.strategy_formula_basis = copy.__strategy.basis;
+        copy.research_priority_score = copy.__strategy.research_priority?.score;
+        copy.research_priority_confidence = copy.__strategy.research_priority?.confidence;
+        copy.research_priority_factors = JSON.stringify(copy.__strategy.research_priority?.factors || []);
+        copy.research_priority_flags = (copy.__strategy.research_priority?.flags || []).join('|');
       }
       delete copy.__strategy;
       return copy;
@@ -434,7 +462,14 @@
       location.assign(`/compare?symbols=${encodeURIComponent([...selected].join(','))}`);
     });
     document.querySelector('#discover-ai')?.addEventListener('click', () => {
-      location.assign(`/ai?symbols=${encodeURIComponent([...selected].join(','))}`);
+      const params = new URLSearchParams();
+      if (selected.size) params.set('symbols', [...selected].join(','));
+      if (activeStrategy) {
+        params.set('strategy', activeStrategy.id);
+        const region = document.querySelector('#discover-region').value;
+        if (region) params.set('region', region);
+      }
+      location.assign(`/ai?${params.toString()}`);
     });
     document.querySelector('#discover-watchlist')?.addEventListener('click', () => addSelectedToWatchlist().catch(error => {
       document.querySelector('#discover-status').textContent = error.message;
