@@ -51,6 +51,8 @@
     const result = { page: location.pathname };
     if (params.get('symbol')) result.symbol = params.get('symbol');
     if (params.get('symbols')) result.symbols = params.get('symbols').split(',').filter(Boolean);
+    if (params.get('strategy')) result.strategy = params.get('strategy');
+    if (params.get('region')) result.region = params.get('region');
     return result;
   }
 
@@ -276,7 +278,12 @@
     const params = new URLSearchParams(location.search);
     const symbols = params.get('symbols');
     const symbol = params.get('symbol');
-    if (symbols) document.querySelector('#ai-prompt').value = `${symbols} を比較して、成長性・割安さ・需給・アナリスト予想・主要リスクを調べて。`;
+    const strategy = params.get('strategy');
+    const region = params.get('region');
+    if (strategy) {
+      const selected = symbols ? ` 選択済み候補は ${symbols}。` : '';
+      document.querySelector('#ai-prompt').value = `${strategy} を${region ? ` ${region.toUpperCase()} 市場で` : ''}実行して、解釈可能な研究優先度で候補を絞り込んで。${selected} 上位候補について、なぜ今調べる価値があるか、最初の棄却条件、追加で確認すべき一次情報・ニュース・イベントまで自律的に掘って。スコアを期待収益率として扱わず、根拠と推論を分けて。`;
+    } else if (symbols) document.querySelector('#ai-prompt').value = `${symbols} を比較して、成長性・割安さ・需給・アナリスト予想・主要リスクを調べて。`;
     else if (symbol) document.querySelector('#ai-prompt').value = `${symbol} を財務・バリュエーション・アナリスト予想・保有状況・インサイダー・ニュース・今後のイベントまで横断分析して。`;
     document.querySelector('#ai-send').disabled = true;
     loadStatus();
