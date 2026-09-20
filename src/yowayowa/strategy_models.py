@@ -30,6 +30,13 @@ class StrategyPresetDefinition(BaseModel):
     sources: list[StrategySource] = Field(default_factory=list)
 
 
+class StrategyBalanceSheetSupplement(BaseModel):
+    current_assets: float
+    liabilities: float
+    investment_securities: float | None = None
+    provenance: Provenance
+
+
 class StrategyCandidateInput(BaseModel):
     symbol: str = Field(min_length=1, max_length=32)
     market_cap: float = Field(gt=0)
