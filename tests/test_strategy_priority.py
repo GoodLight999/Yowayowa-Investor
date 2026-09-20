@@ -39,6 +39,7 @@ def _evaluation(**updates: object) -> StrategyCandidateEvaluation:
 def test_research_priority_exposes_factor_contributions_and_full_evidence() -> None:
     result = research_priority(_evaluation())
 
+    assert result.scoring_version == "kiyohara_priority_v1"
     assert result.score == 95.2
     assert result.confidence == 1.0
     assert {factor.key for factor in result.factors} == {
