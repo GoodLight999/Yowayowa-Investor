@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from decimal import Decimal
 
 from yowayowa.broker_models import (
@@ -15,7 +16,7 @@ class FakeMacroRunner:
         self.result = result
         self.calls: list[tuple[str, tuple[object, ...]]] = []
 
-    def run_macro(self, name: str, args) -> object:  # type: ignore[no-untyped-def]
+    def run_macro(self, name: str, args: Sequence[object]) -> object:
         self.calls.append((name, tuple(args)))
         return self.result
 
@@ -36,7 +37,7 @@ def test_local_rakuten_connector_calls_vba_order_function() -> None:
     runner = FakeMacroRunner()
     connector = RakutenMs2RssLocalConnector(
         runner,
-        next_rss_order_id=lambda: 42,
+        allocate_rss_order_id=lambda _: 42,
     )
 
     receipt = connector.submit_order(_intent())
@@ -56,7 +57,7 @@ def test_local_rakuten_connector_treats_rss_error_as_rejected() -> None:
     runner = FakeMacroRunner("入力エラー: 注文数量")
     connector = RakutenMs2RssLocalConnector(
         runner,
-        next_rss_order_id=lambda: 43,
+        allocate_rss_order_id=lambda _: 43,
     )
 
     receipt = connector.submit_order(_intent())
