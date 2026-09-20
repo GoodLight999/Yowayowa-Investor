@@ -26,6 +26,7 @@ from yowayowa.research_models import (
     AIChatResponse,
     AIProviderConfig,
     AIToolTrace,
+    MarketScreenFilter,
     MarketScreenRequest,
     ResearchSection,
 )
@@ -33,8 +34,16 @@ from yowayowa.services.alerts import list_alerts
 from yowayowa.services.comparison import compare
 from yowayowa.services.portfolios import get_portfolio, list_portfolios, portfolio_analytics
 from yowayowa.services.screening import derived_metrics
+from yowayowa.services.strategy_presets import (
+    KIYOHARA_GLOBAL_ID,
+    evaluate_kiyohara_candidate,
+    get_builtin_strategy,
+)
+from yowayowa.services.strategy_sec import balance_sheet_supplement as sec_strategy_supplement
+from yowayowa.services.strategy_yahoo import balance_sheet_supplement as yahoo_strategy_supplement
 from yowayowa.services.valuation import valuation_snapshot
 from yowayowa.services.watchlists import list_watchlists
+from yowayowa.strategy_models import StrategyCandidateInput
 from yowayowa.symbols import normalize_symbol
 
 ToolHandler = Callable[[dict[str, Any]], Any]
@@ -142,6 +151,12 @@ class InvestmentResearchAgent:
             "Use tools for current market, company, portfolio, news, macro, analyst, "
             "ownership, insider, ESG, option, calendar, and screener facts. "
             "Never invent unavailable data. Separate sourced facts from interpretation. "
+            "When the user asks to find or prioritize investment candidates rather than analyze "
+            "named symbols, prefer the deterministic triage_strategy tool first, then investigate "
+            "the strongest candidates with primary facts, news, events and research tools. "
+            "Treat research-priority scores as attention-allocation scores, never as expected "
+            "returns or autonomous buy/sell decisions. Explain factor contributions, evidence "
+            "coverage, first rejection conditions and what evidence would change the view. "
             "Prefer compact, decision-relevant comparisons over generic prose. "
             "For workspace changes, use propose_* tools; never silently mutate state. "
             "State uncertainty and data basis. Answer in the user's language. "
@@ -349,6 +364,29 @@ class InvestmentResearchAgent:
                 "Screen global equities by valuation, growth, quality and positioning.",
                 MarketScreenRequest.model_json_schema(),
                 self._tool_discover,
+            ),
+            ToolSpec(
+                "triage_strategy",
+                "Run a built-in investment strategy and rank candidates with deterministic, "
+                "factor-level research-priority contributions. Use before deep research when "
+                "the user asks the AI to find opportunities or decide what deserves attention.",
+                self._object_schema(
+                    {
+                        "strategy_id": {
+                            "type": "string",
+                            "enum": [KIYOHARA_GLOBAL_ID],
+                        },
+                        "region": {"type": "string"},
+                        "size": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 25,
+                            "default": 12,
+                        },
+                    },
+                    ["strategy_id"],
+                ),
+                self._tool_triage_strategy,
             ),
             ToolSpec(
                 "compare_symbols",
@@ -594,6 +632,82 @@ class InvestmentResearchAgent:
             payload = payload.model_copy(update={"size": 50})
         result = yahoo_screener_provider().screen(payload)
         return result.model_dump(mode="json")
+
+    def _tool_triage_strategy(self, args: dict[str, Any]) -> Any:
+        strategy_id = str(args.get("strategy_id") or "").strip()
+        strategy = get_builtin_strategy(strategy_id)
+        region = str(args.get("region") or strategy.default_region).strip().lower()
+        size = min(max(int(args.get("size") or 12), 1), 25)
+        filters = list(strategy.discovery.filters)
+        if strategy.region_required:
+            filters = [
+                MarketScreenFilter(field="region", operator="is-in", value=[region]),
+                *filters,
+            ]
+        screen_request = strategy.discovery.model_copy(
+            update={
+                "filters": filters,
+                "size": size,
+                "offset": 0,
+            }
+        )
+        screen = yahoo_screener_provider().screen(screen_request)
+
+        def numeric(row: dict[str, Any], *keys: str) -> float | None:
+            for key in keys:
+                raw = row.get(key)
+                if isinstance(raw, (int, float)):
+                    return float(raw)
+            return None
+
+        evaluations = []
+        errors: dict[str, str] = {}
+        for row in screen.quotes:
+            symbol = normalize_symbol(str(row.get("symbol") or ""))
+            market_cap = numeric(row, "marketCap", "intradaymarketcap")
+            if not symbol or market_cap is None or market_cap <= 0:
+                continue
+            pe_ratio = numeric(row, "trailingPE", "peratio.lasttwelvemonths")
+            if pe_ratio is not None and pe_ratio <= 0:
+                pe_ratio = None
+            try:
+                facts = sec_client().company_facts(symbol)
+                supplement = sec_strategy_supplement(facts) or yahoo_strategy_supplement(facts)
+                evaluation = evaluate_kiyohara_candidate(
+                    facts,
+                    StrategyCandidateInput(
+                        symbol=symbol,
+                        market_cap=market_cap,
+                        pe_ratio=pe_ratio,
+                    ),
+                    supplement,
+                )
+                evaluations.append(evaluation)
+            except Exception as exc:
+                errors[symbol] = f"{type(exc).__name__}: {exc}"
+
+        evaluations.sort(
+            key=lambda item: (
+                -(item.research_priority.score if item.research_priority is not None else -1.0),
+                item.symbol,
+            )
+        )
+        return {
+            "strategy_id": strategy.id,
+            "strategy_name": strategy.name_en,
+            "region": region,
+            "evaluations": [item.model_dump(mode="json") for item in evaluations],
+            "errors": errors,
+            "screen_provenance": screen.provenance.model_dump(mode="json"),
+            "notes": [
+                "Research-priority score is deterministic and interpretable; it is not an "
+                "expected-return forecast.",
+                "The AI should deep-research only the strongest candidates and actively test "
+                "their first rejection conditions.",
+                "This AI tool uses SEC exact enrichment when available and otherwise preserves "
+                "the conservative Yahoo lower-bound semantics.",
+            ],
+        }
 
     def _tool_compare(self, args: dict[str, Any]) -> Any:
         symbols = [normalize_symbol(str(item)) for item in args.get("symbols", [])][:20]
