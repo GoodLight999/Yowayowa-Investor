@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from subprocess import CompletedProcess
-from unittest.mock import Mock
-
 from yowayowa.config import Settings
 from yowayowa.services import codex_cli
 
