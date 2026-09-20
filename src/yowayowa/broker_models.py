@@ -112,6 +112,26 @@ class BrokerOrder(BaseModel):
     status: BrokerOrderStatus
 
 
+class BrokerPosition(BaseModel):
+    broker: str
+    symbol: str
+    quantity: Decimal
+    average_cost: Decimal | None = None
+    market_price: Decimal | None = None
+    market_value: Decimal | None = None
+    unrealized_pnl: Decimal | None = None
+    currency: str = "JPY"
+    account_type: str | None = None
+
+
+class BrokerQuote(BaseModel):
+    broker: str
+    symbol: str
+    price: Decimal
+    currency: str
+    captured_at: datetime
+
+
 class BrokerAccountSnapshot(BaseModel):
     broker: str
     currency: str
@@ -128,6 +148,10 @@ class BrokerConnector(Protocol):
     def submit_order(self, intent: BrokerOrderIntent) -> BrokerOrderReceipt: ...
 
     def list_orders(self) -> list[BrokerOrder]: ...
+
+    def list_positions(self) -> list[BrokerPosition]: ...
+
+    def quote(self, symbol: str) -> BrokerQuote: ...
 
     def cancel_order(
         self,
