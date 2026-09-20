@@ -67,8 +67,10 @@ def _strategy_balance_sheet_supplement(
     fundamentals: Fundamentals,
 ) -> StrategyBalanceSheetSupplement | None:
     if tokyo_security_code(symbol) is not None:
-        return _strategy_edinet_supplement(request, session, symbol)
-    return sec_balance_sheet_supplement(fundamentals)
+        edinet = _strategy_edinet_supplement(request, session, symbol)
+        if edinet is not None:
+            return edinet
+    return sec_balance_sheet_supplement(fundamentals) or yahoo_balance_sheet_supplement(fundamentals)
 
 
 @router.get("/fundamentals/{symbol}", response_model=Fundamentals)
