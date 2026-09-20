@@ -26,6 +26,46 @@ app.add_typer(license_app, name="license")
 app.add_typer(macro_app, name="macro")
 
 
+@app.command("operator-bridge")
+def operator_bridge(
+    port: int = typer.Option(8765, min=1024, max=65535),
+    state_path: str = typer.Option("~/.yowayowa/operator.db"),
+    workbook: str | None = typer.Option(None),
+) -> None:
+    import os
+
+    from yowayowa.config import Settings
+    from yowayowa.operator_bridge.app import build_local_operator_bridge
+
+    token = os.getenv("YOWAYOWA_OPERATOR_BRIDGE_TOKEN")
+    if not token:
+        raise typer.BadParameter(
+            "YOWAYOWA_OPERATOR_BRIDGE_TOKEN must be set in the local environment"
+        )
+    settings = Settings()
+    if settings.mode != "personal":
+        raise typer.BadParameter("Operator Bridge requires YOWAYOWA_MODE=personal")
+    try:
+        import uvicorn
+    except ImportError as exc:
+        raise typer.BadParameter(
+            "Operator Bridge requires the serve extra: "
+            "pip install 'yowayowa-investor[cli,serve,operator-windows]'"
+        ) from exc
+
+    bridge = build_local_operator_bridge(
+        token=token,
+        settings=settings,
+        state_path=state_path,
+        workbook=workbook,
+    )
+    print(
+        f"Starting local Operator Bridge on 127.0.0.1:{port} "
+        f"(live orders: {'ARMED' if settings.broker_live_orders_enabled else 'off'})"
+    )
+    uvicorn.run(bridge, host="127.0.0.1", port=port, log_level="info")
+
+
 @app.command("news-saved")
 def news_saved(
     scope: str = typer.Option("all", help="all, watchlist, or portfolio"),
