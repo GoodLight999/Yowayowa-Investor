@@ -55,6 +55,10 @@ CONCEPTS: dict[str, tuple[str, tuple[str, ...]]] = {
     "eps_diluted": ("Diluted EPS", ("EarningsPerShareDiluted",)),
     "assets": ("Total assets", ("Assets",)),
     "current_assets": ("Current assets", ("AssetsCurrent",)),
+    "marketable_securities_noncurrent": (
+        "Marketable securities, noncurrent",
+        ("MarketableSecuritiesNoncurrent",),
+    ),
     "liabilities": ("Total liabilities", ("Liabilities",)),
     "current_liabilities": ("Current liabilities", ("LiabilitiesCurrent",)),
     "equity": (
