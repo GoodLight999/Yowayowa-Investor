@@ -18,7 +18,10 @@
       <h2>{% if locale == 'ja' %}調べたいことを入力{% else %}Ask a research question{% endif %}</h2>
       <p class="ux-note">{{ u('ai.context.evidence') }}</p>
     </div>
-    <button class="ghost" id="ai-clear" type="button">{{ x('ai.clear') }}</button>
+    <div class="toolbar">
+      <button class="ghost" id="ai-export-prompt" type="button">{% if locale == 'ja' %}外部AI用プロンプト{% else %}External AI prompt{% endif %}</button>
+      <button class="ghost" id="ai-clear" type="button">{{ x('ai.clear') }}</button>
+    </div>
   </div>
 
   <div class="ai-quick" aria-label="{% if locale == 'ja' %}質問例{% else %}Example questions{% endif %}">
@@ -34,6 +37,16 @@
     <button class="primary" id="ai-send" type="submit">{{ x('ai.send') }}</button>
   </form>
   <div id="ai-status" class="provider-source-note"></div>
+
+  <details id="ai-prompt-packet-panel" class="ai-diagnostics" hidden>
+    <summary class="section-heading">{% if locale == 'ja' %}外部AIへ渡す研究パケット{% else %}Research packet for external AI{% endif %}</summary>
+    <p class="ux-note">{% if locale == 'ja' %}Yowayowaが取得した財務・評価・ニュース・イベント・戦略履歴とprovenanceを、単一の長いプロンプトへまとめます。{% else %}Bundles Yowayowa financial, valuation, news, event, strategy-history and provenance data into one long prompt.{% endif %}</p>
+    <div class="toolbar">
+      <button id="ai-copy-prompt-packet" class="ghost" type="button">{% if locale == 'ja' %}コピー{% else %}Copy{% endif %}</button>
+      <span id="ai-prompt-packet-meta" class="provider-source-note"></span>
+    </div>
+    <textarea id="ai-prompt-packet" class="ai-prompt-packet" readonly></textarea>
+  </details>
 
   <details class="ai-diagnostics">
     <summary class="section-heading">{% if locale == 'ja' %}根拠・ツール実行を確認{% else %}Inspect evidence and tool activity{% endif %}</summary>
