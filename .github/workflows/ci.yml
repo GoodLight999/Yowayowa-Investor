@@ -109,9 +109,5 @@ jobs:
             echo "::error::VERCEL_TOKEN repository secret is not configured."
             exit 1
           fi
-      - name: Pull production environment
-        run: npx --yes vercel@59.15.1 pull --yes --environment=production --token="$VERCEL_TOKEN"
-      - name: Build production artifact
-        run: npx --yes vercel@59.15.1 build --prod --token="$VERCEL_TOKEN"
-      - name: Deploy production artifact
-        run: npx --yes vercel@59.15.1 deploy --prebuilt --prod --token="$VERCEL_TOKEN"
+      - name: Deploy source to production
+        run: npx --yes vercel@59.15.1 deploy --prod --yes --token="$VERCEL_TOKEN"
