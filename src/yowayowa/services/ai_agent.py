@@ -72,14 +72,23 @@ class ResolvedAIProvider:
     model: str
     api_key: str
     base_url: str
+    credential: str | None = None
 
 
 class InvestmentResearchAgent:
     """Multi-provider BYOK agent over real Yowayowa research boundaries."""
 
-    def __init__(self, settings: Settings, session: Session) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        session: Session,
+        *,
+        codex_session_id: str | None = None,
+    ) -> None:
         self.settings = settings
         self.session = session
+        self.codex_session_id = codex_session_id
+        self.provider_credential: str | None = None
         self.trace: list[AIToolTrace] = []
         self.proposals: list[Operation] = []
         self.tools = self._build_tools()
@@ -88,6 +97,7 @@ class InvestmentResearchAgent:
         provider = self._resolve_provider(request.provider)
         self.trace = []
         self.proposals = []
+        self.provider_credential = provider.credential
         if provider.provider == "anthropic":
             answer = self._anthropic_loop(provider, request)
         elif provider.provider == "codex_cli":
@@ -100,6 +110,7 @@ class InvestmentResearchAgent:
             model=provider.model,
             tool_trace=self.trace,
             proposed_operations=self.proposals,
+            provider_credential=self.provider_credential,
         )
 
     def status(self) -> dict[str, Any]:
@@ -125,13 +136,14 @@ class InvestmentResearchAgent:
     ) -> ResolvedAIProvider:
         if supplied is not None:
             if supplied.provider == "codex_cli":
-                if not self.settings.codex_cli_enabled:
-                    raise RuntimeError("Codex CLI is disabled on this deployment")
+                if not self.settings.codex_cli_enabled and not self.settings.codex_bridge_url:
+                    raise RuntimeError("Codex is disabled on this deployment")
                 return ResolvedAIProvider(
                     provider="codex_cli",
                     model=supplied.model,
                     api_key="",
                     base_url="",
+                    credential=supplied.credential,
                 )
             if supplied.provider == "anthropic":
                 return ResolvedAIProvider(
@@ -251,13 +263,19 @@ class InvestmentResearchAgent:
         request: AIChatRequest,
     ) -> str:
         observations: list[dict[str, Any]] = []
+        credential = provider.credential
         for _ in range(request.max_tool_rounds):
-            payload = run_codex_structured(
+            execution = run_codex_structured(
                 self.settings,
                 prompt=self._codex_prompt(request, observations, allow_tools=True),
                 schema=self._codex_response_schema(),
                 model=provider.model,
+                credential=credential,
+                session_id=self.codex_session_id,
             )
+            payload = execution.result
+            credential = execution.credential or credential
+            self.provider_credential = credential
             raw_calls = payload.get("tool_calls")
             calls = raw_calls if isinstance(raw_calls, list) else []
             if not calls:
@@ -280,13 +298,16 @@ class InvestmentResearchAgent:
                         "result": content,
                     }
                 )
-        payload = run_codex_structured(
+        execution = run_codex_structured(
             self.settings,
             prompt=self._codex_prompt(request, observations, allow_tools=False),
             schema=self._codex_response_schema(),
             model=provider.model,
+            credential=credential,
+            session_id=self.codex_session_id,
         )
-        return str(payload.get("answer") or "")
+        self.provider_credential = execution.credential or credential
+        return str(execution.result.get("answer") or "")
 
     def _codex_prompt(
         self,
