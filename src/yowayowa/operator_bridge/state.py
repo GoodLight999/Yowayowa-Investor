@@ -4,8 +4,6 @@ import json
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
-
 
 _MAX_RSS_ORDER_ID = 2_147_483_647
 
@@ -95,7 +93,7 @@ class SQLiteOperatorState:
         *,
         client_order_id: str | None,
         broker_order_id: str | None = None,
-        payload: dict[str, Any] | None = None,
+        payload: dict[str, object] | None = None,
     ) -> None:
         created_at = datetime.now(UTC).isoformat()
         serialized = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
@@ -120,7 +118,7 @@ class SQLiteOperatorState:
                 ),
             )
 
-    def latest_order_result(self, client_order_id: str) -> dict[str, Any] | None:
+    def latest_order_result(self, client_order_id: str) -> dict[str, object] | None:
         with self._connect() as connection:
             row = connection.execute(
                 """
@@ -152,7 +150,7 @@ class SQLiteOperatorState:
             ).fetchone()
         return int(row["count"]) if row is not None else 0
 
-    def audit_events(self) -> list[dict[str, Any]]:
+    def audit_events(self) -> list[dict[str, object]]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
