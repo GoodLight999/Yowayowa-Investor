@@ -120,7 +120,7 @@ def test_codex_status_uses_hosted_bridge_without_local_binary() -> None:
     assert status.mode == "hosted_bridge"
 
 
-def test_hosted_codex_carries_refreshed_sealed_credential(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_hosted_codex_refreshes_sealed_credential(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     captured: dict[str, object] = {}
 
     class BridgeResponse:
