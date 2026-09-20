@@ -38,7 +38,11 @@ def _codex_session_id(request: Request) -> tuple[str, bool]:
     return secrets.token_urlsafe(32), True
 
 
-def _set_codex_session_cookie(response: StreamingResponse, request: Request, session_id: str) -> None:
+def _set_codex_session_cookie(
+    response: StreamingResponse,
+    request: Request,
+    session_id: str,
+) -> None:
     response.set_cookie(
         _CODEX_SESSION_COOKIE,
         session_id,
