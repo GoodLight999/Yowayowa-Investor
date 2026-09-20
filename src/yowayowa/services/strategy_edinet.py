@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,6 +12,9 @@ from yowayowa.edinet_index_db import EdinetFilingRecord
 from yowayowa.edinet_models import EdinetFinancials, EdinetMetricObservation
 from yowayowa.providers.edinet import EdinetClient
 from yowayowa.services.edinet import financials, normalize_security_code
+from yowayowa.services.edinet_index import index_coverage_complete
+
+_JST = ZoneInfo("Asia/Tokyo")
 
 
 @dataclass(frozen=True)
@@ -33,6 +38,8 @@ def tokyo_security_code(symbol: str) -> str | None:
 def latest_indexed_annual_report(
     session: Session,
     symbol: str,
+    *,
+    completed_through: date | None = None,
 ) -> EdinetFilingRecord | None:
     security_code = tokyo_security_code(symbol)
     if security_code is None:
@@ -51,7 +58,17 @@ def latest_indexed_annual_report(
         )
         .limit(1)
     )
-    return session.scalar(statement)
+    filing = session.scalar(statement)
+    if filing is None:
+        return None
+    completed_through = completed_through or (
+        datetime.now(_JST).date() - timedelta(days=1)
+    )
+    if filing.filing_date > completed_through:
+        return None
+    if not index_coverage_complete(session, filing.filing_date, completed_through):
+        return None
+    return filing
 
 
 def _first_numeric(
@@ -68,8 +85,14 @@ def balance_sheet_supplement(
     session: Session,
     client: EdinetClient,
     symbol: str,
+    *,
+    completed_through: date | None = None,
 ) -> StrategyBalanceSheetSupplement | None:
-    filing = latest_indexed_annual_report(session, symbol)
+    filing = latest_indexed_annual_report(
+        session,
+        symbol,
+        completed_through=completed_through,
+    )
     if filing is None:
         return None
     data = financials(client, filing.doc_id)
