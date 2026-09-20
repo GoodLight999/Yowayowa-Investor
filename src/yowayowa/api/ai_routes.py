@@ -55,7 +55,6 @@ def ai_chat(
         raise HTTPException(status_code=502, detail=detail) from exc
 
 
-
 @router.get("/codex/status", response_model=CodexCLIStatus)
 def codex_status(settings: Settings = Depends(get_settings)) -> CodexCLIStatus:
     return codex_cli_status(settings)
