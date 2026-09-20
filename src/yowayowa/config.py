@@ -24,6 +24,10 @@ def _default_codex_cli_enabled() -> bool:
     return not bool(os.getenv("VERCEL"))
 
 
+def _default_codex_bridge_url() -> str | None:
+    return os.getenv("CODEX_BRIDGE_URL")
+
+
 def _default_allow_unlisted_ai_endpoints() -> bool:
     # Local/self-hosted personal installs intentionally support Ollama, LM Studio,
     # vLLM and custom gateways. Hosted deployments must opt in explicitly rather
@@ -59,6 +63,7 @@ class Settings(BaseSettings):
     local_enrichment_enabled: bool = False
     allow_unlisted_ai_endpoints: bool = Field(default_factory=_default_allow_unlisted_ai_endpoints)
     codex_cli_enabled: bool = Field(default_factory=_default_codex_cli_enabled)
+    codex_bridge_url: str | None = Field(default_factory=_default_codex_bridge_url)
     codex_cli_timeout_seconds: float = Field(default=180.0, ge=10, le=900)
     openai_compatible_base_url: str | None = None
     openai_compatible_api_key: str | None = None
