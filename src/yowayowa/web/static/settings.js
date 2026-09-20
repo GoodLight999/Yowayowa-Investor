@@ -32,7 +32,7 @@
   function effectiveApiKey(provider) {
     const entered = keyInput.value || readKey();
     if (entered) return entered;
-    return provider?.auth_modes?.includes('none') ? 'local' : '';
+    return provider?.auth_modes?.some(mode => ['none', 'chatgpt_oauth'].includes(mode)) ? 'local' : '';
   }
 
   function enabledIds() {
@@ -40,7 +40,7 @@
     const meta = readMeta();
     let ids = Array.isArray(saved)
       ? saved.filter(id => providers.some(p => p.id === id && providerAllowed(p)))
-      : ['openrouter'].filter(id => providers.some(p => p.id === id && providerAllowed(p)));
+      : ['codex', 'openrouter'].filter(id => providers.some(p => p.id === id && providerAllowed(p)));
     if (
       meta.providerId
       && meta.providerId !== 'server'
@@ -96,18 +96,32 @@
   function syncProvider(overwrite = true) {
     const provider = selectedProvider();
     const server = providerSelect.value === 'server';
-    modelInput.disabled = server; baseInput.disabled = server; keyInput.disabled = server;
-    document.querySelector('#fetch-provider-models').disabled = server;
-    if (provider && overwrite) baseInput.value = provider.base_url;
+    const codex = providerSelect.value === 'codex';
+    modelInput.disabled = server;
+    baseInput.disabled = server || codex;
+    keyInput.disabled = server || codex;
+    document.querySelector('#fetch-provider-models').disabled = server || codex || provider?.model_discovery === false;
+    if (provider && overwrite) {
+      baseInput.value = provider.base_url;
+      if (codex && !modelInput.value.trim()) modelInput.value = 'default';
+    }
     const oauth = document.querySelector('#openrouter-oauth');
     oauth.hidden = providerSelect.value !== 'openrouter';
-    keyInput.placeholder = provider?.auth_modes?.includes('none') ? 'not required' : '';
+    const codexLogin = document.querySelector('#codex-chatgpt-login');
+    codexLogin.hidden = !codex;
+    const codexStatus = document.querySelector('#codex-auth-status');
+    codexStatus.hidden = !codex;
+    keyInput.placeholder = provider?.auth_modes?.some(mode => ['none', 'chatgpt_oauth'].includes(mode))
+      ? 'not required'
+      : '';
+    if (codex) refreshCodexStatus();
   }
 
   function authLabel(item) {
     const modes = new Set(item.auth_modes || []);
     const labels = [];
     if (modes.has('oauth_pkce')) labels.push('OAuth');
+    if (modes.has('chatgpt_oauth')) labels.push('ChatGPT OAuth');
     if (modes.has('api_key')) labels.push(ja ? 'APIキー' : 'API key');
     if (modes.has('none')) labels.push(ja ? '認証不要' : 'No auth');
     return labels.join(' / ');
@@ -219,6 +233,64 @@
       installModelFilter(target);
       status.textContent = `${data.models.length} models`;
     } catch (error) { status.textContent = error.message; }
+  }
+
+
+  async function refreshCodexStatus() {
+    const target = document.querySelector('#codex-auth-status');
+    if (!target) return null;
+    try {
+      const data = await api('/v1/ai/codex/status');
+      if (!data.enabled) {
+        target.textContent = ja
+          ? 'このデプロイではCodex CLI連携を利用できません。'
+          : 'Codex CLI integration is unavailable on this deployment.';
+        return data;
+      }
+      if (!data.installed) {
+        target.textContent = ja
+          ? 'Codex CLIが見つかりません。先にCodex CLIをインストールしてください。'
+          : 'Codex CLI was not found. Install Codex CLI first.';
+        return data;
+      }
+      if (data.authenticated) {
+        target.textContent = `${ja ? 'ChatGPT認証済み' : 'Authenticated with ChatGPT'} · ${data.version || 'Codex'}`;
+      } else {
+        target.textContent = data.reason || (ja ? 'ChatGPTログインが必要です。' : 'ChatGPT login required.');
+      }
+      return data;
+    } catch (error) {
+      target.textContent = error.message;
+      return null;
+    }
+  }
+
+  async function startCodexLogin() {
+    const target = document.querySelector('#codex-auth-status');
+    status.textContent = ja ? 'Codexログインを開始しています…' : 'Starting Codex login…';
+    try {
+      await api('/v1/ai/codex/login', { method: 'POST' });
+      if (target) {
+        target.textContent = ja
+          ? 'ブラウザでChatGPTログインを完了してください。完了を確認しています…'
+          : 'Complete ChatGPT sign-in in the browser. Checking login status…';
+      }
+      for (let attempt = 0; attempt < 45; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const data = await refreshCodexStatus();
+        if (data?.authenticated) {
+          status.textContent = ja ? 'CodexをChatGPTで接続しました。' : 'Codex connected with ChatGPT.';
+          save();
+          return;
+        }
+      }
+      status.textContent = ja
+        ? 'ログイン確認が完了しませんでした。Codexの認証状態を再確認してください。'
+        : 'Login was not confirmed. Recheck Codex authentication status.';
+    } catch (error) {
+      status.textContent = error.message;
+      if (target) target.textContent = error.message;
+    }
   }
 
   function bytesToBase64Url(bytes) {
@@ -365,6 +437,7 @@
   document.querySelector('#openrouter-oauth')?.addEventListener('click', () => startOpenRouterOAuth().catch(error => {
     status.textContent = error.message;
   }));
+  document.querySelector('#codex-chatgpt-login')?.addEventListener('click', () => startCodexLogin());
 
   Promise.all([loadProviders(),loadDataStatus()])
     .then(() => finishOpenRouterOAuth())
