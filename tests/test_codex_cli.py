@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from subprocess import CompletedProcess
+
 from yowayowa.config import Settings
 from yowayowa.services import codex_cli
 
