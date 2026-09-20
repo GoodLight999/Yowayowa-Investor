@@ -73,7 +73,8 @@ class RakutenMs2RssLocalConnector:
         return BrokerOrderReceipt(
             broker="rakuten-securities",
             client_order_id=intent.client_order_id,
-            broker_order_id=str(rss_order_id),
+            transport_order_id=str(rss_order_id),
+            broker_order_id=None,
             accepted=accepted,
             status=BrokerOrderStatus.ACCEPTED if accepted else BrokerOrderStatus.REJECTED,
             submitted_at=datetime.now(UTC),
