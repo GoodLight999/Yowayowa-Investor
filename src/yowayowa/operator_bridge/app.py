@@ -7,11 +7,14 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 
 from yowayowa.broker_models import (
+    BrokerAccountSnapshot,
     BrokerCancelRequest,
     BrokerOrder,
     BrokerOrderIntent,
     BrokerOrderPreview,
     BrokerOrderReceipt,
+    BrokerPosition,
+    BrokerQuote,
 )
 from yowayowa.config import Settings
 from yowayowa.operator_bridge.excel import XlwingsMacroRunner
@@ -64,6 +67,7 @@ def create_operator_bridge_app(
             "broker": "rakuten-securities",
             "transport": "market-speed-ii-rss",
             "live_orders_armed": settings.broker_live_orders_enabled,
+            "capabilities": connector.capabilities.model_dump(mode="json"),
         }
 
     @app.post(
@@ -180,6 +184,30 @@ def create_operator_bridge_app(
             payload=receipt.model_dump(mode="json"),
         )
         return receipt
+
+    @app.get(
+        "/v1/brokers/rakuten/account",
+        response_model=BrokerAccountSnapshot,
+        dependencies=[Depends(authorize)],
+    )
+    def account_snapshot() -> BrokerAccountSnapshot:
+        return connector.account_snapshot()
+
+    @app.get(
+        "/v1/brokers/rakuten/positions",
+        response_model=list[BrokerPosition],
+        dependencies=[Depends(authorize)],
+    )
+    def list_positions() -> list[BrokerPosition]:
+        return connector.list_positions()
+
+    @app.get(
+        "/v1/brokers/rakuten/quotes/{symbol}",
+        response_model=BrokerQuote,
+        dependencies=[Depends(authorize)],
+    )
+    def quote(symbol: str) -> BrokerQuote:
+        return connector.quote(symbol)
 
     return app
 
