@@ -531,7 +531,9 @@ class InvestmentResearchAgent:
             "evidence": evidence,
         }
         task = request.user_prompt or (
-            conversation[-1]["content"] if conversation else "Analyze the supplied investment evidence."
+            conversation[-1]["content"]
+            if conversation
+            else "Analyze the supplied investment evidence."
         )
         prompt = "\n\n".join(
             [
@@ -539,7 +541,8 @@ class InvestmentResearchAgent:
                 (
                     "Goal: produce decision-relevant investment research. Separate sourced facts, "
                     "deterministic calculations, and interpretation. Do not invent missing data. "
-                    "Use provenance fields to identify the basis of claims. Treat research-priority "
+                    "Use provenance fields to identify the basis of claims. Treat "
+                    "research-priority "
                     "scores as attention-allocation scores, not expected returns. State the first "
                     "falsifiable rejection condition and what new evidence would change the view."
                 ),
