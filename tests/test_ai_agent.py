@@ -10,6 +10,7 @@ from yowayowa.domain import Fundamentals, LicenseClass, MetricPoint, MetricSerie
 from yowayowa.research_models import (
     AIChatRequest,
     AIMessage,
+    AIPromptPacketRequest,
     AIProviderConfig,
     MarketScreenResponse,
 )
@@ -237,3 +238,68 @@ def test_ai_strategy_triage_returns_interpretable_priority(monkeypatch) -> None:
         "quality",
         "evidence",
     }
+
+
+
+def test_codex_chat_uses_same_yowayowa_tool_loop(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    replies = iter(
+        [
+            {
+                "answer": None,
+                "tool_calls": [
+                    {
+                        "name": "get_alerts",
+                        "arguments": {},
+                    }
+                ],
+            },
+            {
+                "answer": "Codex answer",
+                "tool_calls": [],
+            },
+        ]
+    )
+    monkeypatch.setattr(ai_agent, "run_codex_structured", lambda *_args, **_kwargs: next(replies))
+    monkeypatch.setattr(ai_agent, "list_alerts", lambda _session: [])
+
+    agent = InvestmentResearchAgent(
+        Settings(database_url="sqlite:///:memory:", codex_cli_enabled=True),
+        Mock(),
+    )
+    result = agent.chat(
+        AIChatRequest(
+            messages=[AIMessage(role="user", content="状況を調べて")],
+            provider=AIProviderConfig(
+                provider="codex_cli",
+                model="default",
+                api_key="local",
+            ),
+        )
+    )
+
+    assert result.answer == "Codex answer"
+    assert result.provider == "codex_cli"
+    assert result.model == "default"
+    assert [item.tool for item in result.tool_trace] == ["get_alerts"]
+
+
+def test_external_prompt_packet_works_without_any_ai_provider() -> None:
+    agent = InvestmentResearchAgent(
+        Settings(
+            database_url="sqlite:///:memory:",
+            codex_cli_enabled=False,
+        ),
+        Mock(),
+    )
+
+    packet = agent.prompt_packet(
+        AIPromptPacketRequest(
+            user_prompt="この材料を投資判断用に分析して",
+            context={"page": "/ai"},
+        )
+    )
+
+    assert "YOWAYOWA DATA PACKET JSON" in packet.prompt
+    assert "この材料を投資判断用に分析して" in packet.prompt
+    assert packet.included_tools == []
+    assert packet.characters == len(packet.prompt)
