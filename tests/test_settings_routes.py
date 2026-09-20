@@ -19,3 +19,7 @@ def test_settings_status_reports_keyless_bls_as_available(monkeypatch) -> None:
     assert status["bls"] is True
     assert status["sec"] is True
     assert status["yahoo_personal"] is True
+    assert status["private_connectors"] is True
+    assert status["scraping"] is True
+    assert status["broker_control"] is True
+    assert status["broker_live_orders"] is False
