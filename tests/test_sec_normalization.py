@@ -165,3 +165,33 @@ def test_extract_metric_ignores_non_periodic_filings() -> None:
     }
     series = SecClient._extract_metric(facts, "net_income", "Net income", ("NetIncomeLoss",))
     assert series.points == []
+
+
+def test_extract_metric_normalizes_noncurrent_marketable_securities_direct_fact() -> None:
+    facts = {
+        "MarketableSecuritiesNoncurrent": {
+            "units": {
+                "USD": [
+                    {
+                        "end": "2026-06-30",
+                        "val": 42,
+                        "fy": 2026,
+                        "fp": "Q2",
+                        "form": "10-Q",
+                        "filed": "2026-08-01",
+                        "accn": "0000000000-26-000001",
+                    }
+                ]
+            }
+        }
+    }
+    series = SecClient._extract_metric(
+        facts,
+        "marketable_securities_noncurrent",
+        "Marketable securities, noncurrent",
+        ("MarketableSecuritiesNoncurrent",),
+    )
+
+    assert len(series.points) == 1
+    assert float(series.points[0].value) == 42
+    assert series.points[0].accession == "0000000000-26-000001"
