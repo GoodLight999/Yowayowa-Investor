@@ -12,7 +12,11 @@ from sqlalchemy.orm import Session
 
 from yowayowa.db import Base
 from yowayowa.domain import LicenseClass, Provenance
-from yowayowa.services.edinet_index import filing_history, sync_filing_index
+from yowayowa.services.edinet_index import (
+    filing_history,
+    maintain_recent_filing_index,
+    sync_filing_index,
+)
 
 
 class FakeEdinetClient:
@@ -155,3 +159,35 @@ def test_edinet_index_rejects_current_japan_calendar_day() -> None:
         sync_filing_index(session, client, today_jst, today_jst)  # type: ignore[arg-type]
 
     assert client.calls == []
+
+
+def test_edinet_recent_maintenance_backfills_newest_missing_days_and_reports_coverage() -> None:
+    today = date(2026, 6, 25)
+    client = FakeEdinetClient()
+    with _session() as session:
+        first = maintain_recent_filing_index(
+            session,
+            client,  # type: ignore[arg-type]
+            lookback_days=5,
+            network_day_budget=3,
+            today_jst=today,
+        )
+        second = maintain_recent_filing_index(
+            session,
+            client,  # type: ignore[arg-type]
+            lookback_days=5,
+            network_day_budget=3,
+            today_jst=today,
+        )
+
+    assert client.calls[:3] == [date(2026, 6, 24), date(2026, 6, 23), date(2026, 6, 22)]
+    assert client.calls[3:] == [date(2026, 6, 21), date(2026, 6, 20)]
+    assert first.days_attempted == 3
+    assert first.days_synced == 3
+    assert first.indexed_days == 3
+    assert first.expected_days == 5
+    assert first.coverage_complete is False
+    assert second.days_attempted == 2
+    assert second.days_synced == 2
+    assert second.indexed_days == 5
+    assert second.coverage_complete is True
