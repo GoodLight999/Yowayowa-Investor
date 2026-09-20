@@ -79,6 +79,10 @@ def create_operator_bridge_app(
         dependencies=[Depends(authorize)],
     )
     def submit_order(intent: BrokerOrderIntent) -> BrokerOrderReceipt:
+        prior = state.latest_order_result(intent.client_order_id)
+        if prior is not None:
+            return BrokerOrderReceipt.model_validate(prior)
+
         preview = connector.preview_order(intent)
         decision = evaluate_broker_execution(
             settings,
