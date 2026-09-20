@@ -120,6 +120,24 @@ class SQLiteOperatorState:
                 ),
             )
 
+    def latest_order_result(self, client_order_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT payload_json
+                FROM broker_audit
+                WHERE event_type = 'order_submit_result'
+                  AND client_order_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (client_order_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        payload = json.loads(row["payload_json"])
+        return payload if isinstance(payload, dict) else None
+
     def count_submission_attempts_today(self) -> int:
         today = datetime.now(UTC).date().isoformat()
         with self._connect() as connection:
