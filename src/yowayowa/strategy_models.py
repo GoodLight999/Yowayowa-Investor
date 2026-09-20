@@ -117,6 +117,36 @@ class StrategyResearchSnapshot(BaseModel):
     captured_at: datetime
 
 
+StrategyOutcomeStatus = Literal["pending", "available", "unavailable"]
+
+
+class StrategyForwardOutcome(BaseModel):
+    snapshot_id: int
+    strategy_id: str
+    scoring_version: str
+    region: str
+    symbol: str
+    research_priority_score: float
+    captured_at: datetime
+    horizon_trading_days: int = Field(gt=0)
+    status: StrategyOutcomeStatus
+    entry_at: datetime | None = None
+    exit_at: datetime | None = None
+    entry_price: float | None = None
+    exit_price: float | None = None
+    total_return: float | None = None
+    benchmark_symbol: str | None = None
+    benchmark_return: float | None = None
+    excess_return: float | None = None
+
+
+class StrategyForwardOutcomeReport(BaseModel):
+    outcomes: list[StrategyForwardOutcome]
+    provenance: list[Provenance] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    evaluated_at: datetime
+
+
 class StrategyEvaluationResponse(BaseModel):
     strategy_id: str
     evaluations: list[StrategyCandidateEvaluation]
