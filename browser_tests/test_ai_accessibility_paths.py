@@ -39,5 +39,7 @@ def test_ai_can_generate_copyable_external_research_packet(page: Page) -> None:
 
     panel = page.locator("#ai-prompt-packet-panel")
     expect(panel).to_be_visible()
-    expect(page.locator("#ai-prompt-packet")).to_contain_text("YOWAYOWA DATA PACKET JSON")
+    expect(page.locator("#ai-prompt-packet")).to_have_value(
+        "YOWAYOWA DATA PACKET JSON:\n{\"symbol\":\"TEST\"}"
+    )
     expect(page.locator("#ai-prompt-packet-meta")).to_contain_text("get_fundamentals")
