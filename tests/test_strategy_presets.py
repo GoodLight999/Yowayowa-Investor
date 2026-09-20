@@ -271,7 +271,6 @@ def test_strategy_api_uses_same_filing_sec_noncurrent_marketable_securities(monk
     assert result["supplemental_provenance"][0]["provider"] == "sec-edgar"
 
 
-
 def test_strategy_api_uses_period_aligned_yahoo_conservative_bound(monkeypatch) -> None:
     from yowayowa.api import fundamentals_routes
     from yowayowa.api.app import app
