@@ -398,7 +398,8 @@ class InvestmentResearchAgent:
             ToolSpec(
                 "get_strategy_history",
                 "Read point-in-time strategy research snapshots. Use this to compare today's "
-                "candidate evidence with earlier AI/Discover triage runs without rewriting history.",
+                "candidate evidence with earlier AI/Discover triage runs without rewriting "
+                "history.",
                 self._object_schema(
                     {
                         "strategy_id": {"type": "string"},
