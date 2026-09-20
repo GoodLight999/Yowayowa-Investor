@@ -127,6 +127,32 @@ def test_edinet_supplement_replaces_all_three_balance_sheet_inputs_together() ->
     assert result.supplemental_provenance[0].source == "EDINET annual filing"
 
 
+def test_supplement_never_mixes_candidate_investment_value_with_provider_balance_sheet() -> None:
+    supplement = StrategyBalanceSheetSupplement(
+        current_assets=120,
+        liabilities=40,
+        investment_securities=None,
+        provenance=_provenance("same-filing provider balance sheet"),
+    )
+    result = evaluate_kiyohara_candidate(
+        _fundamentals(),
+        StrategyCandidateInput(
+            symbol="TEST",
+            market_cap=100,
+            pe_ratio=10,
+            investment_securities=999,
+        ),
+        supplement,
+    )
+
+    assert result.current_assets == 120
+    assert result.liabilities == 40
+    assert result.investment_securities is None
+    assert result.net_cash_ratio == pytest.approx(0.8)
+    assert result.net_cash_ratio_is_lower_bound is True
+    assert result.basis == "conservative_floor_ex_investment_securities"
+
+
 def test_missing_investment_securities_produces_conservative_bounds() -> None:
     result = evaluate_kiyohara_candidate(
         _fundamentals(),
