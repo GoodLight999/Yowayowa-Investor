@@ -30,6 +30,10 @@ serve = [
   "uvicorn[standard]>=0.35,<1",
 ]
 xbrl = ["arelle-release>=2.37,<3"]
+operator-windows = [
+  "xlwings>=0.33,<1",
+  "pywin32>=308; platform_system == 'Windows'",
+]
 dev = [
   "pytest>=8.4,<9",
   "pytest-cov>=6.2,<7",
