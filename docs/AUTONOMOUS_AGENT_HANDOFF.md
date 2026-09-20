@@ -1,6 +1,6 @@
 # Autonomous Agent Handoff
 
-Last materially updated: 2026-09-20
+Last materially updated: 2026-09-21
 
 This document is the compact operational handoff for a long-running autonomous coding agent (Hermes, Codex, or equivalent). Read `AGENTS.md` first; it is the stable contract. This file intentionally contains more current state and may change frequently.
 
@@ -12,12 +12,14 @@ https://github.com/GoodLight999/Yowayowa-Investor/pull/1
 At the time this handoff was written:
 - active branch: `agent/commercial-foundation`
 - base: `main`
-- latest verified product head: `5865c1c1a03d5e8105bbbc3ae7f47d0bbea45418`
+- latest verified product-code checkpoint: `d41542b5252bad759d9baa5e6ca13a60429da8e5`
 - production: https://yowayowa-investor.vercel.app
-- GitHub Actions run #948: verify SUCCESS, real-Chrome browser E2E SUCCESS (64 browser tests), deploy-production SUCCESS
-- Vercel deployment `dpl_AJbzxxR9io6h9u88V7Xx72i3STJw`: READY and promoted to the production alias
-- production `/v1/health` and `/v1/settings/status` returned HTTP 200 after deployment
+- GitHub Actions run #971: verify SUCCESS, real-Chrome browser E2E SUCCESS, deploy-production SUCCESS
+- Vercel deployment `dpl_4ASJUxLEJwpCDwFrPxbVE2EUD1Dy`: READY and serving the production alias
+- production `/v1/health`, `/internal/debug/runtime`, and `/v1/strategy-presets` returned HTTP 200 after deployment
+- `/internal/debug/runtime` reported source revision `d41542b5252bad759d9baa5e6ca13a60429da8e5`
 - recent Vercel runtime-error scan after deployment was clean
+- handoff/documentation-only commits may make the PR head newer than the product-code checkpoint; always resolve the live PR head and inspect the diff before editing
 - production currently reports `edinet: false`: the automatic EDINET cron bootstrap code is deployed but cannot run unattended until a server-side EDINET key is configured
 - durable production database status is not proven by the current health surface; do not assume the EDINET filing index persists across Vercel instances until `DATABASE_URL`/storage is verified
 
