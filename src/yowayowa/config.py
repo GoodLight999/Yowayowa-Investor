@@ -20,6 +20,10 @@ def _default_cron_secret() -> str | None:
     return os.getenv("CRON_SECRET")
 
 
+def _default_codex_cli_enabled() -> bool:
+    return not bool(os.getenv("VERCEL"))
+
+
 def _default_allow_unlisted_ai_endpoints() -> bool:
     # Local/self-hosted personal installs intentionally support Ollama, LM Studio,
     # vLLM and custom gateways. Hosted deployments must opt in explicitly rather
@@ -54,6 +58,8 @@ class Settings(BaseSettings):
     allow_personal_provider_in_public: bool = False
     local_enrichment_enabled: bool = False
     allow_unlisted_ai_endpoints: bool = Field(default_factory=_default_allow_unlisted_ai_endpoints)
+    codex_cli_enabled: bool = Field(default_factory=_default_codex_cli_enabled)
+    codex_cli_timeout_seconds: float = Field(default=180.0, ge=10, le=900)
     openai_compatible_base_url: str | None = None
     openai_compatible_api_key: str | None = None
     openai_compatible_model: str | None = None
@@ -73,6 +79,7 @@ class Settings(BaseSettings):
             raise ValueError("Local enrichment is personal-mode only and cannot run in public mode")
         if self.mode == "public":
             self.allow_unlisted_ai_endpoints = False
+            self.codex_cli_enabled = False
         return self
 
 
