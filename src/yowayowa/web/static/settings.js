@@ -3,6 +3,7 @@
   const META_KEY = 'yowayowa.ai.settings.v2';
   const KEY_KEY = 'yowayowa.ai.key.v2';
   const PKCE_KEY = 'yowayowa.openrouter.pkce.v1';
+  const CODEX_CREDENTIAL_KEY = 'yowayowa.codex.credential.v1';
   const ENABLED_KEY = 'yowayowa.ai.enabled-providers.v1';
   const EDINET_KEY = 'yowayowa.datasource.edinet.key.v1';
   const ja = window.YOWAYOWA_LOCALE === 'ja';
@@ -27,7 +28,18 @@
   function readEdinetKey() { try { return sessionStorage.getItem(EDINET_KEY) || ''; } catch (_) { return ''; } }
   function selectedProvider() { return providers.find(item => item.id === providerSelect.value) || null; }
   function unlistedAllowed() { return dataSourceStatus.allow_unlisted_ai_endpoints !== false; }
-  function providerAllowed(item) { return unlistedAllowed() || item.category === 'cloud'; }
+  function providerAllowed(item) {
+    return item.id === 'codex' || unlistedAllowed() || item.category === 'cloud';
+  }
+  function readCodexCredential() {
+    try { return localStorage.getItem(CODEX_CREDENTIAL_KEY) || ''; } catch (_) { return ''; }
+  }
+  function saveCodexCredential(value) {
+    try {
+      if (value) localStorage.setItem(CODEX_CREDENTIAL_KEY, value);
+      else localStorage.removeItem(CODEX_CREDENTIAL_KEY);
+    } catch (_) {}
+  }
 
   function effectiveApiKey(provider) {
     const entered = keyInput.value || readKey();
@@ -238,12 +250,22 @@
     const target = document.querySelector('#codex-auth-status');
     if (!target) return null;
     try {
-      const data = await api('/v1/ai/codex/status');
+      let data = await api('/v1/ai/codex/status');
       if (!data.enabled) {
         target.textContent = ja
-          ? 'このデプロイではCodex CLI連携を利用できません。'
-          : 'Codex CLI integration is unavailable on this deployment.';
+          ? 'このデプロイではCodex連携を利用できません。'
+          : 'Codex integration is unavailable on this deployment.';
         return data;
+      }
+      if (data.mode === 'hosted_bridge') {
+        const credential = readCodexCredential();
+        if (credential) {
+          data = await api('/v1/ai/codex/session-status', {
+            method: 'POST',
+            body: JSON.stringify({ credential }),
+          });
+          if (data.credential) saveCodexCredential(data.credential);
+        }
       }
       if (!data.installed) {
         target.textContent = ja
@@ -252,7 +274,8 @@
         return data;
       }
       if (data.authenticated) {
-        target.textContent = `${ja ? 'ChatGPT認証済み' : 'Authenticated with ChatGPT'} · ${data.version || 'Codex'}`;
+        const detail = data.plan_type || data.version || 'Codex';
+        target.textContent = `${ja ? 'ChatGPT認証済み' : 'Authenticated with ChatGPT'} · ${detail}`;
       } else {
         target.textContent = data.reason || (ja ? 'ChatGPTログインが必要です。' : 'ChatGPT login required.');
       }
@@ -263,10 +286,73 @@
     }
   }
 
+  async function startHostedCodexLogin(target) {
+    const authWindow = window.open('about:blank', '_blank');
+    if (authWindow) {
+      authWindow.document.title = 'ChatGPT · Codex';
+      authWindow.document.body.textContent = ja
+        ? 'ChatGPT認証を準備しています…'
+        : 'Preparing ChatGPT sign-in…';
+    }
+    const response = await fetch('/v1/ai/codex/device-auth', {
+      method: 'POST',
+      headers: { Accept: 'application/x-ndjson' },
+      credentials: 'same-origin',
+    });
+    if (!response.ok || !response.body) {
+      throw new Error(`Codex device auth HTTP ${response.status}`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split('\n');
+      buffer = done ? '' : (lines.pop() || '');
+      for (const raw of lines) {
+        if (!raw.trim()) continue;
+        const event = JSON.parse(raw);
+        if (event.type === 'instructions') {
+          const code = String(event.user_code || '');
+          const url = String(event.verification_url || '');
+          if (target) {
+            target.textContent = ja
+              ? `認証コード ${code} をChatGPTのCodex認証画面に入力してください。コードはコピー済みです。`
+              : `Enter code ${code} on the ChatGPT Codex authorization page. The code was copied.`;
+          }
+          try { await navigator.clipboard.writeText(code); } catch (_) {}
+          if (authWindow && url) authWindow.location.href = url;
+          else if (url) window.open(url, '_blank', 'noopener,noreferrer');
+        } else if (event.type === 'complete') {
+          if (!event.credential) throw new Error('Codex did not return a sealed credential.');
+          saveCodexCredential(event.credential);
+          if (target) {
+            target.textContent = `${ja ? 'ChatGPT認証済み' : 'Authenticated with ChatGPT'} · ${event.plan_type || 'Codex'}`;
+          }
+          status.textContent = ja
+            ? 'CodexをChatGPTサブスクリプションで接続しました。'
+            : 'Codex connected with your ChatGPT subscription.';
+          save();
+          return;
+        } else if (event.type === 'error') {
+          throw new Error(event.message || 'Codex device login failed.');
+        }
+      }
+      if (done) break;
+    }
+    throw new Error('Codex device login ended before authentication completed.');
+  }
+
   async function startCodexLogin() {
     const target = document.querySelector('#codex-auth-status');
     status.textContent = ja ? 'Codexログインを開始しています…' : 'Starting Codex login…';
     try {
+      const current = await api('/v1/ai/codex/status');
+      if (current.mode === 'hosted_bridge') {
+        await startHostedCodexLogin(target);
+        return;
+      }
       await api('/v1/ai/codex/login', { method: 'POST' });
       if (target) {
         target.textContent = ja
