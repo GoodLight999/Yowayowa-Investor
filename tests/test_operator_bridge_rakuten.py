@@ -1,6 +1,11 @@
 from decimal import Decimal
 
-from yowayowa.broker_models import BrokerOrderIntent, BrokerOrderSide, BrokerOrderStatus, BrokerOrderType
+from yowayowa.broker_models import (
+    BrokerOrderIntent,
+    BrokerOrderSide,
+    BrokerOrderStatus,
+    BrokerOrderType,
+)
 from yowayowa.operator_bridge.rakuten import RakutenMs2RssLocalConnector
 from yowayowa.providers.rakuten_ms2_rss import RSS_STOCK_ORDER_V_FUNCTION
 
@@ -48,7 +53,7 @@ def test_local_rakuten_connector_calls_vba_order_function() -> None:
 
 
 def test_local_rakuten_connector_treats_rss_error_as_rejected() -> None:
-    runner = FakeMacroRunner("入力エラー：注文数量")
+    runner = FakeMacroRunner("入力エラー: 注文数量")
     connector = RakutenMs2RssLocalConnector(
         runner,
         next_rss_order_id=lambda: 43,
