@@ -4,6 +4,36 @@ Last materially updated: 2026-09-21
 
 This document is the compact operational handoff for a long-running autonomous coding agent (Hermes, Codex, or equivalent). Read `AGENTS.md` first; it is the stable contract. This file intentionally contains more current state and may change frequently.
 
+## Major product-direction change — Full / Operator first
+
+As of 2026-09-21, the product direction changed materially.
+
+The primary product is no longer a generally publishable SaaS. `personal` mode is now the **Full / Operator** profile and is the main product. It may use:
+- authenticated/private scraping;
+- private/non-public HTTP, JSON, GraphQL and WebSocket protocols;
+- personal-only data sources;
+- local software/desktop bridges;
+- broker account control, including brokers without a conventional public API;
+- local credentials and local AI/CLI tools.
+
+The `public` profile remains supported as a safe, intentionally limited derivative. Public-mode product constraints must not weaken Full / Operator mode.
+
+For broker control, do **not** default to browser automation. Transport priority is:
+`official API/local programmable interface -> authorized private protocol -> structured scraping -> local application automation -> UI automation fallback`.
+
+Authentication/MFA/access controls are not bypass targets. The operator authenticates legitimately; connectors may then reuse the authorized session or supported local interface.
+
+Current foundation already added:
+- `docs/OPERATOR_MODE.md`;
+- `broker_models.py` provider-neutral broker domain;
+- `private_connectors.py` for authenticated private-protocol / scraping connectors;
+- `services/broker_execution.py` live-order interlocks;
+- `providers/rakuten_ms2_rss.py` official MARKET SPEED II RSS cash-stock order mapping;
+- `operator_bridge/excel.py` lazy Windows Excel/xlwings macro runner;
+- `operator_bridge/rakuten.py` local Rakuten RSS connector;
+- optional `operator-windows` dependency group.
+
+
 ## Current state
 
 The active implementation is Draft PR #1:
@@ -105,17 +135,30 @@ This also gives Japanese listings a safe conservative fallback when an exact EDI
 
 ## Current highest-priority engineering task
 
-### P0 — product completion audit and closure
+### P0 — finish the local Operator Bridge and first live-capable broker path
 
-The project has accumulated substantial vertical functionality. Do not keep extending infrastructure or accounting aliases indefinitely while the product remains perceived as unfinished.
+The new product direction requires a real local execution plane, not just research features.
+
+First target: Rakuten Securities domestic equities via MARKET SPEED II RSS. Rakuten's official RSS interface supports market/account information plus VBA-callable order functions such as `RssStockOrder_V`; use that rather than browser automation.
 
 Execution:
-1. compare the canonical Notion specification with the actual current browser/API/CLI surfaces;
-2. identify missing, weak, disconnected, or duplicated user workflows;
-3. prioritize gaps that materially reduce the need to jump between external finance sites;
-4. complete each selected workflow end-to-end, including failure behavior and real-browser verification;
-5. keep financial/provider correctness boundaries intact while avoiding speculative framework work;
-6. update this handoff after each completed vertical so the remaining completion queue shrinks visibly.
+1. finish a localhost-only Operator Bridge service for Windows;
+2. authenticate the bridge itself with a locally generated secret and bind to loopback by default;
+3. keep Rakuten/MarketSpeed credentials and trading secrets local; never send them to Vercel;
+4. implement persistent unique RSS order-ID allocation and restart-safe idempotency;
+5. implement order-status / order-list observation using official RSS functions, and treat broker status as authoritative;
+6. add positions, buying power and quote reads through RSS where available;
+7. route all live submission through `services/broker_execution.py` plus an append-only audit record;
+8. expose paper/preview/live modes through API/CLI without making the public profile capable of execution;
+9. verify on Linux with fakes and on a real Windows + Excel + MARKET SPEED II installation before declaring live support complete.
+
+After Rakuten:
+- build a reusable authenticated private-protocol/scraping toolkit for brokers with no programmable local interface;
+- first choice is direct private HTTP/JSON/WebSocket from a legitimately authenticated operator session;
+- HTML scraping is secondary;
+- browser click automation remains the last resort only.
+
+The previous product-completion audit becomes the next queue item after the local execution plane is real.
 
 ## Scheduled high-priority data integration
 
@@ -134,9 +177,10 @@ Canonical product/roadmap details are also recorded in Notion.
 
 ## Remaining strategic constraints
 
-1. **Evidence-backed world/IFRS exact enrichment only** — add provider/taxonomy-specific exact mappings when semantics are demonstrably compatible; never invent a universal investment-securities mapping.
-2. **Public market-data licensing path** — personal Yahoo/yfinance remains personal-only. Public launch needs redistributable/licensed market data without weakening provenance.
-3. Higher-severity defects discovered in active workflows outrank planned feature work.
+1. **Operator capability outranks public-SaaS neatness.** Do not remove or weaken useful personal/private integrations merely because they cannot be offered to anonymous public users.
+2. **Evidence-backed world/IFRS exact enrichment only** — add provider/taxonomy-specific exact mappings when semantics are demonstrably compatible; never invent a universal investment-securities mapping.
+3. **Public market-data licensing still matters only for the public profile.** Personal Yahoo/yfinance/private scraping may remain Full/Operator-only.
+4. Higher-severity defects discovered in active workflows outrank planned feature work.
 
 ## UI constraint that is easy to regress
 
