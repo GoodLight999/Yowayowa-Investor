@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from enum import IntEnum
 from typing import Protocol
@@ -241,12 +242,7 @@ class RakutenRssInquiry:
     def account_snapshot(self) -> BrokerAccountSnapshot:
         table = self._reader.read_table_formula("RssCapacityList()")
         rows = _table_rows(table, {"現物買付可能額"})
-        buying_power = (
-            _to_decimal(rows[0].get("現物買付可能額"))
-            if rows
-            else None
-        )
-        from datetime import UTC, datetime
+        buying_power = _to_decimal(rows[0].get("現物買付可能額")) if rows else None
 
         return BrokerAccountSnapshot(
             broker="rakuten-securities",
@@ -262,14 +258,10 @@ class RakutenRssInquiry:
             char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-" for char in normalized
         ):
             raise ValueError("symbol contains characters unsafe for an Excel RSS formula")
-        raw = self._reader.read_scalar_formula(
-            f'RssMarket("{normalized}","現在値")'
-        )
+        raw = self._reader.read_scalar_formula(f'RssMarket("{normalized}","現在値")')
         price = _to_decimal(raw)
         if price is None or price <= 0:
             raise LookupError(f"Rakuten RSS quote unavailable for {normalized}")
-        from datetime import UTC, datetime
-
         return BrokerQuote(
             broker="rakuten-securities",
             symbol=normalized,
