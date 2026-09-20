@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     sec_requests_per_second: float = Field(default=8.0, gt=0, le=10)
     fred_api_key: str | None = None
     edinet_api_key: str | None = None
+    edinet_index_lookback_days: int = Field(default=550, ge=31, le=3660)
+    edinet_index_backfill_days_per_run: int = Field(default=31, ge=1, le=31)
     bls_api_key: str | None = None
     bea_api_key: str | None = None
     estat_app_id: str | None = None
