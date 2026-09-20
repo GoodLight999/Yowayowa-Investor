@@ -70,8 +70,9 @@ def test_yahoo_strategy_supplement_uses_latest_common_statement_period() -> None
 
 def test_yahoo_strategy_supplement_requires_same_currency_and_frequency() -> None:
     data = _fundamentals()
-    liabilities = data.metrics["liabilities"].points[-1].model_copy(update={"unit": "USD"})
-    data.metrics["liabilities"] = _series("liabilities", liabilities)
+    prior = data.metrics["liabilities"].points[0]
+    latest = data.metrics["liabilities"].points[-1].model_copy(update={"unit": "USD"})
+    data.metrics["liabilities"] = _series("liabilities", prior, latest)
 
     supplement = balance_sheet_supplement(data)
 
