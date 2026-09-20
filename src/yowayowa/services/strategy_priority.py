@@ -39,22 +39,16 @@ def research_priority(evaluation: StrategyCandidateEvaluation) -> StrategyResear
 
     revenue_growth = evaluation.revenue_growth_yoy
     net_income_growth = evaluation.net_income_growth_yoy
-    growth_revenue = (
-        15.0 * _clamp(revenue_growth / 0.30) if revenue_growth is not None else 0.0
-    )
+    growth_revenue = 15.0 * _clamp(revenue_growth / 0.30) if revenue_growth is not None else 0.0
     growth_income = (
-        10.0 * _clamp(net_income_growth / 0.40)
-        if net_income_growth is not None
-        else 0.0
+        10.0 * _clamp(net_income_growth / 0.40) if net_income_growth is not None else 0.0
     )
     growth_score = growth_revenue + growth_income
 
     roe = evaluation.return_on_equity
     quality_roe = 12.0 * _clamp(roe / 0.25) if roe is not None else 0.0
     quality_fcf = (
-        8.0
-        if evaluation.free_cash_flow is not None and evaluation.free_cash_flow > 0
-        else 0.0
+        8.0 if evaluation.free_cash_flow is not None and evaluation.free_cash_flow > 0 else 0.0
     )
     quality_score = quality_roe + quality_fcf
 
