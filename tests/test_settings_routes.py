@@ -23,3 +23,19 @@ def test_settings_status_reports_keyless_bls_as_available(monkeypatch) -> None:
     assert status["scraping"] is True
     assert status["broker_control"] is True
     assert status["broker_live_orders"] is False
+
+
+def test_vercel_defaults_full_operator_capabilities_off(monkeypatch) -> None:
+    from yowayowa.config import Settings
+
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("YOWAYOWA_PRIVATE_CONNECTORS_ENABLED", raising=False)
+    monkeypatch.delenv("YOWAYOWA_SCRAPING_ENABLED", raising=False)
+    monkeypatch.delenv("YOWAYOWA_BROKER_CONTROL_ENABLED", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.private_connectors_enabled is False
+    assert settings.scraping_enabled is False
+    assert settings.broker_control_enabled is False
+    assert settings.broker_live_orders_enabled is False
