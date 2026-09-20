@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 from yowayowa.domain import Fundamentals
 from yowayowa.research_models import MarketScreenFilter, MarketScreenRequest
 from yowayowa.services.screening import derived_metrics
-from yowayowa.services.strategy_edinet import StrategyBalanceSheetSupplement
 from yowayowa.strategy_models import (
+    StrategyBalanceSheetSupplement,
     StrategyCandidateEvaluation,
     StrategyCandidateInput,
     StrategyPresetDefinition,
@@ -141,9 +141,11 @@ def evaluate_kiyohara_candidate(
         yowayowa_conservative_net_cash = current_assets - liabilities
         yowayowa_conservative_net_cash_ratio = yowayowa_conservative_net_cash / candidate.market_cap
 
-    investment_securities = candidate.investment_securities
-    if investment_securities is None and supplement is not None:
-        investment_securities = supplement.investment_securities
+    investment_securities = (
+        supplement.investment_securities
+        if supplement is not None
+        else candidate.investment_securities
+    )
     exact_formula = investment_securities is not None
     if not exact_formula:
         missing.append("investment_securities")
