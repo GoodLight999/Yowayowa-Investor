@@ -106,7 +106,7 @@ def test_public_daily_maintenance_never_instantiates_personal_yahoo_providers(mo
     assert result["personal_market_tasks_skipped"] is True
 
 
-def test_daily_maintenance_syncs_only_one_completed_japan_day_for_edinet(monkeypatch) -> None:
+def test_daily_maintenance_backfills_recent_edinet_index_with_bounded_budget(monkeypatch) -> None:
     app_module = importlib.import_module("yowayowa.api.app")
     settings = Settings(
         database_url="sqlite:///:memory:",
@@ -118,19 +118,36 @@ def test_daily_maintenance_syncs_only_one_completed_japan_day_for_edinet(monkeyp
     monkeypatch.setattr(app_module, "get_settings", lambda: settings)
     provider = object()
     monkeypatch.setattr(app_module, "edinet_client", lambda: provider)
-    synchronized: list[tuple[object, object, object]] = []
+    maintained: list[tuple[object, int, int, object]] = []
 
-    def sync(session, client, start_date, end_date):
-        synchronized.append((client, start_date, end_date))
-        return SimpleNamespace(days_synced=1, failures=[])
+    def maintain(
+        session,
+        client,
+        *,
+        lookback_days,
+        network_day_budget,
+        today_jst,
+    ):
+        maintained.append((client, lookback_days, network_day_budget, today_jst))
+        return SimpleNamespace(
+            days_synced=31,
+            indexed_days=31,
+            expected_days=550,
+            coverage_complete=False,
+            failures=[],
+        )
 
-    monkeypatch.setattr(app_module, "sync_filing_index", sync)
+    monkeypatch.setattr(app_module, "maintain_recent_filing_index", maintain)
 
     result = app_module.daily_maintenance(_request("Bearer cron-token"))
 
-    assert len(synchronized) == 1
-    assert synchronized[0][0] is provider
-    assert synchronized[0][1] == synchronized[0][2]
-    assert result["edinet_index_days_synced"] == 1
+    assert len(maintained) == 1
+    assert maintained[0][0] is provider
+    assert maintained[0][1] == 550
+    assert maintained[0][2] == 31
+    assert result["edinet_index_days_synced"] == 31
+    assert result["edinet_index_indexed_days"] == 31
+    assert result["edinet_index_expected_days"] == 550
+    assert result["edinet_index_coverage_complete"] is False
     assert result["edinet_index_failure"] is None
     assert result["ok"] is True
