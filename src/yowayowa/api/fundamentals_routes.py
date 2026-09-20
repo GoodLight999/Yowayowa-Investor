@@ -193,11 +193,7 @@ def strategy_research_outcomes(
     session: Session = Depends(db_session),
 ) -> StrategyForwardOutcomeReport:
     try:
-        resolved_horizons = [
-            int(token.strip())
-            for token in horizons.split(",")
-            if token.strip()
-        ]
+        resolved_horizons = [int(token.strip()) for token in horizons.split(",") if token.strip()]
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Outcome horizons must be integers") from exc
     snapshots = list_strategy_snapshots(
