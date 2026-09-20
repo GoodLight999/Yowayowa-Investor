@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 
 from yowayowa.broker_models import (
+    BrokerCancelRequest,
     BrokerOrder,
     BrokerOrderIntent,
     BrokerOrderPreview,
@@ -133,6 +134,53 @@ def create_operator_bridge_app(
     def list_orders() -> list[BrokerOrder]:
         return connector.list_orders()
 
+    @app.get(
+        "/v1/brokers/rakuten/orders/status/{transport_order_id}",
+        dependencies=[Depends(authorize)],
+    )
+    def order_status(transport_order_id: str) -> dict[str, str]:
+        return {"status": connector.order_status(transport_order_id).value}
+
+    @app.post(
+        "/v1/brokers/rakuten/orders/cancel",
+        response_model=BrokerOrderReceipt,
+        dependencies=[Depends(authorize)],
+    )
+    def cancel_order(payload: BrokerCancelRequest) -> BrokerOrderReceipt:
+        if settings.mode != "personal" or not settings.broker_control_enabled:
+            raise HTTPException(status_code=409, detail="Broker control is disabled")
+        prior = state.latest_order_result(payload.client_order_id)
+        if prior is not None:
+            return BrokerOrderReceipt.model_validate(prior)
+
+        state.append_audit(
+            "order_cancel_attempt",
+            client_order_id=payload.client_order_id,
+            broker_order_id=payload.broker_order_id,
+            payload=payload.model_dump(mode="json"),
+        )
+        try:
+            receipt = connector.cancel_order(
+                payload.broker_order_id,
+                client_order_id=payload.client_order_id,
+            )
+        except Exception as exc:
+            state.append_audit(
+                "order_cancel_error",
+                client_order_id=payload.client_order_id,
+                broker_order_id=payload.broker_order_id,
+                payload={"error_type": type(exc).__name__},
+            )
+            raise HTTPException(status_code=502, detail="Broker cancellation failed") from exc
+
+        state.append_audit(
+            "order_submit_result",
+            client_order_id=payload.client_order_id,
+            broker_order_id=receipt.broker_order_id,
+            payload=receipt.model_dump(mode="json"),
+        )
+        return receipt
+
     return app
 
 
@@ -144,9 +192,11 @@ def build_local_operator_bridge(
     workbook: str | Path | None = None,
 ) -> FastAPI:
     state = SQLiteOperatorState(state_path)
+    excel = XlwingsMacroRunner(workbook)
     connector = RakutenMs2RssLocalConnector(
-        XlwingsMacroRunner(workbook),
+        excel,
         allocate_rss_order_id=state.allocate_rss_order_id,
+        worksheet_runner=excel,
     )
     return create_operator_bridge_app(
         token=token,
