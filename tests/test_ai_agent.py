@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 from yowayowa.config import Settings
-from yowayowa.research_models import AIChatRequest, AIMessage, AIProviderConfig
+from yowayowa.domain import Fundamentals, LicenseClass, MetricPoint, MetricSeries, Provenance
+from yowayowa.research_models import (
+    AIChatRequest,
+    AIMessage,
+    AIProviderConfig,
+    MarketScreenResponse,
+)
 from yowayowa.services import ai_agent
 from yowayowa.services.ai_agent import InvestmentResearchAgent
 
@@ -137,3 +146,86 @@ def test_ai_status_never_returns_configured_keys() -> None:
     assert status["configured"] == {"openai_compatible": True, "anthropic": True}
     assert "secret" not in str(status)
     assert "discover_stocks" in status["tools"]
+    assert "triage_strategy" in status["tools"]
+
+
+def test_ai_strategy_triage_returns_interpretable_priority(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    provenance = Provenance(
+        provider="fixture",
+        source="fixture",
+        license_class=LicenseClass.OFFICIAL_PUBLIC,
+        retrieved_at=datetime(2026, 9, 21, tzinfo=UTC),
+        as_of=date(2025, 12, 31),
+    )
+
+    def series(key: str, value: float) -> MetricSeries:
+        return MetricSeries(
+            key=key,
+            label=key,
+            points=[
+                MetricPoint(
+                    period_end=date(2025, 12, 31),
+                    fiscal_period="FY",
+                    value=Decimal(str(value)),
+                    unit="USD",
+                )
+            ],
+        )
+
+    facts = Fundamentals(
+        symbol="TEST",
+        cik="",
+        company_name="Test Corp",
+        metrics={
+            "current_assets": series("current_assets", 120),
+            "liabilities": series("liabilities", 40),
+            "operating_cash_flow": series("operating_cash_flow", 15),
+            "capex": series("capex", 5),
+        },
+        provenance=provenance,
+    )
+    screen = MarketScreenResponse(
+        quotes=[
+            {
+                "symbol": "TEST",
+                "marketCap": 100.0,
+                "trailingPE": 10.0,
+            }
+        ],
+        total=1,
+        offset=0,
+        size=1,
+        provenance=provenance,
+    )
+    monkeypatch.setattr(
+        ai_agent,
+        "yahoo_screener_provider",
+        lambda: SimpleNamespace(screen=lambda _payload: screen),
+    )
+    monkeypatch.setattr(
+        ai_agent,
+        "sec_client",
+        lambda: SimpleNamespace(company_facts=lambda _symbol: facts),
+    )
+
+    agent = InvestmentResearchAgent(Settings(database_url="sqlite:///:memory:"), Mock())
+    result = agent._tool_triage_strategy(
+        {
+            "strategy_id": "kiyohara_global_value_growth",
+            "region": "us",
+            "size": 5,
+        }
+    )
+
+    assert result["strategy_id"] == "kiyohara_global_value_growth"
+    assert result["region"] == "us"
+    assert result["evaluations"][0]["symbol"] == "TEST"
+    priority = result["evaluations"][0]["research_priority"]
+    assert priority["score"] > 0
+    assert priority["interpretation"] == "research_priority_not_return_forecast"
+    assert {item["key"] for item in priority["factors"]} == {
+        "value",
+        "growth",
+        "quality",
+        "evidence",
+    }
