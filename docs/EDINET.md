@@ -33,7 +33,11 @@ This distinction is intentional. A day with no filings is not the same as a day 
 
 Re-synchronizing a day is idempotent and reconciles stale local rows against the current official list. Each day commits independently so a temporary failure on one date does not erase successful dates in the same backfill.
 
-Remote synchronization is bounded to 31 calendar days per API request. Local company-history queries can cover up to 3,660 days because they do not multiply EDINET network calls. The CLI chunks longer operator backfills into safe 31-day synchronization requests automatically.
+Daily maintenance also performs a shared recent-history bootstrap when a server-side EDINET key is configured. The default target is the latest 550 completed Japan calendar days. Missing dates are filled newest-first with a maximum of 31 EDINET document-list requests per maintenance run. Because each fetched daily list contains all issuers, this cost is shared across every Japanese stock; strategy evaluation never performs a naive per-candidate 365-day scan.
+
+Remote synchronization is bounded to 31 calendar days per API request. Local company-history queries can cover up to 3,660 days because they do not multiply EDINET network calls. The CLI chunks longer operator backfills into safe 31-day synchronization requests automatically. Manual `index-sync` remains the fastest way to seed a new durable database immediately; automatic maintenance provides resumable eventual bootstrap and catch-up.
+
+Strategy consumers that need the latest annual filing are stricter than a simple database maximum. A filing is treated as the latest indexed annual report only when every calendar day from that filing date through the latest completed Japan day is present in `edinet_index_days`. Partial coverage therefore causes the strategy layer to fall back to conservative metrics rather than silently using a stale annual report.
 
 Synchronization failure responses retain the failed date and exception type only. They do not echo provider exception strings that could contain request details or credentials.
 
@@ -86,7 +90,9 @@ yowayowa edinet financials S100XXXX
 yowayowa edinet facts S100XXXX --query NetSales
 ```
 
-A newly deployed database should receive an intentional historical backfill with `index-sync`; after that, `/internal/cron/daily` synchronizes the previous completed Japan-calendar day whenever an EDINET API key is configured. It deliberately does not mark the current intraday date as complete.
+A newly deployed durable database can be seeded immediately with `index-sync`. Even without that manual seed, `/internal/cron/daily` fills the configured recent-history window newest-first and then keeps it current whenever a server-side EDINET API key is configured. The default window is 550 completed Japan calendar days with a 31-day network budget per run. It deliberately does not mark the current intraday date as complete.
+
+Automatic cron bootstrap requires a server-configured EDINET key and durable database storage. A browser-only BYOK key is request-scoped and is not available to unattended cron execution; Vercel `/tmp` SQLite is also not a durable filing index.
 
 The `/edinet` browser surface is available in Japanese and English and follows the existing compact research-workstation design system. Company filing history is the primary flow: security code + range -> indexed filings -> normalized financials -> raw facts. A separate one-day direct lookup remains available for immediate EDINET queries. Accounting logic stays server-side.
 
