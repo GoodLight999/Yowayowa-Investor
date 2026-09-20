@@ -313,9 +313,10 @@
       });
     }
     if (!candidates.length) return null;
+    const region = document.querySelector('#discover-region').value || null;
     return api(`/v1/strategy-presets/${encodeURIComponent(activeStrategy.id)}/evaluate`, {
       method: 'POST',
-      body: JSON.stringify({ candidates }),
+      body: JSON.stringify({ candidates, region, record: true }),
     });
   }
 
