@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from yowayowa.domain import Fundamentals
 from yowayowa.research_models import MarketScreenFilter, MarketScreenRequest
 from yowayowa.services.screening import derived_metrics
+from yowayowa.services.strategy_priority import research_priority
 from yowayowa.strategy_models import (
     StrategyBalanceSheetSupplement,
     StrategyCandidateEvaluation,
@@ -164,7 +165,7 @@ def evaluate_kiyohara_candidate(
     if pe_ratio is not None and net_cash_ratio is not None and net_cash_ratio < 1:
         cash_neutral_pe = pe_ratio * (1 - net_cash_ratio)
 
-    return StrategyCandidateEvaluation(
+    result = StrategyCandidateEvaluation(
         symbol=fundamentals.symbol,
         company_name=fundamentals.company_name,
         market_cap=candidate.market_cap,
@@ -193,6 +194,7 @@ def evaluate_kiyohara_candidate(
         provenance=fundamentals.provenance,
         supplemental_provenance=[supplement.provenance] if supplement is not None else [],
     )
+    return result.model_copy(update={"research_priority": research_priority(result)})
 
 
 def evaluated_at() -> datetime:
