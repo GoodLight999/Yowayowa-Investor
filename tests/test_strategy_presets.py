@@ -201,3 +201,72 @@ def test_strategy_api_returns_partial_results_and_preserves_errors(monkeypatch) 
     assert [item["symbol"] for item in payload["evaluations"]] == ["GOOD"]
     assert payload["evaluations"][0]["yowayowa_conservative_net_cash_ratio"] == pytest.approx(0.8)
     assert "MISS" in payload["errors"]
+
+
+def test_strategy_api_uses_same_filing_sec_noncurrent_marketable_securities(monkeypatch) -> None:
+    from yowayowa.api import fundamentals_routes
+    from yowayowa.api.app import app
+
+    accession = "0000000000-26-000001"
+
+    def instant_series(key: str, value: float) -> MetricSeries:
+        return MetricSeries(
+            key=key,
+            label=key,
+            points=[
+                MetricPoint(
+                    period_end=date(2026, 6, 30),
+                    fiscal_year=2026,
+                    fiscal_period="Q2",
+                    value=Decimal(str(value)),
+                    unit="USD",
+                    accession=accession,
+                    filed=date(2026, 8, 1),
+                    form="10-Q",
+                )
+            ],
+        )
+
+    facts = _fundamentals("US")
+    facts = facts.model_copy(
+        update={
+            "metrics": {
+                **facts.metrics,
+                "current_assets": instant_series("current_assets", 120),
+                "liabilities": instant_series("liabilities", 40),
+                "marketable_securities_noncurrent": instant_series(
+                    "marketable_securities_noncurrent",
+                    30,
+                ),
+            },
+            "provenance": Provenance(
+                provider="sec-edgar",
+                source="SEC EDGAR Company Facts",
+                source_url="https://data.sec.gov/api/xbrl/companyfacts/CIK0000000001.json",
+                license_class=LicenseClass.OFFICIAL_PUBLIC,
+                retrieved_at=datetime(2026, 8, 2, tzinfo=UTC),
+                as_of=date(2026, 6, 30),
+            ),
+        }
+    )
+    monkeypatch.setattr(fundamentals_routes, "_fundamentals", lambda symbol: facts)
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/v1/strategy-presets/{KIYOHARA_GLOBAL_ID}/evaluate",
+            json={
+                "candidates": [
+                    {"symbol": "US", "market_cap": 100, "pe_ratio": 10},
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()["evaluations"][0]
+    assert result["current_assets"] == 120
+    assert result["liabilities"] == 40
+    assert result["investment_securities"] == 30
+    assert result["net_cash_ratio"] == pytest.approx(1.01)
+    assert result["net_cash_ratio_is_lower_bound"] is False
+    assert result["basis"] == "kiyohara_formula_with_investment_securities"
+    assert result["supplemental_provenance"][0]["provider"] == "sec-edgar"
