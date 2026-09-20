@@ -33,6 +33,7 @@ class BrokerOrderStatus(StrEnum):
     PARTIALLY_FILLED = "partially_filled"
     FILLED = "filled"
     CANCELLED = "cancelled"
+    INACTIVE = "inactive"
     REJECTED = "rejected"
     UNKNOWN = "unknown"
 
