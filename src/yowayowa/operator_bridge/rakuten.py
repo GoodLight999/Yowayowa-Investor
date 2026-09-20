@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from yowayowa.broker_models import (
+    BrokerAccountSnapshot,
     BrokerCapabilities,
     BrokerOrder,
     BrokerOrderIntent,
@@ -80,5 +81,5 @@ class RakutenMs2RssLocalConnector:
     def cancel_order(self, broker_order_id: str) -> BrokerOrderReceipt:
         raise NotImplementedError("Rakuten RSS cancellation mapping is not implemented yet")
 
-    def account_snapshot(self):  # type: ignore[no-untyped-def]
+    def account_snapshot(self) -> BrokerAccountSnapshot:
         raise NotImplementedError("Rakuten RSS account snapshot is not implemented yet")
