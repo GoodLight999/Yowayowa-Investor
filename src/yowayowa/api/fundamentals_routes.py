@@ -23,6 +23,7 @@ from yowayowa.services.strategy_edinet import (
     balance_sheet_supplement as edinet_balance_sheet_supplement,
 )
 from yowayowa.services.strategy_edinet import tokyo_security_code
+from yowayowa.services.strategy_outcomes import forward_outcome_report
 from yowayowa.services.strategy_presets import (
     KIYOHARA_GLOBAL_ID,
     evaluate_kiyohara_candidate,
@@ -43,6 +44,7 @@ from yowayowa.strategy_models import (
     StrategyBalanceSheetSupplement,
     StrategyEvaluationRequest,
     StrategyEvaluationResponse,
+    StrategyForwardOutcomeReport,
     StrategyPresetDefinition,
     StrategyResearchSnapshot,
 )
@@ -175,6 +177,47 @@ def strategy_research_snapshots(
         symbol=symbol,
         limit=limit,
     )
+
+
+@router.get(
+    "/strategy-research/outcomes",
+    response_model=StrategyForwardOutcomeReport,
+)
+def strategy_research_outcomes(
+    strategy_id: str | None = Query(default=None, max_length=80),
+    region: str | None = Query(default=None, max_length=16),
+    symbol: str | None = Query(default=None, max_length=32),
+    horizons: str = Query(default="20,60,120", max_length=64),
+    benchmark: str | None = Query(default=None, max_length=32),
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(db_session),
+) -> StrategyForwardOutcomeReport:
+    try:
+        resolved_horizons = [
+            int(token.strip())
+            for token in horizons.split(",")
+            if token.strip()
+        ]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Outcome horizons must be integers") from exc
+    snapshots = list_strategy_snapshots(
+        session,
+        strategy_id=strategy_id,
+        region=region,
+        symbol=symbol,
+        limit=limit,
+    )
+    try:
+        return forward_outcome_report(
+            snapshots,
+            yahoo_market_provider(),
+            horizons=resolved_horizons,
+            benchmark_symbol=normalize_symbol(benchmark) if benchmark else None,
+        )
+    except ProviderPolicyError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post(
