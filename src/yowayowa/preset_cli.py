@@ -157,7 +157,11 @@ def run_builtin(
         evaluation = (
             client.post(
                 f"/v1/strategy-presets/{strategy_id}/evaluate",
-                json={"candidates": candidates},
+                json={
+                    "candidates": candidates,
+                    "region": resolved_region,
+                    "record": True,
+                },
                 headers=headers,
             )
             .raise_for_status()
@@ -166,6 +170,7 @@ def run_builtin(
 
     table = Table(
         "Symbol",
+        "Research priority",
         "Market cap",
         "P/E",
         "Yowayowa NCR",
@@ -188,8 +193,12 @@ def run_builtin(
             cnpe_text = f"<={cnpe:.2f}x"
         growth = item.get("revenue_growth_yoy")
         fcf = item.get("free_cash_flow")
+        priority = item.get("research_priority") or {}
+        priority_score = priority.get("score")
+        priority_text = "—" if priority_score is None else f"{priority_score:.0f}/100"
         table.add_row(
             item["symbol"],
+            priority_text,
             f"{item['market_cap']:.6g}",
             "—" if item.get("pe_ratio") is None else f"{item['pe_ratio']:.2f}x",
             conservative_text,
