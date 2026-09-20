@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Protocol
@@ -8,6 +9,12 @@ from typing import Any, Protocol
 
 class MacroRunner(Protocol):
     def run_macro(self, name: str, args: Sequence[object]) -> object: ...
+
+
+class WorksheetRunner(Protocol):
+    def read_scalar_formula(self, formula: str) -> object: ...
+
+    def read_table_formula(self, formula: str) -> list[list[object]]: ...
 
 
 class ExcelBridgeUnavailable(RuntimeError):
@@ -70,9 +77,75 @@ class XlwingsMacroRunner:
             f"The configured workbook is not open in Excel: {self._workbook}"
         )
 
+    def _scratch_sheet(self) -> Any:
+        book = self._resolve_book()
+        name = "__YOWAYOWA_RSS__"
+        try:
+            sheet = book.sheets[name]
+        except Exception:
+            try:
+                sheet = book.sheets.add(name, after=book.sheets[-1])
+                sheet.visible = False
+            except Exception as exc:
+                raise ExcelBridgeUnavailable("Could not create the RSS scratch worksheet") from exc
+        return sheet
+
+    @staticmethod
+    def _formula(value: str) -> str:
+        formula = value.strip()
+        if not formula.startswith("="):
+            formula = "=" + formula
+        return formula
+
     def run_macro(self, name: str, args: Sequence[object]) -> object:
         book = self._resolve_book()
         try:
             return book.app.macro(name)(*args)
         except Exception as exc:
             raise ExcelBridgeUnavailable(f"Excel macro call failed: {name}") from exc
+
+    def read_scalar_formula(self, formula: str) -> object:
+        sheet = self._scratch_sheet()
+        try:
+            sheet.clear_contents()
+            sheet.range("A1").formula = self._formula(formula)
+            sheet.book.app.calculate()
+            for _ in range(20):
+                value = sheet.range("A1").value
+                if value is not None:
+                    return value
+                time.sleep(0.05)
+            return sheet.range("A1").value
+        except Exception as exc:
+            raise ExcelBridgeUnavailable("RSS scalar worksheet function failed") from exc
+
+    def read_table_formula(self, formula: str) -> list[list[object]]:
+        sheet = self._scratch_sheet()
+        try:
+            sheet.clear_contents()
+            sheet.range("A1").formula = self._formula(formula)
+            sheet.book.app.calculate()
+            previous_shape: tuple[int, int] | None = None
+            stable = 0
+            values: object = None
+            for _ in range(30):
+                region = sheet.range("A1").current_region
+                shape = (int(region.rows.count), int(region.columns.count))
+                values = region.value
+                if shape == previous_shape and shape != (1, 1):
+                    stable += 1
+                    if stable >= 2:
+                        break
+                else:
+                    stable = 0
+                    previous_shape = shape
+                time.sleep(0.1)
+            if values is None:
+                return []
+            if not isinstance(values, list):
+                return [[values]]
+            if values and not isinstance(values[0], list):
+                return [list(values)]
+            return [list(row) for row in values]
+        except Exception as exc:
+            raise ExcelBridgeUnavailable("RSS table worksheet function failed") from exc
