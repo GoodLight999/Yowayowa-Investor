@@ -338,7 +338,6 @@ def test_strategy_api_uses_period_aligned_yahoo_conservative_bound(monkeypatch) 
     assert result["supplemental_provenance"][0]["provider"] == "yahoo/yfinance"
 
 
-
 def test_strategy_api_can_record_and_list_point_in_time_research(monkeypatch) -> None:
     from yowayowa.api import fundamentals_routes
     from yowayowa.api.app import app
