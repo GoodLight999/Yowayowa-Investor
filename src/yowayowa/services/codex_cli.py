@@ -5,18 +5,28 @@ import os
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from yowayowa.config import Settings
 from yowayowa.research_models import CodexCLIStatus
 
 _CODEX_BILLING_ENV = {
     "OPENAI_API_KEY",
+    "CODEX_API_KEY",
     "CODEX_ACCESS_TOKEN",
     "OPENAI_IDENTITY_TOKEN_FILE",
     "OPENAI_FEDERATION_RULE_ID",
 }
+
+
+@dataclass(frozen=True)
+class CodexStructuredResult:
+    result: dict[str, Any]
+    credential: str | None = None
 
 
 def _binary() -> str | None:
@@ -30,12 +40,28 @@ def _subscription_env() -> dict[str, str]:
     return env
 
 
+def _bridge_url(settings: Settings, path: str) -> str:
+    base = (settings.codex_bridge_url or "").rstrip("/")
+    if not base:
+        raise RuntimeError("Hosted Codex bridge is not configured")
+    return f"{base}/{path.lstrip('/')}"
+
+
 def codex_cli_status(settings: Settings) -> CodexCLIStatus:
+    if settings.codex_bridge_url:
+        return CodexCLIStatus(
+            enabled=True,
+            installed=True,
+            authenticated=False,
+            mode="hosted_bridge",
+            reason="ChatGPT login is checked per browser session.",
+        )
     if not settings.codex_cli_enabled:
         return CodexCLIStatus(
             enabled=False,
             installed=False,
             authenticated=False,
+            mode="disabled",
             reason="Codex CLI is disabled on this deployment.",
         )
     binary = _binary()
@@ -44,6 +70,7 @@ def codex_cli_status(settings: Settings) -> CodexCLIStatus:
             enabled=True,
             installed=False,
             authenticated=False,
+            mode="local_cli",
             reason="Codex CLI is not installed.",
         )
 
@@ -76,6 +103,7 @@ def codex_cli_status(settings: Settings) -> CodexCLIStatus:
             installed=True,
             authenticated=False,
             version=version,
+            mode="local_cli",
             reason=f"Could not inspect Codex login: {type(exc).__name__}",
         )
 
@@ -97,12 +125,37 @@ def codex_cli_status(settings: Settings) -> CodexCLIStatus:
         authenticated=chatgpt,
         version=version,
         auth_summary=summary or None,
+        mode="local_cli",
         reason=reason,
     )
 
 
+def codex_bridge_session_status(
+    settings: Settings,
+    *,
+    credential: str,
+    session_id: str,
+) -> CodexCLIStatus:
+    try:
+        response = httpx.post(
+            _bridge_url(settings, "/session-status"),
+            headers={"x-yowayowa-codex-session": session_id},
+            json={"credential": credential},
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise RuntimeError("Hosted Codex session check failed") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("Hosted Codex bridge returned invalid status")
+    return CodexCLIStatus.model_validate(payload)
+
+
 def start_codex_login(settings: Settings) -> None:
     status = codex_cli_status(settings)
+    if status.mode == "hosted_bridge":
+        raise RuntimeError("Hosted Codex uses the browser device-code flow")
     if not status.enabled:
         raise RuntimeError(status.reason or "Codex CLI is disabled")
     binary = _binary()
@@ -128,7 +181,36 @@ def run_codex_structured(
     prompt: str,
     schema: dict[str, Any],
     model: str | None = None,
-) -> dict[str, Any]:
+    credential: str | None = None,
+    session_id: str | None = None,
+) -> CodexStructuredResult:
+    if settings.codex_bridge_url:
+        if not credential or not session_id:
+            raise RuntimeError("ChatGPT login is required for hosted Codex")
+        try:
+            response = httpx.post(
+                _bridge_url(settings, "/structured"),
+                headers={"x-yowayowa-codex-session": session_id},
+                json={
+                    "credential": credential,
+                    "prompt": prompt,
+                    "schema": schema,
+                    "model": model,
+                },
+                timeout=settings.codex_cli_timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise RuntimeError("Hosted Codex execution failed") from exc
+        if not isinstance(payload, dict) or not isinstance(payload.get("result"), dict):
+            raise RuntimeError("Hosted Codex bridge returned invalid structured output")
+        refreshed = payload.get("credential")
+        return CodexStructuredResult(
+            result=payload["result"],
+            credential=str(refreshed) if refreshed else credential,
+        )
+
     status = codex_cli_status(settings)
     if not status.authenticated:
         raise RuntimeError(status.reason or "Codex is not logged in with ChatGPT")
@@ -192,4 +274,4 @@ def run_codex_structured(
             raise RuntimeError("Codex CLI returned invalid structured output") from exc
         if not isinstance(parsed, dict):
             raise RuntimeError("Codex CLI returned a non-object response")
-        return parsed
+        return CodexStructuredResult(result=parsed)
