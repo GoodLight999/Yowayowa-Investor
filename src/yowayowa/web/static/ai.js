@@ -2,6 +2,7 @@
   const { api, escapeHtml, t } = window.Yowayowa;
   const META_KEY = 'yowayowa.ai.settings.v2';
   const KEY_KEY = 'yowayowa.ai.key.v2';
+  const CODEX_CREDENTIAL_KEY = 'yowayowa.codex.credential.v1';
   const LOCAL_PROVIDER_IDS = new Set(['ollama', 'lmstudio', 'vllm', 'codex']);
   const messages = [];
   let serverReady = null;
@@ -14,6 +15,18 @@
   function storedApiKey() {
     try { return sessionStorage.getItem(KEY_KEY) || ''; }
     catch (_) { return ''; }
+  }
+
+  function codexCredential() {
+    try { return localStorage.getItem(CODEX_CREDENTIAL_KEY) || ''; }
+    catch (_) { return ''; }
+  }
+
+  function saveCodexCredential(value) {
+    try {
+      if (value) localStorage.setItem(CODEX_CREDENTIAL_KEY, value);
+      else localStorage.removeItem(CODEX_CREDENTIAL_KEY);
+    } catch (_) {}
   }
 
   function providerPayload() {
@@ -32,6 +45,7 @@
       model: meta.model,
       api_key: apiKey || 'local',
       base_url: meta.adapter === 'codex_cli' ? null : (meta.baseUrl || null),
+      credential: meta.adapter === 'codex_cli' ? (codexCredential() || null) : null,
     };
   }
 
@@ -159,7 +173,16 @@
 
   async function codexReady() {
     try {
-      const data = await api('/v1/ai/codex/status');
+      let data = await api('/v1/ai/codex/status');
+      if (data?.mode === 'hosted_bridge') {
+        const credential = codexCredential();
+        if (!credential) return false;
+        data = await api('/v1/ai/codex/session-status', {
+          method: 'POST',
+          body: JSON.stringify({ credential }),
+        });
+        if (data?.credential) saveCodexCredential(data.credential);
+      }
       return Boolean(data?.authenticated);
     } catch (_) {
       return false;
@@ -276,6 +299,7 @@
           allow_mutations: false,
         }),
       });
+      if (data.provider_credential) saveCodexCredential(data.provider_credential);
       addMessage('assistant', data.answer || '—');
       renderTrace(data.tool_trace || []);
       renderProposals(data.proposed_operations || []);
