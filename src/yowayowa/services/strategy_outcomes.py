@@ -53,11 +53,7 @@ def _return_between(
     end_date: date,
 ) -> float | None:
     bars = sorted(
-        (
-            bar
-            for bar in history.bars
-            if start_date <= bar.timestamp.date() <= end_date
-        ),
+        (bar for bar in history.bars if start_date <= bar.timestamp.date() <= end_date),
         key=lambda bar: bar.timestamp,
     )
     if len(bars) < 2 or bars[0].close == 0:
