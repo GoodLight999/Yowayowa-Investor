@@ -33,7 +33,7 @@ from yowayowa.research_models import (
     ResearchSection,
 )
 from yowayowa.services.alerts import list_alerts
-from yowayowa.services.codex_cli import run_codex_structured
+from yowayowa.services.codex_cli import codex_cli_status, run_codex_structured
 from yowayowa.services.comparison import compare
 from yowayowa.services.portfolios import get_portfolio, list_portfolios, portfolio_analytics
 from yowayowa.services.screening import derived_metrics
@@ -107,12 +107,13 @@ class InvestmentResearchAgent:
         openai_ready = bool(
             self.settings.openai_compatible_api_key and self.settings.openai_compatible_model
         )
+        codex = codex_cli_status(self.settings)
         return {
             "configured": {
                 "openai_compatible": openai_ready,
                 "anthropic": anthropic_ready,
-                "codex_cli": self.settings.codex_cli_enabled,
             },
+            "codex_cli": codex.model_dump(mode="json"),
             "tools": list(self.tools),
             "byok_per_request": True,
             "keys_persisted_by_server": False,
