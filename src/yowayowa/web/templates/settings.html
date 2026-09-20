@@ -28,9 +28,11 @@
         <button class="primary" type="submit">{{ u('settings.save') }}</button>
         <button id="fetch-provider-models" class="ghost" type="button">{{ u('settings.models') }}</button>
         <button id="openrouter-oauth" class="ghost" type="button">{{ u('settings.oauth') }}</button>
+        <button id="codex-chatgpt-login" class="ghost" type="button" hidden>{% if locale == 'ja' %}ChatGPTでCodexに接続{% else %}Connect Codex with ChatGPT{% endif %}</button>
         <button id="clear-ai-api-key" class="ghost" type="button">{% if locale == 'ja' %}APIキーを消去{% else %}Clear API key{% endif %}</button>
       </div>
       <p class="ux-note">{{ u('settings.oauth_note') }}</p>
+      <div id="codex-auth-status" class="ux-note" hidden></div>
       <div id="model-results" class="model-results" hidden></div>
     </form>
   </section>
