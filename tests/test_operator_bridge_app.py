@@ -103,7 +103,8 @@ def test_operator_bridge_submits_and_audits_armed_order(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.json()["accepted"] is True
-    assert response.json()["broker_order_id"] == "1"
+    assert response.json()["transport_order_id"] == "1"
+    assert response.json()["broker_order_id"] is None
     assert len(runner.calls) == 1
     assert state.count_submission_attempts_today() == 1
     events = state.audit_events()
@@ -126,8 +127,10 @@ def test_operator_bridge_retry_reuses_same_rss_order_id(tmp_path: Path) -> None:
 
     assert first.status_code == 200
     assert second.status_code == 200
-    assert first.json()["broker_order_id"] == "1"
-    assert second.json()["broker_order_id"] == "1"
+    assert first.json()["transport_order_id"] == "1"
+    assert second.json()["transport_order_id"] == "1"
+    assert first.json()["broker_order_id"] is None
+    assert second.json()["broker_order_id"] is None
     assert runner.calls[0][1][0] == 1
     assert len(runner.calls) == 1
     assert state.count_submission_attempts_today() == 1
