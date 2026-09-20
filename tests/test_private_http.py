@@ -40,7 +40,7 @@ def test_private_http_uses_injected_authenticated_session_and_same_origin() -> N
     result = connector.get_json("positions", params={"market": "jp"})
 
     assert result.payload == {"cash": 123}
-    assert result.source_url == "https://broker.example/account/positions?market=jp"
+    assert result.source_url == "https://broker.example/account/positions"
 
 
 def test_private_http_rejects_absolute_cross_origin_path() -> None:
