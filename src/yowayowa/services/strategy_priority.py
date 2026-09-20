@@ -51,7 +51,11 @@ def research_priority(evaluation: StrategyCandidateEvaluation) -> StrategyResear
 
     roe = evaluation.return_on_equity
     quality_roe = 12.0 * _clamp(roe / 0.25) if roe is not None else 0.0
-    quality_fcf = 8.0 if evaluation.free_cash_flow is not None and evaluation.free_cash_flow > 0 else 0.0
+    quality_fcf = (
+        8.0
+        if evaluation.free_cash_flow is not None and evaluation.free_cash_flow > 0
+        else 0.0
+    )
     quality_score = quality_roe + quality_fcf
 
     evidence_score = 0.0
