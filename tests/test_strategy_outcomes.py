@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from yowayowa.domain import (
     LicenseClass,
     MarketHistory,
@@ -156,10 +158,10 @@ def test_forward_outcome_starts_after_signal_date_and_measures_excess_return() -
     assert outcome.entry_price == 100
     assert outcome.exit_at == datetime(2026, 1, 4, tzinfo=UTC)
     assert outcome.exit_price == 121
-    assert outcome.total_return == 0.21
+    assert outcome.total_return == pytest.approx(0.21)
     assert outcome.benchmark_symbol == "^GSPC"
-    assert outcome.benchmark_return == 0.02
-    assert outcome.excess_return == 0.19
+    assert outcome.benchmark_return == pytest.approx(0.02)
+    assert outcome.excess_return == pytest.approx(0.19)
 
 
 def test_forward_outcome_is_pending_until_full_horizon_exists() -> None:
