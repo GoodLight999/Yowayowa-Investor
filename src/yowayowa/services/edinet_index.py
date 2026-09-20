@@ -12,6 +12,7 @@ from yowayowa.edinet_models import (
     EdinetDocumentSummary,
     EdinetFilingHistory,
     EdinetIndexFailure,
+    EdinetIndexMaintenanceResult,
     EdinetIndexSyncResult,
 )
 from yowayowa.providers.edinet import EdinetClient
@@ -156,6 +157,95 @@ def sync_filing_index(
         days_requested=len(days),
         days_synced=days_synced,
         documents_upserted=documents_upserted,
+        failures=failures,
+    )
+
+
+def index_coverage_complete(
+    session: Session,
+    start_date: date,
+    end_date: date,
+) -> bool:
+    if end_date < start_date:
+        return False
+    expected_days = (end_date - start_date).days + 1
+    indexed_days = session.scalar(
+        select(func.count())
+        .select_from(EdinetIndexDayRecord)
+        .where(
+            EdinetIndexDayRecord.filing_date >= start_date,
+            EdinetIndexDayRecord.filing_date <= end_date,
+        )
+    )
+    return int(indexed_days or 0) == expected_days
+
+
+def maintain_recent_filing_index(
+    session: Session,
+    client: EdinetClient,
+    *,
+    lookback_days: int = 550,
+    network_day_budget: int = _MAX_SYNC_DAYS,
+    today_jst: date | None = None,
+) -> EdinetIndexMaintenanceResult:
+    if lookback_days < 1 or lookback_days > _MAX_SEARCH_DAYS:
+        raise ValueError(f"lookback_days must be between 1 and {_MAX_SEARCH_DAYS}")
+    if network_day_budget < 1 or network_day_budget > _MAX_SYNC_DAYS:
+        raise ValueError(f"network_day_budget must be between 1 and {_MAX_SYNC_DAYS}")
+
+    today = today_jst or datetime.now(_JST).date()
+    target_end = today - timedelta(days=1)
+    target_start = target_end - timedelta(days=lookback_days - 1)
+
+    indexed_dates = set(
+        session.scalars(
+            select(EdinetIndexDayRecord.filing_date).where(
+                EdinetIndexDayRecord.filing_date >= target_start,
+                EdinetIndexDayRecord.filing_date <= target_end,
+            )
+        ).all()
+    )
+    missing_dates: list[date] = []
+    cursor = target_end
+    while cursor >= target_start and len(missing_dates) < network_day_budget:
+        if cursor not in indexed_dates:
+            missing_dates.append(cursor)
+        cursor -= timedelta(days=1)
+
+    failures: list[EdinetIndexFailure] = []
+    documents_upserted = 0
+    days_synced = 0
+    for filing_date in missing_dates:
+        try:
+            documents_upserted += sync_filing_day(session, client, filing_date)
+            days_synced += 1
+        except Exception as exc:
+            session.rollback()
+            failures.append(
+                EdinetIndexFailure(
+                    filing_date=filing_date,
+                    error=type(exc).__name__,
+                )
+            )
+
+    indexed_days = session.scalar(
+        select(func.count())
+        .select_from(EdinetIndexDayRecord)
+        .where(
+            EdinetIndexDayRecord.filing_date >= target_start,
+            EdinetIndexDayRecord.filing_date <= target_end,
+        )
+    )
+    indexed_days = int(indexed_days or 0)
+    return EdinetIndexMaintenanceResult(
+        target_start=target_start,
+        target_end=target_end,
+        days_attempted=len(missing_dates),
+        days_synced=days_synced,
+        documents_upserted=documents_upserted,
+        indexed_days=indexed_days,
+        expected_days=lookback_days,
+        coverage_complete=indexed_days == lookback_days,
         failures=failures,
     )
 
