@@ -21,4 +21,8 @@ def settings_status(settings: Settings = Depends(get_settings)) -> dict[str, boo
         # request limits/range through v2, so the source itself is always available.
         "bls": True,
         "allow_unlisted_ai_endpoints": settings.allow_unlisted_ai_endpoints,
+        "private_connectors": settings.private_connectors_enabled,
+        "scraping": settings.scraping_enabled,
+        "broker_control": settings.broker_control_enabled,
+        "broker_live_orders": settings.broker_live_orders_enabled,
     }
