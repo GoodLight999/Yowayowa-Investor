@@ -13,9 +13,7 @@ def _instant_points(fundamentals: Fundamentals, metric: str) -> list[MetricPoint
     return [
         point
         for point in series.points
-        if point.period_start is None
-        and point.accession is not None
-        and point.unit == "USD"
+        if point.period_start is None and point.accession is not None and point.unit == "USD"
     ]
 
 
@@ -60,9 +58,7 @@ def balance_sheet_supplement(
         return None
 
     investment_securities: float | None = None
-    investments = _by_filing_key(
-        _instant_points(fundamentals, "marketable_securities_noncurrent")
-    )
+    investments = _by_filing_key(_instant_points(fundamentals, "marketable_securities_noncurrent"))
     investment_point = investments.get(key)
     if investment_point is not None:
         value = float(investment_point.value)
