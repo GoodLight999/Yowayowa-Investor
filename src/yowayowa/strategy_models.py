@@ -48,6 +48,27 @@ NetCashBasis = Literal[
     "kiyohara_formula_with_investment_securities",
     "conservative_floor_ex_investment_securities",
 ]
+StrategyPriorityFactorKey = Literal["value", "growth", "quality", "evidence"]
+StrategyPrioritySignal = float | bool | str | None
+
+
+class StrategyPriorityFactor(BaseModel):
+    key: StrategyPriorityFactorKey
+    score: float = Field(ge=0)
+    max_score: float = Field(gt=0)
+    signals: dict[str, StrategyPrioritySignal] = Field(default_factory=dict)
+
+
+class StrategyResearchPriority(BaseModel):
+    score: float = Field(ge=0, le=100)
+    max_score: float = 100
+    confidence: float = Field(ge=0, le=1)
+    factors: list[StrategyPriorityFactor] = Field(default_factory=list)
+    flags: list[str] = Field(default_factory=list)
+    next_checks: list[str] = Field(default_factory=list)
+    interpretation: Literal["research_priority_not_return_forecast"] = (
+        "research_priority_not_return_forecast"
+    )
 
 
 class StrategyCandidateEvaluation(BaseModel):
@@ -70,6 +91,7 @@ class StrategyCandidateEvaluation(BaseModel):
     free_cash_flow: float | None = None
     return_on_equity: float | None = None
     deep_value_net_cash: bool | None = None
+    research_priority: StrategyResearchPriority | None = None
     basis: NetCashBasis
     missing: list[str] = Field(default_factory=list)
     provenance: Provenance
