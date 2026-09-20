@@ -22,5 +22,5 @@ def test_builtin_strategy_hands_control_to_ai_without_manual_selection(page: Pag
 
     assert "strategy=kiyohara_global_value_growth" in page.url
     assert "region=jp" in page.url
-    expect(page.locator("#ai-prompt")).to_contain_text("解釈可能な研究優先度")
+    assert "解釈可能な研究優先度" in page.locator("#ai-prompt").input_value()
     assert page_errors == []
