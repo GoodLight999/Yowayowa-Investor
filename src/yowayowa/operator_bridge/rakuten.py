@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+
 from yowayowa.broker_models import (
     BrokerAccountSnapshot,
     BrokerCapabilities,
