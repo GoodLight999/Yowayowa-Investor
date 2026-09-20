@@ -11,13 +11,12 @@ from yowayowa.domain import (
     MetricSeries,
     Provenance,
 )
-from yowayowa.strategy_models import StrategyBalanceSheetSupplement
 from yowayowa.services.strategy_presets import (
     KIYOHARA_GLOBAL_ID,
     evaluate_kiyohara_candidate,
     get_builtin_strategy,
 )
-from yowayowa.strategy_models import StrategyCandidateInput
+from yowayowa.strategy_models import StrategyBalanceSheetSupplement, StrategyCandidateInput
 
 
 def _provenance(source: str = "fixture statements") -> Provenance:
