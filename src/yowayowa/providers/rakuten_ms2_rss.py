@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from decimal import Decimal
 from enum import IntEnum
 
 from yowayowa.broker_models import (
@@ -52,7 +51,7 @@ def build_cash_stock_order_v_args(
 
     side = 3 if intent.side == BrokerOrderSide.BUY else 1
     price_kind = 0 if intent.order_type == BrokerOrderType.MARKET else 1
-    price: Decimal | None = None if price_kind == 0 else intent.limit_price
+    price = None if price_kind == 0 else intent.limit_price
 
     return (
         rss_order_id,
