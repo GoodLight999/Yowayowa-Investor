@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -24,6 +24,8 @@ from yowayowa.providers.yahoo_search import YahooSearchProvider
 from yowayowa.research_models import (
     AIChatRequest,
     AIChatResponse,
+    AIPromptPacketRequest,
+    AIPromptPacketResponse,
     AIProviderConfig,
     AIToolTrace,
     MarketScreenFilter,
@@ -31,6 +33,7 @@ from yowayowa.research_models import (
     ResearchSection,
 )
 from yowayowa.services.alerts import list_alerts
+from yowayowa.services.codex_cli import run_codex_structured
 from yowayowa.services.comparison import compare
 from yowayowa.services.portfolios import get_portfolio, list_portfolios, portfolio_analytics
 from yowayowa.services.screening import derived_metrics
@@ -87,6 +90,8 @@ class InvestmentResearchAgent:
         self.proposals = []
         if provider.provider == "anthropic":
             answer = self._anthropic_loop(provider, request)
+        elif provider.provider == "codex_cli":
+            answer = self._codex_loop(provider, request)
         else:
             answer = self._openai_loop(provider, request)
         return AIChatResponse(
@@ -106,6 +111,7 @@ class InvestmentResearchAgent:
             "configured": {
                 "openai_compatible": openai_ready,
                 "anthropic": anthropic_ready,
+                "codex_cli": self.settings.codex_cli_enabled,
             },
             "tools": list(self.tools),
             "byok_per_request": True,
@@ -117,6 +123,15 @@ class InvestmentResearchAgent:
         supplied: AIProviderConfig | None,
     ) -> ResolvedAIProvider:
         if supplied is not None:
+            if supplied.provider == "codex_cli":
+                if not self.settings.codex_cli_enabled:
+                    raise RuntimeError("Codex CLI is disabled on this deployment")
+                return ResolvedAIProvider(
+                    provider="codex_cli",
+                    model=supplied.model,
+                    api_key="",
+                    base_url="",
+                )
             if supplied.provider == "anthropic":
                 return ResolvedAIProvider(
                     provider="anthropic",
@@ -229,6 +244,124 @@ class InvestmentResearchAgent:
         )
         return self._string_content(self._openai_message(payload).get("content"))
 
+    def _codex_loop(
+        self,
+        provider: ResolvedAIProvider,
+        request: AIChatRequest,
+    ) -> str:
+        observations: list[dict[str, Any]] = []
+        for _ in range(request.max_tool_rounds):
+            payload = run_codex_structured(
+                self.settings,
+                prompt=self._codex_prompt(request, observations, allow_tools=True),
+                schema=self._codex_response_schema(),
+                model=provider.model,
+            )
+            raw_calls = payload.get("tool_calls")
+            calls = raw_calls if isinstance(raw_calls, list) else []
+            if not calls:
+                answer = payload.get("answer")
+                return str(answer or "")
+            for raw_call in calls[:8]:
+                if not isinstance(raw_call, dict):
+                    continue
+                name = str(raw_call.get("name") or "")
+                raw_arguments = raw_call.get("arguments")
+                arguments = raw_arguments if isinstance(raw_arguments, dict) else {}
+                result = self._execute_tool(name, arguments)
+                content = self._tool_content(result)
+                if len(content) > 20000:
+                    content = content[:20000] + "…"
+                observations.append(
+                    {
+                        "tool": name,
+                        "arguments": arguments,
+                        "result": content,
+                    }
+                )
+        payload = run_codex_structured(
+            self.settings,
+            prompt=self._codex_prompt(request, observations, allow_tools=False),
+            schema=self._codex_response_schema(),
+            model=provider.model,
+        )
+        return str(payload.get("answer") or "")
+
+    def _codex_prompt(
+        self,
+        request: AIChatRequest,
+        observations: list[dict[str, Any]],
+        *,
+        allow_tools: bool,
+    ) -> str:
+        tools = [
+            {
+                "name": spec.name,
+                "description": spec.description,
+                "parameters": spec.parameters,
+            }
+            for spec in self.tools.values()
+        ]
+        conversation = [item.model_dump(mode="json") for item in request.messages]
+        instruction = (
+            "Choose zero or more Yowayowa tools needed for the next research step. "
+            "If more evidence is needed, return tool_calls and set answer to null. "
+            "If the evidence is sufficient, return no tool_calls and write the final answer. "
+        )
+        if not allow_tools:
+            instruction = (
+                "Do not request more tools. Synthesize the final answer from the supplied "
+                "conversation and tool observations."
+            )
+        return "\n\n".join(
+            [
+                self._system_prompt(request),
+                instruction,
+                "You are not allowed to use shell commands, files, web search, or external tools. "
+                "The only admissible fresh evidence is returned through the Yowayowa tools "
+                "described below.",
+                "CONVERSATION JSON:\n"
+                + json.dumps(conversation, ensure_ascii=False, default=str),
+                "AVAILABLE YOWAYOWA TOOLS JSON:\n"
+                + json.dumps(tools, ensure_ascii=False, default=str),
+                "TOOL OBSERVATIONS JSON:\n"
+                + json.dumps(observations, ensure_ascii=False, default=str),
+                (
+                    "Return only the structured response requested by the output schema. "
+                    "Never fabricate tool results."
+                ),
+            ]
+        )
+
+    def _codex_response_schema(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "answer": {"type": ["string", "null"]},
+                "tool_calls": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "enum": list(self.tools),
+                            },
+                            "arguments": {
+                                "type": "object",
+                                "additionalProperties": True,
+                            },
+                        },
+                        "required": ["name", "arguments"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["answer", "tool_calls"],
+            "additionalProperties": False,
+        }
+
     def _anthropic_loop(
         self,
         provider: ResolvedAIProvider,
@@ -293,6 +426,142 @@ class InvestmentResearchAgent:
         raw_content = payload.get("content")
         blocks = raw_content if isinstance(raw_content, list) else []
         return self._anthropic_text(blocks)
+
+    def prompt_packet(self, request: AIPromptPacketRequest) -> AIPromptPacketResponse:
+        self.trace = []
+        self.proposals = []
+        context = request.context
+        included: list[str] = []
+        evidence: dict[str, Any] = {}
+
+        def capture(name: str, arguments: dict[str, Any]) -> Any:
+            try:
+                result = self._execute_tool(name, arguments)
+            except Exception as exc:
+                result = {"error": f"{type(exc).__name__}: {exc}"}
+            evidence.setdefault(name, []).append(
+                {
+                    "arguments": arguments,
+                    "result": result,
+                }
+            )
+            if name not in included:
+                included.append(name)
+            return result
+
+        symbols: list[str] = []
+        raw_symbols = context.get("symbols")
+        if isinstance(raw_symbols, list):
+            symbols.extend(normalize_symbol(str(item)) for item in raw_symbols if str(item).strip())
+        raw_symbol = context.get("symbol")
+        if raw_symbol:
+            symbols.append(normalize_symbol(str(raw_symbol)))
+
+        strategy_id = str(context.get("strategy") or "").strip()
+        region = str(context.get("region") or "").strip().lower()
+        if strategy_id:
+            triage = capture(
+                "triage_strategy",
+                {
+                    "strategy_id": strategy_id,
+                    "region": region or "jp",
+                    "size": 12,
+                },
+            )
+            if isinstance(triage, dict):
+                evaluations = triage.get("evaluations")
+                if isinstance(evaluations, list):
+                    symbols.extend(
+                        normalize_symbol(str(item.get("symbol")))
+                        for item in evaluations[:5]
+                        if isinstance(item, dict) and item.get("symbol")
+                    )
+            capture(
+                "get_strategy_history",
+                {
+                    "strategy_id": strategy_id,
+                    "region": region or None,
+                    "limit": 30,
+                },
+            )
+            capture(
+                "get_strategy_outcomes",
+                {
+                    "strategy_id": strategy_id,
+                    "region": region or None,
+                    "horizons": [20, 60, 120],
+                    "limit": 30,
+                },
+            )
+
+        symbols = list(dict.fromkeys(symbols))[:6]
+        if symbols:
+            capture("get_quotes", {"symbols": symbols})
+        for symbol in symbols:
+            capture("get_fundamentals", {"symbol": symbol})
+            capture("get_valuation", {"symbol": symbol})
+            capture(
+                "get_company_research",
+                {
+                    "symbol": symbol,
+                    "sections": ["analyst", "ownership", "insiders", "actions"],
+                },
+            )
+            capture("search_news", {"query": symbol, "limit": 8})
+            capture(
+                "get_calendar",
+                {
+                    "start": date.today().isoformat(),
+                    "end": (date.today() + timedelta(days=45)).isoformat(),
+                    "symbol": symbol,
+                },
+            )
+
+        if context.get("page") == "/portfolio":
+            capture("get_portfolios", {})
+
+        conversation = [item.model_dump(mode="json") for item in request.messages]
+        if request.user_prompt:
+            conversation.append({"role": "user", "content": request.user_prompt})
+        packet = {
+            "generated_at": datetime.now(UTC).isoformat(),
+            "ui_context": context,
+            "conversation": conversation,
+            "evidence": evidence,
+        }
+        task = request.user_prompt or (
+            conversation[-1]["content"] if conversation else "Analyze the supplied investment evidence."
+        )
+        prompt = "\n\n".join(
+            [
+                "You are analyzing a Yowayowa-Investor research packet.",
+                (
+                    "Goal: produce decision-relevant investment research. Separate sourced facts, "
+                    "deterministic calculations, and interpretation. Do not invent missing data. "
+                    "Use provenance fields to identify the basis of claims. Treat research-priority "
+                    "scores as attention-allocation scores, not expected returns. State the first "
+                    "falsifiable rejection condition and what new evidence would change the view."
+                ),
+                f"USER TASK:\n{task}",
+                "YOWAYOWA DATA PACKET JSON:\n"
+                + json.dumps(packet, ensure_ascii=False, default=str, indent=2),
+                (
+                    "Return a concise thesis, strongest evidence, strongest counterevidence, "
+                    "valuation/quality/growth interpretation, catalysts, rejection conditions, "
+                    "missing evidence, and next research actions. When multiple securities are "
+                    "present, compare them explicitly."
+                ),
+            ]
+        )
+        if len(prompt) > 300000:
+            prompt = prompt[:300000] + "\n\n[Packet truncated at 300,000 characters.]"
+        generated_at = packet["generated_at"]
+        return AIPromptPacketResponse(
+            prompt=prompt,
+            included_tools=included,
+            generated_at=str(generated_at),
+            characters=len(prompt),
+        )
 
     def _build_tools(self) -> dict[str, ToolSpec]:
         symbol = self._object_schema({"symbol": {"type": "string"}}, ["symbol"])
