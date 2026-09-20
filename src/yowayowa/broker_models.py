@@ -85,6 +85,7 @@ class BrokerOrderPreview(BaseModel):
 class BrokerOrderReceipt(BaseModel):
     broker: str
     client_order_id: str
+    transport_order_id: str | None = None
     broker_order_id: str | None = None
     accepted: bool
     status: BrokerOrderStatus
@@ -95,6 +96,7 @@ class BrokerOrderReceipt(BaseModel):
 class BrokerOrder(BaseModel):
     broker: str
     client_order_id: str | None = None
+    transport_order_id: str | None = None
     broker_order_id: str
     symbol: str
     side: BrokerOrderSide
