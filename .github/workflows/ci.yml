@@ -87,3 +87,31 @@ jobs:
           exit 1
       - name: Browser E2E
         run: uv run pytest browser_tests --browser chromium --browser-channel chrome
+
+  deploy-production:
+    needs: [verify, browser]
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'agent/commercial-foundation' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    env:
+      VERCEL_ORG_ID: team_2bCvwGJQ0mlJZ2zYnYdHWFaY
+      VERCEL_PROJECT_ID: prj_0VDog0xhskVsoC2eQp0j7AEwJ36N
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Require Vercel deployment credential
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::VERCEL_TOKEN repository secret is not configured."
+            exit 1
+          fi
+      - name: Pull production environment
+        run: npx --yes vercel@59.15.1 pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - name: Build production artifact
+        run: npx --yes vercel@59.15.1 build --prod --token="$VERCEL_TOKEN"
+      - name: Deploy production artifact
+        run: npx --yes vercel@59.15.1 deploy --prebuilt --prod --token="$VERCEL_TOKEN"
