@@ -28,6 +28,10 @@ def _default_codex_bridge_url() -> str | None:
     return os.getenv("CODEX_BRIDGE_URL")
 
 
+def _default_full_operator_capability() -> bool:
+    return not bool(os.getenv("VERCEL"))
+
+
 def _default_allow_unlisted_ai_endpoints() -> bool:
     # Local/self-hosted personal installs intentionally support Ollama, LM Studio,
     # vLLM and custom gateways. Hosted deployments must opt in explicitly rather
@@ -61,9 +65,9 @@ class Settings(BaseSettings):
     cron_secret: str | None = Field(default_factory=_default_cron_secret)
     allow_personal_provider_in_public: bool = False
     local_enrichment_enabled: bool = False
-    private_connectors_enabled: bool = True
-    scraping_enabled: bool = True
-    broker_control_enabled: bool = True
+    private_connectors_enabled: bool = Field(default_factory=_default_full_operator_capability)
+    scraping_enabled: bool = Field(default_factory=_default_full_operator_capability)
+    broker_control_enabled: bool = Field(default_factory=_default_full_operator_capability)
     broker_live_orders_enabled: bool = False
     broker_risk_currency: str = Field(default="JPY", min_length=3, max_length=3)
     broker_max_single_order_notional: float | None = Field(default=None, gt=0)
