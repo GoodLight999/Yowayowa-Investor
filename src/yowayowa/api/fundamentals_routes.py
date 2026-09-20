@@ -21,9 +21,8 @@ from yowayowa.services.comparison import compare
 from yowayowa.services.screening import screen
 from yowayowa.services.strategy_edinet import (
     balance_sheet_supplement as edinet_balance_sheet_supplement,
-    tokyo_security_code,
 )
-from yowayowa.services.strategy_sec import balance_sheet_supplement as sec_balance_sheet_supplement
+from yowayowa.services.strategy_edinet import tokyo_security_code
 from yowayowa.services.strategy_presets import (
     KIYOHARA_GLOBAL_ID,
     evaluate_kiyohara_candidate,
@@ -31,6 +30,7 @@ from yowayowa.services.strategy_presets import (
     get_builtin_strategy,
     list_builtin_strategies,
 )
+from yowayowa.services.strategy_sec import balance_sheet_supplement as sec_balance_sheet_supplement
 from yowayowa.services.valuation import valuation_snapshot
 from yowayowa.strategy_models import (
     StrategyBalanceSheetSupplement,
