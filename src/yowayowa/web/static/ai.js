@@ -2,7 +2,7 @@
   const { api, escapeHtml, t } = window.Yowayowa;
   const META_KEY = 'yowayowa.ai.settings.v2';
   const KEY_KEY = 'yowayowa.ai.key.v2';
-  const LOCAL_PROVIDER_IDS = new Set(['ollama', 'lmstudio', 'vllm']);
+  const LOCAL_PROVIDER_IDS = new Set(['ollama', 'lmstudio', 'vllm', 'codex']);
   const messages = [];
   let serverReady = null;
 
@@ -26,10 +26,12 @@
       throw new Error(`${t('ai.api_key')}: required`);
     }
     return {
-      provider: meta.adapter === 'anthropic' ? 'anthropic' : 'openai_compatible',
+      provider: meta.adapter === 'anthropic'
+        ? 'anthropic'
+        : (meta.adapter === 'codex_cli' ? 'codex_cli' : 'openai_compatible'),
       model: meta.model,
       api_key: apiKey || 'local',
-      base_url: meta.baseUrl || null,
+      base_url: meta.adapter === 'codex_cli' ? null : (meta.baseUrl || null),
     };
   }
 
@@ -154,6 +156,52 @@
     }
   }
 
+
+  async function codexReady() {
+    try {
+      const data = await api('/v1/ai/codex/status');
+      return Boolean(data?.authenticated);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function generatePromptPacket() {
+    const panel = document.querySelector('#ai-prompt-packet-panel');
+    const output = document.querySelector('#ai-prompt-packet');
+    const meta = document.querySelector('#ai-prompt-packet-meta');
+    const draft = document.querySelector('#ai-prompt')?.value.trim() || '';
+    document.querySelector('#ai-status').textContent = window.YOWAYOWA_LOCALE === 'ja'
+      ? '研究パケットを生成中…'
+      : 'Building research packet…';
+    try {
+      const data = await api('/v1/ai/prompt-packet', {
+        method: 'POST',
+        body: JSON.stringify({
+          messages,
+          context: context(),
+          user_prompt: draft || null,
+        }),
+      });
+      output.value = data.prompt || '';
+      panel.hidden = false;
+      panel.open = true;
+      meta.textContent = `${Number(data.characters || output.value.length).toLocaleString()} chars · ${(data.included_tools || []).join(', ')}`;
+      try {
+        await navigator.clipboard.writeText(output.value);
+        document.querySelector('#ai-status').textContent = window.YOWAYOWA_LOCALE === 'ja'
+          ? '外部AI用プロンプトを生成してコピーしました。'
+          : 'External AI prompt generated and copied.';
+      } catch (_) {
+        document.querySelector('#ai-status').textContent = window.YOWAYOWA_LOCALE === 'ja'
+          ? '外部AI用プロンプトを生成しました。'
+          : 'External AI prompt generated.';
+      }
+    } catch (error) {
+      document.querySelector('#ai-status').textContent = error.message;
+    }
+  }
+
   function configuredServerProviders(data) {
     return Object.entries(data.configured || {}).filter(([, value]) => value).map(([name]) => name);
   }
@@ -208,6 +256,10 @@
       showServerSetupRequired();
       return;
     }
+    if (provider?.provider === 'codex_cli' && !(await codexReady())) {
+      document.querySelector('#ai-status').innerHTML = `<a href="/settings">${escapeHtml(window.YOWAYOWA_LOCALE === 'ja' ? 'CodexをChatGPTで接続してください →' : 'Connect Codex with ChatGPT →')}</a>`;
+      return;
+    }
     addMessage('user', text);
     prompt.value = '';
     const send = document.querySelector('#ai-send');
@@ -250,9 +302,10 @@
         showServerSetupRequired();
         return;
       }
+      const current = meta.providerId || 'server';
       document.querySelector('#ai-status').textContent = usingServer
         ? `${data.tools?.length || 0} tools · server: ${configured.join(', ') || 'none'}`
-        : `${data.tools?.length || 0} tools · BYOK`;
+        : `${data.tools?.length || 0} tools · ${current === 'codex' ? 'ChatGPT subscription' : 'BYOK'}`;
       refreshSendAvailability();
     } catch (error) {
       document.querySelector('#ai-status').textContent = error.message;
@@ -269,6 +322,19 @@
       document.querySelector('#ai-prompt').value = button.textContent.trim();
       document.querySelector('#ai-prompt').focus();
     }));
+    document.querySelector('#ai-export-prompt')?.addEventListener('click', () => generatePromptPacket());
+    document.querySelector('#ai-copy-prompt-packet')?.addEventListener('click', async () => {
+      const value = document.querySelector('#ai-prompt-packet')?.value || '';
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+        document.querySelector('#ai-status').textContent = window.YOWAYOWA_LOCALE === 'ja'
+          ? '研究パケットをコピーしました。'
+          : 'Research packet copied.';
+      } catch (error) {
+        document.querySelector('#ai-status').textContent = error.message;
+      }
+    });
     document.querySelector('#ai-clear')?.addEventListener('click', () => {
       messages.length = 0;
       renderMessages();
