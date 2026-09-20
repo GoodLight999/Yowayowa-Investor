@@ -51,7 +51,7 @@ from yowayowa.services.alerts import (
     evaluate_event_subscriptions,
     list_event_subscriptions,
 )
-from yowayowa.services.edinet_index import sync_filing_index
+from yowayowa.services.edinet_index import maintain_recent_filing_index
 from yowayowa.services.licensing import license_catalog
 from yowayowa.services.portfolios import (
     list_portfolios,
@@ -301,19 +301,26 @@ def daily_maintenance(request: Request) -> dict[str, object]:
     event_failure: str | None = None
     alerts_checked = 0
     edinet_index_days_synced = 0
+    edinet_index_indexed_days = 0
+    edinet_index_expected_days = 0
+    edinet_index_coverage_complete = False
     edinet_index_failure: str | None = None
     personal_market_tasks_skipped = settings.mode == "public"
     with get_session() as session:
         if settings.edinet_api_key:
             yesterday_jst = datetime.now(ZoneInfo("Asia/Tokyo")).date() - timedelta(days=1)
             try:
-                index_result = sync_filing_index(
+                index_result = maintain_recent_filing_index(
                     session,
                     edinet_client(),
-                    yesterday_jst,
-                    yesterday_jst,
+                    lookback_days=settings.edinet_index_lookback_days,
+                    network_day_budget=settings.edinet_index_backfill_days_per_run,
+                    today_jst=yesterday_jst + timedelta(days=1),
                 )
                 edinet_index_days_synced = index_result.days_synced
+                edinet_index_indexed_days = index_result.indexed_days
+                edinet_index_expected_days = index_result.expected_days
+                edinet_index_coverage_complete = index_result.coverage_complete
                 if index_result.failures:
                     edinet_index_failure = index_result.failures[0].error
             except Exception as exc:
@@ -348,6 +355,9 @@ def daily_maintenance(request: Request) -> dict[str, object]:
         "event_inbox_unread": event_inbox_unread,
         "event_failure": event_failure,
         "edinet_index_days_synced": edinet_index_days_synced,
+        "edinet_index_indexed_days": edinet_index_indexed_days,
+        "edinet_index_expected_days": edinet_index_expected_days,
+        "edinet_index_coverage_complete": edinet_index_coverage_complete,
         "edinet_index_failure": edinet_index_failure,
         "portfolios_snapshotted": snapshotted,
         "portfolio_failures": portfolio_failures,
