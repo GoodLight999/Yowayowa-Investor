@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Numeric,
@@ -153,6 +154,31 @@ class EventInboxRecord(Base):
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class StrategyResearchSnapshotRecord(Base):
+    __tablename__ = "strategy_research_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "strategy_id",
+            "scoring_version",
+            "region",
+            "symbol",
+            "captured_on",
+            name="uq_strategy_snapshot_daily",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    strategy_id: Mapped[str] = mapped_column(String(80), index=True)
+    scoring_version: Mapped[str] = mapped_column(String(80), index=True)
+    region: Mapped[str] = mapped_column(String(16), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    score: Mapped[Decimal] = mapped_column(Numeric(10, 4))
+    confidence: Mapped[Decimal] = mapped_column(Numeric(10, 4))
+    evaluation: Mapped[dict[str, Any]] = mapped_column(JSON)
+    captured_on: Mapped[date] = mapped_column(Date, index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class ResearchPresetRecord(Base):
