@@ -321,8 +321,7 @@ class InvestmentResearchAgent:
                 "You are not allowed to use shell commands, files, web search, or external tools. "
                 "The only admissible fresh evidence is returned through the Yowayowa tools "
                 "described below.",
-                "CONVERSATION JSON:\n"
-                + json.dumps(conversation, ensure_ascii=False, default=str),
+                "CONVERSATION JSON:\n" + json.dumps(conversation, ensure_ascii=False, default=str),
                 "AVAILABLE YOWAYOWA TOOLS JSON:\n"
                 + json.dumps(tools, ensure_ascii=False, default=str),
                 "TOOL OBSERVATIONS JSON:\n"
