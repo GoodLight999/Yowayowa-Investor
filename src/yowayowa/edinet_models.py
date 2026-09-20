@@ -48,6 +48,18 @@ class EdinetIndexSyncResult(BaseModel):
     failures: list[EdinetIndexFailure] = Field(default_factory=list)
 
 
+class EdinetIndexMaintenanceResult(BaseModel):
+    target_start: date
+    target_end: date
+    days_attempted: int
+    days_synced: int
+    documents_upserted: int
+    indexed_days: int
+    expected_days: int
+    coverage_complete: bool
+    failures: list[EdinetIndexFailure] = Field(default_factory=list)
+
+
 class EdinetFilingHistory(BaseModel):
     start_date: date
     end_date: date
