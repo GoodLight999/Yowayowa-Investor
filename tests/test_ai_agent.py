@@ -16,6 +16,7 @@ from yowayowa.research_models import (
 )
 from yowayowa.services import ai_agent
 from yowayowa.services.ai_agent import InvestmentResearchAgent
+from yowayowa.services.codex_cli import CodexStructuredResult
 
 
 class FakeResponse:
@@ -258,7 +259,11 @@ def test_codex_chat_uses_same_yowayowa_tool_loop(monkeypatch) -> None:  # type: 
             },
         ]
     )
-    monkeypatch.setattr(ai_agent, "run_codex_structured", lambda *_args, **_kwargs: next(replies))
+    monkeypatch.setattr(
+        ai_agent,
+        "run_codex_structured",
+        lambda *_args, **_kwargs: CodexStructuredResult(result=next(replies)),
+    )
     monkeypatch.setattr(ai_agent, "list_alerts", lambda _session: [])
 
     agent = InvestmentResearchAgent(
@@ -302,3 +307,55 @@ def test_external_prompt_packet_works_without_any_ai_provider() -> None:
     assert "この材料を投資判断用に分析して" in packet.prompt
     assert packet.included_tools == []
     assert packet.characters == len(packet.prompt)
+
+
+
+def test_hosted_codex_refreshes_browser_credential_between_tool_rounds(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    seen_credentials: list[str | None] = []
+    replies = iter(
+        [
+            CodexStructuredResult(
+                result={
+                    "answer": None,
+                    "tool_calls": [{"name": "get_alerts", "arguments": {}}],
+                },
+                credential="sealed-two",
+            ),
+            CodexStructuredResult(
+                result={"answer": "done", "tool_calls": []},
+                credential="sealed-three",
+            ),
+        ]
+    )
+
+    def fake_run(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        seen_credentials.append(kwargs.get("credential"))
+        return next(replies)
+
+    monkeypatch.setattr(ai_agent, "run_codex_structured", fake_run)
+    monkeypatch.setattr(ai_agent, "list_alerts", lambda _session: [])
+
+    agent = InvestmentResearchAgent(
+        Settings(
+            database_url="sqlite:///:memory:",
+            codex_cli_enabled=False,
+            codex_bridge_url="https://codex.internal",
+        ),
+        Mock(),
+        codex_session_id="browser-session-0123456789",
+    )
+    result = agent.chat(
+        AIChatRequest(
+            messages=[AIMessage(role="user", content="調べて")],
+            provider=AIProviderConfig(
+                provider="codex_cli",
+                model="default",
+                api_key="local",
+                credential="sealed-one",
+            ),
+        )
+    )
+
+    assert seen_credentials == ["sealed-one", "sealed-two"]
+    assert result.answer == "done"
+    assert result.provider_credential == "sealed-three"
