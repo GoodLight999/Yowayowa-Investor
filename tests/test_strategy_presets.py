@@ -269,3 +269,71 @@ def test_strategy_api_uses_same_filing_sec_noncurrent_marketable_securities(monk
     assert result["net_cash_ratio_is_lower_bound"] is False
     assert result["basis"] == "kiyohara_formula_with_investment_securities"
     assert result["supplemental_provenance"][0]["provider"] == "sec-edgar"
+
+
+
+def test_strategy_api_uses_period_aligned_yahoo_conservative_bound(monkeypatch) -> None:
+    from yowayowa.api import fundamentals_routes
+    from yowayowa.api.app import app
+
+    def balance_series(key: str, points: list[tuple[date, float]]) -> MetricSeries:
+        return MetricSeries(
+            key=key,
+            label=key,
+            points=[
+                MetricPoint(
+                    period_start=date(period_end.year, 1, 1),
+                    period_end=period_end,
+                    fiscal_period="FY",
+                    value=Decimal(str(value)),
+                    unit="GBP",
+                    form="Yahoo normalized statement",
+                )
+                for period_end, value in points
+            ],
+        )
+
+    facts = _fundamentals("TEST.L").model_copy(
+        update={
+            "metrics": {
+                "current_assets": balance_series(
+                    "current_assets",
+                    [(date(2025, 12, 31), 100), (date(2026, 12, 31), 999)],
+                ),
+                "liabilities": balance_series(
+                    "liabilities",
+                    [(date(2025, 12, 31), 40)],
+                ),
+            },
+            "provenance": Provenance(
+                provider="yahoo/yfinance",
+                source="Yahoo Finance financial statements",
+                source_url="https://finance.yahoo.com/",
+                license_class=LicenseClass.PERSONAL_ONLY,
+                retrieved_at=datetime(2026, 9, 21, tzinfo=UTC),
+                as_of=date(2026, 12, 31),
+            ),
+        }
+    )
+    monkeypatch.setattr(fundamentals_routes, "_fundamentals", lambda symbol: facts)
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/v1/strategy-presets/{KIYOHARA_GLOBAL_ID}/evaluate",
+            json={
+                "candidates": [
+                    {"symbol": "TEST.L", "market_cap": 100, "pe_ratio": 10},
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()["evaluations"][0]
+    assert result["current_assets"] == 100
+    assert result["liabilities"] == 40
+    assert result["investment_securities"] is None
+    assert result["net_cash_ratio"] == pytest.approx(0.6)
+    assert result["net_cash_ratio_is_lower_bound"] is True
+    assert result["cash_neutral_pe"] == pytest.approx(4.0)
+    assert result["cash_neutral_pe_is_upper_bound"] is True
+    assert result["supplemental_provenance"][0]["provider"] == "yahoo/yfinance"
