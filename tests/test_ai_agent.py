@@ -147,6 +147,7 @@ def test_ai_status_never_returns_configured_keys() -> None:
     assert "secret" not in str(status)
     assert "discover_stocks" in status["tools"]
     assert "triage_strategy" in status["tools"]
+    assert "get_strategy_history" in status["tools"]
 
 
 def test_ai_strategy_triage_returns_interpretable_priority(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -207,6 +208,11 @@ def test_ai_strategy_triage_returns_interpretable_priority(monkeypatch) -> None:
         "sec_client",
         lambda: SimpleNamespace(company_facts=lambda _symbol: facts),
     )
+    monkeypatch.setattr(
+        ai_agent,
+        "record_strategy_snapshots",
+        lambda *_args, **_kwargs: [SimpleNamespace(id=123)],
+    )
 
     agent = InvestmentResearchAgent(Settings(database_url="sqlite:///:memory:"), Mock())
     result = agent._tool_triage_strategy(
@@ -220,6 +226,7 @@ def test_ai_strategy_triage_returns_interpretable_priority(monkeypatch) -> None:
     assert result["strategy_id"] == "kiyohara_global_value_growth"
     assert result["region"] == "us"
     assert result["evaluations"][0]["symbol"] == "TEST"
+    assert result["snapshot_ids"] == [123]
     priority = result["evaluations"][0]["research_priority"]
     assert priority["score"] > 0
     assert priority["interpretation"] == "research_priority_not_return_forecast"
