@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from yowayowa.domain import MarketHistory, Provenance
+from yowayowa.domain import MarketHistory, PriceBar, Provenance
 from yowayowa.providers.base import MarketDataProvider
 from yowayowa.strategy_models import (
     StrategyForwardOutcome,
@@ -40,7 +40,7 @@ def _history_period(captured_at: datetime, now: datetime) -> str:
     return "max"
 
 
-def _bars_after(history: MarketHistory, captured_on: date):
+def _bars_after(history: MarketHistory, captured_on: date) -> list[PriceBar]:
     return sorted(
         (bar for bar in history.bars if bar.timestamp.date() > captured_on),
         key=lambda bar: bar.timestamp,
