@@ -83,6 +83,11 @@ class BrokerOrderPreview(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class BrokerCancelRequest(BaseModel):
+    client_order_id: str = Field(min_length=1, max_length=128)
+    broker_order_id: str = Field(min_length=1, max_length=128)
+
+
 class BrokerOrderReceipt(BaseModel):
     broker: str
     client_order_id: str
@@ -124,6 +129,11 @@ class BrokerConnector(Protocol):
 
     def list_orders(self) -> list[BrokerOrder]: ...
 
-    def cancel_order(self, broker_order_id: str) -> BrokerOrderReceipt: ...
+    def cancel_order(
+        self,
+        broker_order_id: str,
+        *,
+        client_order_id: str,
+    ) -> BrokerOrderReceipt: ...
 
     def account_snapshot(self) -> BrokerAccountSnapshot: ...
