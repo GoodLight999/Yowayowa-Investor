@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from yowayowa.db import Base
 from yowayowa.domain import LicenseClass, Provenance
-from yowayowa.edinet_index_db import EdinetFilingRecord
+from yowayowa.edinet_index_db import EdinetFilingRecord, EdinetIndexDayRecord
 from yowayowa.edinet_models import EdinetFact
 from yowayowa.providers.edinet import EdinetCsvPayload
 from yowayowa.services.strategy_edinet import (
@@ -116,6 +116,14 @@ def _session() -> Iterator[Session]:
                     indexed_at=datetime(2026, 8, 25, tzinfo=UTC),
                 )
             )
+            session.add(
+                EdinetIndexDayRecord(
+                    filing_date=date(2026, 6, 20),
+                    source_total_count=1,
+                    indexed_count=1,
+                    fetched_at=datetime(2026, 8, 25, tzinfo=UTC),
+                )
+            )
             session.commit()
             yield session
     finally:
@@ -130,7 +138,11 @@ def test_tokyo_symbol_maps_to_edinet_security_code() -> None:
 
 def test_latest_indexed_report_requires_annual_csv_filing() -> None:
     with _session() as session:
-        filing = latest_indexed_annual_report(session, "7203.T")
+        filing = latest_indexed_annual_report(
+            session,
+            "7203.T",
+            completed_through=date(2026, 6, 20),
+        )
 
     assert filing is not None
     assert filing.doc_id == "S100TEST"
@@ -143,6 +155,7 @@ def test_edinet_strategy_supplement_uses_three_metrics_from_same_filing() -> Non
             session,
             FakeEdinetClient(),
             "7203.T",
+            completed_through=date(2026, 6, 20),
         )
 
     assert supplement is not None
@@ -151,3 +164,14 @@ def test_edinet_strategy_supplement_uses_three_metrics_from_same_filing() -> Non
     assert supplement.investment_securities == 30
     assert supplement.provenance.provider == "edinet-v2"
     assert any("S100TEST" in note for note in supplement.provenance.notes)
+
+
+def test_latest_indexed_report_is_rejected_when_newer_days_are_not_indexed() -> None:
+    with _session() as session:
+        filing = latest_indexed_annual_report(
+            session,
+            "7203.T",
+            completed_through=date(2026, 6, 21),
+        )
+
+    assert filing is None
