@@ -50,7 +50,8 @@ def test_local_rakuten_connector_calls_vba_order_function() -> None:
     assert args[1] == "4755.T"
     assert receipt.accepted is True
     assert receipt.status == BrokerOrderStatus.ACCEPTED
-    assert receipt.broker_order_id == "42"
+    assert receipt.transport_order_id == "42"
+    assert receipt.broker_order_id is None
 
 
 def test_local_rakuten_connector_treats_rss_error_as_rejected() -> None:
