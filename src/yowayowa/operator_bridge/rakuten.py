@@ -134,11 +134,15 @@ class RakutenMs2RssLocalConnector:
         )
         raw = self._macro_runner.run_macro(RSS_CANCEL_ORDER_V_FUNCTION, args)
         message = None if raw is None else str(raw)
-        rejected = raw is False or raw is None or (
-            isinstance(raw, str)
-            and any(
-                marker in raw
-                for marker in ("エラー", "キャンセル", "使用済", "発注ロック", "接続待ち")
+        rejected = (
+            raw is False
+            or raw is None
+            or (
+                isinstance(raw, str)
+                and any(
+                    marker in raw
+                    for marker in ("エラー", "キャンセル", "使用済", "発注ロック", "接続待ち")
+                )
             )
         )
         return BrokerOrderReceipt(
