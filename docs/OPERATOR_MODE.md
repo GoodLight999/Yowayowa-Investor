@@ -8,17 +8,20 @@ The `public` mode remains as a deliberately limited safe profile. Public-mode co
 
 ## Connector priority
 
-For data acquisition and broker control, use the strongest reliable interface available in this order:
+The primary operator environment is Linux and the product must support domestic and overseas securities. The universal broker-control surface is therefore an **authenticated browser session**, unless the broker offers a stronger cross-platform programmable API.
 
-1. official programmable API or local programmable interface;
-2. authenticated private HTTP/JSON/GraphQL/WebSocket protocol used by the operator's own account;
-3. structured scraping of authenticated pages or downloadable files;
-4. operating-system or application automation where the product exposes only a local GUI/programmatic bridge;
-5. browser/UI click automation only as a last-resort fallback.
+Use this order:
 
-Do not describe browser automation as the default architecture for broker control.
+1. official cross-platform programmable API when available;
+2. authenticated browser session owned by the operator;
+3. inside that session, the broker's own XHR/JSON/GraphQL/WebSocket transport where practical;
+4. DOM interaction for functions that are not safely reproducible at the network layer;
+5. structured scraping/downloads for read paths;
+6. platform-specific local interfaces as optional accelerators.
 
-Authentication, MFA, CAPTCHA, device approval, and similar access controls are not bypass targets. The operator completes the broker's legitimate authentication flow; Yowayowa may then reuse the resulting authorized session or supported local execution interface.
+A browser session is not merely a click bot. It is the container for the broker's legitimate authenticated state. Network-level calls and DOM-level actions may coexist behind the same broker connector.
+
+Authentication, MFA, CAPTCHA, device approval, and similar access controls are not bypass targets. The operator completes the broker's legitimate authentication flow; Yowayowa reuses only the resulting authorized session.
 
 ## Scraping
 
@@ -51,9 +54,11 @@ The generic broker boundary lives in `broker_models.py`. A broker connector shou
 
 Transport examples:
 - official broker API;
-- official desktop/local integration;
-- reverse-engineered authenticated private protocol;
-- authenticated account scraping plus a supported submission path.
+- persistent Chromium/Chrome session on Linux;
+- authenticated private HTTP/JSON/GraphQL/WebSocket calls made from the same session;
+- DOM-based order entry/confirmation when the network contract is too fragile or opaque;
+- official desktop/local integration as a broker/product-specific accelerator;
+- authenticated account scraping for read-only data.
 
 Broker credentials and trading passwords must remain local whenever practical. Do not persist plaintext credentials in Yowayowa's database or send them to Vercel.
 
@@ -77,31 +82,37 @@ Every live connector must additionally implement idempotency/multi-submit protec
 
 Rakuten Securities is the first concrete broker target.
 
-For domestic equities and supported derivatives, the preferred initial transport is **MARKET SPEED II RSS**, not browser automation. Rakuten documents that the RSS add-in supports investment data, order/execution information, and order functions, including VBA-callable order functions.
+The primary path is a persistent authenticated web session because:
+- the operator environment is Linux;
+- Rakuten Web covers domestic equities and U.S. equities, including U.S. cash and margin trading;
+- MARKET SPEED II RSS is Windows-only and does not support foreign equities.
 
-For domestic cash equities, the official VBA function is:
+The first Rakuten connector should therefore keep a persistent Chromium profile locally, allow the operator to complete normal login/MFA, and then use the authenticated session for:
+- account/position/order reads;
+- Japanese and U.S. equity order entry;
+- order status and cancellation;
+- structured data extraction;
+- broker-internal HTTP/JSON calls when their contract is stable enough;
+- DOM operations when the private network contract is not sufficiently stable.
+
+The connector must not assume that every action should be implemented as DOM clicking. Prefer the most robust path within the same authenticated browser session on a per-operation basis.
+
+MARKET SPEED II RSS remains valuable for domestic equities and supported Japanese derivatives. It is an optional Windows-side acceleration/execution transport, not the Full / Operator architecture. Yowayowa keeps the existing RSS models and bridge so a Windows machine can be attached later if useful.
+
+The official VBA function for domestic cash equities is:
 
 `RssStockOrder_V(order_id, symbol, side, order_kind, sor, quantity, price_kind, price, execution_condition, expiration, account_type, stop_trigger_price, stop_trigger_condition, stop_price_kind, stop_price, set_order_kind, set_order_price, set_order_execution_condition, set_order_expiration)`
 
 Yowayowa models this signature in `providers/rakuten_ms2_rss.py`.
-
-The runtime architecture should be:
-- MARKET SPEED II + RSS + Excel remain on the operator's Windows machine;
-- a local Operator Bridge talks to the RSS add-in/Excel automation interface;
-- Yowayowa communicates with that bridge over a local authenticated IPC/localhost channel;
-- the bridge never exposes broker credentials to the hosted application;
-- order IDs are unique and persisted for idempotency;
-- order acceptance is not treated as fill; order/status inquiry remains authoritative.
-
-For products not exposed by MARKET SPEED II RSS, or for brokers without an equivalent local programmable interface, implement private-protocol or scraping connectors under the same broker boundary.
 
 ## Deployment
 
 Vercel remains useful for the public/safe application and remotely accessible research surfaces, but it is not the execution host for local broker control.
 
 Full / Operator deployments may be:
-- local desktop/service;
+- local Linux desktop/service with a persistent browser profile;
 - private LAN/VPN service;
-- a split architecture with hosted research plus a local Operator Bridge.
+- a split architecture with hosted research plus a local Operator Bridge;
+- optional Windows sidecar for broker-specific interfaces such as MARKET SPEED II RSS.
 
 Secrets and authenticated sessions should be kept as close to the local operator as possible.
