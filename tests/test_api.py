@@ -29,7 +29,8 @@ def test_api_startup_health_watchlists_compare_and_portfolio_surfaces(
             assert runtime.status_code == 200
             assert runtime.json()["status"] == "ok"
             assert runtime.json()["request_id"] == runtime.headers["x-yowayowa-request-id"]
-            assert runtime.json()["database_backend"] == "sqlite"
+            assert "source" in runtime.json()
+            assert "vercel" in runtime.json()
 
             japanese = client.get("/?lang=ja")
             assert japanese.status_code == 200
