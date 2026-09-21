@@ -309,7 +309,6 @@ def test_external_prompt_packet_works_without_any_ai_provider() -> None:
     assert packet.characters == len(packet.prompt)
 
 
-
 def test_hosted_codex_refreshes_browser_credential(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     seen_credentials: list[str | None] = []
     replies = iter(
