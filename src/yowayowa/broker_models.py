@@ -10,9 +10,10 @@ from pydantic import BaseModel, Field, model_validator
 
 class BrokerTransport(StrEnum):
     OFFICIAL_API = "official_api"
-    LOCAL_PROGRAMMABLE_INTERFACE = "local_programmable_interface"
+    AUTHENTICATED_WEB_SESSION = "authenticated_web_session"
     PRIVATE_PROTOCOL = "private_protocol"
     SCRAPER = "scraper"
+    LOCAL_PROGRAMMABLE_INTERFACE = "local_programmable_interface"
     UI_AUTOMATION_FALLBACK = "ui_automation_fallback"
 
 
