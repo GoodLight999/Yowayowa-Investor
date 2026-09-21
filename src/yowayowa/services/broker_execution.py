@@ -41,9 +41,8 @@ def evaluate_broker_execution(
             "order currency does not match configured broker risk currency; "
             "cross-currency live execution requires an explicit FX-aware gate"
         )
-    elif (
-        settings.broker_max_single_order_notional is not None
-        and notional > Decimal(str(settings.broker_max_single_order_notional))
+    elif settings.broker_max_single_order_notional is not None and notional > Decimal(
+        str(settings.broker_max_single_order_notional)
     ):
         reasons.append("order exceeds configured single-order notional limit")
 
