@@ -21,7 +21,6 @@ def test_openapi_operation_ids_are_unique() -> None:
     assert len(operation_ids) == len(set(operation_ids))
 
 
-
 def test_agent_facing_openapi_contract_remains_machine_discoverable() -> None:
     schema = app.openapi()
     paths = schema["paths"]
