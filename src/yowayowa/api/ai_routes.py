@@ -169,6 +169,7 @@ def codex_session_status(
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
 
+
 @router.post("/codex/login", response_model=CodexCLIStatus)
 def codex_login(
     request: Request,
