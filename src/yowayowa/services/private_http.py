@@ -75,7 +75,7 @@ class AuthenticatedPrivateHttpClient:
         method: str,
         path: str,
         *,
-        params: Mapping[str, object] | None = None,
+        params: Mapping[str, str | int | float | bool | None] | None = None,
         json_body: object | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> httpx.Response:
@@ -115,7 +115,7 @@ class AuthenticatedPrivateHttpClient:
         self,
         path: str,
         *,
-        params: Mapping[str, object] | None = None,
+        params: Mapping[str, str | int | float | bool | None] | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> PrivateConnectorResult:
         response = self._request("GET", path, params=params, headers=headers)
@@ -152,7 +152,7 @@ class AuthenticatedPrivateHttpClient:
         path: str,
         parser: Callable[[str], dict[str, Any]],
         *,
-        params: Mapping[str, object] | None = None,
+        params: Mapping[str, str | int | float | bool | None] | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> PrivateConnectorResult:
         response = self._request("GET", path, params=params, headers=headers)
