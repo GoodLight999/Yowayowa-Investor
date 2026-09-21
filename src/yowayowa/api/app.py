@@ -19,6 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
 from yowayowa import __version__
@@ -211,7 +212,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_ROOT)), name="static")
 
 
 @app.middleware("http")
-async def request_diagnostics(request: Request, call_next: Any) -> Response:
+async def request_diagnostics(
+    request: Request,
+    call_next: RequestResponseEndpoint,
+) -> Response:
     request_id = request.headers.get("x-yowayowa-request-id") or uuid.uuid4().hex
     request.state.request_id = request_id
     started = time.perf_counter()
