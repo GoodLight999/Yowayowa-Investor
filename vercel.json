@@ -14,7 +14,8 @@
       ]
     },
     "codex": {
-      "root": "codex_service/"
+      "root": "codex_service/",
+      "entrypoint": "server.ts"
     }
   },
   "rewrites": [
