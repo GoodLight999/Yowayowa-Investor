@@ -67,9 +67,9 @@ def ai_status(
 @router.post("/chat", response_model=AIChatResponse)
 def ai_chat(
     payload: AIChatRequest,
-    request: Request,
     settings: Settings = Depends(get_settings),
     session: Session = Depends(db_session),
+    request: Request | None = None,
 ) -> AIChatResponse:
     if payload.provider is not None and payload.provider.base_url:
         try:
@@ -83,7 +83,9 @@ def ai_chat(
             update={"provider": payload.provider.model_copy(update={"base_url": safe_url})}
         )
     try:
-        codex_session = request.cookies.get(_CODEX_SESSION_COOKIE)
+        codex_session = (
+            request.cookies.get(_CODEX_SESSION_COOKIE) if request is not None else None
+        )
         return InvestmentResearchAgent(
             settings,
             session,
