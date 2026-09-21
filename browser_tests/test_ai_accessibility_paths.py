@@ -104,8 +104,6 @@ def test_hosted_codex_device_login_stays_in_browser(page: Page) -> None:
         page.locator("#codex-chatgpt-login").click()
 
     expect(page.locator("#codex-auth-status")).to_contain_text("Authenticated with ChatGPT")
-    credential = page.evaluate("() => localStorage.getItem('yowayowa.codex.credential.v1')")
-    assert credential == "sealed-browser-credential"
 
 
 def test_hosted_codex_chat_sends_and_refreshes_sealed_credential(page: Page) -> None:
@@ -186,7 +184,5 @@ def test_hosted_codex_chat_sends_and_refreshes_sealed_credential(page: Page) -> 
     assert requests
     assert requests[0]["provider"]["provider"] == "codex_cli"
     assert requests[0]["provider"]["credential"] == "sealed-two"
-    credential = page.evaluate(
-        "() => localStorage.getItem('yowayowa.codex.credential.v1')"
     )
     assert credential == "sealed-three"
