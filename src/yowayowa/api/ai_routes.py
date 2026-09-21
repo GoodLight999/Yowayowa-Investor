@@ -101,7 +101,6 @@ def codex_status(settings: Settings = Depends(get_settings)) -> CodexCLIStatus:
     return codex_cli_status(settings)
 
 
-
 @router.post("/codex/device-auth", response_class=StreamingResponse)
 async def codex_device_auth(
     request: Request,
