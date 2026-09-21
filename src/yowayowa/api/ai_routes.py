@@ -64,12 +64,11 @@ def ai_status(
     return status
 
 
-@router.post("/chat", response_model=AIChatResponse)
 def ai_chat(
     payload: AIChatRequest,
     settings: Settings = Depends(get_settings),
     session: Session = Depends(db_session),
-    request: Request | None = None,
+    codex_session_id: str | None = None,
 ) -> AIChatResponse:
     if payload.provider is not None and payload.provider.base_url:
         try:
@@ -83,13 +82,10 @@ def ai_chat(
             update={"provider": payload.provider.model_copy(update={"base_url": safe_url})}
         )
     try:
-        codex_session = (
-            request.cookies.get(_CODEX_SESSION_COOKIE) if request is not None else None
-        )
         return InvestmentResearchAgent(
             settings,
             session,
-            codex_session_id=codex_session,
+            codex_session_id=codex_session_id,
         ).chat(payload)
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
@@ -97,6 +93,20 @@ def ai_chat(
         detail = f"AI provider error: {type(exc).__name__}: {exc}"
         raise HTTPException(status_code=502, detail=detail) from exc
 
+
+@router.post("/chat", response_model=AIChatResponse, operation_id="ai_chat")
+def ai_chat_http(
+    payload: AIChatRequest,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+    session: Session = Depends(db_session),
+) -> AIChatResponse:
+    return ai_chat(
+        payload,
+        settings,
+        session,
+        request.cookies.get(_CODEX_SESSION_COOKIE),
+    )
 
 @router.get("/codex/status", response_model=CodexCLIStatus)
 def codex_status(settings: Settings = Depends(get_settings)) -> CodexCLIStatus:
