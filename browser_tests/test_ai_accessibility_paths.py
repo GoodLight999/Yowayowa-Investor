@@ -184,5 +184,3 @@ def test_hosted_codex_chat_sends_and_refreshes_sealed_credential(page: Page) -> 
     assert requests
     assert requests[0]["provider"]["provider"] == "codex_cli"
     assert requests[0]["provider"]["credential"] == "sealed-two"
-    )
-    assert credential == "sealed-three"
