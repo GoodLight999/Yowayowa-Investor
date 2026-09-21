@@ -192,9 +192,7 @@ class RakutenRssInquiry:
             orders.append(
                 BrokerOrder(
                     broker="rakuten-securities",
-                    transport_order_id=(
-                        str(transport_id) if transport_id is not None else None
-                    ),
+                    transport_order_id=(str(transport_id) if transport_id is not None else None),
                     broker_order_id=broker_order_id,
                     symbol=str(row.get("銘柄コード") or "").strip(),
                     side=side,
