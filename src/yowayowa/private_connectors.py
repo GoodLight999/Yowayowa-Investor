@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class PrivateAcquisitionMethod(StrEnum):
+    AUTHENTICATED_WEB_SESSION = "authenticated_web_session"
     PRIVATE_HTTP = "private_http"
     PRIVATE_WEBSOCKET = "private_websocket"
     STRUCTURED_SCRAPE = "structured_scrape"
