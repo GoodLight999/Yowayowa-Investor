@@ -207,6 +207,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_ROOT)), name="static")
 
 install_vercel_observability(app)
 
+
 @app.exception_handler(InputValidationError)
 async def invalid_market_identifier(_: Request, exc: InputValidationError) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": str(exc)})
