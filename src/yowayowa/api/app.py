@@ -241,9 +241,7 @@ async def request_diagnostics(request: Request, call_next: Any) -> Response:
 def runtime_debug(request: Request) -> dict[str, object]:
     settings = get_settings()
     database_backend = (
-        "postgresql"
-        if settings.database_url.startswith(("postgresql:", "postgres:"))
-        else "sqlite"
+        "postgresql" if settings.database_url.startswith(("postgresql:", "postgres:")) else "sqlite"
     )
     return {
         "status": "ok",
