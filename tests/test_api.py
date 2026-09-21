@@ -21,8 +21,15 @@ def test_api_startup_health_watchlists_compare_and_portfolio_surfaces(
         with TestClient(app) as client:
             health = client.get("/v1/health")
             assert health.status_code == 200
+            assert health.headers["x-yowayowa-request-id"]
             assert health.json()["status"] == "ok"
             assert health.json()["mode"] == "personal"
+
+            runtime = client.get("/internal/debug/runtime")
+            assert runtime.status_code == 200
+            assert runtime.json()["status"] == "ok"
+            assert runtime.json()["request_id"] == runtime.headers["x-yowayowa-request-id"]
+            assert runtime.json()["database_backend"] == "sqlite"
 
             japanese = client.get("/?lang=ja")
             assert japanese.status_code == 200
