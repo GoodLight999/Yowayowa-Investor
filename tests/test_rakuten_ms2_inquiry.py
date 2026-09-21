@@ -87,9 +87,7 @@ def test_rakuten_inquiry_lists_orders_and_joins_transport_id() -> None:
 
 
 def test_rakuten_inquiry_reads_scalar_order_status() -> None:
-    inquiry = RakutenRssInquiry(
-        FakeWorksheetRunner(scalars={"RssOrderStatus(7)": 3})
-    )
+    inquiry = RakutenRssInquiry(FakeWorksheetRunner(scalars={"RssOrderStatus(7)": 3}))
 
     assert inquiry.order_status(7) is BrokerOrderStatus.FILLED
 
@@ -141,9 +139,7 @@ def test_rakuten_inquiry_reads_positions_and_capacity() -> None:
 
 
 def test_rakuten_inquiry_reads_current_quote_without_html_scraping() -> None:
-    reader = FakeWorksheetRunner(
-        scalars={'RssMarket("4755.T","現在値")': 912.5}
-    )
+    reader = FakeWorksheetRunner(scalars={'RssMarket("4755.T","現在値")': 912.5})
     inquiry = RakutenRssInquiry(reader)
 
     quote = inquiry.quote("4755.T")
