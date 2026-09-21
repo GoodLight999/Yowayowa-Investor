@@ -18,8 +18,7 @@ The primary product is no longer a generally publishable SaaS. `personal` mode i
 
 The `public` profile remains supported as a safe, intentionally limited derivative. Public-mode product constraints must not weaken Full / Operator mode.
 
-For broker control, do **not** default to browser automation. Transport priority is:
-`official API/local programmable interface -> authorized private protocol -> structured scraping -> local application automation -> UI automation fallback`.
+For broker control, the primary environment is Linux and overseas securities are required. Use a legitimate persistent authenticated browser session as the universal execution surface unless a stronger cross-platform official API exists. Within that session, prefer stable broker-internal HTTP/JSON/GraphQL/WebSocket calls where appropriate and use DOM interaction for the rest. Platform-specific desktop interfaces are optional accelerators.
 
 Authentication/MFA/access controls are not bypass targets. The operator authenticates legitimately; connectors may then reuse the authorized session or supported local interface.
 
@@ -135,28 +134,25 @@ This also gives Japanese listings a safe conservative fallback when an exact EDI
 
 ## Current highest-priority engineering task
 
-### P0 — finish the local Operator Bridge and first live-capable broker path
+### P0 — authenticated Linux broker-web execution plane
 
-The new product direction requires a real local execution plane, not just research features.
+The new product direction requires a real local execution plane that works from Linux and covers both Japanese and U.S. equities.
 
-First target: Rakuten Securities domestic equities via MARKET SPEED II RSS. Rakuten's official RSS interface supports market/account information plus VBA-callable order functions such as `RssStockOrder_V`; use that rather than browser automation.
+First target: Rakuten Securities Web. Rakuten Web is the broad product surface, while MARKET SPEED II RSS is Windows-only and excludes foreign equities.
 
 Execution:
-1. finish a localhost-only Operator Bridge service for Windows;
-2. authenticate the bridge itself with a locally generated secret and bind to loopback by default;
-3. keep Rakuten/MarketSpeed credentials and trading secrets local; never send them to Vercel;
-4. implement persistent unique RSS order-ID allocation and restart-safe idempotency;
-5. implement order-status / order-list observation using official RSS functions, and treat broker status as authoritative;
-6. add positions, buying power and quote reads through RSS where available;
-7. route all live submission through `services/broker_execution.py` plus an append-only audit record;
-8. expose paper/preview/live modes through API/CLI without making the public profile capable of execution;
-9. verify on Linux with fakes and on a real Windows + Excel + MARKET SPEED II installation before declaring live support complete.
+1. add a local persistent Chromium/Chrome operator session on Linux;
+2. store its user-data/profile locally and never upload cookies/session storage to Vercel;
+3. let the operator complete normal login/MFA interactively;
+4. detect authenticated/expired state without trying to bypass MFA/CAPTCHA/device approval;
+5. instrument same-session requests so broker XHR/JSON/GraphQL/WebSocket contracts can be used where robust;
+6. implement DOM flows for operations where the private network contract is fragile or opaque;
+7. cover Rakuten Japanese and U.S. equity account state, positions, orders, order preview, submission, status and cancellation;
+8. retain restart-safe idempotency, live-order arm gates and append-only audit logs;
+9. keep MARKET SPEED II RSS as an optional domestic-equity Windows sidecar rather than the main path;
+10. verify the actual Linux browser flow before declaring live support complete.
 
-After Rakuten:
-- build a reusable authenticated private-protocol/scraping toolkit for brokers with no programmable local interface;
-- first choice is direct private HTTP/JSON/WebSocket from a legitimately authenticated operator session;
-- HTML scraping is secondary;
-- browser click automation remains the last resort only.
+After Rakuten, generalize the same browser-session/private-protocol toolkit to other brokers without public APIs.
 
 The previous product-completion audit becomes the next queue item after the local execution plane is real.
 
