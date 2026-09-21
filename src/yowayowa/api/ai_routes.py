@@ -108,6 +108,7 @@ def ai_chat_http(
         request.cookies.get(_CODEX_SESSION_COOKIE),
     )
 
+
 @router.get("/codex/status", response_model=CodexCLIStatus)
 def codex_status(settings: Settings = Depends(get_settings)) -> CodexCLIStatus:
     return codex_cli_status(settings)
