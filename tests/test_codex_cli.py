@@ -104,7 +104,6 @@ def test_codex_structured_exec_strips_api_billing_environment(monkeypatch) -> No
     assert "read-only" in command
 
 
-
 def test_codex_status_uses_hosted_bridge_without_local_binary() -> None:
     status = codex_cli.codex_cli_status(
         Settings(
@@ -154,6 +153,4 @@ def test_hosted_codex_refreshes_sealed_credential(monkeypatch) -> None:  # type:
     assert result.result["answer"] == "hosted"
     assert result.credential == "sealed-refreshed"
     assert captured["url"] == "https://codex.internal/structured"
-    assert captured["headers"] == {
-        "x-yowayowa-codex-session": "browser-session-0123456789"
-    }
+    assert captured["headers"] == {"x-yowayowa-codex-session": "browser-session-0123456789"}
