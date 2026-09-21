@@ -19,3 +19,24 @@ def test_openapi_operation_ids_are_unique() -> None:
                 operation_ids.append(operation["operationId"])
 
     assert len(operation_ids) == len(set(operation_ids))
+
+
+
+def test_agent_facing_openapi_contract_remains_machine_discoverable() -> None:
+    schema = app.openapi()
+    paths = schema["paths"]
+
+    required_paths = {
+        "/v1/ai/chat",
+        "/v1/ai/status",
+        "/v1/ai/prompt-packet",
+        "/v1/ai/codex/status",
+        "/v1/ai/codex/device-auth",
+        "/v1/ai/codex/session-status",
+        "/v1/strategy-research/snapshots",
+        "/v1/strategy-research/outcomes",
+        "/v1/strategy-presets/{strategy_id}/evaluate",
+        "/v1/operations/plan",
+    }
+    assert required_paths <= set(paths)
+    assert paths["/v1/ai/chat"]["post"]["operationId"] == "ai_chat"
