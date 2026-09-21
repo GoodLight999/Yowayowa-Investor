@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -63,10 +64,8 @@ class PersistentBrokerWebSession:
         if self._context is not None:
             return
         self.profile_dir.mkdir(parents=True, exist_ok=True)
-        try:
+        with suppress(OSError):
             os.chmod(self.profile_dir, 0o700)
-        except OSError:
-            pass
 
         playwright = sync_playwright().start()
         try:
