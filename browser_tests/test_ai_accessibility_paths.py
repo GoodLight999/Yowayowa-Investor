@@ -45,7 +45,6 @@ def test_ai_can_generate_copyable_external_research_packet(page: Page) -> None:
     expect(page.locator("#ai-prompt-packet-meta")).to_contain_text("get_fundamentals")
 
 
-
 def test_hosted_codex_device_login_stays_in_browser(page: Page) -> None:
     def codex_status(route: Route) -> None:
         route.fulfill(
@@ -105,9 +104,7 @@ def test_hosted_codex_device_login_stays_in_browser(page: Page) -> None:
         page.locator("#codex-chatgpt-login").click()
 
     expect(page.locator("#codex-auth-status")).to_contain_text("Authenticated with ChatGPT")
-    credential = page.evaluate(
-        "() => localStorage.getItem('yowayowa.codex.credential.v1')"
-    )
+    credential = page.evaluate("() => localStorage.getItem('yowayowa.codex.credential.v1')")
     assert credential == "sealed-browser-credential"
 
 
