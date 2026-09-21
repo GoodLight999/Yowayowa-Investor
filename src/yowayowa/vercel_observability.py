@@ -77,7 +77,15 @@ def _vercel_runtime() -> dict[str, str | None]:
 
 
 def _request_id(request: Request) -> str:
-    return request.headers.get("x-vercel-id") or request.headers.get("x-request-id") or uuid4().hex
+    existing = getattr(request.state, "yowayowa_request_id", None)
+    if isinstance(existing, str) and existing:
+        return existing
+    return (
+        request.headers.get("x-yowayowa-request-id")
+        or request.headers.get("x-vercel-id")
+        or request.headers.get("x-request-id")
+        or uuid4().hex
+    )
 
 
 def _safe_traceback(exc: BaseException) -> list[dict[str, str | int]]:
@@ -107,6 +115,7 @@ def install_vercel_observability(app: FastAPI) -> None:
     @app.middleware("http")
     async def vercel_request_observability(request: Request, call_next):  # type: ignore[no-untyped-def]
         request_id = _request_id(request)
+        request.state.yowayowa_request_id = request_id
         started = time.perf_counter()
         try:
             response = await call_next(request)
