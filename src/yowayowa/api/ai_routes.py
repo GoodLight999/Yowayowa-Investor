@@ -102,7 +102,6 @@ def codex_status(settings: Settings = Depends(get_settings)) -> CodexCLIStatus:
 
 
 
-
 @router.post("/codex/device-auth", response_class=StreamingResponse)
 async def codex_device_auth(
     request: Request,
@@ -115,11 +114,14 @@ async def codex_device_auth(
 
     async def stream() -> AsyncIterator[bytes]:
         try:
-            async with httpx.AsyncClient(timeout=None) as client, client.stream(
-                "POST",
-                bridge_url,
-                headers={"x-yowayowa-codex-session": session_id},
-            ) as upstream:
+            async with (
+                httpx.AsyncClient(timeout=None) as client,
+                client.stream(
+                    "POST",
+                    bridge_url,
+                    headers={"x-yowayowa-codex-session": session_id},
+                ) as upstream,
+            ):
                 upstream.raise_for_status()
                 async for chunk in upstream.aiter_bytes():
                     yield chunk
