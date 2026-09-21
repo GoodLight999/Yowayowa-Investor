@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import os
+import platform
+import time
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -92,6 +97,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = PACKAGE_ROOT / "web"
 STATIC_ROOT = WEB_ROOT / "static"
 templates = Jinja2Templates(directory=str(WEB_ROOT / "templates"))
+http_logger = logging.getLogger("yowayowa.http")
 
 _I18N_REPLACEMENTS = (
     (
@@ -202,6 +208,64 @@ app.include_router(fundamentals_router)
 app.include_router(web_asset_router)
 app.include_router(router)
 app.mount("/static", StaticFiles(directory=str(STATIC_ROOT)), name="static")
+
+
+@app.middleware("http")
+async def request_diagnostics(request: Request, call_next: Any) -> Response:
+    request_id = request.headers.get("x-yowayowa-request-id") or uuid.uuid4().hex
+    request.state.request_id = request_id
+    started = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        response.headers["x-yowayowa-request-id"] = request_id
+        return response
+    finally:
+        http_logger.info(
+            json.dumps(
+                {
+                    "event": "http_request",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": status_code,
+                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                },
+                separators=(",", ":"),
+            )
+        )
+
+
+@app.get("/internal/debug/runtime", include_in_schema=False)
+def runtime_debug(request: Request) -> dict[str, object]:
+    settings = get_settings()
+    database_backend = (
+        "postgresql"
+        if settings.database_url.startswith(("postgresql:", "postgres:"))
+        else "sqlite"
+    )
+    return {
+        "status": "ok",
+        "version": __version__,
+        "mode": settings.mode,
+        "request_id": getattr(request.state, "request_id", None),
+        "source_revision": (
+            os.getenv("VERCEL_GIT_COMMIT_SHA")
+            or os.getenv("GITHUB_SHA")
+            or os.getenv("SOURCE_REVISION")
+        ),
+        "deployment_id": os.getenv("VERCEL_DEPLOYMENT_ID"),
+        "vercel": bool(os.getenv("VERCEL")),
+        "vercel_env": os.getenv("VERCEL_ENV"),
+        "vercel_region": os.getenv("VERCEL_REGION"),
+        "python": platform.python_version(),
+        "database_backend": database_backend,
+        "codex": {
+            "local_cli_enabled": settings.codex_cli_enabled,
+            "hosted_bridge_configured": bool(settings.codex_bridge_url),
+        },
+    }
 
 
 @app.exception_handler(InputValidationError)
