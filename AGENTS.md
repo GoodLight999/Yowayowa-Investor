@@ -4,7 +4,7 @@ This repository is designed to be developed by autonomous coding agents. Treat t
 
 ## Product objective
 
-Build Yowayowa-Investor into a private-operator-first investment research and execution workstation whose primary goal is to maximize the operator's useful information advantage and automation while preserving financial correctness and strong security. The general-public SaaS profile is secondary and may be intentionally limited.
+Build Yowayowa-Investor into a private / family operator investment research and execution workstation whose primary goal is to maximize the operator's useful information advantage and automation while preserving financial correctness and strong security. General-public SaaS development is frozen for the foreseeable future: do not add public-mode product features unless the operator explicitly reopens that direction.
 
 The canonical product specification and implementation history live in Notion:
 https://app.notion.com/p/sugoi-daizu/Yowayowa-Invester-3bab2a2d631a80f6844fee5f8b76d64e
@@ -16,7 +16,7 @@ Do not wait for the user to micromanage implementation. Research, design, implem
 1. **API-first modular monolith.** Browser UI, REST API, CLI, tests, and agents must share domain/service logic. Do not put business rules only in JavaScript/templates.
 2. **Financial correctness before convenience.** Missing data is not zero. Units, currencies, periods, restatements, and provenance must be explicit and fail closed when arithmetic would be misleading.
 3. **Provenance is part of the data model.** Preserve provider, source URL, license class, retrieved-at, and as-of information through normalization and derived metrics.
-4. **Full/Operator mode is the primary product.** Personal-only sources, authenticated scraping, private protocols, local application bridges, and broker control are valid first-class capabilities in personal mode. Public mode remains a separate limited profile and must fail closed on rights/security boundaries.
+4. **Private / Family Operator mode is the product.** Personal-only sources, authenticated scraping, private protocols, local application bridges, and broker control are valid first-class capabilities. Existing public/safe-mode code may remain as a compatibility boundary, but public-mode feature work is frozen and must not consume roadmap priority or constrain operator capabilities.
 5. **Official/maintained sources before reinvention.** Prefer official APIs and mature maintained libraries when licensing and quality fit. Build custom code where it creates product value or is necessary for correctness.
 6. **No user-facing development notes.** Internal implementation rationale, debugging notes, developer caveats, provider plumbing, and internal provenance mechanics do not belong in normal UI unless the user needs them to operate or correctly interpret the feature. Put them in logs, API metadata, developer/admin surfaces, or docs.
 7. **AI is additive, not the source of truth.** Deterministic tools and source-backed data remain usable without AI. Separate sourced facts from model inference. Natural-language operations should resolve to transparent structured operations.
