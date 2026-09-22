@@ -6,6 +6,7 @@ import typer
 from rich import print
 from rich.table import Table
 
+from yowayowa.broker_read_cli import app as broker_read_app
 from yowayowa.chart_cli import app as chart_app
 from yowayowa.cli import _client, _percent, app, portfolio_app
 from yowayowa.edinet_cli import app as edinet_app
@@ -26,6 +27,7 @@ app.add_typer(preset_app, name="preset")
 app.add_typer(license_app, name="license")
 app.add_typer(macro_app, name="macro")
 app.add_typer(private_app, name="private")
+app.add_typer(broker_read_app, name="broker-read")
 
 
 @app.command("operator-bridge")

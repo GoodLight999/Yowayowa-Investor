@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     mode: Literal["personal", "public"] = "personal"
     database_url: str = Field(default_factory=_default_database_url)
     private_acquisition_data_dir: str = "./data/private-acquisition"
+    broker_rakuten_web_profile_dir: str = "./data/broker-profiles/rakuten"
     sec_user_agent: str = "Yowayowa-Investor/0.1 admin@example.invalid"
     sec_requests_per_second: float = Field(default=8.0, gt=0, le=10)
     fred_api_key: str | None = None

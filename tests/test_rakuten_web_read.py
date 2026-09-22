@@ -1,0 +1,457 @@
+from __future__ import annotations
+
+from decimal import Decimal
+
+from yowayowa.acquisition.transport import PrivateAcquisitionError, TransportResponse
+from yowayowa.operator_bridge.rakuten_web import (
+    RAKUTEN_WEB_CONNECTOR_ID,
+    RAKUTEN_WEB_HTML_CONNECTOR_ID,
+    RAKUTEN_WEB_RESOURCE_CATALOG,
+    RakutenWebFetchTransport,
+    extract_fees,
+    extract_margin_state,
+    normalize_account,
+    normalize_executions,
+    normalize_open_orders,
+    normalize_positions,
+    parse_jpy_amount,
+    parse_quantity,
+    parse_usd_amount,
+)
+
+# ---------------------------------------------------------------------------
+# 数値パーサ
+# ---------------------------------------------------------------------------
+
+
+def test_parse_jpy_amount_formats() -> None:
+    assert parse_jpy_amount("1,234,567円") == Decimal("1234567")
+    assert parse_jpy_amount(" 1,234 円 ") == Decimal("1234")
+    assert parse_jpy_amount("▲1,234") == Decimal("-1234")
+    assert parse_jpy_amount("+500円") == Decimal("500")
+    assert parse_jpy_amount("−750円") == Decimal("-750")  # U+2212 minus sign
+    assert parse_jpy_amount("１２３") == Decimal("123")  # fullwidth digits
+
+
+def test_parse_jpy_amount_unparseable_yields_none() -> None:
+    assert parse_jpy_amount("—") is None
+    assert parse_jpy_amount("") is None
+    assert parse_jpy_amount(None) is None
+    assert parse_jpy_amount("1,2o4") is None
+    assert parse_jpy_amount("N/A") is None
+
+
+def test_parse_usd_amount_formats() -> None:
+    assert parse_usd_amount("$12.34") == Decimal("12.34")
+    assert parse_usd_amount("1,234.56米ドル") == Decimal("1234.56")
+    assert parse_usd_amount("▲$99.99") == Decimal("-99.99")
+    assert parse_usd_amount("") is None
+    assert parse_usd_amount("—") is None
+    assert parse_usd_amount(None) is None
+
+
+def test_parse_quantity_formats() -> None:
+    assert parse_quantity("100株") == Decimal("100")
+    assert parse_quantity("1,000口") == Decimal("1000")
+    assert parse_quantity("10") == Decimal("10")
+    assert parse_quantity("") is None
+    assert parse_quantity("—") is None
+    assert parse_quantity(None) is None
+
+
+# ---------------------------------------------------------------------------
+# トランスポート (read-only / host check)
+# ---------------------------------------------------------------------------
+
+
+class _ScriptedFetch:
+    def __init__(self, response: TransportResponse) -> None:
+        self.response = response
+        self.calls: list[dict[str, object]] = []
+
+    def __call__(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: object = None,
+        headers: object = None,
+        **_: object,
+    ) -> TransportResponse:
+        self.calls.append({"method": method, "url": url})
+        return self.response
+
+
+def _ok_response(
+    url: str = "https://trade.rakuten-sec.co.jp/web/positions/jp",
+) -> TransportResponse:
+    return TransportResponse(
+        status_code=200,
+        url=url,
+        content_type="application/json",
+        text="{}",
+        content=b"{}",
+        elapsed_ms=1.0,
+    )
+
+
+def test_transport_resolves_relative_urls_against_base() -> None:
+    fetch = _ScriptedFetch(_ok_response())
+    transport = RakutenWebFetchTransport(fetch=fetch)
+    response = transport.fetch("GET", "web/positions/jp")
+    assert response.status_code == 200
+    assert fetch.calls == [
+        {"method": "GET", "url": "https://trade.rakuten-sec.co.jp/web/positions/jp"}
+    ]
+
+
+def test_transport_allows_absolute_rakuten_hosts() -> None:
+    fetch = _ScriptedFetch(_ok_response("https://www.rakuten-sec.co.jp/member/"))
+    transport = RakutenWebFetchTransport(fetch=fetch)
+    transport.fetch("GET", "https://www.rakuten-sec.co.jp/member/")
+    assert len(fetch.calls) == 1
+
+
+def test_transport_rejects_disallowed_host() -> None:
+    transport = RakutenWebFetchTransport(fetch=_ScriptedFetch(_ok_response()))
+    try:
+        transport.fetch("GET", "https://evil.example.com/web/positions")
+    except PrivateAcquisitionError as exc:
+        assert "host not allowed" in exc.reason
+    else:
+        raise AssertionError("expected PrivateAcquisitionError")
+
+
+def test_transport_rejects_non_get_read_only() -> None:
+    transport = RakutenWebFetchTransport(fetch=_ScriptedFetch(_ok_response()))
+    try:
+        transport.fetch("POST", "web/orders")
+    except PrivateAcquisitionError as exc:
+        assert exc.reason == "read-only connector"
+    else:
+        raise AssertionError("expected PrivateAcquisitionError")
+
+
+def test_catalog_urls_are_unverified_initial_assumptions() -> None:
+    assert RAKUTEN_WEB_RESOURCE_CATALOG, "catalog must not be empty"
+    for entry in RAKUTEN_WEB_RESOURCE_CATALOG.values():
+        assert entry.verified is False, f"{entry.resource}/{entry.market} must start unverified"
+        assert entry.parser_kind in ("json", "tables")
+
+
+# ---------------------------------------------------------------------------
+# 正規化器: account
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_account_jp_json_payload() -> None:
+    payload = {
+        "cash_balance": "1,234,567円",
+        "buying_power": "2,000,000円",
+        "as_of": "2026-09-23T09:00:00+09:00",
+    }
+    snapshot = normalize_account(payload, market="jp")
+    assert snapshot.broker == "rakuten-securities"
+    assert snapshot.currency == "JPY"
+    assert snapshot.cash_balance == Decimal("1234567")
+    assert snapshot.buying_power == Decimal("2000000")
+    assert snapshot.captured_at.year == 2026
+
+
+def test_normalize_account_missing_fields_are_none_not_zero() -> None:
+    snapshot = normalize_account({"rows": []}, market="jp")
+    assert snapshot.cash_balance is None
+    assert snapshot.buying_power is None
+
+
+def test_normalize_account_us_tables_payload_vertical_layout() -> None:
+    # tables-parser shape: vertical label/value rows (Japanese statements use this)
+    payload = {
+        "tables": [
+            {
+                "headers": ["項目", "金額"],
+                "rows": [
+                    {"項目": "買付余力", "金額": "$5,000.00"},
+                    {"項目": "預り金", "金額": "$1,250.50"},
+                ],
+            }
+        ]
+    }
+    snapshot = normalize_account(payload, market="us")
+    assert snapshot.currency == "USD"
+    assert snapshot.buying_power == Decimal("5000.00")
+    assert snapshot.cash_balance == Decimal("1250.50")
+
+
+# ---------------------------------------------------------------------------
+# 正規化器: positions
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_positions_jp_json() -> None:
+    payload = {
+        "positions": [
+            {
+                "symbol": "7203",
+                "name": "トヨタ自動車",
+                "quantity": "100株",
+                "average_cost": "2,500円",
+                "market_price": "2,650円",
+                "market_value": "265,000円",
+                "unrealized_pnl": "▲15,000円",
+                "account_type": "特定",
+            }
+        ]
+    }
+    positions, notes = normalize_positions(payload, market="jp")
+    assert not notes
+    assert len(positions) == 1
+    position = positions[0]
+    assert position.symbol == "7203"
+    assert position.quantity == Decimal("100")
+    assert position.average_cost == Decimal("2500")
+    assert position.market_price == Decimal("2650")
+    assert position.market_value == Decimal("265000")
+    assert position.unrealized_pnl == Decimal("-15000")
+    assert position.currency == "JPY"
+    assert position.account_type == "cash"  # 特定口座 is a cash account
+
+
+def test_normalize_positions_missing_fields_become_none_with_notes() -> None:
+    payload = {"positions": [{"symbol": "6501", "quantity": "200株"}]}
+    positions, notes = normalize_positions(payload, market="jp")
+    assert len(positions) == 1
+    position = positions[0]
+    assert position.average_cost is None
+    assert position.market_price is None
+    assert position.market_value is None
+    assert position.unrealized_pnl is None
+    assert position.account_type is None
+    assert not notes  # absent optional fields are not errors
+
+
+def test_normalize_positions_unparseable_quantity_skips_row_with_note() -> None:
+    payload = {
+        "positions": [
+            {"symbol": "7203", "quantity": "1,2o4株"},
+            {"symbol": "6758", "quantity": "10株"},
+        ]
+    }
+    positions, notes = normalize_positions(payload, market="jp")
+    assert [p.symbol for p in positions] == ["6758"]
+    assert len(notes) == 1
+    assert "unparseable quantity" in notes[0]
+    assert "missing data is not zero" in notes[0]
+
+
+def test_normalize_positions_missing_symbol_skips_row_with_note() -> None:
+    payload = {"positions": [{"quantity": "10株"}]}
+    positions, notes = normalize_positions(payload, market="jp")
+    assert positions == []
+    assert any("missing symbol" in note for note in notes)
+
+
+def test_normalize_positions_empty_list() -> None:
+    positions, notes = normalize_positions({"positions": []}, market="jp")
+    assert positions == []
+    assert notes == []
+
+
+def test_normalize_positions_html_tables_shape() -> None:
+    payload = {
+        "tables": [
+            {
+                "headers": ["銘柄コード", "銘柄名", "数量", "取得単価", "現在値", "評価損益"],
+                "rows": [
+                    {
+                        "銘柄コード": "7203",
+                        "銘柄名": "トヨタ自動車",
+                        "数量": "100",
+                        "取得単価": "2,500円",
+                        "現在値": "2,650円",
+                        "評価損益": "15,000円",
+                    }
+                ],
+            }
+        ]
+    }
+    positions, notes = normalize_positions(payload, market="jp")
+    assert not notes
+    assert len(positions) == 1
+    position = positions[0]
+    assert position.symbol == "7203"
+    assert position.quantity == Decimal("100")
+    assert position.average_cost == Decimal("2500")
+    assert position.market_price == Decimal("2650")
+    assert position.unrealized_pnl == Decimal("15000")
+
+
+def test_normalize_positions_usd_market_and_per_position_currency() -> None:
+    payload = {
+        "positions": [
+            {"symbol": "AAPL", "quantity": "10", "average_cost": "$180.50"},
+            {"symbol": "7203", "quantity": "100", "currency": "円", "average_cost": "2,500円"},
+        ]
+    }
+    positions, notes = normalize_positions(payload, market="us")
+    assert not notes
+    assert positions[0].currency == "USD"  # market default
+    assert positions[0].average_cost == Decimal("180.50")
+    assert positions[1].currency == "JPY"  # explicit per-position override kept
+    assert positions[1].average_cost == Decimal("2500")
+
+
+# ---------------------------------------------------------------------------
+# 正規化器: open orders / executions
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_open_orders_jp_json() -> None:
+    payload = {
+        "orders": [
+            {
+                "order_id": "20260923-0001",
+                "symbol": "7203",
+                "side": "買い",
+                "quantity": "100株",
+                "status": "執行待ち",
+                "limit_price": "2,600円",
+            }
+        ]
+    }
+    orders, notes = normalize_open_orders(payload, market="jp")
+    assert not notes
+    assert len(orders) == 1
+    order = orders[0]
+    assert order.broker_order_id == "20260923-0001"
+    assert order.symbol == "7203"
+    assert order.side == "buy"
+    assert order.quantity == 100
+    assert order.status.value == "pending"
+
+
+def test_normalize_open_orders_missing_order_number_empty_id_plus_note() -> None:
+    payload = {"orders": [{"symbol": "7203", "side": "sell", "quantity": "100", "status": "待機"}]}
+    orders, notes = normalize_open_orders(payload, market="jp")
+    assert len(orders) == 1
+    assert orders[0].broker_order_id == ""
+    assert any("missing order number" in note for note in notes)
+
+
+def test_normalize_open_orders_fees_go_to_detail_not_model() -> None:
+    payload = {
+        "orders": [
+            {
+                "order_id": "A-1",
+                "symbol": "7203",
+                "side": "buy",
+                "quantity": "100",
+                "status": "pending",
+                "手数料": "55円",
+            }
+        ]
+    }
+    orders, _notes = normalize_open_orders(payload, market="jp")
+    assert len(orders) == 1
+    fees = extract_fees(payload)
+    assert fees == {"A-1": "55円"}
+
+
+def test_normalize_open_orders_html_tables_shape() -> None:
+    payload = {
+        "tables": [
+            {
+                "headers": ["注文番号", "銘柄コード", "売買", "注文数量", "状況"],
+                "rows": [
+                    {
+                        "注文番号": "20260923-0002",
+                        "銘柄コード": "6758",
+                        "売買": "売却",
+                        "注文数量": "20株",
+                        "状況": "執行待ち",
+                    }
+                ],
+            }
+        ]
+    }
+    orders, notes = normalize_open_orders(payload, market="jp")
+    assert not notes
+    assert len(orders) == 1
+    assert orders[0].side == "sell"
+    assert orders[0].quantity == 20
+    assert orders[0].status.value == "pending"
+
+
+def test_normalize_executions_become_filled_orders() -> None:
+    payload = {
+        "executions": [
+            {
+                "order_id": "20260922-0099",
+                "symbol": "6501",
+                "side": "買い",
+                "quantity": "300株",
+                "平均約定単価": "3,800円",
+                "手数料": "825円",
+                "受渡日": "2026-09-24",
+            }
+        ]
+    }
+    orders, notes = normalize_executions(payload, market="jp")
+    assert not notes
+    assert len(orders) == 1
+    order = orders[0]
+    assert order.status.value == "filled"
+    assert order.filled_quantity == 300
+    assert order.average_fill_price == Decimal("3800")
+    assert extract_fees(payload) == {"20260922-0099": "825円"}
+
+
+def test_normalize_executions_empty_list() -> None:
+    orders, notes = normalize_executions({"executions": []}, market="jp")
+    assert orders == []
+    assert notes == []
+
+
+def test_normalize_orders_unknown_status_maps_to_unknown() -> None:
+    payload = {
+        "orders": [
+            {"order_id": "X-1", "symbol": "7203", "side": "buy", "quantity": "1", "status": "謎"}
+        ]
+    }
+    orders, _notes = normalize_open_orders(payload, market="jp")
+    assert orders[0].status.value == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# detail 抽出 (margin_state / fees)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_margin_state_present_fields() -> None:
+    payload = {
+        "margin_deposit": "300,000円",
+        "maintenance_rate": "250.5%",
+        "margin_positions": [{"symbol": "7203", "quantity": "100"}],
+    }
+    margin = extract_margin_state(payload)
+    assert margin is not None
+    assert margin["margin_deposit"] == Decimal("300000")
+    assert margin["maintenance_rate"] == Decimal("250.5")
+    assert isinstance(margin["margin_positions"], list)
+
+
+def test_extract_margin_state_absent_yields_none() -> None:
+    assert extract_margin_state({"cash_balance": "1円"}) is None
+
+
+def test_extract_fees_absent_yields_none() -> None:
+    assert extract_fees({"orders": [{"order_id": "1", "symbol": "7203"}]}) is None
+
+
+def test_connector_ids_and_catalog_dispatch() -> None:
+    assert RAKUTEN_WEB_CONNECTOR_ID == "rakuten-web"
+    assert RAKUTEN_WEB_HTML_CONNECTOR_ID == "rakuten-web-html"
+    json_entry = RAKUTEN_WEB_RESOURCE_CATALOG[("positions", "jp")]
+    tables_entry = RAKUTEN_WEB_RESOURCE_CATALOG[("account", "us")]
+    assert json_entry.parser_kind == "json"
+    assert tables_entry.parser_kind == "tables"

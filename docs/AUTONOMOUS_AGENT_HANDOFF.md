@@ -112,6 +112,21 @@ At that checkpoint:
 
 Subsequent commits may be documentation-only. Always resolve the live branch head and current CI/deployment before editing.
 
+### P1B checkpoint — Rakuten Web read-side connector (2026-09-23)
+
+P1B is implemented and `make verify` green on `agent/commercial-foundation` (not yet committed/deployed at writing time; commit by CTO):
+
+- `operator_bridge/rakuten_web.py` — read-only Rakuten web domain layer: resource catalog (account/positions/open_orders/executions × jp/us), GET-only host-checked transport, Japanese amount parsers, normalizers to generic broker models, detail extraction (fees/margin/symbol names).
+- `services/broker_read_service.py` — `BrokerReadService` composing `PrivateAcquisitionService` (json + hidden html-tables definitions), `BrokerReadOutcome` model.
+- `api/broker_read_routes.py` + `api/deps.py:get_broker_read_service` — `/v1/broker-read/*` API (personal-mode guarded, 404 unknown connector).
+- `broker_read_cli.py` + `cli_entry.py` wiring — `yowayowa broker-read list|auth-check|fetch|snapshots|diff`.
+- config: `broker_rakuten_web_profile_dir` (default `./data/broker-profiles/rakuten`).
+- tests: `tests/test_rakuten_web_read.py` (30), `tests/test_broker_read_service.py` (20), `tests/test_broker_read_api.py` (7), `tests/test_broker_read_cli.py` (8), `tests/test_broker_read_browser_wiring.py` (12) — all fixture/mock based, no network, no playwright.
+- browser-wiring fix: the production path handed transport-resolved ABSOLUTE URLs to `PersistentBrokerWebSession` (relative-path only), which raised `BrokerWebSessionError`; that is not a `PrivateAcquisitionError`, so it escaped the acquisition service and turned `/v1/broker-read/.../fetch` into HTTP 500. `api/deps.py` now verifies the origin, converts the URL to path+query, and maps any non-acquisition session exception to an explicit `PrivateAcquisitionError(FAILED)`. `tests/test_broker_read_browser_wiring.py` drives the real factory with a session fake as strict as the real one; 11 of its 12 tests fail against the pre-fix code.
+- docs: `docs/RAKUTEN_WEB_SESSION.md` (real-session DoD), OPERATOR_MODE.md "Broker read-side (P1B)" section.
+
+**Blocked on operator (not on code):** real-session verification. All catalog URLs are unverified initial assumptions (`verified=False`); first real session must confirm actual XHR/HTML URLs via devtools, update `RAKUTEN_WEB_RESOURCE_CATALOG`, flip `verified=True`, and run the reconciliation checklist in `docs/RAKUTEN_WEB_SESSION.md`. Read-only by construction (GET-only transport); order submission/cancellation remains P2.
+
 ---
 
 ## Product architecture invariants

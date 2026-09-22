@@ -67,6 +67,20 @@ API surface: `/v1/private/connectors` (list/register/get), `.../fetch`, `.../aut
 
 Reauthentication flow: when a fetch reports `auth_expired`, complete the source's normal login/MFA in the operator browser session (or refresh the credential), then run `yowayowa private auth-check <connector>` until it reports authenticated; the next fetch re-acquires normally.
 
+## Broker read-side (P1B)
+
+The first concrete broker read connector is Rakuten Securities Web (`rakuten-web`), implemented read-only on top of the acquisition toolkit:
+
+- **Domain layer** — `operator_bridge/rakuten_web.py`: versioned resource catalog (account / positions / open_orders / executions × jp / us), read-only host-checked transport wrapper (`RakutenWebFetchTransport`: GET only, `www/trade.rakuten-sec.co.jp` only), Japanese statement amount parsers (▲ negatives, 円/米ドル/株/口, fullwidth digits), and pure normalizers into the generic `broker_models` (`BrokerAccountSnapshot` / `BrokerPosition` / `BrokerOrder`). Missing data stays `None` + notes; JPY and USD are never mixed or converted. Fees, symbol names, and margin/collateral state live in the outcome `detail` dict because the generic models do not carry them.
+- **Service layer** — `services/broker_read_service.py`: `BrokerReadService` composes `PrivateAcquisitionService` (one `rakuten-web` JSON definition + one hidden `rakuten-web-html` tables definition; the catalog's `parser_kind` per resource decides which one serves a fetch). TTL 60s / max-stale 600s; the auth probe is the jp account resource; login detection uses `login/signin/sign-in` URL markers plus login text markers.
+- **API surface** — `/v1/broker-read/connectors` (list/get), `.../auth-check`, `.../fetch` (body: resource, market jp|us, force_refresh), `.../snapshots`, `.../diff`. Same guards as `/v1/private`: 403 outside personal mode or with private connectors disabled; unknown connectors 404. Outcomes carry full acquisition provenance (source URL, retrieved/as-of, parser/schema versions, network exchanges, snapshot, diff, cache state).
+- **CLI** — `yowayowa broker-read list|auth-check|fetch|snapshots|diff`; fetch prints a state/auth summary (cash, buying power, position count, order count, margin state) and `--json` prints the full outcome.
+- **URL caveat** — catalog URLs are unverified initial assumptions (`verified=False` in every outcome's `detail`); confirm them during the first real session per `docs/RAKUTEN_WEB_SESSION.md` and update the catalog. No state-changing request path exists on this surface (GET-only transport; order submission/cancellation is P2).
+
+Reauthentication uses the same flow as the acquisition toolkit: on `auth_expired`, complete Rakuten's normal login/MFA in the persistent browser profile (`YOWAYOWA_BROKER_RAKUTEN_WEB_PROFILE_DIR`, default `./data/broker-profiles/rakuten`), then `yowayowa broker-read auth-check rakuten-web` until authenticated.
+
+Real-session verification procedure (operator DoD): `docs/RAKUTEN_WEB_SESSION.md`.
+
 ## Broker control
 
 Broker control is also a required Full / Operator capability, including brokers without a conventional public API.

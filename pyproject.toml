@@ -76,6 +76,7 @@ known-first-party = ["yowayowa"]
 [tool.ruff.lint.per-file-ignores]
 "src/yowayowa/web/ux_i18n.py" = ["E501", "RUF001"]
 "tests/test_ux_foundations.py" = ["RUF001"]
+"tests/test_rakuten_web_read.py" = ["RUF001"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

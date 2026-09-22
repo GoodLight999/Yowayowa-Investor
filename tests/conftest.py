@@ -36,9 +36,17 @@ def _reset_process_state() -> None:
     _NEWS_CACHE.clear()
     for factory in _CACHED_FACTORIES:
         factory.cache_clear()
-    from yowayowa.api.deps import get_private_acquisition_service
+    from yowayowa.api.deps import (
+        _RAKUTEN_BROWSER_SESSION,
+        get_broker_read_service,
+        get_private_acquisition_service,
+    )
 
     get_private_acquisition_service.cache_clear()
+    get_broker_read_service.cache_clear()
+    # The operator browser session is cached at module level as well; drop it so
+    # a started browser/session can never leak into (or out of) another test.
+    _RAKUTEN_BROWSER_SESSION.clear()
 
 
 @pytest.fixture(autouse=True)

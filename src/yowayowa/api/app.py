@@ -19,6 +19,7 @@ from starlette.responses import Response
 from yowayowa import __version__
 from yowayowa.api.ai_integration_routes import router as ai_integration_router
 from yowayowa.api.ai_routes import router as ai_router
+from yowayowa.api.broker_read_routes import router as broker_read_router
 from yowayowa.api.calendar_routes import router as calendar_router
 from yowayowa.api.chart_routes import router as chart_router
 from yowayowa.api.edinet_routes import router as edinet_router
@@ -201,6 +202,7 @@ app.include_router(ai_router)
 app.include_router(ai_integration_router)
 app.include_router(settings_router)
 app.include_router(private_router)
+app.include_router(broker_read_router)
 app.include_router(fundamentals_router)
 app.include_router(web_asset_router)
 app.include_router(router)
