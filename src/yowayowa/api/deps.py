@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from yowayowa.acquisition.service import PrivateAcquisitionService
 from yowayowa.config import Settings, get_settings
 from yowayowa.db import get_session
 
@@ -85,3 +88,18 @@ def require_api_token(
     expected = f"Bearer {settings.api_token}"
     if authorization != expected:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API token")
+
+
+def require_private_connectors(settings: Settings = Depends(get_settings)) -> None:
+    """Fail closed unless the private acquisition toolkit is explicitly enabled."""
+    if settings.mode != "personal" or not settings.private_connectors_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Private acquisition is disabled",
+        )
+
+
+@lru_cache(maxsize=1)
+def get_private_acquisition_service() -> PrivateAcquisitionService:
+    settings = get_settings()
+    return PrivateAcquisitionService.build_default(Path(settings.private_acquisition_data_dir))

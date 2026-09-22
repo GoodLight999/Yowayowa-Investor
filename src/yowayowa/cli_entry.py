@@ -14,6 +14,7 @@ from yowayowa.institutional_cli import app as institutional_app
 from yowayowa.license_cli import app as license_app
 from yowayowa.macro_cli import app as macro_app
 from yowayowa.preset_cli import app as preset_app
+from yowayowa.private_cli import app as private_app
 from yowayowa.rate_cli import app as rate_app
 
 app.add_typer(events_app, name="events")
@@ -24,6 +25,7 @@ app.add_typer(edinet_app, name="edinet")
 app.add_typer(preset_app, name="preset")
 app.add_typer(license_app, name="license")
 app.add_typer(macro_app, name="macro")
+app.add_typer(private_app, name="private")
 
 
 @app.command("operator-bridge")

@@ -36,6 +36,9 @@ def _reset_process_state() -> None:
     _NEWS_CACHE.clear()
     for factory in _CACHED_FACTORIES:
         factory.cache_clear()
+    from yowayowa.api.deps import get_private_acquisition_service
+
+    get_private_acquisition_service.cache_clear()
 
 
 @pytest.fixture(autouse=True)

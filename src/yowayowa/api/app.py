@@ -27,6 +27,7 @@ from yowayowa.api.fundamentals_routes import router as fundamentals_router
 from yowayowa.api.institutional_routes import router as institutional_router
 from yowayowa.api.license_routes import router as license_router
 from yowayowa.api.macro_routes import router as macro_router
+from yowayowa.api.private_routes import router as private_router
 from yowayowa.api.rate_routes import router as rate_router
 from yowayowa.api.research_routes import router as research_router
 from yowayowa.api.risk_routes import router as risk_router
@@ -199,6 +200,7 @@ app.include_router(edinet_ux_router)
 app.include_router(ai_router)
 app.include_router(ai_integration_router)
 app.include_router(settings_router)
+app.include_router(private_router)
 app.include_router(fundamentals_router)
 app.include_router(web_asset_router)
 app.include_router(router)

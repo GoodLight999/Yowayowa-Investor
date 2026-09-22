@@ -46,6 +46,27 @@ Every scraper must declare:
 
 A personal/private scraper is not automatically a public provider. Public mode must fail closed unless redistribution rights and security posture are appropriate.
 
+## Private acquisition toolkit
+
+The general authenticated acquisition framework lives in `src/yowayowa/acquisition/`. It turns "the operator can legitimately see this data" into a provenance-tracked, inspectable pipeline without asking each source for a public API.
+
+Capabilities:
+
+- **Connector registry** — declarative connector definitions (provider, origin, method, parser, freshness policy) registered at runtime through the API or CLI.
+- **Session transports** — same-origin private HTTP (reusing the authenticated private HTTP client's origin/size/redirect guarantees) and a browser-session transport over the operator's persistent Chromium profile. Browser-session connectors need an injected transport; playwright is loaded lazily and never required for HTTP-only connectors.
+- **Auth-state detection** — each fetch is classified `authenticated` / `unauthenticated` / `unknown` from status, URL, title, and body signals. An expired session returns an explicit `auth_expired` outcome with an operator-reauthentication note; nothing is fetched as if it were data.
+- **Download capture** — CSV/JSON/XLSX downloads are captured with sha256, size, and format; CSV is parsed into capped rows, JSON lists into documents, XLSX is stored raw with an explicit "not parsed" note.
+- **Parsers** — versioned table and text HTML parsers (stdlib only) so scraped HTML becomes structured, schema-versioned payloads.
+- **Cache / freshness** — per-connector TTL with a bounded stale window; entries older than the max-stale bound are dropped rather than served.
+- **Snapshots + diff** — every successful fetch is appended to a local JSONL history with payload hash; consecutive payloads are structurally diffed so "what changed at this source" is a first-class question.
+- **Provenance-safe outcomes** — every fetch returns a debug outcome with network exchange records (method, query-free URL, status, content type, size, duration), source URL, retrieved/as-of timestamps, and parser/schema versions. Cookies, tokens, and Authorization headers never appear in any record.
+
+Local data: snapshots are written under `YOWAYOWA_PRIVATE_ACQUISITION_DATA_DIR` (default `./data/private-acquisition`).
+
+API surface: `/v1/private/connectors` (list/register/get), `.../fetch`, `.../auth-check`, `.../snapshots`, `.../diff`. CLI: `yowayowa private list|register|fetch|auth-check|snapshots|diff`. The routes fail closed with 403 outside personal mode or when private connectors are disabled.
+
+Reauthentication flow: when a fetch reports `auth_expired`, complete the source's normal login/MFA in the operator browser session (or refresh the credential), then run `yowayowa private auth-check <connector>` until it reports authenticated; the next fetch re-acquires normally.
+
 ## Broker control
 
 Broker control is also a required Full / Operator capability, including brokers without a conventional public API.

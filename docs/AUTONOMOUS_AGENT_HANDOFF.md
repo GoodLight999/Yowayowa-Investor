@@ -301,6 +301,11 @@ Existing:
 - HTML scraping boundary
 - persistent Chromium profile
 - browser-context cookie sharing with same-session HTTP requests
+- `acquisition/` toolkit (P1A): connector registry, session transports
+  (private HTTP + browser session), heuristic auth-state detection, download
+  capture (CSV/JSON/XLSX), versioned table/text HTML parsers, TTL cache with
+  bounded staleness, JSONL snapshot history with structural payload diffs, and
+  the fail-closed `/v1/private` API + `yowayowa private` CLI surface.
 
 The foundation is useful, but private-data acquisition is still underexploited.
 
