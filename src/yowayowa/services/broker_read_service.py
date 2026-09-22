@@ -27,12 +27,13 @@ from yowayowa.operator_bridge.rakuten_web import (
     RAKUTEN_WEB_RESOURCE_CATALOG,
     RakutenResourceEntry,
     extract_fees,
-    extract_margin_state,
+    extract_margin_state_with_notes,
     extract_symbol_names,
     lookup_rakuten_resource,
-    normalize_account,
+    normalize_account_with_notes,
     normalize_executions,
     normalize_open_orders,
+    normalize_order_history,
     normalize_positions,
     rakuten_connector_id_for,
     summarize_payload,
@@ -217,12 +218,16 @@ class BrokerReadService:
         }
         notes = result.notes
         if resource == "account":
-            result.account = normalize_account(payload, market=market)
+            result.account, extra = normalize_account_with_notes(payload, market=market)
+            notes.extend(extra)
         elif resource == "positions":
             result.positions, extra = normalize_positions(payload, market=market)
             notes.extend(extra)
         elif resource == "open_orders":
             result.orders, extra = normalize_open_orders(payload, market=market)
+            notes.extend(extra)
+        elif resource == "order_history":
+            result.orders, extra = normalize_order_history(payload, market=market)
             notes.extend(extra)
         elif resource == "executions":
             result.orders, extra = normalize_executions(payload, market=market)
@@ -230,7 +235,8 @@ class BrokerReadService:
         fees = extract_fees(payload)
         if fees is not None:
             detail["fees"] = fees
-        margin_state = extract_margin_state(payload)
+        margin_state, margin_notes = extract_margin_state_with_notes(payload, market=market)
+        notes.extend(margin_notes)
         if margin_state is not None:
             detail["margin_state"] = margin_state
         names = extract_symbol_names(payload)

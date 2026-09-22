@@ -58,12 +58,14 @@ uv run yowayowa broker-read auth-check rakuten-web
 ```bash
 uv run yowayowa broker-read fetch rakuten-web account     --market jp
 uv run yowayowa broker-read fetch rakuten-web positions   --market jp
-uv run yowayowa broker-read fetch rakuten-web open_orders --market jp
-uv run yowayowa broker-read fetch rakuten-web executions  --market jp
+uv run yowayowa broker-read fetch rakuten-web open_orders   --market jp
+uv run yowayowa broker-read fetch rakuten-web order_history --market jp
+uv run yowayowa broker-read fetch rakuten-web executions    --market jp
 uv run yowayowa broker-read fetch rakuten-web account     --market us
 uv run yowayowa broker-read fetch rakuten-web positions   --market us
-uv run yowayowa broker-read fetch rakuten-web open_orders --market us
-uv run yowayowa broker-read fetch rakuten-web executions  --market us
+uv run yowayowa broker-read fetch rakuten-web open_orders   --market us
+uv run yowayowa broker-read fetch rakuten-web order_history --market us
+uv run yowayowa broker-read fetch rakuten-web executions    --market us
 ```
 
 チェックリスト（CLI summary + `--json` の detail で確認）:
@@ -75,9 +77,19 @@ uv run yowayowa broker-read fetch rakuten-web executions  --market us
 - [ ] 評価損益: `unrealized_pnl`（▲は負数として正規化）が画面と一致
 - [ ] 評価額・現在値: `market_value` / `market_price`
 - [ ] 注文明細: `open_orders` の注文件数・銘柄・数量・状況が画面と一致
+- [ ] 注文照会（履歴）と注文一覧（未約定）の区別: `order_history` は取消・失効・約定済みを
+      含み、`open_orders` は未約定のみを返す（終端 status の行は
+      `... status <X> is not an open order; row excluded from open_orders` の note 付きで除外）。
+      両者の注文番号が混ざらないこと
+- [ ] `order_history` の履歴件数が楽天の注文照会画面の件数と一致すること（取消済み注文が
+      含まれること。`open_orders` と件数が違って当然）
 - [ ] 約定: `executions` が約定履歴（status=FILLED, filled_quantity, average_fill_price）と一致
 - [ ] 手数料: `detail.fees`（BrokerOrder に手数料フィールドは無いので detail 行き）
-- [ ] 信用拘束保証金・維持率・建玉明細: `detail.margin_state`
+- [ ] 信用 collateral / margin availability: `detail.margin_state` に
+      拘束保証金・維持率・建玉明細に加え、信用新規建余力 / 信用建余力 / 信用余力 /
+      保証金余裕額 / 委託保証金率 / 委託保証金維持率 / 保証金現金 /
+      受入保証金合計 / 必要保証金合計 / 現物買付可能額 が入ること（JPY/USD 別。
+      画面に項目が無ければキーが無いのが正しい。値があるのに解釈できない場合は note が出る）
 - [ ] 銘柄名: `detail.symbol_names`（銘柄名は generic model に無いので detail 行き）
 - [ ] 通貨混在: JPY リソースと USD リソースで currency が明示分離されていること（換算は行われない）
 - [ ] 注文番号欠損行: `broker_order_id=""` + note が出るだけで落ちないこと
@@ -86,6 +98,8 @@ uv run yowayowa broker-read fetch rakuten-web executions  --market us
 
 初期仮定 URL（`src/yowayowa/operator_bridge/rakuten_web.py` の `RAKUTEN_WEB_RESOURCE_CATALOG`）が
 404・リダイレクト・空 payload を返す場合:
+
+catalog は account / positions / open_orders / order_history / executions の 5 種類を JPY・USD 別に持つ 10 エントリである。
 
 1. 実ブラウザで楽天証券の当該画面（ホーム/口座サマリ、保有商品、注文照会、約定照会）を開く。
 2. devtools の Network パネルで、その画面が実際に叩いている XHR/fetch（JSON）と HTML を特定する。

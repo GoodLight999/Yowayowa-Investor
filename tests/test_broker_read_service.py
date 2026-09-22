@@ -298,6 +298,87 @@ def test_fetch_open_orders_normalizes_orders(tmp_path: Path) -> None:
     assert outcome.detail.get("fees") == {"20260923-0001": "55円"}
 
 
+def _order_history_body() -> bytes:
+    return json.dumps(
+        {
+            "orders": [
+                {
+                    "order_id": "cancel-1",
+                    "symbol": "7203",
+                    "side": "買い",
+                    "quantity": "1",
+                    "status": "取消",
+                },
+                {
+                    "order_id": "fill-1",
+                    "symbol": "6758",
+                    "side": "売り",
+                    "quantity": "2",
+                    "status": "約定",
+                },
+                {
+                    "order_id": "pending-1",
+                    "symbol": "6501",
+                    "side": "買い",
+                    "quantity": "3",
+                    "status": "執行待ち",
+                },
+            ]
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+
+def test_fetch_order_history_jp_reaches_catalog(tmp_path: Path) -> None:
+    transport = ScriptedTransport(
+        [
+            _response(
+                _order_history_body(), url="https://trade.rakuten-sec.co.jp/web/orders/history/jp"
+            )
+        ]
+    )
+    service = _build_service(transport, data_dir=tmp_path)
+    outcome = service.fetch("order_history", "jp")
+    assert outcome.fetch_state == AcquisitionFetchState.OK
+    assert "unknown resource" not in " ".join(outcome.notes)
+    assert len(outcome.orders) == 3
+    assert {order.status.value for order in outcome.orders} == {"cancelled", "filled", "pending"}
+
+
+def test_fetch_order_history_us_reaches_catalog(tmp_path: Path) -> None:
+    html = (
+        "<table><tr><th>注文番号</th><th>銘柄コード</th><th>売買</th><th>注文数量</th><th>状況</th></tr>"
+        "<tr><td>cancel-1</td><td>7203</td><td>買い</td><td>1株</td><td>取消</td></tr></table>"
+    ).encode()
+    transport = ScriptedTransport(
+        [
+            _response(
+                html,
+                url="https://trade.rakuten-sec.co.jp/web/us/orders/history/us",
+                content_type="text/html",
+            )
+        ]
+    )
+    service = _build_service(transport, data_dir=tmp_path)
+    outcome = service.fetch("order_history", "us")
+    assert outcome.fetch_state == AcquisitionFetchState.OK
+    assert "unknown resource" not in " ".join(outcome.notes)
+    assert [(order.broker_order_id, order.status.value) for order in outcome.orders] == [
+        ("cancel-1", "cancelled")
+    ]
+    assert outcome.source_url == "https://trade.rakuten-sec.co.jp/web/us/orders/history/us"
+
+
+def test_fetch_open_orders_does_not_include_cancelled_and_notes_it(tmp_path: Path) -> None:
+    transport = ScriptedTransport(
+        [_response(_order_history_body(), url="https://trade.rakuten-sec.co.jp/web/orders/open/jp")]
+    )
+    service = _build_service(transport, data_dir=tmp_path)
+    outcome = service.fetch("open_orders", "jp")
+    assert [order.status.value for order in outcome.orders] == ["pending"]
+    assert sum("excluded from open_orders" in note for note in outcome.notes) == 2
+
+
 def test_fetch_executions_normalizes_filled_orders(tmp_path: Path) -> None:
     body = json.dumps(
         {

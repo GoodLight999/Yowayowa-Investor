@@ -39,7 +39,13 @@ RAKUTEN_WEB_HTML_CONNECTOR_ID = "rakuten-web-html"
 RAKUTEN_SECURITIES_BROKER = "rakuten-securities"
 RAKUTEN_WEB_BASE_URL = "https://trade.rakuten-sec.co.jp/"
 RAKUTEN_ALLOWED_HOSTS = ("www.rakuten-sec.co.jp", "trade.rakuten-sec.co.jp")
-RAKUTEN_RESOURCES: tuple[str, ...] = ("account", "positions", "open_orders", "executions")
+RAKUTEN_RESOURCES: tuple[str, ...] = (
+    "account",
+    "positions",
+    "open_orders",
+    "order_history",
+    "executions",
+)
 RAKUTEN_MARKETS: tuple[str, ...] = ("jp", "us")
 
 
@@ -52,7 +58,7 @@ RAKUTEN_MARKETS: tuple[str, ...] = ("jp", "us")
 class RakutenResourceEntry:
     """One catalogued Rakuten web resource with versioned parse assumptions."""
 
-    resource: str  # "account" | "positions" | "open_orders" | "executions"
+    resource: str  # "account" | "positions" | "open_orders" | "order_history" | "executions"
     market: str  # "jp" | "us"
     url: str  # relative to RAKUTEN_WEB_BASE_URL (or absolute allowed-host URL)
     parser_kind: str  # "json" | "tables"
@@ -115,6 +121,24 @@ RAKUTEN_WEB_RESOURCE_CATALOG: dict[tuple[str, str], RakutenResourceEntry] = {
         resource="open_orders",
         market="us",
         url="web/orders/open/us",
+        parser_kind="tables",
+        parser_version="rakuten-tables-v1",
+        schema_version="rakuten-web-tables-v1",
+        verified=False,
+    ),
+    ("order_history", "jp"): RakutenResourceEntry(
+        resource="order_history",
+        market="jp",
+        url="web/orders/history/jp",
+        parser_kind="json",
+        parser_version="rakuten-json-v1",
+        schema_version="rakuten-web-v1",
+        verified=False,
+    ),
+    ("order_history", "us"): RakutenResourceEntry(
+        resource="order_history",
+        market="us",
+        url="web/us/orders/history/us",
         parser_kind="tables",
         parser_version="rakuten-tables-v1",
         schema_version="rakuten-web-tables-v1",
@@ -344,6 +368,7 @@ _VALUE_KEYS = ("\u91d1\u984d", "\u5024", "\u6570\u5024", "value", "amount", "Val
 
 _POSITION_LIST_KEYS = ("positions", "rows", "list")
 _ORDER_LIST_KEYS = ("orders", "open_orders", "rows", "list")
+_ORDER_HISTORY_LIST_KEYS = ("order_history", "orderHistory", "history", "orders", "rows", "list")
 _EXECUTION_LIST_KEYS = ("executions", "fills", "deals", "rows", "list")
 
 _POSITION_QUANTITY_KEYS = ("quantity", "\u6570\u91cf", "\u4fdd\u6709\u6570\u91cf", "qty")
@@ -439,9 +464,29 @@ _ORDER_FILL_PRICE_KEYS = (
 )
 _FEE_KEYS = ("fee", "fees", "commission", "\u624b\u6570\u6599", "\u8af8\u8cbb\u7528")
 _MARGIN_KEYS = (
-    ("margin_deposit", "\u62d8\u675f\u4fdd\u8a3c\u91d1", "\u8a3c\u62e0\u91d1\u62d8\u675f"),
-    ("maintenance_rate", "\u7dad\u6301\u7387"),
-    ("margin_positions", "\u5efa\u7389", "\u5efa\u7389\u660e\u7d30"),
+    ("margin_deposit", "拘束保証金", "証拠金拘束"),
+    ("maintenance_rate", "維持率"),
+    ("margin_positions", "建玉", "建玉明細"),
+)
+_MARGIN_AVAILABILITY_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("margin_new_order_buying_power", ("信用新規建余力",)),
+    ("margin_buying_power", ("信用建余力",)),
+    ("margin_capacity", ("信用余力", "建余力")),
+    ("margin_collateral_surplus", ("保証金余裕額", "保証金余裕")),
+    ("margin_commission_rate", ("委託保証金率",)),
+    ("margin_commission_maintenance_rate", ("委託保証金維持率",)),
+    ("margin_collateral_cash", ("保証金現金",)),
+    ("margin_collateral_received_total", ("受入保証金合計",)),
+    ("margin_collateral_required_total", ("必要保証金合計",)),
+    ("cash_buying_power_limit", ("現物買付可能額", "現引余力", "現引き余力")),
+)
+_TERMINAL_STATUSES = frozenset(
+    {
+        BrokerOrderStatus.FILLED,
+        BrokerOrderStatus.CANCELLED,
+        BrokerOrderStatus.INACTIVE,
+        BrokerOrderStatus.REJECTED,
+    }
 )
 
 
@@ -449,6 +494,18 @@ def _get(row: Mapping[str, object], keys: tuple[str, ...]) -> object | None:
     for key in keys:
         if key in row:
             return row[key]
+    return None
+
+
+def _label_present(maps: list[Mapping[str, object]], labels: tuple[str, ...]) -> str | None:
+    """Return the first label appearing as a key or vertical-table value."""
+    for mapping in maps:
+        for label in labels:
+            if label in mapping:
+                return label
+            for value in mapping.values():
+                if isinstance(value, str) and value.strip() == label:
+                    return label
     return None
 
 
@@ -502,6 +559,28 @@ def _payload_rows(
             rows.extend(item for item in value if isinstance(item, dict))
     rows.extend(dict(row) for row in _table_row_maps(payload))
     return rows
+
+
+def _row_source_note(
+    payload: Mapping[str, object], list_keys: tuple[str, ...], *, resource_label: str
+) -> str | None:
+    if _payload_rows(payload, list_keys):
+        return None
+    for key in list_keys:
+        if key in payload:
+            if isinstance(payload[key], list):
+                return None
+            return (
+                f"{resource_label}: field {key!r} present but not a list; ignored "
+                "(unhandled payload shape — empty result is not proof of an empty account)"
+            )
+    if isinstance(payload.get("tables"), list):
+        return None
+    return (
+        f"{resource_label}: no list field found in payload (top-level keys: "
+        f"{sorted(payload)[:8]}); nested shapes are not traversed "
+        "(empty result is not proof of an empty account)"
+    )
 
 
 def _find_amount(
@@ -582,6 +661,52 @@ def normalize_account(payload: Mapping[str, object], *, market: str) -> BrokerAc
     )
 
 
+def normalize_account_with_notes(
+    payload: Mapping[str, object], *, market: str
+) -> tuple[BrokerAccountSnapshot, list[str]]:
+    snapshot = normalize_account(payload, market=market)
+    notes: list[str] = []
+    if snapshot.buying_power is None and snapshot.cash_balance is None:
+
+        def find_nested(container: Mapping[str, object]) -> str | None:
+            """First amount-like string strictly below the top level."""
+
+            def walk(value: object, path: str, depth: int) -> str | None:
+                if depth > 3:
+                    return None
+                if isinstance(value, str):
+                    if (("円" in value) or ("$" in value)) and any(c.isdigit() for c in value):
+                        return path
+                    return None
+                if isinstance(value, dict):
+                    for key, child in value.items():
+                        found = walk(child, f"{path}.{key}" if path else str(key), depth + 1)
+                        if found is not None:
+                            return found
+                if isinstance(value, list):
+                    for index, child in enumerate(value):
+                        found = walk(child, f"{path}[{index}]", depth + 1)
+                        if found is not None:
+                            return found
+                return None
+
+            for key, child in container.items():
+                if isinstance(child, (dict, list)):
+                    found = walk(child, str(key), 1)
+                    if found is not None:
+                        return found
+            return None
+
+        example = find_nested(payload)
+        if example is not None:
+            notes.append(
+                "account: no balance field parsed at top level but payload contains "
+                "amount-like values "
+                f"(e.g. {example!r}); shape may be unhandled (do not read this as a zero balance)"
+            )
+    return snapshot, notes
+
+
 def normalize_positions(
     payload: Mapping[str, object],
     *,
@@ -617,6 +742,9 @@ def normalize_positions(
                 account_type=_account_type_of(row),
             )
         )
+    source_note = _row_source_note(payload, _POSITION_LIST_KEYS, resource_label="positions")
+    if source_note is not None:
+        notes.append(source_note)
     return positions, notes
 
 
@@ -626,6 +754,7 @@ def _normalize_order_like(
     market: str,
     list_keys: tuple[str, ...],
     filled_defaults_to_quantity: bool,
+    exclude_terminal: bool = False,
 ) -> tuple[list[BrokerOrder], list[str]]:
     default_currency = _currency_for_market(market)
     notes: list[str] = []
@@ -667,6 +796,12 @@ def _normalize_order_like(
         )
         if filled_defaults_to_quantity:
             status = BrokerOrderStatus.FILLED
+        if exclude_terminal and status in _TERMINAL_STATUSES:
+            notes.append(
+                f"{label}: status {status.value} is not an open order; "
+                "row excluded from open_orders"
+            )
+            continue
         currency = _currency_of(row, default_currency)
         orders.append(
             BrokerOrder(
@@ -689,12 +824,35 @@ def normalize_open_orders(
     market: str,
 ) -> tuple[list[BrokerOrder], list[str]]:
     """Normalize open orders; fees are not in BrokerOrder and go to detail."""
-    return _normalize_order_like(
+    orders, notes = _normalize_order_like(
         payload,
         market=market,
         list_keys=_ORDER_LIST_KEYS,
         filled_defaults_to_quantity=False,
+        exclude_terminal=True,
     )
+    source_note = _row_source_note(payload, _ORDER_LIST_KEYS, resource_label="open_orders")
+    if source_note is not None:
+        notes.append(source_note)
+    return orders, notes
+
+
+def normalize_order_history(
+    payload: Mapping[str, object], *, market: str
+) -> tuple[list[BrokerOrder], list[str]]:
+    """History includes filled, cancelled, inactive, and carried orders."""
+    orders, notes = _normalize_order_like(
+        payload,
+        market=market,
+        list_keys=_ORDER_HISTORY_LIST_KEYS,
+        filled_defaults_to_quantity=False,
+    )
+    source_note = _row_source_note(
+        payload, _ORDER_HISTORY_LIST_KEYS, resource_label="order history"
+    )
+    if source_note is not None:
+        notes.append(source_note)
+    return orders, notes
 
 
 def normalize_executions(
@@ -703,12 +861,16 @@ def normalize_executions(
     market: str,
 ) -> tuple[list[BrokerOrder], list[str]]:
     """Normalize executions as FILLED orders; fees/settlement go to detail."""
-    return _normalize_order_like(
+    orders, notes = _normalize_order_like(
         payload,
         market=market,
         list_keys=_EXECUTION_LIST_KEYS,
         filled_defaults_to_quantity=True,
     )
+    source_note = _row_source_note(payload, _EXECUTION_LIST_KEYS, resource_label="executions")
+    if source_note is not None:
+        notes.append(source_note)
+    return orders, notes
 
 
 # ---------------------------------------------------------------------------
@@ -768,12 +930,19 @@ def extract_fees(payload: Mapping[str, object]) -> dict[str, str] | None:
     return fees or None
 
 
-def extract_margin_state(payload: Mapping[str, object]) -> dict[str, object] | None:
-    """Margin/collateral fields the generic models do not carry; None if absent."""
+def extract_margin_state_with_notes(
+    payload: Mapping[str, object], *, market: str | None = None
+) -> tuple[dict[str, object] | None, list[str]]:
     result: dict[str, object] = {}
+    notes: list[str] = []
     maps: list[Mapping[str, object]] = [payload, *_table_row_maps(payload)]
+    currencies = (_currency_for_market(market),) if market is not None else ("JPY", "USD")
     for keys in _MARGIN_KEYS:
-        value = _find_amount(maps, keys, currency="JPY")
+        value = None
+        for currency in currencies:
+            value = _find_amount(maps, keys, currency=currency)
+            if value is not None:
+                break
         if value is not None:
             result[keys[0]] = value
             continue
@@ -782,7 +951,38 @@ def extract_margin_state(payload: Mapping[str, object]) -> dict[str, object] | N
             if raw is not None:
                 result[keys[0]] = raw
                 break
-    return result or None
+        else:
+            label = _label_present(maps, keys[1:])
+            if label is not None:
+                notes.append(
+                    f"margin_state: {label!r} present but unparseable for "
+                    f"{'/'.join(currencies)}; omitted"
+                )
+    for key, labels in _MARGIN_AVAILABILITY_KEYS:
+        value = None
+        found_label: str | None = None
+        for currency in currencies:
+            value = _find_amount(maps, labels, currency=currency)
+            if value is not None:
+                break
+        if value is not None:
+            result[key] = value
+        else:
+            found_label = _label_present(maps, labels)
+            if found_label is not None:
+                notes.append(
+                    f"margin_state: {found_label!r} present but unparseable for "
+                    f"{'/'.join(currencies)}; omitted"
+                )
+    return result or None, notes
+
+
+def extract_margin_state(
+    payload: Mapping[str, object], *, market: str | None = None
+) -> dict[str, object] | None:
+    """Compatibility wrapper for margin extraction."""
+    result, _notes = extract_margin_state_with_notes(payload, market=market)
+    return result
 
 
 __all__ = [
@@ -799,11 +999,14 @@ __all__ = [
     "RakutenWebFetchTransport",
     "extract_fees",
     "extract_margin_state",
+    "extract_margin_state_with_notes",
     "extract_symbol_names",
     "lookup_rakuten_resource",
     "normalize_account",
+    "normalize_account_with_notes",
     "normalize_executions",
     "normalize_open_orders",
+    "normalize_order_history",
     "normalize_positions",
     "parse_jpy_amount",
     "parse_quantity",

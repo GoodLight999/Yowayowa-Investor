@@ -4,15 +4,20 @@ from decimal import Decimal
 
 from yowayowa.acquisition.transport import PrivateAcquisitionError, TransportResponse
 from yowayowa.operator_bridge.rakuten_web import (
+    RAKUTEN_RESOURCES,
     RAKUTEN_WEB_CONNECTOR_ID,
     RAKUTEN_WEB_HTML_CONNECTOR_ID,
     RAKUTEN_WEB_RESOURCE_CATALOG,
     RakutenWebFetchTransport,
     extract_fees,
     extract_margin_state,
+    extract_margin_state_with_notes,
+    lookup_rakuten_resource,
     normalize_account,
+    normalize_account_with_notes,
     normalize_executions,
     normalize_open_orders,
+    normalize_order_history,
     normalize_positions,
     parse_jpy_amount,
     parse_quantity,
@@ -455,3 +460,203 @@ def test_connector_ids_and_catalog_dispatch() -> None:
     tables_entry = RAKUTEN_WEB_RESOURCE_CATALOG[("account", "us")]
     assert json_entry.parser_kind == "json"
     assert tables_entry.parser_kind == "tables"
+
+
+def _history_payload() -> dict[str, object]:
+    return {
+        "orders": [
+            {
+                "order_id": "cancel-1",
+                "symbol": "7203",
+                "side": "買い",
+                "quantity": "1",
+                "status": "取消",
+            },
+            {
+                "order_id": "fill-1",
+                "symbol": "6758",
+                "side": "売り",
+                "quantity": "2",
+                "status": "約定",
+            },
+            {
+                "order_id": "pending-1",
+                "symbol": "6501",
+                "side": "買い",
+                "quantity": "3",
+                "status": "執行待ち",
+            },
+        ]
+    }
+
+
+def test_order_history_catalog_entries_unverified_assumptions() -> None:
+    for market, parser in (("jp", "json"), ("us", "tables")):
+        entry = lookup_rakuten_resource("order_history", market)
+        assert entry is not None and entry.verified is False
+        assert "order_history" in RAKUTEN_RESOURCES
+        assert entry.parser_kind == parser
+
+
+def test_normalize_order_history_keeps_cancelled_and_filled() -> None:
+    orders, _ = normalize_order_history(_history_payload(), market="jp")
+    assert len(orders) == 3
+    assert {order.status.value for order in orders} == {"cancelled", "filled", "pending"}
+
+
+def test_normalize_open_orders_excludes_terminal_statuses() -> None:
+    orders, notes = normalize_open_orders(_history_payload(), market="jp")
+    assert [order.status.value for order in orders] == ["pending"]
+    assert sum("excluded from open_orders" in note for note in notes) == 2
+
+
+def test_open_orders_and_order_history_do_not_mix() -> None:
+    history, _ = normalize_order_history(_history_payload(), market="jp")
+    open_orders, _ = normalize_open_orders(_history_payload(), market="jp")
+    history_ids = {order.broker_order_id for order in history}
+    open_ids = {order.broker_order_id for order in open_orders}
+    assert open_ids <= history_ids
+    assert open_ids != history_ids
+
+
+def test_extract_margin_state_jp_availability_labels_are_decimal() -> None:
+    payload = {
+        label: "1,000円"
+        for labels in (
+            ("信用新規建余力",),
+            ("信用建余力",),
+            ("信用余力",),
+            ("保証金余裕額",),
+            ("委託保証金率",),
+            ("委託保証金維持率",),
+            ("保証金現金",),
+            ("受入保証金合計",),
+            ("必要保証金合計",),
+            ("現物買付可能額",),
+        )
+        for label in labels
+    }
+    margin = extract_margin_state(payload, market="jp")
+    assert margin is not None
+    assert all(isinstance(value, Decimal) for value in margin.values())
+    assert len(margin) == 10
+
+
+def test_extract_margin_state_us_availability_labels_are_decimal() -> None:
+    rows = [
+        {"項目": label, "金額": "$1,000.00"}
+        for label in (
+            "信用新規建余力",
+            "信用建余力",
+            "信用余力",
+            "保証金余裕額",
+            "委託保証金率",
+            "委託保証金維持率",
+            "保証金現金",
+            "受入保証金合計",
+            "必要保証金合計",
+            "現物買付可能額",
+        )
+    ]
+    margin = extract_margin_state({"tables": [{"rows": rows}]}, market="us")
+    assert margin is not None
+    assert isinstance(margin["margin_buying_power"], Decimal)
+    assert isinstance(margin["margin_collateral_surplus"], Decimal)
+
+
+def test_extract_margin_state_us_collateral_currency_no_longer_dropped() -> None:
+    payload = {
+        "tables": [
+            {
+                "headers": ["項目", "金額"],
+                "rows": [
+                    {"項目": "拘束保証金", "金額": "$900.00"},
+                    {"項目": "維持率", "金額": "300.0%"},
+                    {"項目": "建玉", "金額": "$2,000.00"},
+                ],
+            }
+        ]
+    }
+    margin, notes = extract_margin_state_with_notes(payload, market="us")
+    assert margin is not None
+    assert margin["margin_deposit"] == Decimal("900.00")
+    assert margin["margin_positions"] == Decimal("2000.00")
+    assert not any("unparseable" in note for note in notes)
+
+
+def test_extract_margin_state_present_but_unparseable_yields_note() -> None:
+    margin, notes = extract_margin_state_with_notes(
+        {"tables": [{"rows": [{"項目": "拘束保証金", "金額": "—"}]}]}, market="us"
+    )
+    assert margin is None or "margin_deposit" not in margin
+    assert any("拘束保証金" in note and "unparseable" in note for note in notes)
+
+
+def test_extract_margin_state_vertical_unparseable_label_yields_note() -> None:
+    margin, notes = extract_margin_state_with_notes(
+        {"tables": [{"headers": ["項目", "金額"], "rows": [{"項目": "拘束保証金", "金額": "—"}]}]},
+        market="us",
+    )
+    assert margin is None or "margin_deposit" not in margin
+    assert any("拘束保証金" in note and "unparseable for USD" in note for note in notes)
+
+
+def test_extract_margin_state_horizontal_unparseable_keeps_raw_without_note() -> None:
+    margin, notes = extract_margin_state_with_notes({"拘束保証金": "—"}, market="us")
+    assert margin == {"margin_deposit": "—"}
+    assert not any("unparseable" in note for note in notes)
+
+
+def test_normalize_positions_unrecognized_shape_yields_note() -> None:
+    positions, notes = normalize_positions({"positions": "not-a-list"}, market="jp")
+    assert positions == []
+    assert any(
+        "present but not a list" in note and "not proof of an empty account" in note
+        for note in notes
+    )
+
+
+def test_normalize_positions_nested_shape_yields_note() -> None:
+    positions, notes = normalize_positions(
+        {"data": {"positions": [{"symbol": "7203", "quantity": "100株"}]}}, market="jp"
+    )
+    assert positions == []
+    assert any("no list field found" in note for note in notes)
+
+
+def test_normalize_account_nested_shape_yields_note() -> None:
+    _, notes = normalize_account_with_notes(
+        {"summary": {"現物買付余力": "1,000,000円"}}, market="jp"
+    )
+    assert any("amount-like values" in note and "summary.現物買付余力" in note for note in notes)
+
+
+def test_normalize_account_flat_margin_only_payload_yields_no_note() -> None:
+    payload = {
+        label: "1,000,000円"
+        for label in (
+            "信用新規建余力",
+            "信用建余力",
+            "信用余力",
+            "保証金余裕額",
+            "委託保証金率",
+            "委託保証金維持率",
+            "保証金現金",
+            "受入保証金合計",
+            "必要保証金合計",
+            "現物買付可能額",
+        )
+    }
+    _, notes = normalize_account_with_notes(payload, market="jp")
+    assert notes == []
+
+
+def test_normalize_account_empty_shape_yields_no_note() -> None:
+    assert normalize_account_with_notes({}, market="jp")[1] == []
+    assert normalize_account_with_notes({"rows": []}, market="jp")[1] == []
+
+
+def test_normalize_account_us_tables_shape_yields_no_note() -> None:
+    payload = {"tables": [{"rows": [{"項目": "信用余力", "金額": "$250,000.00"}]}]}
+    _, notes = normalize_account_with_notes(payload, market="us")
+    assert notes == []
