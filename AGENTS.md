@@ -9,7 +9,10 @@ Build Yowayowa-Investor into a private / family operator investment research and
 The canonical product specification and implementation history live in Notion:
 https://app.notion.com/p/sugoi-daizu/Yowayowa-Invester-3bab2a2d631a80f6844fee5f8b76d64e
 
-Do not wait for the user to micromanage implementation. Research, design, implement, test, debug, document, and verify autonomously whenever the product direction is already established.
+The current completion roadmap is `docs/PRIVATE_OPERATOR_ROADMAP.md`.
+The current execution handoff is `docs/AUTONOMOUS_AGENT_HANDOFF.md`.
+
+Hermes is the primary long-running autonomous development agent unless the operator explicitly changes that assignment. Do not wait for the user to micromanage implementation. Research, design, implement, test, debug, document, and verify autonomously whenever the product direction is already established.
 
 ## Non-negotiable engineering invariants
 
@@ -77,7 +80,8 @@ Read these before changing the corresponding subsystem:
 - `docs/EDINET.md` — Japanese disclosure ingestion/normalization
 - `docs/SEC.md` — U.S. EDGAR normalization and same-filing strategy enrichment
 - `docs/ESTAT.md` — Japanese government statistics integration
-- `docs/AUTONOMOUS_AGENT_HANDOFF.md` — current execution queue and handoff state
+- `docs/PRIVATE_OPERATOR_ROADMAP.md` — authoritative Private / Family Operator completion roadmap
+- `docs/AUTONOMOUS_AGENT_HANDOFF.md` — current Hermes execution queue, blockers, checkpoint, and handoff state
 
 ## Strategy preset rules
 
