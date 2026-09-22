@@ -209,7 +209,7 @@ Do not stop merely because code compiles, tests are green, an endpoint returns 2
 
 ## Completion roadmap and progress baseline — 2026-09-22
 
-Use **68%** as the current weighted completion baseline for the primary **Full / Operator v1** target. This is a product-completion estimate, not a commit-count metric.
+Use **68%** as the current weighted completion baseline for the primary **Private / Family Operator v1** target. This is a product-completion estimate, not a commit-count metric. General-public SaaS is frozen and contributes 0% to this roadmap.
 
 Weighted model:
 - core research workstation: 25% weight, ~90% complete;
@@ -227,7 +227,7 @@ Critical path, in order:
 5. run a full product-completion audit against the canonical spec and major competitor workflows;
 6. freeze Full / Operator v1 only after green CI/browser/production/runtime verification and durable docs.
 
-Do **not** put public billing, advertising, public redistribution licensing for every personal-only source, broad broker expansion, or speculative infrastructure on this critical path. Public commercialization is a separate phase.
+Do **not** put public billing, advertising, affiliate flows, anonymous-user polish, public redistribution work, broad broker expansion, or speculative infrastructure on this critical path. General-public SaaS work is frozen indefinitely unless the operator explicitly reopens it. Existing public/safe-mode code is maintenance-only.
 
 ## Minimal launch instruction for a fresh autonomous agent
 
