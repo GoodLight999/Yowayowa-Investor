@@ -1,239 +1,647 @@
-# Autonomous Agent Handoff
+# Autonomous Agent Handoff — Hermes Primary
 
-Last materially updated: 2026-09-21
+Updated: 2026-09-22
 
-This document is the compact operational handoff for a long-running autonomous coding agent (Hermes, Codex, or equivalent). Read `AGENTS.md` first; it is the stable contract. This file intentionally contains more current state and may change frequently.
+This is the operational handoff for Hermes or another long-running autonomous coding agent.
 
-## Major product-direction change — Full / Operator first
+Read in this order:
 
-As of 2026-09-21, the product direction changed materially.
+1. `AGENTS.md`
+2. `docs/PRIVATE_OPERATOR_ROADMAP.md`
+3. this file
+4. subsystem docs only when touching that subsystem
 
-The primary product is no longer a generally publishable SaaS. `personal` mode is now the **Full / Operator** profile and is the main product. It may use:
-- authenticated/private scraping;
-- private/non-public HTTP, JSON, GraphQL and WebSocket protocols;
-- personal-only data sources;
-- local software/desktop bridges;
-- broker account control, including brokers without a conventional public API;
-- local credentials and local AI/CLI tools.
+Canonical product specification and historical decision log:
+https://app.notion.com/p/sugoi-daizu/Yowayowa-Invester-3bab2a2d631a80f6844fee5f8b76d64e
 
-The `public` profile remains supported as a safe, intentionally limited derivative. Public-mode product constraints must not weaken Full / Operator mode.
+## Mission
 
-For broker control, the primary environment is Linux and overseas securities are required. Use a legitimate persistent authenticated browser session as the universal execution surface unless a stronger cross-platform official API exists. Within that session, prefer stable broker-internal HTTP/JSON/GraphQL/WebSocket calls where appropriate and use DOM interaction for the rest. Platform-specific desktop interfaces are optional accelerators.
+Yowayowa-Investor is a **Private / Family Operator** investment research and execution system.
 
-Authentication/MFA/access controls are not bypass targets. The operator authenticates legitimately; connectors may then reuse the authorized session or supported local interface.
+General-public SaaS development is frozen indefinitely unless the operator explicitly reopens it.
 
-Current foundation already added:
-- `docs/OPERATOR_MODE.md`;
-- `broker_models.py` provider-neutral broker domain;
-- `private_connectors.py` for authenticated private-protocol / scraping connectors;
-- `services/broker_execution.py` live-order interlocks;
-- `providers/rakuten_ms2_rss.py` official MARKET SPEED II RSS cash-stock order mapping;
-- `operator_bridge/excel.py` lazy Windows Excel/xlwings macro runner;
-- `operator_bridge/rakuten.py` local Rakuten RSS connector;
-- optional `operator-windows` dependency group.
+Do not spend autonomous development capacity on:
+- public billing/subscriptions;
+- advertising;
+- affiliate flows;
+- anonymous-user onboarding;
+- public redistribution parity;
+- public-provider parity;
+- generic SaaS polish.
 
+The system should maximize useful information advantage and automation for the operator/family while preserving financial correctness, provenance, interpretability, security, and safe execution.
 
-## Current state
+Primary loop:
 
-The active implementation is Draft PR #1:
+**discover -> investigate -> falsify -> compare -> size -> propose execution -> execute -> observe outcome -> recalibrate**
+
+Current weighted Private / Family Operator v1 completion baseline: **68%**.
+
+## Development ownership
+
+Hermes is now the **primary autonomous development agent**.
+
+ChatGPT remains useful for:
+- product-direction discussion;
+- architectural review;
+- external research;
+- debugging support;
+- user-facing explanation;
+- occasional targeted implementation.
+
+Do not assume ChatGPT will maintain continuous execution state. Hermes must keep repository and Notion state sufficient to continue without reconstructing chat history.
+
+### Autonomy rule
+
+Do not wait for the operator except when a task truly requires external human action.
+
+Examples:
+- ChatGPT device-code authorization;
+- broker login/MFA/device approval;
+- obtaining a new credential;
+- destructive or financially consequential live action requiring explicit approval;
+- an irreducible product decision not settled by current product principles.
+
+When blocked by one of these:
+1. record the exact human action required;
+2. leave a deterministic verification checklist;
+3. move immediately to the highest-priority unblocked task.
+
+Never let one OAuth/login/MFA step stop the entire development queue.
+
+---
+
+## Repository / delivery state
+
+Repository:
+`GoodLight999/Yowayowa-Investor`
+
+Active implementation branch:
+`agent/commercial-foundation`
+
+Base:
+`main`
+
+Draft PR:
 https://github.com/GoodLight999/Yowayowa-Investor/pull/1
 
-At the time this handoff was written:
-- active branch: `agent/commercial-foundation`
-- base: `main`
-- latest verified product-code checkpoint: `d41542b5252bad759d9baa5e6ca13a60429da8e5`
-- production: https://yowayowa-investor.vercel.app
-- GitHub Actions run #971: verify SUCCESS, real-Chrome browser E2E SUCCESS, deploy-production SUCCESS
-- Vercel deployment `dpl_4ASJUxLEJwpCDwFrPxbVE2EUD1Dy`: READY and serving the production alias
-- production `/v1/health`, `/internal/debug/runtime`, and `/v1/strategy-presets` returned HTTP 200 after deployment
-- `/internal/debug/runtime` reported source revision `d41542b5252bad759d9baa5e6ca13a60429da8e5`
-- recent Vercel runtime-error scan after deployment was clean
-- handoff/documentation-only commits may make the PR head newer than the product-code checkpoint; always resolve the live PR head and inspect the diff before editing
-- production currently reports `edinet: false`: the automatic EDINET cron bootstrap code is deployed but cannot run unattended until a server-side EDINET key is configured
-- durable production database status is not proven by the current health surface; do not assume the EDINET filing index persists across Vercel instances until `DATABASE_URL`/storage is verified
+Production:
+https://yowayowa-investor.vercel.app
 
-Always re-resolve the PR head before editing; the SHA above is a checkpoint, not a branch pin.
+GitHub Actions deploys production only after verify + real-Chrome E2E succeed.
 
-## Recent product work
+Repository secret:
+`VERCEL_TOKEN` already exists. Never ask the operator for it, print it, move it, or commit it.
 
-### Kiyohara strategy preset
+### Verified production code checkpoint
 
-Built-in preset ID: `kiyohara_global_value_growth`
+The most recent fully verified production-code checkpoint before this handoff refresh is:
 
-User-facing name:
-- Japanese: `清原達郎モード`
-- English: `Tatsuro Kiyohara mode`
+`6ad34406c6da2f132821aa2863e517c5fdd1704b`
 
-Global discovery:
-- one region at a time;
-- discover low-P/E candidates;
-- sort by market cap ascending within the chosen region rather than FX-converting a Japanese fixed small-cap ceiling;
-- then evaluate net cash, growth, FCF, and related quality metrics.
+Production deployment:
+`dpl_CVaZAa4zL4rP4nbMKF4wwSa6ebXf`
 
-Net-cash definitions:
-- Yowayowa conservative net cash = `current_assets - liabilities`
-- Yowayowa conservative NCR = conservative net cash / market cap
-- Kiyohara net cash = `current_assets + investment_securities * 0.7 - liabilities`
-- Kiyohara NCR = Kiyohara net cash / market cap
-- cash-neutral P/E = `P/E * (1 - NCR)` only for NCR < 1
-- NCR >= 1 => cash-neutral P/E is undefined/null and UI uses `NCR≥1`
-- when investment securities are unavailable, the Kiyohara metric may fall back to the conservative value and must be marked as a lower bound; cash-neutral P/E then becomes an upper bound.
+At that checkpoint:
+- verify succeeded;
+- real Chrome E2E succeeded;
+- production deploy succeeded;
+- production `/internal/debug/runtime` reported the matching source revision;
+- production `/v1/ai/codex/status` reported hosted Codex bridge enabled;
+- request correlation / runtime diagnostics were working.
 
-Japanese exact enrichment uses EDINET `jppfs_cor:InvestmentSecurities`. Current assets, liabilities, and investment securities must come from the same EDINET annual report and all use JPY. Do not combine EDINET investment securities with Yahoo balance-sheet terms.
+Subsequent commits may be documentation-only. Always resolve the live branch head and current CI/deployment before editing.
 
-### Production delivery
+---
 
-Vercel was not natively Git-connected. A gated GitHub Actions production deployment path now exists:
-- verify + browser E2E must pass first;
-- Actions authenticates with repository secret `VERCEL_TOKEN`;
-- source is sent to Vercel for remote production build;
-- do not reintroduce local `vercel build --prod` in GitHub Actions unless `uv`/secret semantics are intentionally handled.
+## Product architecture invariants
 
-This path was exercised end to end successfully.
+### 1. API-first
 
-## Recently completed engineering task
+FastAPI/service logic is the canonical boundary.
 
-### EDINET shared recent-history bootstrap and stale-index guard
+Browser UI, REST API, CLI, tests, and AI agents must share service/domain logic.
 
-Implemented and verified:
-- shared EDINET daily-list index bootstrap; no per-candidate historical scanning;
-- default target: latest 550 completed Japan calendar days;
-- each maintenance run fills at most 31 missing days, newest-first;
-- repeated runs are resumable and only fetch still-missing dates;
-- manual `edinet index-sync` remains the fast explicit bootstrap path;
-- exact Kiyohara strategy enrichment refuses to call an annual report “latest” unless every calendar day from that filing date through the latest completed Japan day has been indexed;
-- incomplete coverage falls back to conservative strategy metrics rather than silently using a stale report;
-- coverage state is exposed in cron operation output and documented in `docs/EDINET.md`.
+Do not put meaningful business logic only in JavaScript/templates.
 
-Operational activation is still external:
-- production currently has no server-side EDINET API key;
-- durable database configuration must be verified before relying on unattended hosted index persistence.
+Every meaningful GUI capability should have a machine-usable service/API path where appropriate.
 
-## Recently completed strategy enrichment
+OpenAPI is not merely human documentation. It is also an agent contract.
 
-### SEC exact/bounded enrichment
+### 2. Financial correctness
 
-U.S. issuers now use a typed SEC strategy supplement:
-- current assets and total liabilities must share the same period end, accession, USD unit, and instant balance-sheet scope;
-- only direct `us-gaap:MarketableSecuritiesNoncurrent` is accepted as the exact investment-securities add-on;
-- current marketable securities are never added because they are already inside current assets;
-- vague or overlapping investment concepts are not summed to improve apparent coverage;
-- absence of the direct noncurrent fact preserves the conservative NCR lower bound and cash-neutral P/E upper bound.
+Missing data is not zero.
 
-The API integration and source-isolation behavior are covered by tests.
+Do not combine:
+- incompatible reporting periods;
+- incompatible currencies;
+- incompatible filings;
+- vague accounting concepts merely to improve apparent coverage.
 
-### International Yahoo conservative enrichment
+Derived metrics must remain reproducible and provenance-aware.
 
-Personal-mode non-SEC listings now receive a period-consistent Yahoo strategy supplement:
-- current assets and total liabilities must share one statement period, currency, and frequency;
-- a newer unmatched statement value is not mixed with an older balance-sheet counterpart;
-- Yahoo's broad investment rows are deliberately not treated as a universal IFRS/non-US equivalent of Kiyohara investment securities;
-- where an evidence-backed exact mapping is unavailable, the evaluator exposes the conservative net-cash lower bound rather than guessing.
+### 3. Provenance
 
-This also gives Japanese listings a safe conservative fallback when an exact EDINET supplement is unavailable.
+Preserve:
+- provider;
+- source;
+- source URL where available;
+- retrieved-at;
+- as-of/effective date;
+- license/access class;
+- approximation/lower-bound/upper-bound semantics.
 
-## Current highest-priority engineering task
+### 4. AI-led but interpretable
 
-### P0 — authenticated Linux broker-web execution plane
+AI should lead:
+- candidate discovery;
+- prioritization;
+- evidence gathering;
+- falsification;
+- next-research-step selection;
+- portfolio/execution proposal formation.
 
-The new product direction requires a real local execution plane that works from Linux and covers both Japanese and U.S. equities.
+AI must not become the untraceable source of truth.
 
-First target: Rakuten Securities Web. Rakuten Web is the broad product surface, while MARKET SPEED II RSS is Windows-only and excludes foreign equities.
+Keep facts, deterministic calculations, and model inference separable.
 
-Execution:
-1. add a local persistent Chromium/Chrome operator session on Linux;
-2. store its user-data/profile locally and never upload cookies/session storage to Vercel;
-3. let the operator complete normal login/MFA interactively;
-4. detect authenticated/expired state without trying to bypass MFA/CAPTCHA/device approval;
-5. instrument same-session requests so broker XHR/JSON/GraphQL/WebSocket contracts can be used where robust;
-6. implement DOM flows for operations where the private network contract is fragile or opaque;
-7. cover Rakuten Japanese and U.S. equity account state, positions, orders, order preview, submission, status and cancellation;
-8. retain restart-safe idempotency, live-order arm gates and append-only audit logs;
-9. keep MARKET SPEED II RSS as an optional domestic-equity Windows sidecar rather than the main path;
-10. verify the actual Linux browser flow before declaring live support complete.
+### 5. Private connectors are first-class
 
-After Rakuten, generalize the same browser-session/private-protocol toolkit to other brokers without public APIs.
+Scraping/private protocols/authenticated sessions are valid architecture in Private / Family Operator mode.
 
-The previous product-completion audit becomes the next queue item after the local execution plane is real.
+Absence of a public API is not a reason to discard a useful source.
 
-## Scheduled high-priority data integration
+Authentication/MFA/access controls are not bypass targets.
 
-### JPX daily margin balances — available from 2026-09-28 if migration proceeds
+---
 
-Tokyo Stock Exchange has announced that the all-issue margin-balance publication currently available weekly will become daily, with prior-business-day balances published around 16:00 each business day. The announced output includes sales/purchase balances, daily changes, ratio to listed shares, negotiable/standardized margin breakdowns, and balance values as well as share counts.
+## Important implemented subsystems
 
-Once the production format is live:
-1. inspect the real JPX output and usage/redistribution terms;
-2. implement a provenance-aware JPX margin provider and persistent daily history;
-3. surface margin supply/demand on Japanese instrument pages;
-4. add useful screener/comparison fields and abrupt-change alerts;
-5. keep personal-use acquisition rights distinct from public redistribution rights.
+### Core research workstation
 
-Canonical product/roadmap details are also recorded in Notion.
+Substantial support already exists for:
+- instrument search;
+- instrument pages;
+- market overview;
+- charts and technical indicators;
+- financial statements/facts;
+- valuation;
+- screening;
+- comparison;
+- watchlists;
+- portfolio analytics;
+- news;
+- calendar/events;
+- macro data;
+- alerts;
+- provenance/source display.
 
-## Remaining strategic constraints
+Do not reimplement these blindly. Audit current code first.
 
-1. **Operator capability outranks public-SaaS neatness.** Do not remove or weaken useful personal/private integrations merely because they cannot be offered to anonymous public users.
-2. **Evidence-backed world/IFRS exact enrichment only** — add provider/taxonomy-specific exact mappings when semantics are demonstrably compatible; never invent a universal investment-securities mapping.
-3. **Public market-data licensing still matters only for the public profile.** Personal Yahoo/yfinance/private scraping may remain Full/Operator-only.
-4. Higher-severity defects discovered in active workflows outrank planned feature work.
+### Kiyohara strategy
 
-## UI constraint that is easy to regress
+Built-in strategy:
+`kiyohara_global_value_growth`
 
-Normal user UI must not display development notes or internal implementation trivia.
+Japanese:
+`清原達郎モード`
 
-Good user-facing qualification:
-- “≥0.80×” because the value is a lower bound and that changes interpretation.
+Key definitions:
 
-Bad normal-UI copy:
-- “the 20× threshold is a Yowayowa implementation default rather than a fixed rule from Kiyohara” when the filter itself already exposes 20× and the sentence exists mainly to explain developer provenance.
+Yowayowa conservative net cash:
+`current_assets - liabilities`
 
-Keep such implementation rationale in docs/API metadata, not the normal UI.
+Kiyohara net cash:
+`current_assets + investment_securities * 0.7 - liabilities`
 
-## Autonomous execution loop
+Cash-neutral P/E:
+`P/E * (1 - NCR)` only when NCR < 1.
 
-For each major task:
+NCR >= 1 => cash-neutral P/E is undefined/null.
 
-1. Resolve current PR head and deployment state.
-2. Read the relevant code, tests, docs, and authoritative external docs.
-3. Write down the correctness constraints before changing code.
-4. Implement end-to-end, including API/service/UI/CLI surfaces where the capability belongs.
-5. Add tests for failure modes and ambiguous financial-data cases, not just happy paths.
-6. Run `make verify` and obtain GitHub browser-E2E evidence.
-7. If deployed behavior changed, follow the production deploy to READY and query the real affected endpoint/page.
-8. Check recent runtime errors.
-9. Update durable docs and canonical Notion when semantics/architecture/operations changed.
-10. Leave this handoff with a precise next task.
+If investment securities cannot be established exactly:
+- NCR may remain a conservative lower bound;
+- cash-neutral P/E may remain an upper bound.
 
-Do not stop merely because code compiles, tests are green, an endpoint returns 200, or Vercel says READY.
+Never erase these semantics merely to produce a complete-looking number.
 
-## Completion roadmap and progress baseline — 2026-09-22
+### Interpretable research priority
 
-Use **68%** as the current weighted completion baseline for the primary **Private / Family Operator v1** target. This is a product-completion estimate, not a commit-count metric. General-public SaaS is frozen and contributes 0% to this roadmap.
+Current conceptual factor groups:
+- Value;
+- Growth;
+- Quality;
+- Evidence.
 
-Weighted model:
-- core research workstation: 25% weight, ~90% complete;
-- AI-led / interpretable operation: 20% weight, ~75% complete;
-- broker execution plane: 20% weight, ~30% complete;
-- data depth / Japan edge: 15% weight, ~65% complete;
-- reliability / API-agent parity / observability: 15% weight, ~80% complete;
-- completion audit / UX closure: 5% weight, ~60% complete.
+The score is **research-attention allocation**, not expected return.
 
-Critical path, in order:
-1. finish real production hosted-Codex device-auth + research execution validation;
-2. build and verify the Linux authenticated broker-web execution plane, first for Rakuten Japanese + U.S. equities;
-3. close the profitability-measurement loop: explicit hypotheses, deterministic metrics, cited evidence, invalidation conditions, proposals and forward outcomes;
-4. activate hosted EDINET persistence and add JPX daily margin balances once the announced feed is live;
-5. run a full product-completion audit against the canonical spec and major competitor workflows;
-6. freeze Full / Operator v1 only after green CI/browser/production/runtime verification and durable docs.
+Historical observations are versioned.
 
-Do **not** put public billing, advertising, affiliate flows, anonymous-user polish, public redistribution work, broad broker expansion, or speculative infrastructure on this critical path. General-public SaaS work is frozen indefinitely unless the operator explicitly reopens it. Existing public/safe-mode code is maintenance-only.
+Do not silently mutate old scoring semantics; new calibrated rules require new scoring versions.
 
-## Minimal launch instruction for a fresh autonomous agent
+### Point-in-time strategy history / outcomes
 
-Give the agent repository access and this instruction:
+Foundation exists for:
+- point-in-time strategy snapshots;
+- scoring version;
+- same-day deduplication;
+- forward outcomes;
+- next-trading-session entry logic;
+- benchmark-relative excess return;
+- AI access to strategy history/outcomes.
+
+This is the base for later walk-forward calibration.
+
+### AI infrastructure
+
+Implemented/partially implemented:
+- OpenAI-compatible provider path;
+- Anthropic-style provider path;
+- BYOK;
+- structured agent tool loop;
+- tool trace;
+- operation proposals;
+- strategy triage;
+- strategy history/outcomes tools;
+- external-AI prompt packet generation;
+- hosted Codex bridge;
+- ChatGPT device-code authentication UI/route;
+- OpenAPI contract protection for agent-facing endpoints.
+
+Important:
+- Codex ChatGPT subscription usage must not silently fall back to OpenAI API-key billing.
+- Hosted browser-authenticated Codex remains subject to real-account end-to-end verification.
+
+### Observability / debugging
+
+Maintain:
+- `/internal/debug/runtime`;
+- `x-yowayowa-request-id`;
+- source-revision visibility;
+- structured runtime logging without secrets;
+- request -> runtime log -> deployment -> exact SHA traceability.
+
+Do not log:
+- API keys;
+- cookies;
+- Authorization headers;
+- DB URLs;
+- raw OAuth credentials;
+- broker credentials;
+- trading passwords.
+
+### Private acquisition foundation
+
+Existing:
+- `services/private_http.py`
+- `operator_bridge/web_session.py`
+- private connector descriptors/models
+- same-origin authenticated private HTTP
+- JSON acquisition
+- HTML scraping boundary
+- persistent Chromium profile
+- browser-context cookie sharing with same-session HTTP requests
+
+The foundation is useful, but private-data acquisition is still underexploited.
+
+### Broker foundation
+
+Existing:
+- provider-neutral broker models;
+- broker execution interlocks;
+- MARKET SPEED II RSS mapping;
+- Windows Excel/xlwings bridge;
+- Rakuten RSS connector;
+- persistent browser-session foundation.
+
+The real Linux Rakuten Web connector is not finished.
+
+---
+
+## Current roadmap
+
+The authoritative current roadmap is:
+
+`docs/PRIVATE_OPERATOR_ROADMAP.md`
+
+Do not invent a parallel roadmap.
+
+### Immediate autonomous sequence
+
+#### P0 — Close AI access without blocking
+
+Complete automated verification around hosted Codex.
+
+Real ChatGPT authorization requires the operator. If unavailable:
+- write the exact manual verification steps;
+- continue immediately.
+
+Do not spend another long cycle polishing provider plumbing after the path is operational.
+
+#### P1 — Exploit scraping/private access
+
+This is currently underdeveloped and high value.
+
+Work in this order:
+
+1. reusable authenticated acquisition/debug framework;
+2. Rakuten Web read-side ingestion;
+3. generic company-IR monitoring and structured extraction;
+4. legitimate authenticated private information sources where useful.
+
+Prefer:
+official API -> internal JSON/XHR -> GraphQL/WebSocket -> downloads -> embedded state -> HTML -> DOM.
+
+Every connector needs:
+- auth/session assumptions;
+- provenance;
+- freshness/cache semantics;
+- parser/schema assumptions;
+- explicit failure state;
+- reauthentication state;
+- debug/API inspection surface;
+- snapshot/diff support where valuable.
+
+#### P2 — Linux broker execution
+
+First real broker path:
+Rakuten Securities Web.
+
+Must cover Japanese and U.S. equities.
+
+Read-side before write-side.
+
+Then:
+- preview;
+- submit;
+- status;
+- cancellation;
+- fill reconciliation;
+- portfolio update.
+
+Live submission must retain:
+- explicit arming;
+- notional limit;
+- daily order limit;
+- idempotency;
+- duplicate-submit protection;
+- append-only audit trail.
+
+#### P3 — Profitability learning loop
+
+Build aggregate calibration over point-in-time research snapshots/outcomes.
+
+Start simple and statistically honest:
+- count;
+- median/mean total return;
+- median/mean excess return;
+- positive-excess hit rate;
+- score/factor deciles;
+- rank IC / Spearman where appropriate;
+- minimum-sample thresholds;
+- confidence/bootstrap intervals where useful.
+
+Use walk-forward/out-of-sample evaluation.
+
+Do not optimize and evaluate new weights on the same sample.
+
+AI should be able to inspect calibration evidence and state uncertainty.
+
+#### P4 — Japan edge
+
+EDINET:
+- verify durable production storage;
+- verify unattended maintenance/key operation;
+- preserve same-filing/currency constraints.
+
+JPX daily margin:
+- announced start 2026-09-28 if migration proceeds;
+- inspect live production format before writing final parser;
+- persist daily history;
+- instrument-page supply/demand;
+- screener/compare fields;
+- abrupt-change alerts;
+- point-in-time snapshots for outcome analysis.
+
+#### P5 — Product completion audit
+
+Audit real workflows rather than feature names.
+
+Find what still forces unnecessary hopping among:
+- TradingView;
+- Yahoo Finance;
+- Investing.com;
+- TipRanks;
+- broker web;
+- company IR pages.
+
+Do not clone everything. Remove high-friction gaps.
+
+#### P6 — Private / Family Operator v1 freeze
+
+Freeze only after:
+- end-to-end workflows work;
+- machine/UI parity holds;
+- broker execution is safe/audited;
+- provenance is stable;
+- CI and real Chrome are green;
+- hosted portions are production verified;
+- local operator components are real-machine verified;
+- runtime errors are clean;
+- docs/Notion/handoff are current.
+
+---
+
+## Scraping/private-data direction
+
+Private scraping permission materially changes product strategy.
+
+The goal is no longer:
+
+> find an official/public API or omit the data.
+
+The goal is:
+
+> if the operator can legitimately access decision-relevant information, acquire it through the most robust available transport and preserve provenance.
+
+High-value targets:
+
+### Broker context
+
+Ingest:
+- balances;
+- buying power;
+- cash;
+- margin availability;
+- positions;
+- acquisition prices;
+- unrealized P/L;
+- open orders;
+- executions;
+- fees;
+- margin/collateral state.
+
+This should feed portfolio-aware AI research and sizing.
+
+### Company IR
+
+Monitor:
+- earnings presentations;
+- guidance revisions;
+- dividend revisions;
+- buybacks;
+- medium-term plans;
+- monthly operating data;
+- backlog/bookings;
+- ARR/subscriber metrics;
+- store counts;
+- utilization;
+- shipments;
+- company-specific KPI tables.
+
+Desired pipeline:
+
+**discover source -> detect new material -> acquire -> extract -> diff -> store provenance -> attach to instrument timeline -> AI investigates change**
+
+### Private/subscription sources
+
+Allowed when:
+- operator/family legitimately has access;
+- use remains personal/private;
+- credentials/session state is handled securely;
+- source terms/security posture are respected.
+
+Do not build redistribution features around private access.
+
+---
+
+## API / agent contract
+
+Protect machine usability.
+
+At minimum, preserve discoverability and functionality of:
+- AI chat/status;
+- Codex auth/session status;
+- external prompt packets;
+- strategy preset evaluation;
+- strategy snapshots;
+- strategy forward outcomes;
+- operation planning;
+- portfolio/watchlist operations;
+- data/provider diagnostics.
+
+When adding a GUI feature:
+1. identify service/domain operation;
+2. expose machine path where useful;
+3. test it independently from browser rendering.
+
+Do not let HTTP-specific concerns break direct Python/service calls.
+
+---
+
+## External actions that may block only one verification step
+
+### ChatGPT hosted Codex
+
+Human action:
+- complete device-code authorization with the operator's ChatGPT account.
+
+Hermes responsibility:
+- prepare flow;
+- expose exact instructions;
+- capture non-secret status;
+- test everything around it;
+- continue other roadmap tasks if operator is unavailable.
+
+### Rakuten broker session
+
+Human action:
+- legitimate login/MFA/device approval;
+- explicit live-trading approval before financially consequential tests.
+
+Hermes responsibility:
+- build read-only path first;
+- create session diagnostics;
+- never request plaintext passwords in chat;
+- never bypass MFA/CAPTCHA/device approval;
+- provide exact real-machine verification checklist;
+- continue unrelated work if operator is unavailable.
+
+### EDINET / other credentials
+
+If a credential is genuinely absent:
+- report exact missing capability;
+- implement/test with fixtures or browser/session BYOK where appropriate;
+- continue other work.
+
+Do not repeatedly ask for a credential that is already configured.
+
+---
+
+## Verification contract
+
+For every substantial code change:
+
+1. resolve current branch head;
+2. inspect relevant code/tests/docs;
+3. implement service/API/UI/CLI surfaces as appropriate;
+4. add boundary/failure tests;
+5. obtain `make verify` equivalent CI evidence;
+6. obtain real Chrome E2E for browser changes;
+7. when hosted behavior changes, wait for gated production deploy;
+8. query the affected production API/page;
+9. verify source revision;
+10. inspect runtime errors;
+11. update durable roadmap/handoff/Notion for material architecture or product-direction changes.
+
+Do not declare success merely because:
+- code compiles;
+- unit tests pass;
+- an endpoint returns 200;
+- Vercel says READY.
+
+---
+
+## Documentation hygiene
+
+Keep this handoff operational and current.
+
+After each major milestone:
+- update only current checkpoint, current blockers, and next work;
+- remove obsolete P0 items rather than stacking contradictory histories;
+- put long historical notes in canonical Notion if they matter;
+- do not require the next agent to reconstruct old conversations.
+
+`docs/PRIVATE_OPERATOR_ROADMAP.md` is the roadmap.
+This file is the execution handoff.
+
+---
+
+## Hermes launch instruction
+
+Use this verbatim when starting a fresh Hermes context:
 
 ```text
-Work autonomously on Yowayowa-Investor. First read AGENTS.md and docs/AUTONOMOUS_AGENT_HANDOFF.md, then resolve the current Draft PR #1 head and verify repository/deployment state. Execute the current P0 end-to-end without waiting for micromanagement: research authoritative sources, make correctness constraints explicit, implement, test, debug, verify real browser behavior, deploy through the existing gated pipeline when appropriate, verify production, update canonical docs/Notion, and rewrite the handoff so the next agent can continue. Ask the user only for genuinely external credentials/authorization or an irreducible product decision.
-```
+You are the primary autonomous development agent for Yowayowa-Investor.
 
+Repository: GoodLight999/Yowayowa-Investor
+Active branch: agent/commercial-foundation
+Base: main
+Draft PR: #1
+
+First read:
+1. AGENTS.md
+2. docs/PRIVATE_OPERATOR_ROADMAP.md
+3. docs/AUTONOMOUS_AGENT_HANDOFF.md
+4. the canonical Notion Yowayowa-Investor page if available.
+
+The product is Private / Family Operator first. General-public SaaS work is frozen unless the operator explicitly reopens it.
+
+Work autonomously. Do not wait for micromanagement. Resolve the current branch/CI/deployment state, then continue the highest-priority unblocked roadmap task end-to-end. If OAuth, broker login/MFA, a credential, or explicit live-trading approval requires the operator, record the exact human step and verification checklist, then immediately continue the highest-priority task that does not require that action.
+
+Preserve API-first architecture, financial correctness, provenance, agent/API parity, real-browser verification, and production/runtime verification. Scraping/private protocols/authenticated sessions are legitimate first-class Private Operator capabilities; prefer structured internal transports over DOM automation when robust.
+
+Do not add public SaaS features, billing, advertising, affiliate flows, anonymous-user polish, or public redistribution work.
+
+At the end of every major milestone, update docs/AUTONOMOUS_AGENT_HANDOFF.md and the canonical Notion page so another agent can continue without conversation history.
+```
