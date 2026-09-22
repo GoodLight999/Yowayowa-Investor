@@ -207,6 +207,28 @@ For each major task:
 
 Do not stop merely because code compiles, tests are green, an endpoint returns 200, or Vercel says READY.
 
+## Completion roadmap and progress baseline — 2026-09-22
+
+Use **68%** as the current weighted completion baseline for the primary **Full / Operator v1** target. This is a product-completion estimate, not a commit-count metric.
+
+Weighted model:
+- core research workstation: 25% weight, ~90% complete;
+- AI-led / interpretable operation: 20% weight, ~75% complete;
+- broker execution plane: 20% weight, ~30% complete;
+- data depth / Japan edge: 15% weight, ~65% complete;
+- reliability / API-agent parity / observability: 15% weight, ~80% complete;
+- completion audit / UX closure: 5% weight, ~60% complete.
+
+Critical path, in order:
+1. finish real production hosted-Codex device-auth + research execution validation;
+2. build and verify the Linux authenticated broker-web execution plane, first for Rakuten Japanese + U.S. equities;
+3. close the profitability-measurement loop: explicit hypotheses, deterministic metrics, cited evidence, invalidation conditions, proposals and forward outcomes;
+4. activate hosted EDINET persistence and add JPX daily margin balances once the announced feed is live;
+5. run a full product-completion audit against the canonical spec and major competitor workflows;
+6. freeze Full / Operator v1 only after green CI/browser/production/runtime verification and durable docs.
+
+Do **not** put public billing, advertising, public redistribution licensing for every personal-only source, broad broker expansion, or speculative infrastructure on this critical path. Public commercialization is a separate phase.
+
 ## Minimal launch instruction for a fresh autonomous agent
 
 Give the agent repository access and this instruction:
