@@ -8,6 +8,7 @@ from typing import Protocol
 from pydantic import BaseModel
 
 from yowayowa.broker_models import (
+    RAKUTEN_SECURITIES_BROKER,
     BrokerAccountSnapshot,
     BrokerOrder,
     BrokerOrderIntent,
@@ -191,7 +192,7 @@ class RakutenRssInquiry:
             transport_id = submissions.get(broker_order_id)
             orders.append(
                 BrokerOrder(
-                    broker="rakuten-securities",
+                    broker=RAKUTEN_SECURITIES_BROKER,
                     transport_order_id=(str(transport_id) if transport_id is not None else None),
                     broker_order_id=broker_order_id,
                     symbol=str(row.get("銘柄コード") or "").strip(),
@@ -229,7 +230,7 @@ class RakutenRssInquiry:
                 continue
             positions.append(
                 BrokerPosition(
-                    broker="rakuten-securities",
+                    broker=RAKUTEN_SECURITIES_BROKER,
                     symbol=symbol,
                     quantity=Decimal(_to_int(row.get("保有数量"))),
                     average_cost=_to_decimal(row.get("平均取得価額")),
@@ -248,7 +249,7 @@ class RakutenRssInquiry:
         buying_power = _to_decimal(rows[0].get("現物買付可能額")) if rows else None
 
         return BrokerAccountSnapshot(
-            broker="rakuten-securities",
+            broker=RAKUTEN_SECURITIES_BROKER,
             currency="JPY",
             buying_power=buying_power,
             cash_balance=None,
@@ -266,7 +267,7 @@ class RakutenRssInquiry:
         if price is None or price <= 0:
             raise LookupError(f"Rakuten RSS quote unavailable for {normalized}")
         return BrokerQuote(
-            broker="rakuten-securities",
+            broker=RAKUTEN_SECURITIES_BROKER,
             symbol=normalized,
             price=price,
             currency="JPY",
@@ -353,7 +354,7 @@ def preview_cash_stock_order(
     intent: BrokerOrderIntent,
 ) -> BrokerOrderPreview:
     return BrokerOrderPreview(
-        broker="rakuten-securities",
+        broker=RAKUTEN_SECURITIES_BROKER,
         transport=BrokerTransport.LOCAL_PROGRAMMABLE_INTERFACE,
         intent=intent,
         estimated_notional=intent.estimated_notional(),

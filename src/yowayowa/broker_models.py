@@ -7,6 +7,9 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field, model_validator
 
+RAKUTEN_SECURITIES_BROKER = "rakuten-securities"
+RAKUTEN_LOGIN_URL_MARKERS: tuple[str, ...] = ("login", "signin", "sign-in")
+
 
 class BrokerTransport(StrEnum):
     OFFICIAL_API = "official_api"

@@ -573,6 +573,24 @@ def test_09b_auth_probe_text_marker_blocks(tmp_path: Path) -> None:
     assert REASON_NOT_AUTHENTICATED in (receipt.message or "")
 
 
+def test_09c_auth_probe_5xx_blocks_fail_closed(tmp_path: Path) -> None:
+    """A 5xx probe response proves neither auth state: the submit must
+    block fail-closed instead of reaching the order form."""
+
+    service, _p = _audited_proposal_service(tmp_path)
+    server_error = _FakeResponse(
+        status=503,
+        url="https://www.rakuten-sec.co.jp/app/pos",
+        body="",
+    )
+    session = FakeBrokerWebSession(probe_response=server_error)
+    transport = _transport(service, session, submissions_enabled=True)
+    receipt = transport.submit_order(_intent(), armed=True)
+    assert receipt.accepted is False
+    assert REASON_NOT_AUTHENTICATED in (receipt.message or "")
+    assert STAGE_SUBMIT not in _request_stages(service)
+
+
 # =========================================================================
 # 10. full happy path -> request/response/state audited, accepted
 # =========================================================================
@@ -1029,3 +1047,58 @@ def test_23c_auth_probe_uses_pinned_login_path(tmp_path: Path) -> None:
     transport.submit_order(_intent(), armed=True)
     assert ("GET", "ITS/V_ACT_Login.html") in session.request_calls
     assert all(method == "GET" for method, _path in session.request_calls)
+
+
+# =========================================================================
+# 24. P3 preflight: detector-backed probe + selector context on failures
+# =========================================================================
+
+
+def test_24_auth_probe_query_marker_with_clean_path_is_authenticated(
+    tmp_path: Path,
+) -> None:
+    """Marker in the QUERY only (path clean) no longer misblocks: the detector
+    scans the URL path, so the submit proceeds and audits stage=submit."""
+
+    service, _p = _audited_proposal_service(tmp_path)
+    probe = _FakeResponse(
+        status=200,
+        url="https://www.rakuten-sec.co.jp/app/order_entry.do?next=/login",
+        body="",
+    )
+    session = FakeBrokerWebSession(probe_response=probe, order_id_on_confirm="777001")
+    transport = _transport(service, session, submissions_enabled=True)
+    receipt = transport.submit_order(_intent(), armed=True)
+    assert receipt.accepted is True
+    assert STAGE_SUBMIT in _request_stages(service)
+
+
+def test_24b_fill_failure_audit_error_carries_selector_name(tmp_path: Path) -> None:
+    """A failing page.fill is re-raised with the selector prefixed, so the
+    stage=submit-failed audit entry names the offending selector."""
+
+    service, _p = _audited_proposal_service(tmp_path)
+
+    class _FailingFillPage(_FakePage):
+        def fill(self, selector: str, value: str) -> None:
+            if selector == RAKUTEN_WEB_ORDER_FORM["selectors"]["quantity"]:
+                raise TimeoutError("locator.fill: Timeout 30000ms exceeded")
+            self._session.fill_calls.append((selector, value))
+
+    session = FakeBrokerWebSession()
+    transport = _transport(service, session, submissions_enabled=True)
+
+    def _open(path: str = "") -> _FakePage:
+        session.open_calls.append(path)
+        return _FailingFillPage(session, session.order_id_on_confirm, session.page_url)
+
+    session.open = _open  # type: ignore[method-assign]
+    receipt = transport.submit_order(_intent(), armed=True)
+    assert receipt.accepted is False
+    failed_entry = next(
+        entry
+        for entry in service.audit_entries()
+        if entry.kind == "state" and entry.payload.get("stage") == STAGE_SUBMIT_FAILED
+    )
+    assert "selector" in failed_entry.payload["error"]
+    assert RAKUTEN_WEB_ORDER_FORM["selectors"]["quantity"] in failed_entry.payload["error"]

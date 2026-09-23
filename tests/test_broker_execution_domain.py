@@ -783,3 +783,44 @@ def test_42_f2_cli_duplicate_create_exits_nonzero(tmp_path: Path) -> None:
     result = runner.invoke(cli_app, args)
     assert result.exit_code != 0
     assert "duplicate client_order_id" in result.output
+
+
+# ---------------------------------------------------- find_audited_proposal
+
+
+def test_43_find_audited_proposal_roundtrip_matches_propose(tmp_path: Path) -> None:
+    """propose -> find rebuilds an equal proposal (model_dump + hash)."""
+
+    service = _service(tmp_path)
+    proposal = service.propose_model(_proposal(client_order_id="find-1"))
+    found = service.find_audited_proposal("find-1")
+    assert found is not None
+    assert found.model_dump(mode="json") == proposal.model_dump(mode="json")
+    assert found.proposal_hash() == proposal.proposal_hash()
+
+
+def test_44_find_audited_proposal_unknown_id_returns_none(tmp_path: Path) -> None:
+    """An id that was never proposed is None (no exception)."""
+
+    service = _service(tmp_path)
+    assert service.find_audited_proposal("never-proposed") is None
+
+
+def test_45_find_audited_proposal_backfills_created_at_from_entry_payload(
+    tmp_path: Path,
+) -> None:
+    """A legacy intent entry without created_at in the proposal payload is
+    reconstructed with the entry payload's created_at string — never 'now'."""
+
+    service = _service(tmp_path)
+    proposal_payload = _proposal(client_order_id="legacy-1").model_dump(mode="json")
+    proposal_payload.pop("created_at")
+    entry_created_at = "2026-01-02T03:04:05+00:00"
+    service.audit_log().append(
+        "intent",
+        "legacy-1",
+        {"proposal": proposal_payload, "created_at": entry_created_at},
+    )
+    found = service.find_audited_proposal("legacy-1")
+    assert found is not None
+    assert found.created_at.isoformat() == entry_created_at

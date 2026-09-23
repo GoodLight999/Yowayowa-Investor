@@ -192,6 +192,29 @@ class BrokerExecutionDomainService:
                 proposal.client_order_id, existing.proposal_hash, proposal.proposal_hash()
             )
 
+    # ------------------------------------------------------------- reconstruct
+
+    def find_audited_proposal(self, client_order_id: str) -> OrderProposal | None:
+        """Rebuild the proposal from the newest intent audit entry.
+
+        created_at is backfilled from the entry payload timestamp when the
+        stored proposal payload predates the created_at audit field
+        (provenance: proposal creation time is the intent entry ts, never
+        'now'). Returns None when never proposed.
+        """
+
+        for entry in reversed(self.audit_entries()):
+            if entry.kind != "intent" or entry.client_order_id != client_order_id:
+                continue
+            proposal_payload = entry.payload.get("proposal")
+            if isinstance(proposal_payload, dict):
+                created = entry.payload.get("created_at")
+                if isinstance(created, str):
+                    proposal_payload = dict(proposal_payload)
+                    proposal_payload.setdefault("created_at", created)
+                return OrderProposal.model_validate(proposal_payload)
+        return None
+
     # --------------------------------------------------------------- preview
 
     def preview(self, proposal: OrderProposal) -> OrderExecutionPreview:

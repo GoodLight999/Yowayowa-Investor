@@ -5,8 +5,17 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 from yowayowa.acquisition.models import AuthState
+from yowayowa.broker_models import RAKUTEN_LOGIN_URL_MARKERS
 
 _BODY_MARKER_SCAN_LIMIT = 200_000
+
+
+def strip_url_query(url: str) -> str:
+    """Return the URL without its query string and fragment (audit-safe)."""
+
+    if not url:
+        return ""
+    return url.split("?", 1)[0].split("#", 1)[0]
 
 
 @dataclass(frozen=True)
@@ -33,7 +42,7 @@ class HeuristicAuthDetector:
     def __init__(
         self,
         *,
-        login_url_markers: tuple[str, ...] = ("login", "signin", "sign-in", "auth"),
+        login_url_markers: tuple[str, ...] = RAKUTEN_LOGIN_URL_MARKERS,
         login_text_markers: tuple[str, ...] = ("ログイン", "サインイン", "Sign in", "Log in"),
     ) -> None:
         self.login_url_markers = login_url_markers

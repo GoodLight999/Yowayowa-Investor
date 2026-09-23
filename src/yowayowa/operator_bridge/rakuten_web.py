@@ -13,6 +13,7 @@ from yowayowa.acquisition.transport import (
     TransportResponse,
 )
 from yowayowa.broker_models import (
+    RAKUTEN_SECURITIES_BROKER,
     BrokerAccountSnapshot,
     BrokerOrder,
     BrokerOrderSide,
@@ -36,7 +37,6 @@ URL PROVENANCE NOTICE
 
 RAKUTEN_WEB_CONNECTOR_ID = "rakuten-web"
 RAKUTEN_WEB_HTML_CONNECTOR_ID = "rakuten-web-html"
-RAKUTEN_SECURITIES_BROKER = "rakuten-securities"
 RAKUTEN_WEB_BASE_URL = "https://www.rakuten-sec.co.jp/"
 # VERIFIED 2026-09-23 (CTO live check): HTTP 200, title「総合口座ログイン | 楽天証券」.
 # This is the real login page; an authenticated session is redirected away from it.

@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 
 from yowayowa.broker_models import (
+    RAKUTEN_SECURITIES_BROKER,
     BrokerAccountSnapshot,
     BrokerCancelRequest,
     BrokerOrder,
@@ -64,7 +65,7 @@ def create_operator_bridge_app(
         return {
             "status": "ok",
             "profile": "full_operator",
-            "broker": "rakuten-securities",
+            "broker": RAKUTEN_SECURITIES_BROKER,
             "transport": "market-speed-ii-rss",
             "live_orders_armed": settings.broker_live_orders_enabled,
             "capabilities": connector.capabilities.model_dump(mode="json"),

@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from yowayowa.broker_models import (
+    RAKUTEN_SECURITIES_BROKER,
     BrokerAccountSnapshot,
     BrokerCapabilities,
     BrokerOrder,
@@ -28,7 +29,7 @@ from yowayowa.providers.rakuten_ms2_rss import (
 
 class RakutenMs2RssLocalConnector:
     capabilities = BrokerCapabilities(
-        broker="rakuten-securities",
+        broker=RAKUTEN_SECURITIES_BROKER,
         transport=BrokerTransport.LOCAL_PROGRAMMABLE_INTERFACE,
         account_snapshot=False,
         positions=False,
@@ -87,7 +88,7 @@ class RakutenMs2RssLocalConnector:
             else None
         )
         return BrokerOrderReceipt(
-            broker="rakuten-securities",
+            broker=RAKUTEN_SECURITIES_BROKER,
             client_order_id=intent.client_order_id,
             transport_order_id=str(rss_order_id),
             broker_order_id=broker_order_id,
@@ -146,7 +147,7 @@ class RakutenMs2RssLocalConnector:
             )
         )
         return BrokerOrderReceipt(
-            broker="rakuten-securities",
+            broker=RAKUTEN_SECURITIES_BROKER,
             client_order_id=client_order_id,
             transport_order_id=str(cancel_rss_order_id),
             broker_order_id=broker_order_id,

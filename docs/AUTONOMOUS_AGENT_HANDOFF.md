@@ -407,6 +407,68 @@ fail-closed behavior, or audit shapes.
   `yowayowa broker-read auth-check rakuten-web`, then first supervised
   live probe per the P2B checkpoint flow.
 
+### P3-preflight checkpoint — shared-constant + probe unification (2026-09-24)
+
+HEAD `2841fc4` + this commit → lightweight cleanup before the P3 start
+(task t_9788f417, design fixed by parent card t_542afd2b). Compatibility
+preserving everywhere except ONE intended behavior relaxation (4d below).
+No product-semantic or documentation-context changes → no Notion update.
+
+Four cleanups and where the new single sources of truth live:
+
+- Proposal reconstruction unified to ONE implementation:
+  `BrokerExecutionDomainService.find_audited_proposal()` (broker/execution/
+  service.py) — newest `intent` entry, `created_at` backfilled from the
+  entry payload when the stored proposal payload predates the audit field
+  (provenance: creation time = intent entry ts, never "now"), None when
+  never proposed. The CLI (`_find_proposal` → typer.BadParameter), API
+  (`_find_proposal` → 404), and the submission transport
+  (`_find_audited_proposal`, entries parameter removed; entries fetching
+  stays for the hash/replay helpers) all delegate to it. This also fixes
+  the latent transport-version gap: the transport path now backfills
+  `created_at` like the CLI/API paths always did.
+- `"rakuten-securities"` string literal exists exactly once:
+  `RAKUTEN_SECURITIES_BROKER` in broker_models.py (zero-dependency
+  module, no import cycles), next to the new
+  `RAKUTEN_LOGIN_URL_MARKERS = ("login", "signin", "sign-in")`.
+  `operator_bridge/rakuten_web.py` re-exports the constant (unchanged
+  `__all__`), `transport.RAKUTEN_SUBMISSION_BROKER` is an alias, and the
+  literals in rakuten_ms2_rss.py / rakuten.py / app.py / interlocks.py
+  were replaced. Test literals under tests/ intentionally remain as
+  expectations (anti-同語反復).
+- Auth probe unified on `HeuristicAuthDetector`:
+  `transport._probe_authenticated` now builds an `AuthSignal` from the
+  probe response (status/url/text, body scan still capped at 2048) and
+  returns True only for AUTHENTICATED; fail-closed kept on any exception.
+  The Location-header check was removed — PersistentBrokerWebSession
+  requests use max_redirects=0, so the URL-path scan is the single
+  source of truth (alive session → 30x away from the login path;
+  expired → login page itself). The detector default dropped the
+  "auth" URL marker (real defect fix, 4d): Rakuten's legitimate URLs
+  contain "auth" and were at risk of misclassification; markers in a
+  query string with a clean path no longer misblock.
+  `broker_read_service._RAKUTEN_DETECTOR` now uses the shared
+  `RAKUTEN_LOGIN_URL_MARKERS` (same behavior, one definition).
+- Audit URL stripping shared: `strip_url_query()` lives in
+  acquisition/auth.py; `transport._strip_query` is a thin wrapper over
+  it (the only call site, confirmation_url). documents.py keeps its own
+  PDF source-path helper (different context, untouched by design).
+- No selector fallback added (speculative fills on the unverified order
+  form remain forbidden): `_fill_order_form` instead re-raises any fill
+  failure as the SAME exception type with the offending selector
+  prefixed, so stage=submit-failed audit entries carry selector context.
+  `RAKUTEN_WEB_ORDER_FORM` provenance notice unchanged (still
+  verified=False for the order-form selectors).
+- Tests: 3 domain (`find_audited_proposal` roundtrip / unknown-id None /
+  created_at backfill), 2 transport (query-marker relaxation proceeds to
+  stage=submit; fill failure names the selector in the audit error),
+  2 acquisition-auth (default markers drop "auth"; `strip_url_query`
+  variants) → repo total **756 passed, 2 skipped**. `make verify` green.
+- Next interval already queued and waiting on this review: P3
+  profitability loop (t_0f38a853), FX real-rate provider (t_ba41c587),
+  testbot experiment B (t_684920c7) — all gated on CTO acceptance of
+  review card t_9cba22c7.
+
 ### P2B prerequisite checkpoint — Rakuten web base host repoint (2026-09-23)
 
 HEAD `fce2b2f` → environment correction only (CTO ruling, parent card

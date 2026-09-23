@@ -25,6 +25,12 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
+from yowayowa.acquisition.auth import (
+    AuthSignal,
+    HeuristicAuthDetector,
+    strip_url_query,
+)
+from yowayowa.acquisition.models import AuthState
 from yowayowa.broker.execution.interlocks import REASON_DUPLICATE_MISMATCH
 from yowayowa.broker.execution.models import OrderProposal
 from yowayowa.broker.execution.service import (
@@ -32,6 +38,8 @@ from yowayowa.broker.execution.service import (
     BrokerExecutionDomainService,
 )
 from yowayowa.broker_models import (
+    RAKUTEN_LOGIN_URL_MARKERS,
+    RAKUTEN_SECURITIES_BROKER,
     BrokerAccountSnapshot,
     BrokerCapabilities,
     BrokerOrder,
@@ -49,7 +57,7 @@ from yowayowa.operator_bridge.rakuten_web import RAKUTEN_WEB_LOGIN_PATH
 if TYPE_CHECKING:
     from yowayowa.broker.session_notify import SessionExpiryNotifier
 
-RAKUTEN_SUBMISSION_BROKER = "rakuten-securities"
+RAKUTEN_SUBMISSION_BROKER = RAKUTEN_SECURITIES_BROKER
 TRANSPORT_NAME = "authenticated-web-session"
 
 STAGE_SUBMIT = REQUEST_STAGE_SUBMIT
@@ -77,13 +85,7 @@ RESEND_INQUIRY_PHRASE = (
 )
 
 _BODY_MARKER_SCAN_LIMIT = 2048
-_AUTH_URL_MARKERS: tuple[str, ...] = ("login", "signin", "sign-in")
-_AUTH_TEXT_MARKERS: tuple[str, ...] = (
-    "\u30ed\u30b0\u30a4\u30f3",
-    "\u30b5\u30a4\u30f3\u30a4\u30f3",
-    "Sign in",
-    "Log in",
-)
+_AUTH_DETECTOR = HeuristicAuthDetector(login_url_markers=RAKUTEN_LOGIN_URL_MARKERS)
 _BROKER_ORDER_ID_RE = re.compile(
     "(?:\u6ce8\u6587\u756a\u53f7|\u53d7\u4ed8\u756a\u53f7)\\s*[:\uff1a]?\\s*([0-9A-Za-z-]{4,})"
 )
@@ -151,9 +153,7 @@ RAKUTEN_WEB_ORDER_FORM: dict[str, Any] = {
 def _strip_query(url: str) -> str:
     """Return the URL without its query string (audit-safe form)."""
 
-    if not url:
-        return ""
-    return url.split("?", 1)[0].split("#", 1)[0]
+    return strip_url_query(url)
 
 
 def _extract_broker_order_id(page: Any) -> tuple[str | None, str]:
@@ -268,7 +268,7 @@ class RakutenWebSubmissionTransport:
 
         entries = self._service.audit_entries()
         # 2. Proposal discovery from the audit trail (no re-input).
-        proposal = self._find_audited_proposal(entries, client_order_id)
+        proposal = self._find_audited_proposal(client_order_id)
         if proposal is None:
             return self._blocked_receipt(client_order_id, (REASON_NO_AUDITED_PROPOSAL,))
 
@@ -461,16 +461,8 @@ class RakutenWebSubmissionTransport:
             message=message,
         )
 
-    def _find_audited_proposal(
-        self, entries: list[Any], client_order_id: str
-    ) -> OrderProposal | None:
-        for entry in reversed(entries):
-            if entry.kind != "intent" or entry.client_order_id != client_order_id:
-                continue
-            proposal_payload = entry.payload.get("proposal")
-            if isinstance(proposal_payload, dict):
-                return OrderProposal.model_validate(proposal_payload)
-        return None
+    def _find_audited_proposal(self, client_order_id: str) -> OrderProposal | None:
+        return self._service.find_audited_proposal(client_order_id)
 
     def _audited_proposal_hash(self, entries: list[Any], client_order_id: str) -> str | None:
         for entry in reversed(entries):
@@ -515,15 +507,20 @@ class RakutenWebSubmissionTransport:
         return None
 
     def _probe_authenticated(self) -> bool:
-        """GET-only login-marker probe; anything unclear counts as unauthenticated.
+        """Detector-backed GET-only probe; anything unclear means unauthenticated.
 
         The probe targets the pinned real login page (RAKUTEN_WEB_LOGIN_PATH,
-        VERIFIED 2026-09-23). PersistentBrokerWebSession.request uses
-        max_redirects=0, so when the session is alive the broker redirects the
-        login-page GET away and the response arrives as a 30x with a Location
-        header that carries no login marker -> authenticated. When the session
-        has expired, the login page itself comes back (with login markers in
-        URL/body) -> unauthenticated. Anything unclear stays fail-closed.
+        VERIFIED 2026-09-23) and delegates the verdict to the shared
+        HeuristicAuthDetector (login/signin/sign-in URL-path markers +
+        default text markers; AUTHENTICATED only for a 2xx/3xx response).
+        The URL-path scan is the single source of truth because
+        PersistentBrokerWebSession.request uses max_redirects=0: when the
+        session is alive the broker redirects the login-page GET away and
+        the 30x response URL carries no login marker, while an expired
+        session gets the login page itself back (login markers in the URL
+        path and/or body). The former Location-header check is therefore
+        redundant and was removed with the detector unification. Anything
+        unclear stays fail-closed.
         """
 
         try:
@@ -534,10 +531,6 @@ class RakutenWebSubmissionTransport:
             return False
         status = int(getattr(response, "status", 0) or 0)
         url = str(getattr(response, "url", "") or "")
-        headers = getattr(response, "headers", None)
-        location = ""
-        if headers is not None and hasattr(headers, "get"):
-            location = str(headers.get("location", "") or "")
         text = ""
         text_getter = getattr(response, "text", None)
         if callable(text_getter):
@@ -545,14 +538,12 @@ class RakutenWebSubmissionTransport:
                 text = str(text_getter() or "")[:_BODY_MARKER_SCAN_LIMIT]
             except Exception:
                 text = ""
-        if status in (401, 403):
+        try:
+            state = _AUTH_DETECTOR.detect(AuthSignal(url=url, status_code=status, body_text=text))
+        except Exception:
+            # Detection must never raise its way into a submission: fail closed.
             return False
-        url_and_location = f"{url}\n{location}".lower()
-        if any(marker in url_and_location for marker in _AUTH_URL_MARKERS):
-            return False
-        if any(marker in text for marker in _AUTH_TEXT_MARKERS):
-            return False
-        return 200 <= status < 400
+        return state is AuthState.AUTHENTICATED
 
     @staticmethod
     def _order_form_view(proposal: OrderProposal) -> dict[str, Any]:
@@ -575,23 +566,37 @@ class RakutenWebSubmissionTransport:
 
     @staticmethod
     def _fill_order_form(page: Any, proposal: OrderProposal) -> None:
-        """Fill the (unverified-selector) order form; raises on any DOM error."""
+        """Fill the (unverified-selector) order form; raises on any DOM error.
+
+        No selector fallback exists by design (speculative fills against an
+        unverified form are forbidden): instead, every fill failure is
+        re-raised as the SAME exception type with the offending selector
+        prefixed, so the stage=submit-failed audit entry carries selector
+        context.
+        """
 
         form = RAKUTEN_WEB_ORDER_FORM
         selectors = form["selectors"]
-        page.fill(selectors["symbol"], proposal.symbol)
-        page.fill(selectors["quantity"], str(proposal.quantity))
+
+        def _fill(selector: str, value: str) -> None:
+            try:
+                page.fill(selector, value)
+            except Exception as exc:
+                raise type(exc)(f"selector {selector!r}: {exc}") from exc
+
+        _fill(selectors["symbol"], proposal.symbol)
+        _fill(selectors["quantity"], str(proposal.quantity))
         market_code = form["market_codes"].get(proposal.market)
         side_code = form["side_codes"].get(proposal.side.value)
         type_code = form["order_type_codes"].get(proposal.order_type.value)
         if market_code is not None:
-            page.fill(selectors.get("market", "#input_market"), str(market_code))
+            _fill(selectors.get("market", "#input_market"), str(market_code))
         if side_code is not None:
-            page.fill(selectors.get("side", "#input_side"), str(side_code))
+            _fill(selectors.get("side", "#input_side"), str(side_code))
         if type_code is not None:
-            page.fill(selectors.get("order_type", "#input_order_type"), str(type_code))
+            _fill(selectors.get("order_type", "#input_order_type"), str(type_code))
         if proposal.limit_price is not None:
-            page.fill(selectors["limit_price"], str(proposal.limit_price))
+            _fill(selectors["limit_price"], str(proposal.limit_price))
 
 
 __all__ = [

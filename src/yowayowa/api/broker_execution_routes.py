@@ -178,14 +178,7 @@ def _find_proposal(
 ) -> OrderProposal:
     """Rebuild the proposal from the audit trail; 404 when never proposed."""
 
-    for entry in reversed(service.audit_entries()):
-        if entry.client_order_id == client_order_id and entry.kind == "intent":
-            payload = entry.payload
-            proposal_payload = payload.get("proposal")
-            if isinstance(proposal_payload, dict):
-                created = payload.get("created_at")
-                if isinstance(created, str):
-                    proposal_payload = dict(proposal_payload)
-                    proposal_payload.setdefault("created_at", created)
-                return OrderProposal.model_validate(proposal_payload)
-    raise HTTPException(status_code=404, detail=f"unknown client_order_id: {client_order_id}")
+    proposal = service.find_audited_proposal(client_order_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail=f"unknown client_order_id: {client_order_id}")
+    return proposal

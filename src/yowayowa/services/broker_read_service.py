@@ -19,7 +19,12 @@ from yowayowa.acquisition.registry import (
 )
 from yowayowa.acquisition.service import PrivateAcquisitionService
 from yowayowa.broker.session_notify import SessionExpiryNotifier
-from yowayowa.broker_models import BrokerAccountSnapshot, BrokerOrder, BrokerPosition
+from yowayowa.broker_models import (
+    RAKUTEN_LOGIN_URL_MARKERS,
+    BrokerAccountSnapshot,
+    BrokerOrder,
+    BrokerPosition,
+)
 from yowayowa.operator_bridge.rakuten_web import (
     RAKUTEN_SECURITIES_BROKER,
     RAKUTEN_WEB_BASE_URL,
@@ -51,9 +56,7 @@ construction: no state-changing request path exists on this surface.
 """
 
 _RAKUTEN_FRESHNESS = FreshnessPolicy(ttl_seconds=60, max_stale_seconds=600)
-_RAKUTEN_DETECTOR = HeuristicAuthDetector(
-    login_url_markers=("login", "signin", "sign-in"),
-)
+_RAKUTEN_DETECTOR = HeuristicAuthDetector(login_url_markers=RAKUTEN_LOGIN_URL_MARKERS)
 
 
 class BrokerReadOutcome(BaseModel):

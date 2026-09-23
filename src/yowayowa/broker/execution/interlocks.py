@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from yowayowa.broker.execution.models import OrderProposal
 from yowayowa.broker_models import (
+    RAKUTEN_SECURITIES_BROKER,
     BrokerOrderIntent,
     BrokerOrderPreview,
     BrokerTransport,
@@ -53,7 +54,7 @@ def _as_preview(proposal: OrderProposal) -> BrokerOrderPreview:
     price = proposal.limit_price or proposal.reference_price
     notional = None if price is None else price * proposal.quantity
     return BrokerOrderPreview(
-        broker="rakuten-securities",
+        broker=RAKUTEN_SECURITIES_BROKER,
         transport=BrokerTransport.AUTHENTICATED_WEB_SESSION,
         intent=intent,
         estimated_notional=notional,
