@@ -19,6 +19,7 @@ from yowayowa.domain import (
     PriceBar,
     Provenance,
 )
+from yowayowa.fx_models import FxHistory, FxHistoryPoint, FxRateSnapshot
 from yowayowa.providers.base import ProviderDescriptor, enforce_provider_policy
 from yowayowa.providers.fundamentals import is_non_us_exchange_listing
 from yowayowa.technical import compute_indicators
@@ -71,6 +72,10 @@ class YahooMarketProvider:
             maxsize=128, ttl=ttl
         )
         self._overview_cache: TTLCache[str, MarketOverview] = TTLCache(maxsize=4, ttl=ttl)
+        self._fx_history_cache: TTLCache[tuple[str, str, str], FxHistory] = TTLCache(
+            maxsize=128, ttl=ttl
+        )
+        self._fx_rate_cache: TTLCache[str, FxRateSnapshot] = TTLCache(maxsize=64, ttl=ttl)
 
     def history(
         self,
@@ -150,6 +155,91 @@ class YahooMarketProvider:
         result = self._quotes_from_frame(frame if frame is not None else pd.DataFrame(), normalized)
         self._quote_cache[normalized] = result
         return result
+
+    def fx_quote(self, pair: str) -> FxRateSnapshot:
+        """Latest FX rate for a normalized pair, from the same Yahoo source."""
+
+        from yowayowa.fx_models import fx_pair_to_yahoo, normalize_fx_pair
+
+        normalized = normalize_fx_pair(pair)
+        provider_symbol = fx_pair_to_yahoo(normalized)
+        cached = self._fx_rate_cache.get(normalized)
+        if cached is not None:
+            return cached
+        frame = yf.Ticker(provider_symbol).history(period="5d", interval="1d", auto_adjust=False)
+        close = self._close_series(frame.rename(columns=str.lower) if not frame.empty else frame)
+        if close is None or close.empty:
+            raise LookupError(f"No FX rate returned for {normalized}")
+        snapshot = FxRateSnapshot(
+            pair=normalized,
+            rate=float(close.iloc[-1]),
+            previous_close=float(close.iloc[-2]) if len(close) > 1 else None,
+            as_of=self._utc_timestamp(close.index[-1]),
+            provenance=self._fx_provenance(provider_symbol, close.index[-1]),
+        )
+        self._fx_rate_cache[normalized] = snapshot
+        return snapshot
+
+    def fx_history(
+        self,
+        pair: str,
+        *,
+        interval: str = "1d",
+        period: str = "1mo",
+    ) -> FxHistory:
+        """FX OHLC history for a normalized pair; missing fields stay None."""
+
+        from yowayowa.fx_models import fx_pair_to_yahoo, normalize_fx_pair
+
+        normalized = normalize_fx_pair(pair)
+        provider_symbol = fx_pair_to_yahoo(normalized)
+        cache_key = (normalized, period, interval)
+        cached = self._fx_history_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        frame = yf.Ticker(provider_symbol).history(
+            period=period, interval=interval, auto_adjust=False
+        )
+        points: list[FxHistoryPoint] = []
+        if not frame.empty:
+            frame = frame.rename(columns=str.lower)
+            for index, row in frame.iterrows():
+                # Only fully-absent rows are skipped; individual None fields
+                # are preserved as None (never zero-filled).
+                if all(pd.isna(row.get(field)) for field in ("open", "high", "low", "close")):
+                    continue
+                points.append(
+                    FxHistoryPoint(
+                        timestamp=self._utc_timestamp(index),
+                        open=float(row["open"]) if pd.notna(row.get("open")) else None,
+                        high=float(row["high"]) if pd.notna(row.get("high")) else None,
+                        low=float(row["low"]) if pd.notna(row.get("low")) else None,
+                        close=float(row["close"]) if pd.notna(row.get("close")) else None,
+                        volume=float(row["volume"]) if pd.notna(row.get("volume")) else None,
+                    )
+                )
+        if not points:
+            raise LookupError(f"No FX history returned for {normalized}")
+        result = FxHistory(
+            pair=normalized,
+            interval=interval,
+            points=points,
+            provenance=self._fx_provenance(provider_symbol, points[-1].timestamp),
+        )
+        self._fx_history_cache[cache_key] = result
+        return result
+
+    @staticmethod
+    def _fx_provenance(provider_symbol: str, as_of: Any) -> Provenance:
+        return Provenance(
+            provider="yahoo/yfinance",
+            source="Yahoo Finance",
+            source_url=f"https://finance.yahoo.com/quote/{provider_symbol}",
+            license_class=LicenseClass.PERSONAL_ONLY,
+            retrieved_at=datetime.now(UTC),
+            as_of=YahooMarketProvider._utc_timestamp(as_of),
+            notes=["Personal-use provider. Public redistribution is blocked by provider policy."],
+        )
 
     def overview(self) -> MarketOverview:
         cached = self._overview_cache.get("default")
