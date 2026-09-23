@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from yowayowa.acquisition.registry import ConnectorDefinition
     from yowayowa.operator_bridge.web_session import PersistentBrokerWebSession
     from yowayowa.services.broker_read_service import BrokerReadService
+    from yowayowa.services.ir_monitor_service import IrMonitorService
 
 _PUBLIC_READ_ONLY_ROUTES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("GET", re.compile(r"/v1/instruments/search")),
@@ -227,6 +228,25 @@ def _rakuten_browser_transport_factory(
         )
 
     return RakutenWebFetchTransport(fetch=_fetch_url)
+
+
+@lru_cache(maxsize=1)
+def get_ir_monitor_service() -> IrMonitorService:
+    """IR monitor wired to the operator's local http transport.
+
+    Default sources are empty: the operator registers company IR pages at
+    runtime (CLI/API), so no source list is hardcoded into the product.
+    """
+    from yowayowa.services.ir_monitor_service import (
+        IrMonitorService,
+        _default_http_transport,
+    )
+
+    settings = get_settings()
+    return IrMonitorService(
+        data_dir=Path(settings.private_acquisition_data_dir),
+        transport_factory=_default_http_transport,
+    )
 
 
 _RAKUTEN_BROWSER_SESSION: dict[str, PersistentBrokerWebSession] = {}

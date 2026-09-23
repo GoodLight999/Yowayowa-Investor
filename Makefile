@@ -1,7 +1,7 @@
 .PHONY: install dev test lint typecheck verify openapi
 
 install:
-	uv sync --extra dev
+	uv sync --extra dev --extra operator-ir
 
 dev:
 	uv run uvicorn yowayowa.api.app:app --reload

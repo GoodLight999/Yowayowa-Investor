@@ -129,6 +129,52 @@ P1B is implemented and `make verify` green on `agent/commercial-foundation` (not
 
 ---
 
+### P1C checkpoint — Company IR acquisition (2026-09-23)
+
+P1C is implemented on `agent/commercial-foundation`, verified end-to-end against a
+live non-API IR source (Nitori Holdings, `nitorihd.co.jp`).
+
+Pipeline: `IrSourceDefinition` → discovery → new/revised/unchanged/verified
+classification → acquisition → structured extraction → previous-version KPI diff →
+provenance → instrument timeline → REST/CLI.
+
+New modules (all generic; no company-specific parsers):
+- `acquisition/documents.py` — HTML tables (reuses `TableHtmlParser`), XLSX (stdlib OOXML),
+  PDF text layer + coordinate-based table reconstruction (pdfminer, lazy import).
+- `acquisition/ir.py` — canonical KPI labels (JP/EN), number/unit normalization
+  (compound yen chains such as `892億74百万円`, `(Millions of yen)` captions,
+  per-table unit hints), `IrTimelineStore`, fingerprints.
+- `acquisition/discovery.py` — IR link discovery, document classification,
+  `FingerprintStore` (URL-only records keep a URL from re-classifying as new).
+- `services/ir_monitor_service.py` — `IrMonitorService`, `IrKpiHistoryStore`,
+  `IrSourceRegistryStore` (sources persist across restarts), `_default_http_transport`
+  (unauthenticated public GET; no session, no credentials).
+- `api/ir_routes.py` + `api/deps.py:get_ir_monitor_service` — `/v1/ir/*`
+  (sources list/register/get, monitor, instrument timeline, document KPI history),
+  guarded by the same private-connectors switch as the rest of the private surfaces.
+- `ir_cli.py` + `cli_entry.py` wiring — `yowayowa ir sources|add-source|monitor|timeline|kpi-history`.
+- `pyproject.toml` extra `operator-ir` (`pdfminer.six`), installed by `make install`,
+  both CI jobs, and the Dockerfile.
+
+Real-data evidence (Nitori, 106 discovered documents, fetch budget 6):
+- new-document detection is idempotent: run 1 `new=106`, run 2 `new=0`, all 106 `unchanged`.
+- KPI extraction matches published figures, e.g. FY2026.3 4Q tanshin revenue
+  `912,248 million yen` → `912248000000.0`, 3Q `688,503 million yen`, and the
+  prose figure `当期利益892億74百万円` → `89,274,000,000.0`.
+- previous-version diff on a real file replacement behind a stable URL:
+  `status=revised` with `revenue` change `decrease`, `delta=-223745000000.0`
+  and both versions retained in the KPI history.
+- provenance (provider / source_url / license_class / retrieved_at) present on
+  every timeline entry; image-only PDFs fail closed with an explicit
+  `parse_note` instead of reporting an empty document as parsed.
+
+**Operator note (not a code blocker):** `nitorihd.co.jp`'s WAF silently stalls
+requests whose `User-Agent` embeds a `+https://...` reference URL (connection held
+until timeout). `_default_http_transport` therefore sends
+`Yowayowa-Investor/0.1 (personal research)` and documents the reason inline.
+
+---
+
 ## Product architecture invariants
 
 ### 1. API-first

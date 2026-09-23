@@ -81,6 +81,54 @@ Reauthentication uses the same flow as the acquisition toolkit: on `auth_expired
 
 Real-session verification procedure (operator DoD): `docs/RAKUTEN_WEB_SESSION.md`.
 
+## Company IR acquisition (P1C)
+
+A general IR monitoring pipeline for companies whose useful information is not
+fully represented by SEC/EDINET/Yahoo. It is read-only and uses public,
+unauthenticated GET transport: no session, no credentials, no cookies.
+
+Pipeline: IR source discovery → new-document detection → HTML/PDF/XLSX/CSV
+acquisition → structured extraction → previous-version diff → provenance →
+instrument timeline.
+
+- **Discovery** — `acquisition/discovery.py` enumerates document links on the
+  source's listing page (same-origin, `.pdf/.xlsx?/.csv`; HTML navigation links
+  are pages, not documents) and classifies each URL against the recorded
+  fingerprints as `new` / `seen` / `verified` / `unchanged` / `revised`.
+- **Extraction** — `acquisition/documents.py` handles HTML tables (the existing
+  `TableHtmlParser`), XLSX (stdlib OOXML), and PDF (pdfminer text layer plus
+  coordinate-based table reconstruction). An image-only PDF fails closed with an
+  explicit parse note; it is never reported as a parsed document with no KPIs.
+- **KPI normalization** — `acquisition/ir.py` maps JP/EN labels to canonical KPI
+  names and normalizes values to yen, handling per-table unit declarations,
+  document-level captions such as `(Millions of yen)`, and compound yen chains
+  such as `当期利益892億74百万円`. A first observation of a document carries no
+  diff: reporting one would fabricate a previous version.
+- **Diff and history** — a revision is a changed content hash behind a stable
+  URL, so `kpi_diff` compares against the last recorded observation of the same
+  URL and reports `increase` / `decrease` / `revision` / `added` / `removed` with
+  a signed delta. Both versions stay in the KPI history and the timeline.
+- **Sources** — company IR sources are operator configuration and persist in the
+  registry (`data/private-acquisition/ir-sources/sources.json`), so they survive
+  a process restart.
+
+API surface: `/v1/ir/sources` (list/register/get), `/v1/ir/sources/{id}/monitor`,
+`/v1/ir/instruments/{symbol}/timeline`, `/v1/ir/documents/kpi-history`. CLI:
+`yowayowa ir sources|add-source|monitor|timeline|kpi-history`. Same guards as
+`/v1/private`: 403 outside personal mode or with private connectors disabled.
+
+PDF extraction requires the `operator-ir` extra (`pdfminer.six`), installed by
+`make install`, CI, and the Dockerfile. Without it, PDFs fail closed with a note
+naming the extra; HTML/XLSX/CSV processing is unaffected.
+
+Add a company with:
+
+```
+yowayowa ir add-source nitorihd-ir --symbol 9843.T --provider nitorihd.co.jp \
+  --listing-url https://www.nitorihd.co.jp/ir/library/summary.html
+yowayowa ir monitor nitorihd-ir
+```
+
 ## Broker control
 
 Broker control is also a required Full / Operator capability, including brokers without a conventional public API.

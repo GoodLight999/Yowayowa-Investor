@@ -26,6 +26,7 @@ from yowayowa.api.edinet_routes import router as edinet_router
 from yowayowa.api.edinet_ux_routes import router as edinet_ux_router
 from yowayowa.api.fundamentals_routes import router as fundamentals_router
 from yowayowa.api.institutional_routes import router as institutional_router
+from yowayowa.api.ir_routes import router as ir_router
 from yowayowa.api.license_routes import router as license_router
 from yowayowa.api.macro_routes import router as macro_router
 from yowayowa.api.private_routes import router as private_router
@@ -203,6 +204,7 @@ app.include_router(ai_integration_router)
 app.include_router(settings_router)
 app.include_router(private_router)
 app.include_router(broker_read_router)
+app.include_router(ir_router)
 app.include_router(fundamentals_router)
 app.include_router(web_asset_router)
 app.include_router(router)

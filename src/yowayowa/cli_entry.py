@@ -12,6 +12,7 @@ from yowayowa.cli import _client, _percent, app, portfolio_app
 from yowayowa.edinet_cli import app as edinet_app
 from yowayowa.event_cli import app as events_app
 from yowayowa.institutional_cli import app as institutional_app
+from yowayowa.ir_cli import app as ir_app
 from yowayowa.license_cli import app as license_app
 from yowayowa.macro_cli import app as macro_app
 from yowayowa.preset_cli import app as preset_app
@@ -28,6 +29,7 @@ app.add_typer(license_app, name="license")
 app.add_typer(macro_app, name="macro")
 app.add_typer(private_app, name="private")
 app.add_typer(broker_read_app, name="broker-read")
+app.add_typer(ir_app, name="ir")
 
 
 @app.command("operator-bridge")

@@ -169,6 +169,14 @@ Pipeline:
 
 Do not build company-specific parsers when a robust generic table/document extraction path is sufficient; allow small evidence-backed adapters where company-specific semantics add real value.
 
+Implementation status (2026-09-23): implemented and verified end-to-end against
+Nitori Holdings (`nitorihd.co.jp`); see the P1C checkpoint in
+`docs/AUTONOMOUS_AGENT_HANDOFF.md` and the "Company IR acquisition (P1C)" section
+of `docs/OPERATOR_MODE.md`. New modules: `acquisition/discovery.py`,
+`acquisition/documents.py`, `acquisition/ir.py`,
+`services/ir_monitor_service.py`, `api/ir_routes.py`, `ir_cli.py`; the existing
+P1A toolkit and `diff_payloads` are unchanged.
+
 ### P1D — Authorized private information sources
 
 For services the operator/family legitimately subscribes to or can access, allow personal-use authenticated connectors when useful.
