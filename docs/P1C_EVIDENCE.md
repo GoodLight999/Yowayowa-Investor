@@ -156,7 +156,9 @@ evidence doc test counts`）
   合計を 40 passed→39 passed（33 + 6）に訂正（L107の「510 passed」は
   P1C時点の実測として変更なし）。
 - 修正後のIRテスト合計: **40 passed**（34 + 6）
-- `make verify` 総数: **511 passed**（lint / typecheck / openapi 含め成功）
+- `make verify`（開発中の計測, P1Dマージ ec2af8e 合流前）: 511 passed
+- `make verify`（最終commit eee6def, P1Dマージ込み）: **634 passed**
+  （CTO独立検証 2026-09-23, CI run 35824917780 success）
 - 実データrecon再実測（nitorihd.co.jp, fresh一時data dir, budget=6）:
   discovered=106 / new_count=106 に対し、
   `outcome.timeline_entries = 6` = on-disk timeline entries `6`
