@@ -84,6 +84,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     anthropic_model: str | None = None
     anthropic_base_url: str = "https://api.anthropic.com"
+    # Authorized private mailbox access (P1D): the operator's own mail account,
+    # read through the read-only `gog` CLI. The keyring password file is a
+    # local path only; its value is never read into settings, logged, or
+    # returned by any surface.
+    mailbox_command: str = "gog"
+    mailbox_keyring_password_file: str | None = None
 
     @model_validator(mode="after")
     def enforce_public_safeguards(self) -> Settings:

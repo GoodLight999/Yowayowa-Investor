@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from yowayowa.operator_bridge.web_session import PersistentBrokerWebSession
     from yowayowa.services.broker_read_service import BrokerReadService
     from yowayowa.services.ir_monitor_service import IrMonitorService
+    from yowayowa.services.private_source_service import PrivateSourceService
 
 _PUBLIC_READ_ONLY_ROUTES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("GET", re.compile(r"/v1/instruments/search")),
@@ -250,6 +251,38 @@ def get_ir_monitor_service() -> IrMonitorService:
 
 
 _RAKUTEN_BROWSER_SESSION: dict[str, PersistentBrokerWebSession] = {}
+
+
+@lru_cache(maxsize=1)
+def get_private_source_service() -> PrivateSourceService:
+    """Private-source (mailbox) service wired to the read-only ``gog`` reader.
+
+    Default sources are empty: the operator registers mailbox sources at
+    runtime via CLI/API. The keyring password is only ever passed as a *path*
+    to the reader; its value is never read, logged, or returned here.
+    """
+    from yowayowa.acquisition.mailbox import GogMailboxReader
+    from yowayowa.services.private_source_service import PrivateSourceService
+
+    settings = get_settings()
+    keyring_path = (
+        Path(settings.mailbox_keyring_password_file)
+        if settings.mailbox_keyring_password_file
+        else None
+    )
+
+    def _reader_factory(source: object) -> GogMailboxReader:
+        account = getattr(source, "account", "")
+        return GogMailboxReader(
+            account=account,
+            command=settings.mailbox_command,
+            keyring_password_file=keyring_path,
+        )
+
+    return PrivateSourceService(
+        data_dir=Path(settings.private_acquisition_data_dir),
+        reader_factory=_reader_factory,
+    )
 
 
 @lru_cache(maxsize=1)

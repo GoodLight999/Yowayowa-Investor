@@ -17,6 +17,7 @@ from yowayowa.license_cli import app as license_app
 from yowayowa.macro_cli import app as macro_app
 from yowayowa.preset_cli import app as preset_app
 from yowayowa.private_cli import app as private_app
+from yowayowa.private_source_cli import app as private_source_app
 from yowayowa.rate_cli import app as rate_app
 
 app.add_typer(events_app, name="events")
@@ -30,6 +31,7 @@ app.add_typer(macro_app, name="macro")
 app.add_typer(private_app, name="private")
 app.add_typer(broker_read_app, name="broker-read")
 app.add_typer(ir_app, name="ir")
+app.add_typer(private_source_app, name="private-sources")
 
 
 @app.command("operator-bridge")
