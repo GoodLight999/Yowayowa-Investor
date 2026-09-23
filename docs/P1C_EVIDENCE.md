@@ -102,8 +102,8 @@ PASS  timeline records every KPI-bearing observation
 ## 4. 回帰テスト
 
 - `tests/test_ir_acquisition.py` — 33件
-- `tests/test_ir_surfaces.py` — 7件
-- 合計 40 passed（上記の全欠陥に対する回帰テストを含む）
+- `tests/test_ir_surfaces.py` — 6件
+- 合計 39 passed（33 + 6）（上記の全欠陥に対する回帰テストを含む）
 - リポジトリ全体: **510 passed**（P1B時点の471から非減少）
 
 ## 5. verify / CI / 本番
