@@ -116,8 +116,15 @@ catalog は account / positions / open_orders / order_history / executions の 5
 4. 正規化器（`normalize_*`）のキー名・テーブルヘッダ対応も実 payload 形状に合わせて更新し、テスト fixture を実形状に寄せる。
 5. 手順4のチェックリストを再実行して全項目一致を確認。
 
-URL の host は `RAKUTEN_ALLOWED_HOSTS`（www/trade.rakuten-sec.co.jp）に制限されている。
+URL の host は `RAKUTEN_ALLOWED_HOSTS`（www.rakuten-sec.co.jp）に制限されている。
 許可外 host への取得は `failed`（`host not allowed: ...`）で落ちる。
+
+## 変更経緯
+
+- 2026-09-23: ベースURL/許可hostを、権威DNSでNXDOMAINとなった旧hostから `www.rakuten-sec.co.jp` に変更。
+  旧hostはグローバル消滅（IIJ権威 SOA 付きで確認済）。
+  実ログインページは `https://www.rakuten-sec.co.jp/ITS/V_ACT_Login.html`。
+  カタログURL自体は実機未検証（verified=False）のまま。親カード t_97c79206 の立会い検証で対応。
 
 ## トラブルシュート
 

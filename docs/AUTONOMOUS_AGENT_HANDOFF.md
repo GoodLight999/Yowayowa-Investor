@@ -358,6 +358,23 @@ all P2A interlocks (settings arm + runtime `--armed` + notional limits
   snapshot as the operational evidence (separate supervised run, not
   part of this checkpoint).
 
+### P2B prerequisite checkpoint — Rakuten web base host repoint (2026-09-23)
+
+HEAD `fce2b2f` → environment correction only (CTO ruling, parent card
+t_97c79206). The former base host is globally dead: authoritative
+DNS returns NXDOMAIN for it (getaddrinfo / systemd-resolved / nslookup
+1.1.1.1 / dns.google DoH Status:3 + SOA `rakuten-sec.co.jp` on
+ns000.d-53.net = IIJ authoritative; evidence 2026-09-23 22:40-50 JST,
+`p2b_live/dns-evidence-20260923.md`). The live host is
+`www.rakuten-sec.co.jp` (real login page:
+`https://www.rakuten-sec.co.jp/ITS/V_ACT_Login.html`).
+`RAKUTEN_WEB_BASE_URL` repointed to `https://www.rakuten-sec.co.jp/`,
+`RAKUTEN_ALLOWED_HOSTS` narrowed to `("www.rakuten-sec.co.jp",)`, and
+every remaining reference to the dead host (code, docs, test
+fixtures) removed from the repo. Resource catalog URLs stay UNVERIFIED
+(`verified=False`) — flipping them is the parent card's supervised
+session, not this change. broker/execution files untouched.
+
 ---
 
 ## Product architecture invariants

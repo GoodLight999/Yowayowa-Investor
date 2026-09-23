@@ -91,7 +91,7 @@ class _ScriptedFetch:
 
 
 def _ok_response(
-    url: str = "https://trade.rakuten-sec.co.jp/web/positions/jp",
+    url: str = "https://www.rakuten-sec.co.jp/web/positions/jp",
 ) -> TransportResponse:
     return TransportResponse(
         status_code=200,
@@ -109,7 +109,7 @@ def test_transport_resolves_relative_urls_against_base() -> None:
     response = transport.fetch("GET", "web/positions/jp")
     assert response.status_code == 200
     assert fetch.calls == [
-        {"method": "GET", "url": "https://trade.rakuten-sec.co.jp/web/positions/jp"}
+        {"method": "GET", "url": "https://www.rakuten-sec.co.jp/web/positions/jp"}
     ]
 
 

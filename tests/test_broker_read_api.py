@@ -29,7 +29,7 @@ _POSITIONS_BODY = json.dumps(
 
 class _StubResponse:
     status_code = 200
-    url = "https://trade.rakuten-sec.co.jp/web/positions/jp"
+    url = "https://www.rakuten-sec.co.jp/web/positions/jp"
     content_type = "application/json"
     text = _POSITIONS_BODY.decode("utf-8")
     content = _POSITIONS_BODY

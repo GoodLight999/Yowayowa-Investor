@@ -48,7 +48,7 @@ _FETCH_PAYLOAD: dict[str, Any] = {
         "verified": False,
         "margin_state": {"margin_deposit": "300000"},
     },
-    "source_url": "https://trade.rakuten-sec.co.jp/web/positions/jp",
+    "source_url": "https://www.rakuten-sec.co.jp/web/positions/jp",
     "retrieved_at": "2026-09-23T12:00:00+00:00",
     "as_of": None,
     "parser_version": "json-v1",

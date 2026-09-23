@@ -63,7 +63,7 @@ class ScriptedTransport:
 def _response(
     body: bytes = _POSITIONS_BODY,
     status: int = 200,
-    url: str = "https://trade.rakuten-sec.co.jp/web/positions/jp",
+    url: str = "https://www.rakuten-sec.co.jp/web/positions/jp",
     content_type: str = "application/json",
 ) -> TransportResponse:
     return TransportResponse(
@@ -141,7 +141,7 @@ def test_fetch_changed_payload_diff_changed(tmp_path: Path) -> None:
 def test_fetch_auth_expired_invalidates_cache(tmp_path: Path) -> None:
     login_body = _response(
         body="<html>楽天証券ログイン</html>".encode(),
-        url="https://trade.rakuten-sec.co.jp/login",
+        url="https://www.rakuten-sec.co.jp/login",
     )
     transport = ScriptedTransport([_response(), login_body])
     service = _build_service(transport, data_dir=tmp_path)
@@ -246,7 +246,7 @@ def test_fetch_payload_none_yields_empty_lists(tmp_path: Path) -> None:
     # auth_expired path returns payload=None -> empty positions/orders
     login_body = _response(
         body="<html>ログインしてください</html>".encode(),
-        url="https://trade.rakuten-sec.co.jp/login",
+        url="https://www.rakuten-sec.co.jp/login",
     )
     transport = ScriptedTransport([login_body])
     service = _build_service(transport, data_dir=tmp_path)
@@ -262,7 +262,7 @@ def test_fetch_account_normalizes_snapshot(tmp_path: Path) -> None:
         {"cash_balance": "1,234,567円", "buying_power": "2,000,000円"},
         ensure_ascii=False,
     ).encode("utf-8")
-    url = "https://trade.rakuten-sec.co.jp/web/account/summary"
+    url = "https://www.rakuten-sec.co.jp/web/account/summary"
     transport = ScriptedTransport([_response(body, url=url)])
     service = _build_service(transport, data_dir=tmp_path)
     outcome = service.fetch("account", "jp")
@@ -289,7 +289,7 @@ def test_fetch_open_orders_normalizes_orders(tmp_path: Path) -> None:
         },
         ensure_ascii=False,
     ).encode("utf-8")
-    url = "https://trade.rakuten-sec.co.jp/web/orders/open/jp"
+    url = "https://www.rakuten-sec.co.jp/web/orders/open/jp"
     transport = ScriptedTransport([_response(body, url=url)])
     service = _build_service(transport, data_dir=tmp_path)
     outcome = service.fetch("open_orders", "jp")
@@ -335,7 +335,7 @@ def test_fetch_order_history_jp_reaches_catalog(tmp_path: Path) -> None:
     transport = ScriptedTransport(
         [
             _response(
-                _order_history_body(), url="https://trade.rakuten-sec.co.jp/web/orders/history/jp"
+                _order_history_body(), url="https://www.rakuten-sec.co.jp/web/orders/history/jp"
             )
         ]
     )
@@ -356,7 +356,7 @@ def test_fetch_order_history_us_reaches_catalog(tmp_path: Path) -> None:
         [
             _response(
                 html,
-                url="https://trade.rakuten-sec.co.jp/web/us/orders/history/us",
+                url="https://www.rakuten-sec.co.jp/web/us/orders/history/us",
                 content_type="text/html",
             )
         ]
@@ -368,7 +368,7 @@ def test_fetch_order_history_us_reaches_catalog(tmp_path: Path) -> None:
     assert [(order.broker_order_id, order.status.value) for order in outcome.orders] == [
         ("cancel-1", "cancelled")
     ]
-    assert outcome.source_url == "https://trade.rakuten-sec.co.jp/web/us/orders/history/us"
+    assert outcome.source_url == "https://www.rakuten-sec.co.jp/web/us/orders/history/us"
 
 
 _ORDER_HISTORY_DETAIL_KEYS = ("orders", "history", "order_history", "orderHistory")
@@ -401,7 +401,7 @@ def test_fetch_order_history_detail_fees_and_names_all_list_keys(
         [
             _response(
                 _history_detail_body(list_key),
-                url="https://trade.rakuten-sec.co.jp/web/orders/history/jp",
+                url="https://www.rakuten-sec.co.jp/web/orders/history/jp",
             )
         ]
     )
@@ -426,7 +426,7 @@ def test_fetch_order_history_stale_serves_detail_from_cache(tmp_path: Path) -> N
         [
             _response(
                 _history_detail_body("history"),
-                url="https://trade.rakuten-sec.co.jp/web/orders/history/jp",
+                url="https://www.rakuten-sec.co.jp/web/orders/history/jp",
             )
         ]
     )
@@ -456,7 +456,7 @@ def test_fetch_order_history_us_tables_detail_fees_not_inflated(tmp_path: Path) 
         [
             _response(
                 html,
-                url="https://trade.rakuten-sec.co.jp/web/us/orders/history/us",
+                url="https://www.rakuten-sec.co.jp/web/us/orders/history/us",
                 content_type="text/html",
             )
         ]
@@ -473,7 +473,7 @@ def test_fetch_order_history_us_tables_detail_fees_not_inflated(tmp_path: Path) 
 
 def test_fetch_open_orders_does_not_include_cancelled_and_notes_it(tmp_path: Path) -> None:
     transport = ScriptedTransport(
-        [_response(_order_history_body(), url="https://trade.rakuten-sec.co.jp/web/orders/open/jp")]
+        [_response(_order_history_body(), url="https://www.rakuten-sec.co.jp/web/orders/open/jp")]
     )
     service = _build_service(transport, data_dir=tmp_path)
     outcome = service.fetch("open_orders", "jp")
@@ -496,7 +496,7 @@ def test_fetch_executions_normalizes_filled_orders(tmp_path: Path) -> None:
         },
         ensure_ascii=False,
     ).encode("utf-8")
-    url = "https://trade.rakuten-sec.co.jp/web/executions/jp"
+    url = "https://www.rakuten-sec.co.jp/web/executions/jp"
     transport = ScriptedTransport([_response(body, url=url)])
     service = _build_service(transport, data_dir=tmp_path)
     outcome = service.fetch("executions", "jp")
@@ -518,7 +518,7 @@ def test_tables_resource_rides_html_connector(tmp_path: Path) -> None:
         [
             _response(
                 html,
-                url="https://trade.rakuten-sec.co.jp/web/us/account/summary",
+                url="https://www.rakuten-sec.co.jp/web/us/account/summary",
                 content_type="text/html",
             )
         ]
@@ -560,7 +560,7 @@ def test_auth_detector_ignores_auth_path_but_flags_login(tmp_path: Path) -> None
     # Rakuten serves legitimate pages under URLs containing "auth"; those must
     # NOT be misclassified as login (the default detector's "auth" marker would).
     auth_page = _response(
-        url="https://trade.rakuten-sec.co.jp/web/auth/menu",
+        url="https://www.rakuten-sec.co.jp/web/auth/menu",
         body=b'{"ok": true}',
     )
     transport = ScriptedTransport([auth_page])
@@ -570,7 +570,7 @@ def test_auth_detector_ignores_auth_path_but_flags_login(tmp_path: Path) -> None
     assert outcome.auth_state == AuthState.AUTHENTICATED
 
     login_page = _response(
-        url="https://trade.rakuten-sec.co.jp/login",
+        url="https://www.rakuten-sec.co.jp/login",
         body=b"<html>please log in</html>",
     )
     transport2 = ScriptedTransport([login_page])

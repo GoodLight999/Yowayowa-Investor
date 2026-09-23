@@ -53,7 +53,7 @@ class _FakeResponse:
         self,
         *,
         status: int = 200,
-        url: str = "https://trade.rakuten-sec.co.jp/accept/orders",
+        url: str = "https://www.rakuten-sec.co.jp/accept/orders",
         body: str = "ok",
         headers: dict[str, str] | None = None,
     ) -> None:
@@ -83,7 +83,7 @@ class FakeBrokerWebSession:
         self.request_calls: list[tuple[str, str]] = []
         self.fill_calls: list[tuple[str, str]] = []
         self.click_calls: list[str] = []
-        self.page_url = "https://trade.rakuten-sec.co.jp/app/order_entry.do?foo=bar"
+        self.page_url = "https://www.rakuten-sec.co.jp/app/order_entry.do?foo=bar"
 
     def open(self, path: str = "") -> _FakePage:
         self.open_calls.append(path)
@@ -433,6 +433,7 @@ def test_06_notional_unknown_blocks(tmp_path: Path) -> None:
 
 
 def test_07_duplicate_same_hash_replays_without_resending(tmp_path: Path) -> None:
+    # stage is attached manually here; the real transport write path is verified by test_07c.
     service, _p = _audited_proposal_service(tmp_path)
     service.record_request("co-1", {"stage": STAGE_SUBMIT, "proposal_hash": "h"})
     service.record_response(
@@ -459,6 +460,42 @@ def test_07_duplicate_same_hash_replays_without_resending(tmp_path: Path) -> Non
     assert kinds_after.count("response") == 1
     assert len(service.audit_entries()) == receipt_before + 1  # + state only
     assert session.open_calls == [] and session.request_calls == []
+
+
+def test_07c_transport_writes_stage_key_and_replay_restores_receipt(tmp_path: Path) -> None:
+    """The REAL transport write path: record_response must store stage=submit so
+    the replay route (_latest_submit_response) can restore the prior receipt."""
+
+    service, _p = _audited_proposal_service(tmp_path)
+    session = FakeBrokerWebSession()
+    transport = _transport(service, session, submissions_enabled=True)
+
+    # 1st submit: real DOM path through the fake session.
+    receipt = transport.submit_order(_intent(), armed=True)
+    assert receipt.accepted is True
+    assert receipt.broker_order_id == "12345678"
+
+    # Core assertion: the response entry written by transport carries stage=submit.
+    responses = [entry for entry in service.audit_entries() if entry.kind == "response"]
+    assert len(responses) == 1
+    assert responses[0].payload.get("stage") == STAGE_SUBMIT
+    # Existing convention: the transport never issues non-GET HTTP requests.
+    assert all(method == "GET" for method, _path in session.request_calls)
+
+    # 2nd submit: same id, same hash -> receipt restored, no resend.
+    session2 = FakeBrokerWebSession()
+    transport2 = _transport(service, session2, submissions_enabled=True)
+    receipt2 = transport2.submit_order(_intent(), armed=True)
+    assert receipt2.accepted is True
+    assert receipt2.broker_order_id == "12345678"
+    assert receipt2.status is BrokerOrderStatus.ACCEPTED
+    assert STAGE_SUBMIT_REPLAYED in _state_stages(service)
+
+    # No new request or response audit entries, no session traffic.
+    kinds_after = [entry.kind for entry in service.audit_entries()]
+    assert kinds_after.count("request") == 1
+    assert kinds_after.count("response") == 1
+    assert session2.open_calls == [] and session2.request_calls == []
 
 
 def test_07b_replay_without_recorded_response_returns_unknown_inquiry(tmp_path: Path) -> None:
@@ -510,7 +547,7 @@ def test_09_auth_probe_failure_blocks(tmp_path: Path) -> None:
     service, _p = _audited_proposal_service(tmp_path)
     unauthenticated = _FakeResponse(
         status=200,
-        url="https://trade.rakuten-sec.co.jp/Auth/Login?b=1",
+        url="https://www.rakuten-sec.co.jp/Auth/Login?b=1",
         body="",
     )
     session = FakeBrokerWebSession(probe_response=unauthenticated)
@@ -527,7 +564,7 @@ def test_09_auth_probe_failure_blocks(tmp_path: Path) -> None:
 def test_09b_auth_probe_text_marker_blocks(tmp_path: Path) -> None:
     service, _p = _audited_proposal_service(tmp_path)
     login_page = _FakeResponse(
-        status=200, url="https://trade.rakuten-sec.co.jp/accept", body="ログイン"
+        status=200, url="https://www.rakuten-sec.co.jp/accept", body="ログイン"
     )
     session = FakeBrokerWebSession(probe_response=login_page)
     transport = _transport(service, session, submissions_enabled=True)

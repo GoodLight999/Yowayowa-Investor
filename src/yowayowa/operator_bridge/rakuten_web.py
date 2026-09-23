@@ -37,8 +37,8 @@ URL PROVENANCE NOTICE
 RAKUTEN_WEB_CONNECTOR_ID = "rakuten-web"
 RAKUTEN_WEB_HTML_CONNECTOR_ID = "rakuten-web-html"
 RAKUTEN_SECURITIES_BROKER = "rakuten-securities"
-RAKUTEN_WEB_BASE_URL = "https://trade.rakuten-sec.co.jp/"
-RAKUTEN_ALLOWED_HOSTS = ("www.rakuten-sec.co.jp", "trade.rakuten-sec.co.jp")
+RAKUTEN_WEB_BASE_URL = "https://www.rakuten-sec.co.jp/"
+RAKUTEN_ALLOWED_HOSTS = ("www.rakuten-sec.co.jp",)
 RAKUTEN_RESOURCES: tuple[str, ...] = (
     "account",
     "positions",

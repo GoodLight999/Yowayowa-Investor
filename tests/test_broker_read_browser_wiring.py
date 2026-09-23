@@ -50,8 +50,8 @@ from yowayowa.services.broker_read_service import BrokerReadService
 if TYPE_CHECKING:
     from yowayowa.operator_bridge.web_session import PersistentBrokerWebSession
 
-_ABSOLUTE_POSITIONS_URL = "https://trade.rakuten-sec.co.jp/web/positions/jp"
-_OFF_ORIGIN_POSITIONS_URL = "https://www.rakuten-sec.co.jp/web/positions/jp"
+_ABSOLUTE_POSITIONS_URL = "https://www.rakuten-sec.co.jp/web/positions/jp"
+_OFF_ORIGIN_POSITIONS_URL = "http://www.rakuten-sec.co.jp/web/positions/jp"
 
 _POSITIONS_BODY = json.dumps(
     {
@@ -101,7 +101,7 @@ class _FakeBrokerWebSession:
         error: Exception | None = None,
     ) -> None:
         self.base_url = RAKUTEN_WEB_BASE_URL
-        self._base_origin = ("https", "trade.rakuten-sec.co.jp", None)
+        self._base_origin = ("https", "www.rakuten-sec.co.jp", None)
         self._response = response or _FakeApiResponse()
         # Raised before path handling: simulates a crashed / not-started
         # browser, independent of the path shape.
@@ -324,7 +324,7 @@ def test_login_page_through_production_wiring_reports_auth_expired(tmp_path: Pat
     login_html = "<html><head><title>ログイン</title></head><body>ログイン</body></html>".encode()
     session = _FakeBrokerWebSession(
         response=_FakeApiResponse(
-            url="https://trade.rakuten-sec.co.jp/login",
+            url="https://www.rakuten-sec.co.jp/login",
             body=login_html,
             content_type="text/html",
         )
