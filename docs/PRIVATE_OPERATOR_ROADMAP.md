@@ -285,6 +285,44 @@ submission path):
   JP equity order, audit JSONL snapshot + broker order-id + portfolio
   reflection as the operational evidence.
 
+#### P2C1 checkpoint — order status inquiry, audit-matched (2026-09-24)
+
+Implemented on the P2B audit layer (base `ccc7133`), read-only:
+
+- `src/yowayowa/services/order_inquiry_service.py` — `OrderInquiryService`
+  (+ `OrderInquiryReport` / `OrderInquiryItem`): fetches `open_orders`
+  and `order_history` through the existing P1B `BrokerReadService` (TTL
+  cache, auth detection, snapshots, provenance; no new network code),
+  merges them (dedupe by broker_order_id, order_history wins as the
+  newer state, open_orders order preserved), and classifies every row
+  against the P2A audit trail: `audit_matched` (client_order_id +
+  proposal_hash filled from the latest `stage=submit` response entry),
+  `unmatched_web` (manual/other-channel order), or `audit_only`
+  (audited submission invisible in the web query; order restored from
+  the audited proposal, status from the recorded response, and a note
+  telling the operator to verify on the broker's order status page).
+  Read-only by construction: the inquiry never appends to the audit
+  trail; `intact_audit=false` when `verify_audit()` reports problems.
+  Non-OK fetch states surface the outcome (notes/fetch states) without
+  inventing rows (missing data is not zero).
+- Surfaces: `GET /v1/broker-execution/orders` and
+  `GET /v1/broker-execution/orders/{client_order_id}` (404 for an id
+  that was never proposed; operation ids `broker_execution_list_orders`
+  / `broker_execution_order_status`); CLI `yowayowa broker-exec orders`
+  and `order-status` (API-backed, `--market jp|us`, `--json`).
+  `RakutenWebSubmissionTransport.list_orders()` still fails closed and
+  now points at the new GET endpoint. No cancel endpoint exists by
+  design (see the cancellation design section in docs/OPERATOR_MODE.md).
+- Tests: `tests/test_order_inquiry.py` (merge/dedupe/order, all three
+  match kinds, order_status hit + unknown id, fail-closed fetch state,
+  audit tamper → intact_audit=false, API 200/404/401-403, CLI, and the
+  transport error message).
+- Verified: `make verify` in a detached worktree (ruff, ruff-format,
+  mypy, pytest) — 794 baseline plus the new tests, all green.
+- Next: P2C2 — cancel implementation in the web-session transport,
+  only after the `cancels_enabled` gate lands and a real operator
+  session is verified (see docs/OPERATOR_MODE.md).
+
 ### Exit criteria
 
 A real operator can safely complete:

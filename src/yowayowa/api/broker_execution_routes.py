@@ -4,6 +4,11 @@ All endpoints operate on the local domain service: proposals, previews,
 interlock decisions, and audit reads. NOTHING here submits an order to
 a broker; a blocked interlock decision is a 200 response carrying
 ``allowed=false``, never an exception.
+
+The two GET order-inquiry endpoints (P2C2) are read-only: they query
+the P1B broker-read connector and match rows against the audit trail.
+No POST/DELETE order path exists by design — cancellation is not
+implemented and has no endpoint at all (not even a 405).
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from yowayowa.api.deps import (
     get_broker_execution_service,
+    get_order_inquiry_service,
     require_api_token,
     require_private_connectors,
 )
@@ -26,6 +32,7 @@ from yowayowa.broker.execution.service import (
     DuplicateProposalError,
     OrderExecutionPreview,
 )
+from yowayowa.services.order_inquiry_service import OrderInquiryReport, OrderInquiryService
 
 router = APIRouter(
     prefix="/v1/broker-execution",
@@ -182,3 +189,46 @@ def _find_proposal(
     if proposal is None:
         raise HTTPException(status_code=404, detail=f"unknown client_order_id: {client_order_id}")
     return proposal
+
+
+# ---------------------------------------------------------------------
+# P2C2: read-only order inquiry (audit-matched). No write path exists.
+# ---------------------------------------------------------------------
+
+
+@router.get(
+    "/orders",
+    response_model=OrderInquiryReport,
+    operation_id="broker_execution_list_orders",
+)
+def list_orders(
+    market: Annotated[str, Query(pattern="^(jp|us)$")] = "jp",
+    force_refresh: bool = False,
+    service: OrderInquiryService = Depends(get_order_inquiry_service),
+) -> OrderInquiryReport:
+    """Orders from the authenticated web session, audit-matched."""
+
+    return service.list_orders(market=market, force_refresh=force_refresh)
+
+
+@router.get(
+    "/orders/{client_order_id}",
+    response_model=OrderInquiryReport,
+    operation_id="broker_execution_order_status",
+)
+def order_status(
+    client_order_id: str,
+    market: Annotated[str, Query(pattern="^(jp|us)$")] = "jp",
+    service: OrderInquiryService = Depends(get_order_inquiry_service),
+) -> OrderInquiryReport:
+    """One audited client_order_id; 404 when the id was never proposed."""
+
+    report = service.order_status(client_order_id, market=market)
+    if not report.items and any(
+        note.startswith("unknown client_order_id") for note in report.notes
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail=f"unknown client_order_id: {client_order_id}",
+        )
+    return report

@@ -8,6 +8,10 @@ the proposal lookup, the browser session, the DOM, or a stage=submit
 audit entry. No HTTP API route exists for submission by design (CTO
 decision: keep the HTTP exposure unchanged; API-first is satisfied by
 CLI and domain sharing the same service).
+
+The P2C2 ``orders`` / ``order-status`` commands are read-only and call
+the API (the P1B web session lives behind it), mirroring the
+broker-read CLI pattern.
 """
 
 from __future__ import annotations
@@ -336,6 +340,129 @@ class _FrozenNullWebSession:
 
     def close(self) -> None:
         return None
+
+
+# ---------------------------------------------------------------------------
+# P2C2: read-only order inquiry (API-backed, same _client pattern as peers)
+# ---------------------------------------------------------------------------
+
+
+def _orders_report(
+    api_url: str,
+    token: str | None,
+    path: str,
+    params: dict[str, str],
+) -> dict[str, Any]:
+    from yowayowa.cli import _client
+
+    with _client(api_url, token) as client:
+        payload: dict[str, Any] = client.get(path, params=params).raise_for_status().json()
+    return payload
+
+
+def _orders_table(payload: dict[str, Any]) -> Table:
+    table = Table(
+        "Broker order id",
+        "Symbol",
+        "Side",
+        "Qty",
+        "Filled",
+        "Status",
+        "Match",
+        "Client order id",
+    )
+    for item in payload.get("items", []):
+        order = item.get("order", {})
+        table.add_row(
+            str(order.get("broker_order_id") or "—"),
+            str(order.get("symbol") or "—"),
+            str(order.get("side") or "—"),
+            str(order.get("quantity") if order.get("quantity") is not None else "—"),
+            str(order.get("filled_quantity") if order.get("filled_quantity") is not None else "—"),
+            str(order.get("status") or "—"),
+            str(item.get("match") or "—"),
+            str(item.get("client_order_id") or "—"),
+        )
+    return table
+
+
+def _orders_print_notes(payload: dict[str, Any]) -> None:
+    if not payload.get("intact_audit", True):
+        print("[bold red]audit chain problems reported (intact_audit=false)[/bold red]")
+    for note in payload.get("notes", []):
+        print(f"note: {note}")
+
+
+@app.command("orders")
+def orders(
+    market: str = typer.Option("jp", "--market", help="jp or us"),
+    force_refresh: bool = typer.Option(
+        False, "--force-refresh/--no-force-refresh", help="Bypass the read cache"
+    ),
+    api_url: str = typer.Option("http://127.0.0.1:8000", "--api-url"),
+    token: str | None = typer.Option(None, envvar="YOWAYOWA_API_TOKEN"),
+    as_json: bool = typer.Option(False, "--json", help="Print the full report JSON"),
+) -> None:
+    """List web-queried orders matched against the execution audit trail."""
+
+    market = _validate_market(market)
+    payload = _orders_report(
+        api_url,
+        token,
+        "/v1/broker-execution/orders",
+        {"market": market, "force_refresh": "true" if force_refresh else "false"},
+    )
+    if as_json:
+        typer.echo(_dump(payload))
+        return
+    print(
+        f"{payload.get('broker')} · {payload.get('market')} · "
+        f"{len(payload.get('items', []))} orders"
+    )
+    _orders_print_notes(payload)
+    print(_orders_table(payload))
+
+
+@app.command("order-status")
+def order_status(
+    client_order_id: str = typer.Argument(..., help="Client order id of an audited proposal"),
+    market: str = typer.Option("jp", "--market", help="jp or us"),
+    api_url: str = typer.Option("http://127.0.0.1:8000", "--api-url"),
+    token: str | None = typer.Option(None, envvar="YOWAYOWA_API_TOKEN"),
+    as_json: bool = typer.Option(False, "--json", help="Print the full report JSON"),
+) -> None:
+    """Show one audited order matched against the web inquiry (404 if unknown)."""
+
+    market = _validate_market(market)
+    try:
+        payload = _orders_report(
+            api_url,
+            token,
+            f"/v1/broker-execution/orders/{client_order_id}",
+            {"market": market},
+        )
+    except Exception as exc:
+        message = str(exc)
+        if "404" in message:
+            print(f"[bold red]unknown client_order_id: {client_order_id}[/bold red]")
+            raise typer.Exit(code=1) from exc
+        raise
+    if as_json:
+        typer.echo(_dump(payload))
+        return
+    print(
+        f"{payload.get('broker')} · {payload.get('market')} · "
+        f"{len(payload.get('items', []))} item(s)"
+    )
+    _orders_print_notes(payload)
+    print(_orders_table(payload))
+
+
+def _validate_market(market: str) -> str:
+    normalized = market.strip().lower()
+    if normalized not in {"jp", "us"}:
+        raise typer.BadParameter("market must be jp or us")
+    return normalized
 
 
 __all__ = ["_FrozenNullWebSession", "app"]

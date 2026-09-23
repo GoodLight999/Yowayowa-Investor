@@ -240,6 +240,16 @@ These are anti-accident interlocks, not product limitations. The operator can ra
 
 Every live connector must additionally implement idempotency/multi-submit protection and preserve an audit trail of intent, request, broker response, and later order state.
 
+### Order cancellation (P2C2 design, not implemented)
+
+Cancellation is designed but deliberately NOT implemented. When it is built, the following decisions are binding:
+
+- The only implementation site is the web-session transport layer (same shape as the P2B `RakutenWebSubmissionTransport`). No HTTP API route is created for cancellation, for the same reasons as submission: the audit trail and failure containment must live in the transport layer, not in a request handler.
+- A second master gate `cancels_enabled` (default False, analogous to `submissions_enabled`) gates the whole path. While it is False, every cancel request is rejected by the gate before proposal/broker-order lookup, session access, DOM interaction, or any cancel audit entry, and a `state(stage=cancel-frozen)` entry is recorded. The gate is evaluated first — before everything else — exactly like the submission freeze gate.
+- Processing order: cancel-frozen gate → audit matching of the broker order id against the submit-time evidence (an unmatched broker order id is refused) → GET-only authenticated probe → `stage=cancel` request audit → DOM cancel interaction → `record_response` → receipt. `accepted=True` only with evidence read back from a broker cancellation-confirmation page. A DOM failure is audited as `stage=cancel-failed` and returns status UNKNOWN.
+- Cancellation is deliberately NOT idempotent: re-running a cancel for an order that no longer exists is refused (fail-closed), and replays are never performed automatically.
+- Opening the gate requires the same evidence standard as the submission unfreeze: a verified real operator session and an explicit operator (COO) ruling.
+
 ## Rakuten Securities first path
 
 Rakuten Securities is the first concrete broker target.

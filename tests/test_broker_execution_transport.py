@@ -820,7 +820,11 @@ def test_19_feature_methods_raise_fail_closed(tmp_path: Path) -> None:
         try:
             call()
         except BrokerConnectorFeatureError as exc:
-            assert "broker-read" in str(exc) or "out of scope" in str(exc)
+            assert (
+                "broker-read" in str(exc)
+                or "out of scope" in str(exc)
+                or "GET /v1/broker-execution/orders" in str(exc)
+            )
         else:
             raise AssertionError(f"{call} must raise BrokerConnectorFeatureError")
 

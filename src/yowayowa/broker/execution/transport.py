@@ -371,7 +371,7 @@ class RakutenWebSubmissionTransport:
     def list_orders(self) -> list[BrokerOrder]:
         raise BrokerConnectorFeatureError(
             "list_orders is not served by the submission transport; "
-            "use the P1B broker-read connector (yowayowa broker-read)"
+            "use GET /v1/broker-execution/orders"
         )
 
     def list_positions(self) -> list[BrokerPosition]:

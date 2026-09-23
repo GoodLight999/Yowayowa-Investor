@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from yowayowa.operator_bridge.web_session import PersistentBrokerWebSession
     from yowayowa.services.broker_read_service import BrokerReadService
     from yowayowa.services.ir_monitor_service import IrMonitorService
+    from yowayowa.services.order_inquiry_service import OrderInquiryService
     from yowayowa.services.private_source_service import PrivateSourceService
 
 _PUBLIC_READ_ONLY_ROUTES: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -321,4 +322,20 @@ def get_broker_execution_service() -> BrokerExecutionDomainService:
     return BrokerExecutionDomainService(
         settings=settings,
         audit_dir=settings.broker_execution_audit_dir,
+    )
+
+
+@lru_cache(maxsize=1)
+def get_order_inquiry_service() -> OrderInquiryService:
+    """Read-only order inquiry: P1B reads + P2A audit matching (P2C2).
+
+    Composes the two existing cached providers; no new network path is
+    created here and the audit trail is never written to.
+    """
+
+    from yowayowa.services.order_inquiry_service import OrderInquiryService
+
+    return OrderInquiryService(
+        broker_read=get_broker_read_service(),
+        execution=get_broker_execution_service(),
     )
