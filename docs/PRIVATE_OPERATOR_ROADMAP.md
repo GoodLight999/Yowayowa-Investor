@@ -183,6 +183,14 @@ For services the operator/family legitimately subscribes to or can access, allow
 
 Keep source-specific credentials/session state local whenever practical. Do not turn private access into redistribution.
 
+Implementation status (2026-09-23): implemented and verified end-to-end against the
+operator's real mailbox; see the P1D checkpoint in
+`docs/AUTONOMOUS_AGENT_HANDOFF.md` and `docs/P1D_EVIDENCE.md`. New modules:
+`acquisition/mailbox.py` (read-only `gog` CLI reader),
+`acquisition/alerts.py` (earnings-calendar extraction),
+`services/private_source_service.py`, `api/private_source_routes.py`,
+`private_source_cli.py`; P1A/B/C modules unchanged.
+
 ### Exit criteria
 
 - At least one authenticated broker read connector is useful in daily operation.

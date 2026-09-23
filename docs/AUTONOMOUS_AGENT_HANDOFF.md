@@ -182,6 +182,58 @@ until timeout). `_default_http_transport` therefore sends
 
 ---
 
+### P1D checkpoint — Authorized private mailbox source (2026-09-23)
+
+P1D is implemented on `agent/commercial-foundation`, verified end-to-end against
+the operator's real mailbox (`nakanagundam@gmail.com`, read-only via the `gog` CLI).
+
+Commit: `eee6def` (CI run `35824917780` green: verify 634 passed, browser E2E
+passed, deploy-production success). Production OpenAPI carries the five
+`private_source_*` operations; they answer 403 outside personal mode by design
+(private-source data stays local by construction).
+
+First authorized private source: Rakuten Securities 銘柄情報通知サービス
+earnings-calendar mail — a holdings/watch-list-scoped announcement-date stream no
+public source provides.
+
+New modules:
+- `acquisition/mailbox.py` — `GogMailboxReader`: only ever invokes
+  `gog -j --readonly -a <account> gmail messages search <query> --max N --include-body`;
+  keyring password enters only via env/file, never logged/stored/returned
+  (redacted from error reasons); keyring/TTY/token failures fail closed as
+  `AUTH_EXPIRED` instead of an empty success.
+- `acquisition/alerts.py` — generic `extract_earnings_calendar`: JP codes
+  (`464A`→`464A.T`) and US tickers, section-header date fallback
+  (`■決算発表日（…）1営業日前銘柄`), NFKC normalization for full-width mail text;
+  dateless/unrecognized lines are dropped into `notes`, never guessed into events.
+- `services/private_source_service.py` — source registry (JSON), sha256 message
+  fingerprints, idempotent timeline entries via the P1C `IrTimelineStore` /
+  `timeline_entry`, 900s in-memory cache with `force_refresh`.
+- `api/private_source_routes.py` + `api/deps.py:get_private_source_service` —
+  `/v1/private-sources/sources[...]`, `/fetch`, `/events` (personal-mode guarded).
+- `private_source_cli.py` + `cli_entry.py` wiring —
+  `yowayowa private-sources sources|add-source|fetch|events`.
+- config: `mailbox_command` (default `gog`), `mailbox_keyring_password_file`.
+
+Real-data evidence (2026-09-23, 40-message scan):
+- 10 fetched mails → 11 events incl. `COUR`/`INTC` 2026-10-21, `464A.T` 2026-10-14,
+  and `6871.T` via the section-date fallback.
+- run1: `messages_scanned=40`, 70 timeline entries appended; run2 (cache) wrote
+  nothing; `force_refresh` and a fresh service over the same data dir both
+  reported `new_events=0` with zero duplicate entries (idempotent).
+- provenance on every entry: `provider=rakuten-sec-alerts`,
+  `source_url=mailbox://<account>?q=<urlencoded query>`,
+  `license_class=personal_only`, `retrieved_at`, source message id/subject/sent_at.
+- live fail-closed check: without keyring access gog exits with
+  `no TTY available for keyring file backend password prompt` → `AUTH_EXPIRED`,
+  `events=[]`, note `operator reauthentication required: ...`.
+
+Tests: 123 new (mailbox 42, extraction 26, service 38, surfaces 17); repo total
+634 passed (510 at P1C). P1A/P1B/P1C modules unchanged (frozen diff empty).
+Evidence: `docs/P1D_EVIDENCE.md`.
+
+---
+
 ## Product architecture invariants
 
 ### 1. API-first
