@@ -6,6 +6,7 @@ import typer
 from rich import print
 from rich.table import Table
 
+from yowayowa.broker_execution_cli import app as broker_execution_app
 from yowayowa.broker_read_cli import app as broker_read_app
 from yowayowa.chart_cli import app as chart_app
 from yowayowa.cli import _client, _percent, app, portfolio_app
@@ -30,6 +31,7 @@ app.add_typer(license_app, name="license")
 app.add_typer(macro_app, name="macro")
 app.add_typer(private_app, name="private")
 app.add_typer(broker_read_app, name="broker-read")
+app.add_typer(broker_execution_app, name="broker-exec")
 app.add_typer(ir_app, name="ir")
 app.add_typer(private_source_app, name="private-sources")
 

@@ -26,6 +26,7 @@ from yowayowa.db import get_session
 
 if TYPE_CHECKING:
     from yowayowa.acquisition.registry import ConnectorDefinition
+    from yowayowa.broker.execution.service import BrokerExecutionDomainService
     from yowayowa.operator_bridge.web_session import PersistentBrokerWebSession
     from yowayowa.services.broker_read_service import BrokerReadService
     from yowayowa.services.ir_monitor_service import IrMonitorService
@@ -299,3 +300,20 @@ def get_broker_read_service() -> BrokerReadService:
         transport_factory=_rakuten_browser_transport_factory,
     )
     return BrokerReadService(acquisition=acquisition)
+
+
+@lru_cache(maxsize=1)
+def get_broker_execution_service() -> BrokerExecutionDomainService:
+    """Domain-only execution service: proposals, interlocks, and audit.
+
+    No submit path is wired here; the future Rakuten submission
+    connector will own that and will never live in this provider.
+    """
+
+    from yowayowa.broker.execution.service import BrokerExecutionDomainService
+
+    settings = get_settings()
+    return BrokerExecutionDomainService(
+        settings=settings,
+        audit_dir=settings.broker_execution_audit_dir,
+    )

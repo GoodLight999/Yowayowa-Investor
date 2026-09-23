@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     broker_risk_currency: str = Field(default="JPY", min_length=3, max_length=3)
     broker_max_single_order_notional: float | None = Field(default=None, gt=0)
     broker_max_orders_per_day: int | None = Field(default=None, ge=1, le=10000)
+    broker_execution_audit_dir: str = "./data/broker-execution/audit"
     allow_unlisted_ai_endpoints: bool = Field(default_factory=_default_allow_unlisted_ai_endpoints)
     codex_cli_enabled: bool = Field(default_factory=_default_codex_cli_enabled)
     codex_bridge_url: str | None = Field(default_factory=_default_codex_bridge_url)
