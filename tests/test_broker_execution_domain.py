@@ -14,9 +14,17 @@ from starlette.testclient import TestClient
 from typer.testing import CliRunner
 
 from yowayowa.api.deps import get_broker_execution_service
-from yowayowa.broker.execution.audit import AppendOnlyAuditLog
+from yowayowa.broker.execution.audit import (
+    AUDIT_STATE_FILE_NAME,
+    AppendOnlyAuditLog,
+    entry_hash,
+)
 from yowayowa.broker.execution.models import OrderProposal
-from yowayowa.broker.execution.service import JST, BrokerExecutionDomainService
+from yowayowa.broker.execution.service import (
+    JST,
+    BrokerExecutionDomainService,
+    DuplicateProposalError,
+)
 from yowayowa.broker_execution_cli import app as cli_app
 from yowayowa.config import Settings, get_settings
 
@@ -572,3 +580,202 @@ def test_29_cli_audit_show_and_verify_on_temp_dir(tmp_path: Path) -> None:
     result_verify = runner.invoke(cli_app, ["audit-verify", "--audit-dir", str(audit_dir)])
     assert result_verify.exit_code == 0, result_verify.output
     assert "audit chain OK" in result_verify.output
+
+
+# ================================================= P2A追補: F1 state sidecar
+
+
+def test_30_f1_state_sidecar_updated_on_every_append(tmp_path: Path) -> None:
+    log = AppendOnlyAuditLog(tmp_path / "audit")
+    first = log.append("intent", "co-1", {"a": 1})
+    second = log.append("request", "co-2", {"b": 2})
+    third = log.append("state", "co-3", {"c": 3})
+    state = json.loads((tmp_path / "audit" / AUDIT_STATE_FILE_NAME).read_text(encoding="utf-8"))
+    assert state["count"] == 3
+    assert state["last_entry_hash"] == third.entry_hash
+    assert log.verify() == []
+    _ = first, second
+
+
+def test_31_f1_truncated_tail_detected_by_verify(tmp_path: Path) -> None:
+    log = AppendOnlyAuditLog(tmp_path / "audit")
+    log.append("intent", "co-1", {"a": 1})
+    log.append("intent", "co-2", {"a": 2})
+    log.append("intent", "co-3", {"a": 3})
+    lines = log.path.read_text(encoding="utf-8").splitlines(keepends=True)
+    log.path.write_text("".join(lines[:2]), encoding="utf-8")
+    problems = log.verify()
+    assert problems, "tail truncation must be detected"
+    assert any("count mismatch" in problem for problem in problems)
+
+
+def test_32_f1_tampered_last_entry_flagged_by_sidecar(tmp_path: Path) -> None:
+    """A *reforged* last entry (content + entry_hash consistently replaced)
+    passes the pure chain check but diverges from the sidecar, which is the
+    only witness of the original tail hash."""
+
+    log = AppendOnlyAuditLog(tmp_path / "audit")
+    log.append("intent", "co-1", {"amount": "1"})
+    log.append("intent", "co-2", {"amount": "2"})
+    log.append("intent", "co-3", {"amount": "3"})
+    lines = log.path.read_text(encoding="utf-8").splitlines()
+    reforged = json.loads(lines[2])
+    reforged["payload"]["amount"] = "999999"
+    del reforged["entry_hash"]
+    reforged["entry_hash"] = entry_hash(reforged)
+    lines[2] = json.dumps(reforged, ensure_ascii=False, separators=(",", ":"))
+    log.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    problems = log.verify()
+    assert problems, "reforged tail must be detected"
+    assert any("last_entry_hash" in problem for problem in problems)
+    # the chain itself is internally consistent; only the sidecar flags it
+    assert not any(
+        "entry_hash does not match recomputed content hash" in problem for problem in problems
+    )
+
+
+def test_33_f1_missing_state_file_self_heals(tmp_path: Path) -> None:
+    log = AppendOnlyAuditLog(tmp_path / "audit")
+    log.append("intent", "co-1", {"a": 1})
+    log.append("intent", "co-2", {"a": 2})
+    (tmp_path / "audit" / AUDIT_STATE_FILE_NAME).unlink()
+    assert log.verify() == []
+    state = json.loads((tmp_path / "audit" / AUDIT_STATE_FILE_NAME).read_text(encoding="utf-8"))
+    assert state["count"] == 2
+
+
+def test_34_f1_unparsable_state_file_reported(tmp_path: Path) -> None:
+    log = AppendOnlyAuditLog(tmp_path / "audit")
+    log.append("intent", "co-1", {"a": 1})
+    (tmp_path / "audit" / AUDIT_STATE_FILE_NAME).write_text("not json", encoding="utf-8")
+    problems = log.verify()
+    assert problems, "unparsable state file must be reported"
+    assert any("unparsable" in problem for problem in problems)
+
+
+# ================================================= P2A追補: F2 first-wins
+
+
+def test_35_f2_second_propose_different_content_rejected_first_wins(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    first = service.propose_model(_proposal(quantity=100))
+    with pytest.raises(DuplicateProposalError) as excinfo:
+        service.propose_model(_proposal(quantity=999))
+    assert excinfo.value.client_order_id == "co-1"
+    intents = [e for e in service.audit_entries() if e.kind == "intent"]
+    assert len(intents) == 1, "the second propose must not touch the audit trail"
+    replay = service.duplicate_check(_proposal(quantity=100))
+    assert replay.replay is True and replay.mismatch is False
+    mismatch = service.duplicate_check(_proposal(quantity=999))
+    assert mismatch.mismatch is True
+    _ = first
+
+
+def test_36_f2_second_propose_same_content_also_rejected(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.propose_model(_proposal())
+    with pytest.raises(DuplicateProposalError):
+        service.propose_model(_proposal())
+    intents = [e for e in service.audit_entries() if e.kind == "intent"]
+    assert len(intents) == 1
+
+
+def test_37_f2_restart_replays_first_intent(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.propose_model(_proposal(quantity=100))
+    with pytest.raises(DuplicateProposalError):
+        service.propose_model(_proposal(quantity=999))
+    restarted = _service(tmp_path)
+    assert restarted.duplicate_check(_proposal(quantity=100)).replay is True
+    assert restarted.duplicate_check(_proposal(quantity=999)).mismatch is True
+
+
+def test_38_f2_api_post_duplicate_returns_409(monkeypatch: Any, tmp_path: Path) -> None:
+    _api_env(monkeypatch, tmp_path)
+    from yowayowa.api.app import app
+
+    with TestClient(app) as client:
+        first = client.post("/v1/broker-execution/proposals", json=_api_proposal_body())
+        assert first.status_code == 200, first.text
+        second = client.post("/v1/broker-execution/proposals", json=_api_proposal_body())
+        assert second.status_code == 409, second.text
+        assert "duplicate client_order_id" in second.json()["detail"]
+
+
+# ==================================================== P2A追補: F3 torn line
+
+
+def test_39_f3_torn_tail_line_skipped_and_reported(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.propose_model(_proposal())
+    service.record_request("co-1", {"stage": "submit"})
+    service.record_response("co-1", {"accepted": False})
+    log = service.audit_log()
+    with log.path.open("a", encoding="utf-8") as handle:
+        handle.write('{"seq": 4, "ts": "2026-09-23T00')
+    assert len(log.entries()) == 3, "torn tail must be skipped without raising"
+    problems = log.verify()
+    assert any("unparsable" in problem for problem in problems)
+    restarted = _service(tmp_path)
+    assert len(restarted.audit_entries()) == 3
+
+
+def test_40_f3_garbage_midfile_line_reported_with_line_number(tmp_path: Path) -> None:
+    log = AppendOnlyAuditLog(tmp_path / "audit")
+    log.append("intent", "co-1", {"a": 1})
+    with log.path.open("a", encoding="utf-8") as handle:
+        handle.write("}}} garbage not json {{{\n")
+    log.append("intent", "co-2", {"a": 2})
+    entries = log.entries()
+    assert [e.seq for e in entries] == [1, 2]
+    problems = log.verify()
+    assert any("line 2" in problem and "unparsable" in problem for problem in problems)
+
+
+def test_41_f3_api_audit_endpoint_200_with_problems(monkeypatch: Any, tmp_path: Path) -> None:
+    _api_env(monkeypatch, tmp_path)
+    from yowayowa.api.app import app
+
+    with TestClient(app) as client:
+        created = client.post("/v1/broker-execution/proposals", json=_api_proposal_body())
+        assert created.status_code == 200, created.text
+        audit_path = tmp_path / "audit" / "audit.jsonl"
+        with audit_path.open("a", encoding="utf-8") as handle:
+            handle.write("torn line without newline")
+        response = client.get("/v1/broker-execution/audit", params={"limit": 10})
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["intact"] is False
+        assert body["verify_problems"], "torn line must surface in verify_problems"
+        assert len(body["entries"]) >= 1
+
+
+def test_42_f2_cli_duplicate_create_exits_nonzero(tmp_path: Path) -> None:
+    audit_dir = tmp_path / "audit"
+    service = BrokerExecutionDomainService(
+        settings=_armed_settings(),
+        audit_dir=audit_dir,
+    )
+    service.propose_model(_proposal(client_order_id="cli-co-1"))
+    args = [
+        "proposals-create",
+        "--client-order-id",
+        "cli-co-1",
+        "--symbol",
+        "7203",
+        "--side",
+        "buy",
+        "--quantity",
+        "999",
+        "--order-type",
+        "limit",
+        "--limit-price",
+        "3100",
+        "--motivation",
+        "cli duplicate probe",
+        "--audit-dir",
+        str(audit_dir),
+    ]
+    result = runner.invoke(cli_app, args)
+    assert result.exit_code != 0
+    assert "duplicate client_order_id" in result.output

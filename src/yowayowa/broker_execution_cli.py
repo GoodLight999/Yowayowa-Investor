@@ -15,7 +15,7 @@ from rich import print
 from rich.table import Table
 
 from yowayowa.broker.execution.models import OrderProposal
-from yowayowa.broker.execution.service import BrokerExecutionDomainService
+from yowayowa.broker.execution.service import BrokerExecutionDomainService, DuplicateProposalError
 from yowayowa.config import Settings
 
 app = typer.Typer(
@@ -124,6 +124,9 @@ def proposals_create(
         fields["source_research_link"] = source_research_link
     try:
         proposal = service.propose(**fields)
+    except DuplicateProposalError as exc:
+        print(f"[bold red]error: {exc}[/bold red]")
+        raise typer.Exit(code=1) from exc
     except (ValueError, ValidationError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     preview = service.preview(proposal)

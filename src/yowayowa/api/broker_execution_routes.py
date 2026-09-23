@@ -21,7 +21,11 @@ from yowayowa.api.deps import (
 )
 from yowayowa.broker.execution.audit import AuditEntry
 from yowayowa.broker.execution.models import OrderProposal
-from yowayowa.broker.execution.service import BrokerExecutionDomainService, OrderExecutionPreview
+from yowayowa.broker.execution.service import (
+    BrokerExecutionDomainService,
+    DuplicateProposalError,
+    OrderExecutionPreview,
+)
 
 router = APIRouter(
     prefix="/v1/broker-execution",
@@ -110,6 +114,8 @@ def create_proposal(
         fields["provenance"] = body.provenance
     try:
         proposal = service.propose(**fields)
+    except DuplicateProposalError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (ValidationError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return ProposalResponse(

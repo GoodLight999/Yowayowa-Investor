@@ -38,13 +38,23 @@ class OrderExecutionPreview(BaseModel):
     currency: str
     warnings: list[str] = []
 
-    def model_post_init(self, __context: object) -> None:
-        if self.estimated_notional is None:
-            return
-        warnings = list(self.warnings)
-        if "notional cannot be estimated" in warnings:
-            warnings.remove("notional cannot be estimated")
-            self.warnings = warnings
+
+class DuplicateProposalError(RuntimeError):
+    """Raised when propose() is called twice for the same client_order_id.
+
+    The registry is strictly first-wins: an id already proposed can never
+    be re-proposed (even with identical economic content), so the audit
+    trail holds exactly one ``intent`` entry per client_order_id.
+    """
+
+    def __init__(self, client_order_id: str, existing_hash: str, incoming_hash: str) -> None:
+        self.client_order_id = client_order_id
+        self.existing_hash = existing_hash
+        self.incoming_hash = incoming_hash
+        super().__init__(
+            f"duplicate client_order_id already proposed: {client_order_id} "
+            f"(existing hash {existing_hash}, incoming hash {incoming_hash})"
+        )
 
 
 class _ProposalState(BaseModel):
@@ -91,7 +101,13 @@ class BrokerExecutionDomainService:
         payload = entry.payload
         if entry.kind == "intent":
             hash_value = payload.get("proposal_hash")
-            if isinstance(hash_value, str) and hash_value:
+            # First-wins: only the first intent for an id ever registers,
+            # matching the propose-path rejection semantics.
+            if (
+                isinstance(hash_value, str)
+                and hash_value
+                and entry.client_order_id not in self._proposals
+            ):
                 self._proposals[entry.client_order_id] = _ProposalState(
                     proposal_hash=hash_value,
                     proposal_id=str(payload.get("proposal_id", "")),
@@ -123,9 +139,14 @@ class BrokerExecutionDomainService:
     # --------------------------------------------------------------- propose
 
     def propose(self, **fields: object) -> OrderProposal:
-        """Create and audit an OrderProposal (generates the proposal_id)."""
+        """Create and audit an OrderProposal (generates the proposal_id).
+
+        Raises DuplicateProposalError when the client_order_id was already
+        proposed (first-wins; nothing is appended to the audit trail).
+        """
 
         proposal = OrderProposal.model_validate(fields)
+        self._reject_reproposed(proposal)
         self._audit.append(
             "intent",
             proposal.client_order_id,
@@ -142,8 +163,13 @@ class BrokerExecutionDomainService:
         return proposal
 
     def propose_model(self, proposal: OrderProposal) -> OrderProposal:
-        """Register an already-constructed proposal in the audit trail."""
+        """Register an already-constructed proposal in the audit trail.
 
+        Raises DuplicateProposalError when the client_order_id was already
+        proposed (first-wins; nothing is appended to the audit trail).
+        """
+
+        self._reject_reproposed(proposal)
         self._audit.append(
             "intent",
             proposal.client_order_id,
@@ -158,6 +184,13 @@ class BrokerExecutionDomainService:
             proposal_id=proposal.proposal_id,
         )
         return proposal
+
+    def _reject_reproposed(self, proposal: OrderProposal) -> None:
+        existing = self._proposals.get(proposal.client_order_id)
+        if existing is not None:
+            raise DuplicateProposalError(
+                proposal.client_order_id, existing.proposal_hash, proposal.proposal_hash()
+            )
 
     # --------------------------------------------------------------- preview
 
@@ -254,5 +287,6 @@ __all__ = [
     "JST",
     "REQUEST_STAGE_SUBMIT",
     "BrokerExecutionDomainService",
+    "DuplicateProposalError",
     "OrderExecutionPreview",
 ]
