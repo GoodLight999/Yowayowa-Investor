@@ -335,6 +335,7 @@ class RakutenWebSubmissionTransport:
         self._service.record_response(
             client_order_id,
             {
+                "stage": STAGE_SUBMIT,
                 "accepted": accepted,
                 "broker_order_id": broker_order_id,
                 "status": status.value,
