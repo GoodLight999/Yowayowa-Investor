@@ -676,3 +676,38 @@ def test_timeline_entry_payload_keeps_kpis_and_diff(tmp_path: Path) -> None:
         .splitlines()[0]
     )
     assert json.loads(line)["kind"] in {"document", "page"}
+
+
+def test_timeline_entries_count_only_actual_timeline_writes(tmp_path: Path) -> None:
+    """``timeline_entries`` counts timeline writes, not statuses.
+
+    Documents beyond the fetch budget are classified "new" by URL only and
+    never reach the timeline: counting statuses reported them as timeline
+    entries (real-data run1 reported 106 while 6 entries were on disk).
+    """
+    listing_lines = ["<html><body>"]
+    for index in range(5):
+        listing_lines.append(f'<a href="/ir/items/bulk_{index}.csv">資料{index}[1.0 KB]</a>')
+    listing_lines.append("</body></html>")
+    routes: dict[str, tuple[int, str | None, bytes]] = {
+        "/library/briefing.html": (
+            200,
+            "text/html; charset=utf-8",
+            "\n".join(listing_lines).encode(),
+        )
+    }
+    for index in range(5):
+        routes[f"/ir/items/bulk_{index}.csv"] = (200, "text/csv", _CSV)
+    service = _service(tmp_path, routes, max_documents_per_run=2)
+    outcome = service.monitor("example-ir")
+
+    new_records = [document for document in outcome.documents if document.status == "new"]
+    assert len(new_records) > 2, "scenario requires more new docs than the fetch budget"
+    on_disk = service.timeline("1234.T")
+    assert outcome.timeline_entries == len(on_disk)
+    fetched_active = [
+        document
+        for document in outcome.documents
+        if document.fetched and document.status in ("new", "revised", "verified")
+    ]
+    assert outcome.timeline_entries == len(fetched_active)

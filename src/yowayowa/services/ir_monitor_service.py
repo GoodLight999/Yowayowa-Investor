@@ -378,9 +378,11 @@ class IrMonitorService:
         records: list[IrDocumentRecord] = []
         timeline_entries = 0
         for item in classified:
-            record = self._process_document(source, item, responses.get(item["url"]), now, notes)
+            record, wrote = self._process_document(
+                source, item, responses.get(item["url"]), now, notes
+            )
             records.append(record)
-            timeline_entries += 1 if record.status in ("new", "revised", "verified") else 0
+            timeline_entries += 1 if wrote else 0
 
         # Persist fingerprints: content fingerprints for fetched documents,
         # URL-only fingerprints for the rest so the next run sees them.
@@ -505,7 +507,13 @@ class IrMonitorService:
         response: TransportResponse | None,
         now: datetime,
         notes: list[str],
-    ) -> IrDocumentRecord:
+    ) -> tuple[IrDocumentRecord, bool]:
+        """Process one classified document.
+
+        Returns ``(record, wrote_timeline)``: ``wrote_timeline`` is True only
+        immediately after a successful ``self._timeline.append(...)`` — never
+        for URL-only classifications that did not reach the timeline.
+        """
         url: str = item["url"]
         record = IrDocumentRecord(
             url=url,
@@ -517,7 +525,7 @@ class IrMonitorService:
         )
         if response is None or not item.get("sha256"):
             record.notes.append("not fetched; classified by URL only")
-            return record
+            return record, False
         record.fetch_state = AcquisitionFetchState.OK
         record.size_bytes = len(response.content)
 
@@ -564,7 +572,8 @@ class IrMonitorService:
                 notes=record.notes,
             )
             self._timeline.append(source.symbol, entry)
-        return record
+            return record, True
+        return record, False
 
     def _extract_kpis(self, extracted: ExtractedDocument) -> tuple[list[dict[str, Any]], list[str]]:
         if not extracted.parsed:
