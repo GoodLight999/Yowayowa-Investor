@@ -140,6 +140,32 @@ SOURCE_POLICIES: tuple[SourceLicensePolicy, ...] = (
         ],
     ),
     SourceLicensePolicy(
+        key="frankfurter-ecb",
+        source="European Central Bank reference exchange rates (via Frankfurter)",
+        provider_patterns=["frankfurter", "ecb-fx"],
+        license_class=LicenseClass.OFFICIAL_PUBLIC,
+        access=SourceAccess.PUBLIC,
+        commercial_use=True,
+        public_display=True,
+        public_api=True,
+        derived_analysis_public=True,
+        attribution_required=True,
+        attribution="Source: European Central Bank reference exchange rates",
+        terms_url=(
+            "https://www.ecb.europa.eu/stats/policy_and_exchange_rates/"
+            "euro_reference_exchange_rates/html/index.en.html"
+        ),
+        reviewed_on=date(2026, 9, 24),
+        notes=[
+            "Frankfurter is a key-less, open mirror of the ECB's official euro reference "
+            "exchange rates; the ECB publishes these rates for free reuse with attribution.",
+            "ECB reference rates are a once-daily fix (16:00 CET) covering roughly 30 "
+            "currencies; cross rates are computed from the EUR-base series.",
+            "Only the rate data is treated as reusable here; Frankfurter/ECB site assets and "
+            "marks are outside this policy.",
+        ],
+    ),
+    SourceLicensePolicy(
         key="fred",
         source="Federal Reserve Economic Data (FRED)",
         provider_patterns=["fred"],

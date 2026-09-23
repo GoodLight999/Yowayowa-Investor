@@ -9,6 +9,7 @@ Current public-safe source families:
 - U.S. Bureau of Labor Statistics — CPI, labor-market and wage series.
 - U.S. Bureau of Economic Analysis — NIPA tables including GDP and consumption analysis.
 - U.S. Treasury — official Treasury yield-curve/rate data.
+- ECB reference exchange rates (via Frankfurter) — official daily FX reference rates; the FX analysis surface's public-safe provider.
 
 Restricted convenience sources remain outside anonymous public research:
 

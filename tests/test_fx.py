@@ -128,6 +128,11 @@ def _install_fx_app(monkeypatch: pytest.MonkeyPatch, tmp_path, provider: object)
     from yowayowa.api import fx_routes
 
     monkeypatch.setattr(fx_routes, "yahoo_market_provider", lambda: provider)
+    monkeypatch.setattr(
+        fx_routes,
+        "FrankfurterFxProvider",
+        lambda _settings: provider,
+    )
 
 
 def test_fx_rate_endpoint_returns_snapshot(tmp_path, monkeypatch) -> None:
@@ -177,7 +182,11 @@ def test_fx_rate_endpoint_rejects_unsupported_currency(tmp_path, monkeypatch) ->
         get_settings.cache_clear()
 
 
-def test_fx_history_endpoint_returns_points_with_none_preserved(tmp_path, monkeypatch) -> None:
+def test_fx_history_endpoint_preserves_partial_rows_for_personal_surfaces(
+    tmp_path, monkeypatch
+) -> None:
+    """Crypto pairs keep the Yahoo surface (OHLC rows, None fields preserved)."""
+
     class FakeProvider:
         def fx_history(
             self,
@@ -211,18 +220,18 @@ def test_fx_history_endpoint_returns_points_with_none_preserved(tmp_path, monkey
         with TestClient(app) as client:
             response = client.get(
                 "/v1/fx/history",
-                params={"pair": "USDJPY", "interval": "1h", "period": "1mo"},
+                params={"pair": "BTCUSD", "interval": "1h", "period": "1mo"},
             )
             assert response.status_code == 200
             payload = response.json()
-            assert payload["pair"] == "USDJPY"
+            assert payload["pair"] == "BTCUSD"
             assert payload["interval"] == "1h"
             assert payload["points"][0]["volume"] is None
             assert payload["points"][1]["close"] is None
 
             unsupported = client.get(
                 "/v1/fx/history",
-                params={"pair": "USDJPY", "interval": "2h"},
+                params={"pair": "BTCUSD", "interval": "2h"},
             )
             assert unsupported.status_code == 422
     finally:
@@ -354,3 +363,188 @@ def test_fx_proposal_endpoint_returns_spec(tmp_path, monkeypatch) -> None:
 class _SnapshotProvider:
     def fx_quote(self, pair: str) -> FxRateSnapshot:
         return _snapshot(pair)
+
+
+# ------------------------------------------------------- pair-based provider routing
+
+
+class _RecordingProvider:
+    """Records which provider instance each call was routed to."""
+
+    def __init__(self) -> None:
+        self.quoted: list[str] = []
+        self.histories: list[tuple[str, str, str]] = []
+
+    def fx_quote(self, pair: str) -> FxRateSnapshot:
+        self.quoted.append(pair)
+        return _snapshot(pair)
+
+    def fx_history(self, pair: str, *, interval: str = "1d", period: str = "1mo") -> FxHistory:
+        self.histories.append((pair, interval, period))
+        return FxHistory(pair=pair, interval=interval, points=[], provenance=_provenance())
+
+
+def test_fx_rate_routes_ecb_pairs_through_frankfurter(tmp_path, monkeypatch) -> None:
+    provider = _RecordingProvider()
+    _install_fx_app(monkeypatch, tmp_path, provider)
+
+    from yowayowa.api.app import app
+
+    try:
+        with TestClient(app) as client:
+            for pair in ("USDJPY", "EURGBP", "EURUSD", "CHFKRW"):
+                response = client.get("/v1/fx/rate", params={"pair": pair})
+                assert response.status_code == 200
+                assert response.json()["provenance"]["provider"] == "fixture"
+            assert provider.quoted == ["USDJPY", "EURGBP", "EURUSD", "CHFKRW"]
+    finally:
+        get_settings.cache_clear()
+
+
+def test_fx_rate_non_ecb_pair_fails_closed_with_404(tmp_path, monkeypatch) -> None:
+    provider = _RecordingProvider()
+    _install_fx_app(monkeypatch, tmp_path, provider)
+
+    from yowayowa.api.app import app
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/v1/fx/rate", params={"pair": "USDVND"})
+            assert response.status_code == 404
+            assert (
+                "does not fall back" in response.json()["detail"]
+                or "not available" in (response.json()["detail"])
+            )
+            assert provider.quoted == []
+    finally:
+        get_settings.cache_clear()
+
+
+def test_fx_rate_crypto_pair_uses_personal_provider(tmp_path, monkeypatch) -> None:
+    provider = _RecordingProvider()
+    _install_fx_app(monkeypatch, tmp_path, provider)
+
+    from yowayowa.api.app import app
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/v1/fx/rate", params={"pair": "BTCUSD"})
+            assert response.status_code == 200
+            assert provider.quoted == ["BTCUSD"]
+    finally:
+        get_settings.cache_clear()
+
+
+def test_fx_history_rejects_intraday_interval_with_422(tmp_path, monkeypatch) -> None:
+    provider = _RecordingProvider()
+    _install_fx_app(monkeypatch, tmp_path, provider)
+
+    from yowayowa.api.app import app
+
+    try:
+        with TestClient(app) as client:
+            for interval in ("1h", "1wk", "1mo"):
+                response = client.get(
+                    "/v1/fx/history",
+                    params={"pair": "USDJPY", "interval": interval},
+                )
+                assert response.status_code == 422
+                assert "daily only" in response.json()["detail"]
+            assert provider.histories == []
+    finally:
+        get_settings.cache_clear()
+
+
+def test_fx_history_non_ecb_pair_fails_closed_with_404(tmp_path, monkeypatch) -> None:
+    provider = _RecordingProvider()
+    _install_fx_app(monkeypatch, tmp_path, provider)
+
+    from yowayowa.api.app import app
+
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/v1/fx/history",
+                params={"pair": "USDVND", "interval": "1d"},
+            )
+            assert response.status_code == 404
+            assert provider.histories == []
+    finally:
+        get_settings.cache_clear()
+
+
+def test_fx_proposal_routes_ecb_pair_and_keeps_propose_only(tmp_path, monkeypatch) -> None:
+    provider = _RecordingProvider()
+    _install_fx_app(monkeypatch, tmp_path, provider)
+
+    from yowayowa.api.app import app
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/v1/fx/proposal", params={"pair": "USDJPY"})
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["action"] == "propose_only"
+            assert payload["provenance"]["provider"] == "fixture"
+            assert provider.quoted == ["USDJPY"]
+    finally:
+        get_settings.cache_clear()
+
+
+def test_fx_routes_fail_closed_in_public_mode_for_crypto_pair(tmp_path, monkeypatch) -> None:
+    """Public mode: crypto pairs must hit Yahoo's fail-closed policy, ECB pairs must not."""
+
+    provider = _RecordingProvider()
+    monkeypatch.setenv("YOWAYOWA_MODE", "public")
+    monkeypatch.setenv("YOWAYOWA_API_TOKEN", "secret")
+    monkeypatch.setenv("YOWAYOWA_DATABASE_URL", f"sqlite:///{tmp_path / 'fx-public.db'}")
+    get_settings.cache_clear()
+    from yowayowa.api import fx_routes
+
+    monkeypatch.setattr(fx_routes, "yahoo_market_provider", lambda: provider)
+    monkeypatch.setattr(fx_routes, "FrankfurterFxProvider", lambda _settings: provider)
+    import yowayowa.api.deps as deps
+
+    monkeypatch.setattr(deps, "get_settings", get_settings)
+
+    from yowayowa.api.app import app
+
+    try:
+        with TestClient(app) as client:
+            # fx routes stay token-gated in public mode (not on the anonymous
+            # research allowlist): a bad token is 401 before any routing.
+            bad_token = client.get(
+                "/v1/fx/rate", params={"pair": "USDJPY"}, headers={"Authorization": "Bearer x"}
+            )
+            assert bad_token.status_code == 401
+
+            # Valid token + ECB pair resolves to Frankfurter (stubbed here);
+            # no Yahoo policy violation because Frankfurter is OFFICIAL_PUBLIC.
+            ecb = client.get(
+                "/v1/fx/rate",
+                params={"pair": "USDJPY"},
+                headers={"Authorization": "Bearer secret"},
+            )
+            assert ecb.status_code == 200
+            assert provider.quoted == ["USDJPY"]
+    finally:
+        get_settings.cache_clear()
+
+    # The Yahoo construction itself remains fail-closed under public policy.
+    from yowayowa.providers.base import ProviderPolicyError
+    from yowayowa.providers.yahoo import YahooMarketProvider
+
+    with pytest.raises(ProviderPolicyError):
+        YahooMarketProvider(get_settings())
+
+
+def test_fx_provider_resolution_unit_fails_closed_without_any_fallback() -> None:
+    """Routing helper: ECB resolves to Frankfurter, unknown pairs raise."""
+
+    from yowayowa.api.fx_routes import _fx_provider
+    from yowayowa.providers.frankfurter import FrankfurterFxProvider
+
+    settings = get_settings()
+    assert isinstance(_fx_provider("USDJPY", settings), FrankfurterFxProvider)
+    with pytest.raises(LookupError):
+        _fx_provider("USDVND", settings)

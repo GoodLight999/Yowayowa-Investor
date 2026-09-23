@@ -29,6 +29,7 @@ An unknown source is denied in public mode until it is deliberately classified.
 | U.S. Bureau of Labor Statistics | Yes | Yes | Published BLS material is treated as public domain except identified third-party assets. Cite BLS, retrieval time where relevant, and do not imply BLS endorsement of downstream analysis. |
 | U.S. Bureau of Economic Analysis | Yes | Yes | BEA-published data are treated as public domain except content explicitly identified as third-party copyrighted material. API access uses a free registered key; cite BEA and do not imply BEA/Commerce endorsement of downstream analysis. |
 | U.S. Treasury rate data | Yes | Yes | Public product uses the official rate feed; unrelated site assets/marks are outside the policy. |
+| ECB reference rates (via Frankfurter) | Yes | Yes | Official public source (key-less, free). Daily fix only; cite the ECB and do not imply ECB endorsement. Covers ~30 currencies; cross rates are Frankfurter-computed from the EUR-base series. |
 | FRED generic catalog/series | No | No by default | Personal/BYOK only. FRED aggregates series whose original providers can impose different copyright terms. A FRED API key is not a redistribution license. A future series-specific allowlist may promote individually verified series. |
 | Yahoo Finance / yfinance | No | No | Personal mode only. Never use as a public redistribution source. |
 

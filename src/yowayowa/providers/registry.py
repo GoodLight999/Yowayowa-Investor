@@ -7,6 +7,7 @@ from yowayowa.domain import Fundamentals
 from yowayowa.providers.bea import BeaClient
 from yowayowa.providers.bls import BlsClient
 from yowayowa.providers.edinet import EdinetClient
+from yowayowa.providers.frankfurter import FrankfurterFxProvider
 from yowayowa.providers.fred import FredClient
 from yowayowa.providers.fundamentals import is_non_us_exchange_listing
 from yowayowa.providers.sec import SecClient
@@ -53,6 +54,11 @@ def fundamentals_provider() -> SecClient:
 @lru_cache(maxsize=1)
 def yahoo_market_provider() -> YahooMarketProvider:
     return YahooMarketProvider(get_settings())
+
+
+@lru_cache(maxsize=1)
+def frankfurter_fx_provider() -> FrankfurterFxProvider:
+    return FrankfurterFxProvider(get_settings())
 
 
 @lru_cache(maxsize=1)
