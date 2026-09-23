@@ -134,6 +134,13 @@ P1B is implemented and `make verify` green on `agent/commercial-foundation` (not
 P1C is implemented on `agent/commercial-foundation`, verified end-to-end against a
 live non-API IR source (Nitori Holdings, `nitorihd.co.jp`).
 
+Commit: `64cd3dc` (pushed, CI run `35811046451` green: verify 510 passed,
+browser E2E 69 passed, deploy-production success).
+Production verified: `/internal/debug/runtime` reports
+`source_revision=64cd3dc2b99bbd566a479a18dc27d5948ed74e8e`, deployment
+`dpl_BLodR564pztojtq96kcgzb1RVG4q`, and the five `/v1/ir/*` paths are present in
+the production OpenAPI document (they answer 403 outside personal mode by design).
+
 Pipeline: `IrSourceDefinition` → discovery → new/revised/unchanged/verified
 classification → acquisition → structured extraction → previous-version KPI diff →
 provenance → instrument timeline → REST/CLI.
