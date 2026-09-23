@@ -248,8 +248,12 @@ def test_11_currency_mismatch_blocked(tmp_path: Path) -> None:
 
 
 def test_12_daily_count_blocked_at_limit(tmp_path: Path) -> None:
-    service = _service(tmp_path, settings=_armed_settings(broker_max_orders_per_day=2))
     clock_now = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
+    service = _service(
+        tmp_path,
+        settings=_armed_settings(broker_max_orders_per_day=2),
+        clock=lambda: clock_now,
+    )
     service.record_request(
         "co-x",
         {"stage": "submit"},
