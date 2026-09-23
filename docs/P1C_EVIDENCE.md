@@ -99,12 +99,18 @@ PASS  timeline records every KPI-bearing observation
    `+https://...` 参照URLを含むリクエストを接続保持したままタイムアウトさせていた。
    → UAを `Yowayowa-Investor/0.1 (personal research)` にし、理由をコード内に明記。
 
-## 4. 回帰テスト
+## 4. 回帰テスト（final, corrected 2026-09-23）
 
-- `tests/test_ir_acquisition.py` — 33件
-- `tests/test_ir_surfaces.py` — 6件
-- 合計 39 passed（33 + 6）（上記の全欠陥に対する回帰テストを含む）
-- リポジトリ全体: **510 passed**（P1B時点の471から非減少）
+- `tests/test_ir_acquisition.py` — **42件**（発見・分類・抽出・KPI・diff・
+  counting・CSV/XLSX多列レイアウトの回帰を含む）
+- `tests/test_ir_surfaces.py` — **6件**
+- IRテスト合計: **48 passed**（42 + 6）
+- リポジトリ全体: **642 passed**（後述の 追補 セクション参照）
+
+> 訂正の経緯: commit `64cd3dc` のメッセージはテスト数を過大に申告していた
+> （33(35)+7=42）。歴史は書き換えず（force-pushなし）、本節が唯一の最終
+> 正値を保持する。初期版の「33件/6件/39 passed」および 追補 の40 / 42表記
+> は本節の数値に統一された。
 
 ## 5. verify / CI / 本番
 
@@ -155,7 +161,8 @@ evidence doc test counts`）
 - **F2**: 上記「## 4. 回帰テスト」の `test_ir_surfaces.py` を7件→6件、
   合計を 40 passed→39 passed（33 + 6）に訂正（L107の「510 passed」は
   P1C時点の実測として変更なし）。
-- 修正後のIRテスト合計: **40 passed**（34 + 6）
+- 修正後のIRテスト合計（当時）: **40 passed**（34 + 6）
+  → F3追加後の最終値は「## 4. 回帰テスト（final）」参照: 48 passed（42 + 6）
 - `make verify`（開発中の計測, P1Dマージ ec2af8e 合流前）: 511 passed
 - `make verify`（最終commit eee6def, P1Dマージ込み）: **634 passed**
   （CTO独立検証 2026-09-23, CI run 35824917780 success）
@@ -164,3 +171,53 @@ evidence doc test counts`）
   `outcome.timeline_entries = 6` = on-disk timeline entries `6`
   （修正前の実測では outcome が 106 と報告 / on-disk は 6 だった）。
   12/12 checks passed、run2 new=0（冪等）も維持。
+
+## 8. 追補2（F3/F1-remainder実装, 2026-09-23）
+
+### F3: CSV解析 + XLSX/CSV多列KPI抽出
+
+COO実測プローブ（`coo_p1c` counting/xlsx_layouts/csv）で確認された4つの
+xlsx形状とCSV無視を修正:
+
+1. **CSV解析**（`acquisition/documents.py`）: `extract_csv_tables()` を新設
+   （stdlib csv）。utf-8-sig → cp932 → fail-closed note のデコード順。
+   `extract_document` は拡張子 `.csv` と content-type `csv` の両方で振分け。
+   形状は `extract_xlsx_tables` と同一（headers + rows dict）。
+2. **表単位ヒントの拡張**（`acquisition/ir.py` `table_unit_hint`）: rows辞書
+   の先頭6行×6セルも走査し、単位行（`単位：百万円`）を認識。
+3. **ヘッダレイアウト フォールバック**（`_detect_header_layout` +
+   `_extract_kpis_header_layout`）: 既存3形状（rows-key / first-cell /
+   PDF cells）が観測を1つも返さない表中でのみ実行。
+   - ヘッダ行 = 汎用ラベル列ヘッダ（項目/項目名/ラベル/KPI/item）を含むか、
+     期間ヒント2個以上を含む行。ヘッダより前の行は消費（単位宣言は表単位、
+     他はスキップ）。
+   - 値列 = 当期/今期/current を最優先、次に汎用値ヘッダ（値/value/数値）、
+     その後 最右の期間列。
+   - 単位セマンティクスは既存ルール厳守: 倍率は `_unit_multiplier` の合成、
+     単位なし/曖昧なら 1.0 / None（fail closed、値を invent しない）。
+   - xlsx/cvs の生シート行は `_source_rows` としてテーブルに保持され、
+     グリッド再構築（タイトル行オフセット含む）に使われる。
+
+回帰テスト（`tests/test_ir_acquisition.py`, +8 → 42件）で4形状すべてを
+実数値で固定: A`revenue=1200.0`, B`order_backlog=1200.0`,
+C`revenue=1_200_000_000.0/百万円・当期列選択`, D`revenue=1200.0, unit=None`,
+CSV `order_backlog=1200.0 / contracts=340.0`, cp932デコード。
+
+### F1-remainder: unchanged(seen) 分離
+
+- `IrMonitorOutcome.seen_count: int = 0` を追加。
+  `unchanged_count` は content-verified（status == 'unchanged'）のみ、
+  `seen_count` は URL-only（status == 'seen'）のみを数える。文書自身の
+  status の意味は不変。
+- CLI 表示: `unchanged {n} · seen {n}` を rich 行に追加
+  （`ir_cli.py` monitor）。APIは pydantic モデル経由で自動反映。
+- 回帰テスト `test_monitor_counts_unchanged_content_verified_and_seen_url_only`
+  （COO counting probe 鏡像: 12発見 / budget=4 → run1 new=12, fetched=4,
+  timeline_entries=4=disk行数; run2 unchanged=4, seen=8, timeline_entries=0）。
+
+### 最終テスト数（`make verify` 実測後に確定）
+
+- `tests/test_ir_acquisition.py`: **42**（34 → 42, +8）
+- `tests/test_ir_surfaces.py`: **6**（不変）
+- IR合計: **48 passed**
+- リポジトリ全体: **642 passed**（verify ログ参照）

@@ -83,6 +83,8 @@ known-first-party = ["yowayowa"]
 "src/yowayowa/web/ux_i18n.py" = ["E501", "RUF001"]
 "tests/test_ux_foundations.py" = ["RUF001"]
 "tests/test_rakuten_web_read.py" = ["RUF001"]
+"tests/test_ir_acquisition.py" = ["RUF001", "RUF002"]
+"src/yowayowa/acquisition/ir.py" = ["RUF001", "RUF002"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

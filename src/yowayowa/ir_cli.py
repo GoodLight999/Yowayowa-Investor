@@ -67,7 +67,8 @@ def monitor(
     print(
         f"[bold]{payload['source_id']} ({payload['symbol']})[/bold] · "
         f"state {payload['fetch_state']} · new {payload['new_count']} · "
-        f"revised {payload['revised_count']} · unchanged {payload['unchanged_count']} · "
+        f"revised {payload['revised_count']} · "
+        f"unchanged {payload['unchanged_count']} · seen {payload.get('seen_count', 0)} · "
         f"timeline +{payload['timeline_entries']}"
     )
     table = Table("Status", "Format", "Doc", "KPIs", "Diff")

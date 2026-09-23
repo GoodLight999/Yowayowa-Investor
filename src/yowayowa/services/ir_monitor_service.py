@@ -207,6 +207,7 @@ class IrMonitorOutcome(BaseModel):
     new_count: int = 0
     revised_count: int = 0
     unchanged_count: int = 0
+    seen_count: int = 0
     timeline_entries: int = 0
     network: list[NetworkExchange] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
@@ -396,7 +397,10 @@ class IrMonitorService:
 
         new_count = sum(1 for record in records if record.status == "new")
         revised_count = sum(1 for record in records if record.status == "revised")
-        unchanged_count = sum(1 for record in records if record.status in ("unchanged", "seen"))
+        # unchanged counts CONTENT-verified records only; URL-only records
+        # (never fetched) are reported separately as seen.
+        unchanged_count = sum(1 for record in records if record.status == "unchanged")
+        seen_count = sum(1 for record in records if record.status == "seen")
         return IrMonitorOutcome(
             source_id=source.source_id,
             symbol=source.symbol,
@@ -406,6 +410,7 @@ class IrMonitorService:
             new_count=new_count,
             revised_count=revised_count,
             unchanged_count=unchanged_count,
+            seen_count=seen_count,
             timeline_entries=timeline_entries,
             network=network,
             notes=notes,

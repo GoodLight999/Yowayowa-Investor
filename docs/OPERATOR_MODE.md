@@ -96,14 +96,30 @@ instrument timeline.
   are pages, not documents) and classifies each URL against the recorded
   fingerprints as `new` / `seen` / `verified` / `unchanged` / `revised`.
 - **Extraction** — `acquisition/documents.py` handles HTML tables (the existing
-  `TableHtmlParser`), XLSX (stdlib OOXML), and PDF (pdfminer text layer plus
-  coordinate-based table reconstruction). An image-only PDF fails closed with an
-  explicit parse note; it is never reported as a parsed document with no KPIs.
+  `TableHtmlParser`), XLSX (stdlib OOXML), CSV (stdlib `csv`; bytes decode as
+  utf-8-sig then cp932, otherwise the document fails closed with an explicit
+  note), and PDF (pdfminer text layer plus coordinate-based table
+  reconstruction). CSV and XLSX rows become the same generic row-table shape,
+  and multi-column KPI forms are extracted for both: a label column paired
+  with period columns (current period preferred over the previous one),
+  generic `項目`/`値` heads, title rows and `単位：百万円` unit rows ahead of
+  the detected header. A table with no recognized unit declaration keeps
+  multiplier 1.0 and `unit: None` — fail closed; values are never invented.
+  An image-only PDF fails closed with an explicit parse note; it is never
+  reported as a parsed document with no KPIs.
 - **KPI normalization** — `acquisition/ir.py` maps JP/EN labels to canonical KPI
   names and normalizes values to yen, handling per-table unit declarations,
   document-level captions such as `(Millions of yen)`, and compound yen chains
   such as `当期利益892億74百万円`. A first observation of a document carries no
   diff: reporting one would fabricate a previous version.
+- **Run counting semantics** — a monitoring run reports the discovered
+  documents in disjoint buckets: `new` (URL + new content fetched this run),
+  `revised` (content changed behind a known URL), `unchanged`
+  (content-verified again), and `seen` (URL known but only classified by
+  URL — beyond this run's fetch budget). `unchanged_count` never includes
+  URL-only records: `unchanged {n} · seen {m}` in the CLI counts them
+  separately, and `timeline_entries` equals the number of entries actually
+  appended to the on-disk timeline, not the number of statuses.
 - **Diff and history** — a revision is a changed content hash behind a stable
   URL, so `kpi_diff` compares against the last recorded observation of the same
   URL and reports `increase` / `decrease` / `revision` / `added` / `removed` with

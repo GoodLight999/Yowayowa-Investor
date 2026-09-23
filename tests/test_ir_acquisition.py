@@ -27,6 +27,7 @@ from yowayowa.acquisition.discovery import (
     discover_ir_documents,
 )
 from yowayowa.acquisition.documents import (
+    extract_csv_tables,
     extract_document,
     extract_html_tables,
     extract_xlsx_tables,
@@ -711,3 +712,184 @@ def test_timeline_entries_count_only_actual_timeline_writes(tmp_path: Path) -> N
         if document.fetched and document.status in ("new", "revised", "verified")
     ]
     assert outcome.timeline_entries == len(fetched_active)
+
+
+# --------------------------------------------------- CSV extraction (F3)
+
+
+def test_extract_document_dispatches_csv_by_extension_and_content_type() -> None:
+    extracted = extract_document(content=_CSV, content_type="text/csv", filename="summary.csv")
+    assert extracted.format == "csv"
+    assert extracted.parsed
+    assert extracted.parse_note is None
+    assert extracted.tables[0]["headers"] == ["項目", "値"]
+    assert extracted.tables[0]["rows"][0] == {"項目": "受注残", "値": "1200"}
+
+    # content-type dispatch works even without a recognized extension
+    by_type = extract_document(
+        content=_CSV,
+        content_type="text/csv",
+        filename="download",  # no extension: dispatch must fall to content-type
+    )
+    assert by_type.format == "csv"
+    assert by_type.parsed
+
+
+def test_extract_csv_tables_decodes_cp932() -> None:
+    extracted = extract_csv_tables("項目,値\n受注残,1200\n".encode("cp932"))
+    assert extracted.parsed
+    assert extracted.tables[0]["rows"][0] == {"項目": "受注残", "値": "1200"}
+
+
+def test_csv_kpis_extracted_through_header_layout_fallback() -> None:
+    """項目/値 CSV heads yield KPIs via the header-layout fallback path."""
+    extracted = extract_csv_tables(_CSV)
+    observations, _ = extract_kpis_from_tables(extracted.tables)
+    by_kpi = {item["kpi"]: item for item in observations}
+    assert by_kpi["order_backlog"]["value"] == 1200.0
+    assert by_kpi["contracts"]["value"] == 340.0
+
+
+def _xlsx_workbook(rows: list[list[str]]) -> bytes:
+    """Minimal OOXML workbook whose cells carry inline strings."""
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(
+            "xl/workbook.xml",
+            '<workbook><sheets><sheet name="KPI"/></sheets></workbook>',
+        )
+        sheet_rows = []
+        for row_index, row in enumerate(rows, start=1):
+            cells = []
+            for column, value in enumerate(row):
+                reference = f"{chr(ord('A') + column)}{row_index}"
+                cells.append(f'<c r="{reference}" t="inlineStr"><is><t>{value}</t></is></c>')
+            sheet_rows.append(f"<row r='{row_index}'>{''.join(cells)}</row>")
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            "<worksheet><sheetData>" + "".join(sheet_rows) + "</sheetData></worksheet>",
+        )
+    return buffer.getvalue()
+
+
+# -------------------------------------- XLSX multi-column layouts (F3)
+
+
+def test_xlsx_shape_a_kpi_name_headers_still_extracts() -> None:
+    """Non-regression: KPI names as column headers, values in row 1."""
+    extracted = extract_document(
+        content=_xlsx_workbook([["売上高", "営業利益"], ["1200", "150"]]),
+        content_type=None,
+        filename="a.xlsx",
+    )
+    observations, _ = extract_kpis_from_tables(extracted.tables)
+    revenue = next(item for item in observations if item["kpi"] == "revenue")
+    assert revenue["value"] == 1200.0
+
+
+def test_xlsx_header_kpi_current_period_extracts() -> None:
+    """KPI/当期 header + label/value row (COO shape B)."""
+    extracted = extract_document(
+        content=_xlsx_workbook([["KPI", "当期"], ["受注残", "1,200"]]),
+        content_type=None,
+        filename="b.xlsx",
+    )
+    observations, _ = extract_kpis_from_tables(extracted.tables)
+    by_kpi = {item["kpi"]: item for item in observations}
+    assert by_kpi["order_backlog"]["value"] == 1200.0
+
+
+def test_xlsx_title_unit_period_rows_extracts_current_period_column() -> None:
+    """Title + 単位：百万円 + period-header rows resolve the CURRENT column
+    (COO shape C): units apply and the previous-period 1000 is NOT picked."""
+    extracted = extract_document(
+        content=_xlsx_workbook(
+            [
+                ["2026年3月期 第3四半期 決算短信", "", ""],
+                ["単位：百万円", "前期", "当期"],
+                ["売上高", "1000", "1200"],
+                ["営業利益", "100", "150"],
+            ]
+        ),
+        content_type=None,
+        filename="c.xlsx",
+    )
+    assert extracted.parsed
+    observations, _ = extract_kpis_from_tables(extracted.tables)
+    by_kpi = {item["kpi"]: item for item in observations}
+    revenue = by_kpi["revenue"]
+    assert revenue["value"] == 1_200_000_000.0
+    assert revenue["unit"] == "百万円"
+    assert revenue["raw_value"] == "1200"
+    assert by_kpi["operating_profit"]["value"] == 150_000_000.0
+
+
+def test_xlsx_period_headers_without_unit_fail_closed_to_multiplier_one() -> None:
+    """No unit declared anywhere (COO shape D): multiplier stays 1.0 and the
+    unit is None — a table with no unit declaration never gets one invented."""
+    extracted = extract_document(
+        content=_xlsx_workbook(
+            [
+                ["項目", "前期", "当期"],
+                ["売上高", "1000", "1200"],
+                ["営業利益", "100", "150"],
+            ]
+        ),
+        content_type=None,
+        filename="d.xlsx",
+    )
+    observations, _ = extract_kpis_from_tables(extracted.tables)
+    by_kpi = {item["kpi"]: item for item in observations}
+    revenue = by_kpi["revenue"]
+    assert revenue["value"] == 1200.0
+    assert revenue["unit"] is None
+    assert by_kpi["operating_profit"]["value"] == 150.0
+
+
+# --------------------------------------- F1: unchanged / seen separation
+
+
+def test_monitor_counts_unchanged_content_verified_and_seen_url_only(
+    tmp_path: Path,
+) -> None:
+    """ "unchanged" counts content-verified records; "seen" counts URL-only
+    records; each mirrors the COO counting probe (12 docs, budget 4)."""
+    listing_lines = ["<html><body>"]
+    for index in range(12):
+        listing_lines.append(f'<a href="/ir/items/bulk_{index}.csv">資料{index}[1.0 KB]</a>')
+    listing_lines.append("</body></html>")
+    routes: dict[str, tuple[int, str | None, bytes]] = {
+        "/library/briefing.html": (
+            200,
+            "text/html; charset=utf-8",
+            "\n".join(listing_lines).encode(),
+        )
+    }
+    for index in range(12):
+        routes[f"/ir/items/bulk_{index}.csv"] = (200, "text/csv", _CSV)
+    service = _service(tmp_path, routes, max_documents_per_run=4)
+
+    run1 = service.monitor("example-ir")
+    assert run1.new_count == 12
+    assert run1.seen_count == 0
+    assert run1.unchanged_count == 0
+    # fetch budget 4: only 4 documents could reach the timeline
+    assert sum(1 for document in run1.documents if document.fetched) == 4
+    assert run1.timeline_entries == 4
+    on_disk = (
+        (Path(tmp_path) / "ir-timeline" / "1234-T" / "timeline.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    assert len(on_disk) == 4
+
+    run2 = service.monitor("example-ir")
+    assert run2.new_count == 0
+    # the 4 fetched docs re-verify by content; the 8 beyond-budget never
+    # fetched anything, so they are "seen", not "unchanged"
+    assert run2.unchanged_count == 4
+    assert run2.seen_count == 8
+    assert run2.timeline_entries == 0

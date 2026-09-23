@@ -164,7 +164,10 @@ New modules (all generic; no company-specific parsers):
   both CI jobs, and the Dockerfile.
 
 Real-data evidence (Nitori, 106 discovered documents, fetch budget 6):
-- new-document detection is idempotent: run 1 `new=106`, run 2 `new=0`, all 106 `unchanged`.
+- new-document detection is idempotent: run 1 `new=106`, run 2 `new=0`,
+  6 content-verified (`unchanged`) and 100 URL-only (`seen`) — these are
+  reported separately (`unchanged_count` vs `seen_count`), never merged.
+  `timeline_entries` counts actual on-disk timeline writes (6), not statuses.
 - KPI extraction matches published figures, e.g. FY2026.3 4Q tanshin revenue
   `912,248 million yen` → `912248000000.0`, 3Q `688,503 million yen`, and the
   prose figure `当期利益892億74百万円` → `89,274,000,000.0`.
@@ -179,6 +182,14 @@ Real-data evidence (Nitori, 106 discovered documents, fetch budget 6):
 requests whose `User-Agent` embeds a `+https://...` reference URL (connection held
 until timeout). `_default_http_transport` therefore sends
 `Yowayowa-Investor/0.1 (personal research)` and documents the reason inline.
+
+IR test counts (post F1/F3 rework, 2026-09-23):
+`tests/test_ir_acquisition.py` 42, `tests/test_ir_surfaces.py` 6 — **48 passed**
+(repo total at P1C: 510; commit `64cd3dc`'s message overstated these
+counts (33(35)+7=42); `docs/P1C_EVIDENCE.md` section 4 carries the single
+final reconciled set). CSV documents are now parsed and KPI-extracted;
+XLSX/CSV label-column × period-column layouts, unit rows, and
+current-period preference are covered by regression tests.
 
 ---
 

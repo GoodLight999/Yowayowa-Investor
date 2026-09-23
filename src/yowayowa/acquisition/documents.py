@@ -7,7 +7,9 @@ Minimal, precedent-first extraction over raw document bytes:
   the ``operator-ir`` extra). Image-only PDFs fail closed with an explicit
   note — they are never silently treated as empty KPI sets.
 - XLSX is captured with a per-sheet row table using the standard library's
-  zipfile + XML reading (shared strings included). No new hard dependency.
+  zipfile + XML reading (shared strings included). CSV is parsed with the
+  standard library's ``csv`` module into the same row-table shape. No new
+  hard dependency.
 
 Every extraction returns an ``ExtractedDocument`` that carries generic
 structures (tables, text chunks) plus provenance-relevant parse notes. No
@@ -16,6 +18,7 @@ company-specific parsing lives here.
 
 from __future__ import annotations
 
+import csv
 import io
 import re
 import zipfile
@@ -32,13 +35,14 @@ _NAMESPACE_RE = re.compile(r"\{[^}]*\}")
 _EXTENSIONS_HTML = frozenset({".html", ".htm", ".xhtml"})
 _EXTENSIONS_PDF = frozenset({".pdf"})
 _EXTENSIONS_XLSX = frozenset({".xlsx"})
+_EXTENSIONS_CSV = frozenset({".csv"})
 
 
 @dataclass
 class ExtractedDocument:
     """Generic extraction result with parse metadata; never raises."""
 
-    format: str  # "html" | "pdf" | "xlsx" | "unknown"
+    format: str  # "html" | "pdf" | "xlsx" | "csv" | "unknown"
     parsed: bool
     parse_note: str | None = None
     parser_version: str = "doc-v1"
@@ -245,6 +249,67 @@ def extract_pdf_document(content: bytes) -> ExtractedDocument:
     return document
 
 
+def _decode_csv_bytes(content: bytes) -> tuple[str, str | None]:
+    """Decode CSV bytes: utf-8-sig first, cp932 fallback, fail closed.
+
+    Japanese IR exports are commonly cp932-encoded; a BOM-marked utf-8 file
+    decodes with ``utf-8-sig``. When BOTH decodings fail the note makes the
+    document fail closed instead of guessing an encoding.
+    """
+
+    try:
+        return content.decode("utf-8-sig"), None
+    except UnicodeDecodeError:
+        pass
+    try:
+        return content.decode("cp932"), None
+    except UnicodeDecodeError:
+        return "", ("csv decode failed (neither utf-8-sig nor cp932); not parsed")
+
+
+def extract_csv_tables(content: bytes) -> ExtractedDocument:
+    """Per-document table from a CSV file's rows (stdlib csv).
+
+    The first row becomes the headers and every following row becomes a
+    ``{header: value}`` dict, matching ``extract_xlsx_tables`` output shape
+    so KPI extraction needs no format-specific branch.
+    """
+
+    text, decode_note = _decode_csv_bytes(content)
+    if decode_note is not None:
+        return ExtractedDocument(format="csv", parsed=False, parse_note=decode_note)
+    try:
+        rows = list(csv.reader(io.StringIO(text)))
+    except csv.Error as exc:
+        return ExtractedDocument(
+            format="csv",
+            parsed=False,
+            parse_note=f"csv parse failed: {type(exc).__name__}",
+        )
+    rows = [row[:_XLSX_MAX_COLUMNS] for row in rows[:_XLSX_MAX_ROWS]]
+    rows = [row for row in rows if any(cell.strip() for cell in row)]
+    if not rows:
+        return ExtractedDocument(
+            format="csv",
+            parsed=False,
+            parse_note="csv contained no readable rows",
+        )
+    headers = rows[0]
+    parsed_rows: list[dict[str, str]] = []
+    for cells in rows[1:]:
+        row: dict[str, str] = {}
+        for column, header in enumerate(headers):
+            key = header or _column_letter(column + 1)
+            value = cells[column] if column < len(cells) else ""
+            row[key] = value
+        parsed_rows.append(row)
+    return ExtractedDocument(
+        format="csv",
+        parsed=True,
+        tables=[{"headers": headers, "rows": parsed_rows, "_source_rows": rows}],
+    )
+
+
 def _column_letter(index: int) -> str:
     """1-based column index -> spreadsheet column letters (1 -> A)."""
 
@@ -279,6 +344,10 @@ def extract_xlsx_tables(content: bytes) -> ExtractedDocument:
             if not rows:
                 continue
             headers = rows[0]
+            # rows (the raw sheet rows incl. the header row) are carried on
+            # the table so KPI header-layout detection can reconstruct
+            # pre-header title/unit rows that the header projection cannot
+            # represent.
             parsed_rows: list[dict[str, str]] = []
             for cells in rows[1:]:
                 row: dict[str, str] = {}
@@ -287,7 +356,14 @@ def extract_xlsx_tables(content: bytes) -> ExtractedDocument:
                     value = cells[column] if column < len(cells) else ""
                     row[key] = value
                 parsed_rows.append(row)
-            tables.append({"name": sheet_name, "headers": headers, "rows": parsed_rows})
+            tables.append(
+                {
+                    "name": sheet_name,
+                    "headers": headers,
+                    "rows": parsed_rows,
+                    "_source_rows": rows,
+                }
+            )
         if not tables:
             return ExtractedDocument(
                 format="xlsx",
@@ -423,7 +499,11 @@ def extract_document(
         return extract_pdf_document(content)
     if extension in _EXTENSIONS_XLSX:
         return extract_xlsx_tables(content)
+    if extension in _EXTENSIONS_CSV:
+        return extract_csv_tables(content)
     lowered = (content_type or "").lower()
+    if "csv" in lowered:
+        return extract_csv_tables(content)
     if "pdf" in lowered:
         return extract_pdf_document(content)
     if "spreadsheetml" in lowered:

@@ -237,6 +237,13 @@ class KpiObservation(dict[str, Any]):
     """Typed dict alias for a single extracted KPI value."""
 
 
+# Generic header-row labels: a column whose header normalizes to one of
+# these is the row-label column (not a period column).
+_GENERIC_LABEL_HEADERS = frozenset({"項目", "項目名", "ラベル", "kpi", "item"})
+# Generic value-column headers paired with a generic label header.
+_GENERIC_VALUE_HEADERS = frozenset({"値", "value", "数値"})
+
+
 # Unit declarations in table chrome. Full-width colon U+FF1A appears in
 # Japanese IR documents by design.
 _UNIT_HINT_RES: tuple[re.Pattern[str], ...] = (
@@ -253,12 +260,22 @@ _UNIT_HINT_RES: tuple[re.Pattern[str], ...] = (
 
 
 def table_unit_hint(table: dict[str, Any]) -> str | None:
-    """Unit declared in a table's header/first rows (単位 = million yen etc.)."""
+    """Unit declared in a table's header/first rows (単位 = million yen etc.).
+
+    Scans ``headers``, the dict ``rows`` (an XLSX/CSV sheet's unit row sits
+    BEFORE the detected header row and therefore ends up inside the row
+    dicts), and PDF coordinate ``cells``.
+    """
 
     candidates: list[str] = []
     headers = table.get("headers")
     if isinstance(headers, list):
         candidates.extend(str(header) for header in headers[:6])
+    rows = table.get("rows")
+    if isinstance(rows, list):
+        for row in rows[:6]:
+            if isinstance(row, dict):
+                candidates.extend(str(value) for value in list(row.values())[:6])
     cells = table.get("cells")
     if isinstance(cells, list):
         for row in cells[:6]:
@@ -270,6 +287,201 @@ def table_unit_hint(table: dict[str, Any]) -> str | None:
             if match:
                 return match.group(1)
     return None
+
+
+_HEADER_SCAN_ROWS = 6
+_HEADER_SCAN_CELLS = 6
+
+
+def _raw_cell_grid(table: dict[str, Any]) -> list[list[str]]:
+    """Raw visual cell grid of a table's first rows (best effort).
+
+    XLSX/CSV tables carry ``headers`` plus projected ``rows`` dicts; the
+    projection flattened title/unit/period rows into dict VALUE cells. The
+    visual layout is rebuilt in reverse: the sheet's first row IS the
+    headers row, and the sheet row below the headers replays from the
+    original ``cells`` lists (keyed by header index) when present, so a
+    short row's cells stay aligned with their visual columns and unit rows
+    surface as raw cells. PDF coordinate tables keep their ``cells`` grid.
+    """
+
+    rows = table.get("rows")
+    grid: list[list[str]] = []
+    if isinstance(rows, list):
+        headers = table.get("headers")
+        header_list = [str(header) for header in headers] if isinstance(headers, list) else []
+        source_rows: list[list[str]] = []
+        origin = table.get("_source_rows")
+        if isinstance(origin, list):
+            source_rows = [[str(cell) for cell in row] for row in origin if isinstance(row, list)]
+        if header_list:
+            grid.append(header_list[:_HEADER_SCAN_CELLS] + [""] * 0)
+        for row_index, row in enumerate(rows[:_HEADER_SCAN_ROWS]):
+            if not isinstance(row, dict):
+                continue
+            # sheet rows are 1 header row + N data rows: dict row i comes
+            # from the sheet's raw row i+1.
+            source_index = row_index + 1
+            if source_index < len(source_rows):
+                source = source_rows[source_index]
+                width = max(len(header_list), len(source))
+                grid.append([source[i] if i < len(source) else "" for i in range(width)])
+            else:
+                grid.append(
+                    [str(row.get(header, "")) for header in header_list]
+                    + ["" for _ in range(max(0, _HEADER_SCAN_CELLS - len(header_list)))]
+                )
+                grid[-1] = grid[-1][:_HEADER_SCAN_CELLS]
+    cells = table.get("cells")
+    if isinstance(cells, list) and not grid:
+        for row in cells[:_HEADER_SCAN_ROWS]:
+            if isinstance(row, list):
+                grid.append([str(cell) for cell in row[:_HEADER_SCAN_CELLS]])
+    return grid
+
+
+def _detect_header_layout(
+    grid: list[list[str]],
+) -> tuple[int, int, int] | None:
+    """Locate (header_row_index, label_column, value_column) in a table.
+
+    A header row contains a generic label-column header (項目/項目名/ラベル/
+    KPI/item) OR >=2 cells matching the period-hint regex. The label column
+    is the generic header's index; otherwise (period-header layout) it is a
+    column with at least one canonical KPI cell. The value column prefers
+    当期/今期/current, then a generic value header (値/value/数値) paired
+    with a generic label header, then the rightmost period column, else the
+    last non-label cell. Rows BEFORE the header row are consumed by the
+    caller (unit declaration / title rows).
+    """
+
+    for row_index, row in enumerate(grid):
+        cells = row[:_HEADER_SCAN_CELLS]
+        normalized = [normalize_label(cell) for cell in cells]
+        label_col: int | None = None
+        for index, label in enumerate(normalized):
+            if label in _GENERIC_LABEL_HEADERS:
+                label_col = index
+                break
+        period_cols = [index for index, cell in enumerate(cells) if _PERIOD_HINT_RE.search(cell)]
+        value_col: int | None = None
+        if label_col is not None:
+            for index, label in enumerate(normalized):
+                if index != label_col and label in _GENERIC_VALUE_HEADERS:
+                    value_col = index
+                    break
+            if value_col is None and period_cols:
+                # current-period preference beats rightmost
+                for index, label in enumerate(normalized):
+                    if index != label_col and (label in {"当期", "今期"} or "current" in label):
+                        value_col = index
+                        break
+                if value_col is None:
+                    value_col = period_cols[-1]
+            elif value_col is None:
+                # generic label/value pair without a recognized value header:
+                # a single remaining column is the value column.
+                remaining = [i for i in range(len(cells)) if i != label_col and cells[i]]
+                if len(remaining) == 1:
+                    value_col = remaining[0]
+            if value_col is None:
+                # No generic value header, no recognized period columns,
+                # and more than one remaining column: fall back to the LAST
+                # non-label cell (financial sheets order the current
+                # period last; when a 当期/今期/current column exists the
+                # preference above already picked it).
+                remaining = [i for i in range(len(cells)) if i != label_col and cells[i]]
+                if remaining:
+                    value_col = remaining[-1]
+            if value_col is not None:
+                return row_index, label_col, value_col
+            continue
+        if len(period_cols) >= 2:
+            label_col = 0
+            candidates = [
+                index
+                for index in range(len(cells))
+                if index not in period_cols and index != label_col and cells[index]
+            ]
+            if candidates:
+                label_col = candidates[0]
+            for index, label in enumerate(normalized):
+                if index != label_col and (label in {"当期", "今期"} or "current" in label):
+                    value_col = index
+                    break
+            if value_col is None:
+                value_col = period_cols[-1]
+            return row_index, label_col, value_col
+    return None
+
+
+def _preheader_table_unit(grid: list[list[str]], header_index: int) -> str | None:
+    """Unit declared in a row before the detected header (単位：百万円...)."""
+
+    for row in grid[:header_index]:
+        for cell in row:
+            for pattern in _UNIT_HINT_RES:
+                match = pattern.search(cell)
+                if match:
+                    return match.group(1)
+    return None
+
+
+def _extract_kpis_header_layout(
+    table: dict[str, Any],
+    table_index: int,
+    effective_hint: str | None,
+    skipped_state: dict[str, int],
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Per-table fallback for label-column x period-column layouts.
+
+    Title/unit rows ABOVE the detected header row are consumed: a unit
+    declaration found there becomes the table unit (multiplied via the same
+    ``_unit_multiplier`` composition as the other shapes); other pre-header
+    rows are skipped. Each data row below the header whose label column
+    carries a canonical KPI label (and not a period hint) contributes an
+    observation from the chosen value column; rows without a parsable
+    number there are counted in ``skipped_state`` (fail closed — never
+    invented). Returns (observations, pre_header_unit).
+    """
+
+    grid = _raw_cell_grid(table)
+    layout = _detect_header_layout(grid)
+    if layout is None:
+        return [], None
+    header_index, label_col, value_col = layout
+    table_unit = _preheader_table_unit(grid, header_index)
+    if value_col is None:
+        return [], table_unit
+    observations: list[dict[str, Any]] = []
+    for raw_index, raw_row in enumerate(grid):
+        if raw_index <= header_index:
+            # rows before the header: consumed (unit/title rows); the header
+            # row itself is not a data row.
+            continue
+        raw_value = raw_row[value_col] if value_col < len(raw_row) else ""
+        label = raw_row[label_col] if label_col < len(raw_row) else ""
+        canonical = canonical_kpi_name(label)
+        if canonical is None or _PERIOD_HINT_RE.search(normalize_label(label)):
+            continue
+        number = parse_number(raw_value)
+        if number is None:
+            skipped_state["skipped"] += 1
+            continue
+        multiplier, unit = _unit_multiplier(
+            f"{effective_hint or ''} {table_unit or ''} {label} {raw_value}"
+        )
+        observations.append(
+            {
+                "kpi": canonical,
+                "label": label,
+                "value": _canonical_number(number * multiplier),
+                "raw_value": raw_value,
+                "unit": unit,
+                "source": f"table[{table_index}].header_layout",
+            }
+        )
+    return observations, table_unit
 
 
 def extract_kpis_from_tables(
@@ -298,6 +510,8 @@ def extract_kpis_from_tables(
     notes: list[str] = []
     skipped = 0
     for table_index, table in enumerate(tables):
+        fallback_state: dict[str, int] = {"skipped": 0}
+        observations_before_table = len(observations)
         # A table-level unit declaration (単位 header row) applies to all
         # numeric cells in it; per-cell units still win when present.
         table_unit = table_unit_hint(table)
@@ -396,6 +610,16 @@ def extract_kpis_from_tables(
                     "source": f"table[{table_index}].cells",
                 }
             )
+        # Fallback: the table produced NO observation from the row-dict or
+        # coordinate paths (parameterized layouts: label column x period
+        # columns, generic 項目/値 CSV heads, title/unit rows ahead of the
+        # header). Keep existing shapes untouched otherwise.
+        if len(observations) == observations_before_table:
+            fallback, _preheader_unit = _extract_kpis_header_layout(
+                table, table_index, effective_hint, fallback_state
+            )
+            observations.extend(fallback)
+            skipped += fallback_state["skipped"]
     if skipped:
         notes.append(f"kpi extraction skipped {skipped} unparsable/period rows")
     return observations, notes
