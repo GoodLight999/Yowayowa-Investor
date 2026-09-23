@@ -8,6 +8,7 @@ from yowayowa.config import get_settings
 from yowayowa.db import dispose_database
 from yowayowa.providers.registry import (
     edinet_client,
+    frankfurter_fx_provider,
     fred_client,
     fundamentals_provider,
     sec_client,
@@ -28,6 +29,7 @@ _CACHED_FACTORIES = (
     yahoo_tracked_calendar_provider,
     fred_client,
     edinet_client,
+    frankfurter_fx_provider,
 )
 
 
