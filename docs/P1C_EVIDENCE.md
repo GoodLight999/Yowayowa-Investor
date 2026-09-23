@@ -139,3 +139,26 @@ CI run `35811357147` (commit 27a0306) — success
 - read-only（GETのみ）、秘密情報なし、認証迂回なし。
 - `.github/workflows/ci.yml` は未変更（OAuth Appのworkflow scope不足のため、
   CIへのpdfminer導入は `dev` extra 側で実施）。
+
+## 7. 追補（F1/F2修正, 2026-09-23）
+
+F1/F2修正commit: `4c8393115d57c0a3a40d7877502861d406ae42ec`
+（`P1C follow-up: count timeline entries by actual timeline writes; correct
+evidence doc test counts`）
+
+- **F1**: `IrMonitorService._process_document()` が
+  `tuple[IrDocumentRecord, bool]` を返すようにし、monitor() の
+  `timeline_entries` は `self._timeline.append(...)` 成功の実測のみを加算。
+  fetch budget超過のURL-only分類文書は加算されない。回帰テスト
+  `test_timeline_entries_count_only_actual_timeline_writes` 追加
+  （修正前RED: `assert 5 == 2` で失敗 → 修正後GREEN）。
+- **F2**: 上記「## 4. 回帰テスト」の `test_ir_surfaces.py` を7件→6件、
+  合計を 40 passed→39 passed（33 + 6）に訂正（L107の「510 passed」は
+  P1C時点の実測として変更なし）。
+- 修正後のIRテスト合計: **40 passed**（34 + 6）
+- `make verify` 総数: **511 passed**（lint / typecheck / openapi 含め成功）
+- 実データrecon再実測（nitorihd.co.jp, fresh一時data dir, budget=6）:
+  discovered=106 / new_count=106 に対し、
+  `outcome.timeline_entries = 6` = on-disk timeline entries `6`
+  （修正前の実測では outcome が 106 と報告 / on-disk は 6 だった）。
+  12/12 checks passed、run2 new=0（冪等）も維持。
