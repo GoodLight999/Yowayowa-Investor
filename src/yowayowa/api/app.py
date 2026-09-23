@@ -30,6 +30,7 @@ from yowayowa.api.ir_routes import router as ir_router
 from yowayowa.api.license_routes import router as license_router
 from yowayowa.api.macro_routes import router as macro_router
 from yowayowa.api.private_routes import router as private_router
+from yowayowa.api.private_source_routes import router as private_source_router
 from yowayowa.api.rate_routes import router as rate_router
 from yowayowa.api.research_routes import router as research_router
 from yowayowa.api.risk_routes import router as risk_router
@@ -205,6 +206,7 @@ app.include_router(settings_router)
 app.include_router(private_router)
 app.include_router(broker_read_router)
 app.include_router(ir_router)
+app.include_router(private_source_router)
 app.include_router(fundamentals_router)
 app.include_router(web_asset_router)
 app.include_router(router)
