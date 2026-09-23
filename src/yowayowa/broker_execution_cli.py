@@ -1,13 +1,19 @@
-"""Broker execution CLI (P2A) — domain-only, direct service calls.
+"""Broker execution CLI (P2A/P2B) — direct service/transport calls.
 
-No HTTP, no transport. There is deliberately NO submit command anywhere
-in this app: the Rakuten submission connector is a future task.
+P2A commands are domain-only (proposals, interlocks, audit). The P2B
+``submit`` command is the only submission surface, and it fails closed:
+the COO freeze gate (``--submissions-enabled``, default False) is
+checked before anything else, so the default invocation can never reach
+the proposal lookup, the browser session, the DOM, or a stage=submit
+audit entry. No HTTP API route exists for submission by design (CTO
+decision: keep the HTTP exposure unchanged; API-first is satisfied by
+CLI and domain sharing the same service).
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 from pydantic import ValidationError
@@ -17,6 +23,9 @@ from rich.table import Table
 from yowayowa.broker.execution.models import OrderProposal
 from yowayowa.broker.execution.service import BrokerExecutionDomainService, DuplicateProposalError
 from yowayowa.config import Settings
+
+if TYPE_CHECKING:
+    from yowayowa.broker.execution.transport import RakutenWebSubmissionTransport
 
 app = typer.Typer(
     help=(
@@ -32,6 +41,64 @@ def _service(audit_dir: str | None) -> BrokerExecutionDomainService:
         settings=settings,
         audit_dir=audit_dir if audit_dir is not None else settings.broker_execution_audit_dir,
     )
+
+
+def _submission_transport(
+    audit_dir: str | None, submissions_enabled: bool
+) -> tuple[BrokerExecutionDomainService, RakutenWebSubmissionTransport, Any]:
+    """Build the domain service and the Rakuten web submission transport.
+
+    Importing the real web session (and therefore playwright) is
+    deferred to here so the module — and every existing command — keeps
+    working on machines without the operator-browser extra. When the COO
+    freeze gate is shut, no session object is created at all: the
+    transport is built with a null session it can never reach (the gate
+    fires before any session access inside submit_order).
+    """
+
+    settings = Settings()
+    service = BrokerExecutionDomainService(
+        settings=settings,
+        audit_dir=audit_dir if audit_dir is not None else settings.broker_execution_audit_dir,
+    )
+    if not submissions_enabled:
+        from yowayowa.broker.execution.transport import (
+            RakutenWebSubmissionTransport as _Transport,
+        )
+
+        return (
+            service,
+            _Transport(
+                session=_FrozenNullWebSession(),
+                service=service,
+                settings=settings,
+                submissions_enabled=False,
+            ),
+            _FrozenNullWebSession(),
+        )
+    try:
+        from yowayowa.operator_bridge.web_session import PersistentBrokerWebSession
+    except ImportError as exc:
+        raise typer.BadParameter(
+            "the Rakuten web session requires the operator-browser extra: "
+            "uv sync --extra operator-browser && uv run playwright install chromium"
+        ) from exc
+    from yowayowa.operator_bridge.rakuten_web import RAKUTEN_WEB_BASE_URL
+
+    session = PersistentBrokerWebSession(
+        base_url=RAKUTEN_WEB_BASE_URL,
+        profile_dir=settings.broker_rakuten_web_profile_dir,
+        headless=False,
+    )
+    from yowayowa.broker.execution.transport import RakutenWebSubmissionTransport
+
+    transport = RakutenWebSubmissionTransport(
+        session=session,
+        service=service,
+        settings=settings,
+        submissions_enabled=submissions_enabled,
+    )
+    return service, transport, session
 
 
 def _dump(payload: object) -> str:
@@ -187,4 +254,92 @@ def proposals_evaluate(
         print(f"- {reason}")
 
 
-__all__ = ["app"]
+@app.command("submit")
+def submit(
+    client_order_id: str = typer.Argument(..., help="Client order id of an existing proposal"),
+    armed: bool = typer.Option(
+        False,
+        "--armed/--no-armed",
+        help="Explicit runtime arming switch (fail-closed default: not armed)",
+    ),
+    submissions_enabled: bool = typer.Option(
+        False,
+        "--submissions-enabled/--no-submissions-enabled",
+        help=(
+            "COO freeze master gate for real submission. Default False: the "
+            "command audits submit-frozen and never touches the session, the "
+            "DOM, or stage=submit audit"
+        ),
+    ),
+    audit_dir: str | None = typer.Option(None, "--audit-dir", help="Audit directory override"),
+    as_json: bool = typer.Option(False, "--json", help="Print the full receipt JSON"),
+) -> None:
+    """Submit one audited proposal through the Rakuten web session.
+
+    Fail-closed by construction: the intent is rebuilt from the audit
+    trail (never re-entered), and while --submissions-enabled is False
+    (the default) the COO freeze gate rejects the submission before any
+    browser session is opened.
+    """
+
+    service, transport, session = _submission_transport(audit_dir, submissions_enabled)
+    proposal = _find_proposal(service, client_order_id)
+    from yowayowa.broker_models import BrokerOrderIntent
+
+    intent = BrokerOrderIntent(
+        client_order_id=proposal.client_order_id,
+        symbol=proposal.symbol,
+        side=proposal.side,
+        quantity=proposal.quantity,
+        order_type=proposal.order_type,
+        limit_price=proposal.limit_price,
+        reference_price=proposal.reference_price,
+        currency=proposal.currency,
+    )
+    try:
+        if submissions_enabled:
+            session.start()
+        receipt = transport.submit_order(intent, armed=armed)
+    finally:
+        close = getattr(session, "close", None)
+        if callable(close):
+            close()
+    if as_json:
+        typer.echo(_dump(receipt.model_dump(mode="json")))
+        return
+    state = (
+        "[bold green]ACCEPTED[/bold green]"
+        if receipt.accepted
+        else "[bold red]NOT ACCEPTED[/bold red]"
+    )
+    print(f"{state} · {receipt.status.value} · {receipt.client_order_id}")
+    if receipt.broker_order_id is not None:
+        print(f"broker order id {receipt.broker_order_id}")
+    if receipt.message:
+        print(receipt.message)
+
+
+class _FrozenNullWebSession:
+    """Placeholder session while the COO freeze gate is shut.
+
+    Every method raises, so an accidental gate regression cannot silently
+    touch a browser: fail-closed by construction.
+    """
+
+    def open(self, path: str = "") -> Any:
+        raise RuntimeError("submissions_enabled is False; no browser session is available")
+
+    def request(self, method: str, path: str) -> Any:
+        raise RuntimeError("submissions_enabled is False; no browser session is available")
+
+    def page(self) -> Any:
+        raise RuntimeError("submissions_enabled is False; no browser session is available")
+
+    def start(self) -> None:
+        raise RuntimeError("submissions_enabled is False; no browser session is available")
+
+    def close(self) -> None:
+        return None
+
+
+__all__ = ["_FrozenNullWebSession", "app"]
