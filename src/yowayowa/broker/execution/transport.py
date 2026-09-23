@@ -23,7 +23,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from yowayowa.broker.execution.interlocks import REASON_DUPLICATE_MISMATCH
 from yowayowa.broker.execution.models import OrderProposal
@@ -44,6 +44,10 @@ from yowayowa.broker_models import (
     BrokerTransport,
 )
 from yowayowa.config import Settings
+from yowayowa.operator_bridge.rakuten_web import RAKUTEN_WEB_LOGIN_PATH
+
+if TYPE_CHECKING:
+    from yowayowa.broker.session_notify import SessionExpiryNotifier
 
 RAKUTEN_SUBMISSION_BROKER = "rakuten-securities"
 TRANSPORT_NAME = "authenticated-web-session"
@@ -125,7 +129,11 @@ class SubmissionWebSession(Protocol):
 # be audited as stage=submit-failed (fail-closed) rather than "succeed".
 RAKUTEN_WEB_ORDER_FORM: dict[str, Any] = {
     "verified": False,
-    "auth_probe_path": "accept/orders",
+    # VERIFIED 2026-09-23 (CTO live check): the probe targets the pinned real
+    # login page. order_entry_path and selectors below remain UNVERIFIED
+    # initial assumptions; "verified" continues to describe the order-form
+    # selector validation state only.
+    "auth_probe_path": RAKUTEN_WEB_LOGIN_PATH,
     "order_entry_path": "app/order_entry.do",
     "selectors": {
         "symbol": "#input_symbol",
@@ -193,12 +201,14 @@ class RakutenWebSubmissionTransport:
         settings: Settings,
         clock: Callable[[], datetime] | None = None,
         submissions_enabled: bool = False,
+        expiry_notifier: SessionExpiryNotifier | None = None,
     ) -> None:
         self._session = session
         self._service = service
         self._settings = settings
         self._clock: Callable[[], datetime] = clock or (lambda: datetime.now(UTC))
         self._submissions_enabled = submissions_enabled
+        self._expiry_notifier = expiry_notifier
 
     # ------------------------------------------------------------ capabilities
 
@@ -283,6 +293,8 @@ class RakutenWebSubmissionTransport:
 
         # 6. Authentication probe (GET only; never a POST).
         if not self._probe_authenticated():
+            if self._expiry_notifier is not None:
+                self._expiry_notifier.notify_session_expired(source="broker-exec")
             return self._blocked_receipt(client_order_id, (REASON_NOT_AUTHENTICATED,))
 
         # 7. Request audit: the ONLY site that writes stage=submit.
@@ -503,7 +515,16 @@ class RakutenWebSubmissionTransport:
         return None
 
     def _probe_authenticated(self) -> bool:
-        """GET-only login-marker probe; anything unclear counts as unauthenticated."""
+        """GET-only login-marker probe; anything unclear counts as unauthenticated.
+
+        The probe targets the pinned real login page (RAKUTEN_WEB_LOGIN_PATH,
+        VERIFIED 2026-09-23). PersistentBrokerWebSession.request uses
+        max_redirects=0, so when the session is alive the broker redirects the
+        login-page GET away and the response arrives as a 30x with a Location
+        header that carries no login marker -> authenticated. When the session
+        has expired, the login page itself comes back (with login markers in
+        URL/body) -> unauthenticated. Anything unclear stays fail-closed.
+        """
 
         try:
             response = self._session.request("GET", str(RAKUTEN_WEB_ORDER_FORM["auth_probe_path"]))

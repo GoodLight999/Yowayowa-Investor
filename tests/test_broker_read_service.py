@@ -81,6 +81,7 @@ def _build_service(
     *,
     data_dir: Path,
     now: Callable[[], datetime] | None = None,
+    expiry_notifier: Any | None = None,
 ) -> BrokerReadService:
     factory: TransportFactory = lambda definition: transport  # noqa: E731
     kwargs: dict[str, Any] = {
@@ -92,7 +93,27 @@ def _build_service(
     }
     if now is not None:
         kwargs["now"] = now
-    return BrokerReadService(acquisition=PrivateAcquisitionService(**kwargs))
+    service = BrokerReadService(acquisition=PrivateAcquisitionService(**kwargs))
+    if expiry_notifier is not None:
+        service._expiry_notifier = expiry_notifier
+    return service
+
+
+class _RecordingNotifier:
+    """Test double recording SessionExpiryNotifier calls (no state file)."""
+
+    def __init__(self) -> None:
+        self.expiry_calls: list[tuple[str, str]] = []
+        self.authenticated_calls: list[str] = []
+
+    def notify_session_expired(
+        self, *, source: str, connector_id: str = "rakuten-web", detail: str = ""
+    ) -> bool:
+        self.expiry_calls.append((source, connector_id))
+        return True
+
+    def notify_authenticated(self, connector_id: str = "rakuten-web") -> None:
+        self.authenticated_calls.append(connector_id)
 
 
 def test_fetch_ok_first_time_snapshot_without_diff(tmp_path: Path) -> None:
@@ -593,6 +614,55 @@ def test_snapshots_and_diff_through_service(tmp_path: Path) -> None:
     diff = service.diff("rakuten-web", "positions", "jp")
     assert diff is not None
     assert diff.changed is True
+
+
+def test_auth_expired_outcome_fires_expiry_notifier_once(
+    tmp_path: Path,
+) -> None:
+    login_body = _response(
+        body="<html>楽天証券ログイン</html>".encode(),
+        url="https://www.rakuten-sec.co.jp/login",
+    )
+    transport = ScriptedTransport([login_body])
+    notifier = _RecordingNotifier()
+    service = _build_service(transport, data_dir=tmp_path, expiry_notifier=notifier)
+
+    outcome = service.fetch("positions", "jp")
+
+    assert outcome.fetch_state == AcquisitionFetchState.AUTH_EXPIRED
+    assert notifier.expiry_calls == [("broker-read", "rakuten-web")]
+    assert notifier.authenticated_calls == []
+
+
+def test_authenticated_outcome_clears_suppression(tmp_path: Path) -> None:
+    transport = ScriptedTransport([_response()])
+    notifier = _RecordingNotifier()
+    service = _build_service(transport, data_dir=tmp_path, expiry_notifier=notifier)
+
+    outcome = service.fetch("positions", "jp")
+
+    assert outcome.fetch_state == AcquisitionFetchState.OK
+    assert outcome.auth_state == AuthState.AUTHENTICATED
+    assert notifier.authenticated_calls == ["rakuten-web"]
+    assert notifier.expiry_calls == []
+
+
+def test_notifier_exception_does_not_break_outcome(tmp_path: Path) -> None:
+    transport = ScriptedTransport([_response()])
+
+    class _ExplodingNotifier:
+        def notify_session_expired(self, *, source: str, **kwargs: Any) -> bool:
+            raise RuntimeError("notification channel down")
+
+        def notify_authenticated(self, connector_id: str) -> None:
+            raise RuntimeError("notification channel down")
+
+    service = _build_service(transport, data_dir=tmp_path, expiry_notifier=_ExplodingNotifier())
+    outcome = service.fetch("positions", "jp")
+    # The read outcome itself must be completely unaffected.
+    assert outcome.fetch_state == AcquisitionFetchState.OK
+    assert outcome.auth_state == AuthState.AUTHENTICATED
+    assert len(outcome.positions) == 1
 
 
 def test_snapshots_unknown_resource_returns_empty(tmp_path: Path) -> None:

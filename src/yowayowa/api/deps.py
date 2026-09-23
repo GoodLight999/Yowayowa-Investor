@@ -201,6 +201,7 @@ def _rakuten_browser_transport_factory(
                 new_session: PersistentBrokerWebSession = PersistentBrokerWebSession(
                     base_url=RAKUTEN_WEB_BASE_URL,
                     profile_dir=settings.broker_rakuten_web_profile_dir,
+                    user_agent=settings.broker_rakuten_web_user_agent,
                 )
                 new_session.start()
                 _RAKUTEN_BROWSER_SESSION["session"] = new_session
@@ -288,6 +289,7 @@ def get_private_source_service() -> PrivateSourceService:
 
 @lru_cache(maxsize=1)
 def get_broker_read_service() -> BrokerReadService:
+    from yowayowa.broker.session_notify import SessionExpiryNotifier
     from yowayowa.config import get_settings
     from yowayowa.services.broker_read_service import BrokerReadService
 
@@ -299,7 +301,10 @@ def get_broker_read_service() -> BrokerReadService:
         data_dir=Path(settings.private_acquisition_data_dir),
         transport_factory=_rakuten_browser_transport_factory,
     )
-    return BrokerReadService(acquisition=acquisition)
+    return BrokerReadService(
+        acquisition=acquisition,
+        expiry_notifier=SessionExpiryNotifier(settings.broker_session_notify_state_path),
+    )
 
 
 @lru_cache(maxsize=1)

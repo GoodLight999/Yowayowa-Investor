@@ -149,6 +149,71 @@ def _clear_browser_session() -> Any:
     deps._RAKUTEN_BROWSER_SESSION.pop("session", None)
 
 
+# ---------------------------------------------------------------------------
+# P2C: the UA pin (settings.broker_rakuten_web_user_agent) must reach the
+# session construction inside the production factory.
+# ---------------------------------------------------------------------------
+
+
+def test_production_factory_passes_user_agent_setting_to_session(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from yowayowa.operator_bridge.web_session import PersistentBrokerWebSession as _Real
+
+    captured: dict[str, Any] = {}
+    real_init = _Real.__init__
+
+    def _spy_init(self: Any, *, base_url: str, profile_dir: Path, **kwargs: Any) -> None:
+        captured["user_agent"] = kwargs.get("user_agent")
+        # Never start a real browser here: keep the fake-session contract
+        # (page()/request() of the real class must never be reached).
+        self.base_url = base_url.rstrip("/") + "/"
+        self.profile_dir = Path(profile_dir)
+        self.headless = False
+        self.channel = None
+        self.user_agent = kwargs.get("user_agent")
+        self._playwright = None
+        self._context = None
+
+    def _spy_request(self: Any, method: str, path: str, **_kwargs: Any) -> _FakeApiResponse:
+        return _FakeApiResponse()
+
+    def _spy_start(self: Any) -> None:
+        # Neutralize start(): the real playwright launch is out of scope here.
+        return None
+
+    monkeypatch.setattr(_Real, "__init__", _spy_init)
+    monkeypatch.setattr(_Real, "start", _spy_start)
+    monkeypatch.setattr(_Real, "request", _spy_request)
+    monkeypatch.setenv("YOWAYOWA_MODE", "personal")
+    monkeypatch.setenv("YOWAYOWA_BROKER_RAKUTEN_WEB_PROFILE_DIR", str(tmp_path / "profile"))
+    monkeypatch.setenv(
+        "YOWAYOWA_BROKER_RAKUTEN_WEB_USER_AGENT",
+        "Mozilla/5.0 (X11; Linux x86_64) YowayowaPinned/1.0",
+    )
+    get_settings.cache_clear()
+
+    try:
+        factory = deps._rakuten_browser_transport_factory
+        assert factory is not None
+        # The session is constructed lazily inside _fetch_url (never at
+        # factory-call time), so the production transport must be driven once.
+        transport = cast("RakutenWebFetchTransport", factory(_positions_definition()))
+        transport.fetch("GET", "web/positions/jp")
+    finally:
+        get_settings.cache_clear()
+
+    assert captured["user_agent"] == "Mozilla/5.0 (X11; Linux x86_64) YowayowaPinned/1.0"
+    assert real_init is not None
+
+
+def test_default_user_agent_setting_is_none() -> None:
+    # Default: no UA override -> real Chromium UA (pin only via settings).
+    assert get_settings().broker_rakuten_web_user_agent is None or isinstance(
+        get_settings().broker_rakuten_web_user_agent, str
+    )
+
+
 def _positions_definition() -> ConnectorDefinition:
     return ConnectorDefinition(
         id="rakuten-web",

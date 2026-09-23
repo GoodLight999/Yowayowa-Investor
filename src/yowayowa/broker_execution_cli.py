@@ -89,14 +89,17 @@ def _submission_transport(
         base_url=RAKUTEN_WEB_BASE_URL,
         profile_dir=settings.broker_rakuten_web_profile_dir,
         headless=False,
+        user_agent=settings.broker_rakuten_web_user_agent,
     )
     from yowayowa.broker.execution.transport import RakutenWebSubmissionTransport
+    from yowayowa.broker.session_notify import SessionExpiryNotifier
 
     transport = RakutenWebSubmissionTransport(
         session=session,
         service=service,
         settings=settings,
         submissions_enabled=submissions_enabled,
+        expiry_notifier=SessionExpiryNotifier(settings.broker_session_notify_state_path),
     )
     return service, transport, session
 

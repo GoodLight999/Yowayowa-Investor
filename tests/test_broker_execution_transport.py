@@ -935,3 +935,97 @@ def test_22_frozen_receipt_carries_no_broker_order_id(tmp_path: Path) -> None:
     assert receipt.broker_order_id is None
     assert receipt.transport_order_id is None
     assert receipt.accepted is False
+
+
+# =========================================================================
+# 23. P2C: auth-probe failure fires the expiry notifier exactly once
+# =========================================================================
+
+
+class _RecordingExpiryNotifier:
+    """Test double recording notify_session_expired/notify_authenticated."""
+
+    def __init__(self) -> None:
+        self.expiry_calls: list[str] = []
+        self.authenticated_calls: list[str] = []
+
+    def notify_session_expired(
+        self,
+        *,
+        source: str,
+        connector_id: str = "rakuten-web",
+        detail: str = "",
+    ) -> bool:
+        self.expiry_calls.append(source)
+        return True
+
+    def notify_authenticated(self, connector_id: str = "rakuten-web") -> None:
+        self.authenticated_calls.append(connector_id)
+
+
+def test_23_auth_probe_failure_fires_expiry_notifier_broker_exec(tmp_path: Path) -> None:
+    service, _p = _audited_proposal_service(tmp_path)
+    unauthenticated = _FakeResponse(
+        status=200,
+        url="https://www.rakuten-sec.co.jp/ITS/V_ACT_Login.html",
+        body="",
+    )
+    session = FakeBrokerWebSession(probe_response=unauthenticated)
+    notifier = _RecordingExpiryNotifier()
+    transport = RakutenWebSubmissionTransport(
+        session=session,
+        service=service,
+        settings=_armed_settings(),
+        clock=lambda: _FIXED_NOW,
+        submissions_enabled=True,
+        expiry_notifier=notifier,
+    )
+    receipt = transport.submit_order(_intent(), armed=True)
+    assert receipt.accepted is False
+    assert receipt.status is BrokerOrderStatus.REJECTED
+    assert REASON_NOT_AUTHENTICATED in (receipt.message or "")
+    # Notifier fired exactly once with the broker-exec source.
+    assert notifier.expiry_calls == ["broker-exec"]
+    assert notifier.authenticated_calls == []
+    # Blocked audit shape is unchanged: stage=submit-blocked, no stage=submit.
+    assert STAGE_SUBMIT_BLOCKED in _state_stages(service)
+    assert STAGE_SUBMIT not in _request_stages(service)
+    assert session.open_calls == []  # no DOM before auth
+
+
+def test_23b_frozen_gate_never_fires_expiry_notifier(tmp_path: Path) -> None:
+    """Step-order regression: the frozen gate precedes the probe, so a frozen
+    submission must not notify (probe is never reached)."""
+
+    service, _p = _audited_proposal_service(tmp_path)
+    session = FakeBrokerWebSession()
+    notifier = _RecordingExpiryNotifier()
+    transport = RakutenWebSubmissionTransport(
+        session=session,
+        service=service,
+        settings=_armed_settings(),
+        clock=lambda: _FIXED_NOW,
+        submissions_enabled=False,
+        expiry_notifier=notifier,
+    )
+    receipt = transport.submit_order(_intent(), armed=True)
+    assert receipt.accepted is False
+    assert "frozen by COO ruling" in (receipt.message or "")
+    assert notifier.expiry_calls == [] and notifier.authenticated_calls == []
+    assert _state_stages(service) == [STAGE_SUBMIT_FROZEN]
+    assert session.open_calls == [] and session.request_calls == []
+
+
+def test_23c_auth_probe_uses_pinned_login_path(tmp_path: Path) -> None:
+    """The probe GET must target the pinned real login page (P2C), not the
+    former unverified accept/orders assumption."""
+
+    from yowayowa.operator_bridge.rakuten_web import RAKUTEN_WEB_LOGIN_PATH
+
+    assert RAKUTEN_WEB_LOGIN_PATH == "ITS/V_ACT_Login.html"
+    service, _p = _audited_proposal_service(tmp_path)
+    session = FakeBrokerWebSession()
+    transport = _transport(service, session, submissions_enabled=True)
+    transport.submit_order(_intent(), armed=True)
+    assert ("GET", "ITS/V_ACT_Login.html") in session.request_calls
+    assert all(method == "GET" for method, _path in session.request_calls)

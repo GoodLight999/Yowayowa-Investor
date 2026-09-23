@@ -38,6 +38,10 @@ RAKUTEN_WEB_CONNECTOR_ID = "rakuten-web"
 RAKUTEN_WEB_HTML_CONNECTOR_ID = "rakuten-web-html"
 RAKUTEN_SECURITIES_BROKER = "rakuten-securities"
 RAKUTEN_WEB_BASE_URL = "https://www.rakuten-sec.co.jp/"
+# VERIFIED 2026-09-23 (CTO live check): HTTP 200, title「総合口座ログイン | 楽天証券」.
+# This is the real login page; an authenticated session is redirected away from it.
+RAKUTEN_WEB_LOGIN_PATH = "ITS/V_ACT_Login.html"
+RAKUTEN_WEB_LOGIN_URL = "https://www.rakuten-sec.co.jp/ITS/V_ACT_Login.html"
 RAKUTEN_ALLOWED_HOSTS = ("www.rakuten-sec.co.jp",)
 RAKUTEN_RESOURCES: tuple[str, ...] = (
     "account",
@@ -1075,6 +1079,8 @@ __all__ = [
     "RAKUTEN_WEB_BASE_URL",
     "RAKUTEN_WEB_CONNECTOR_ID",
     "RAKUTEN_WEB_HTML_CONNECTOR_ID",
+    "RAKUTEN_WEB_LOGIN_PATH",
+    "RAKUTEN_WEB_LOGIN_URL",
     "RAKUTEN_WEB_RESOURCE_CATALOG",
     "FetchUrlCallable",
     "RakutenResourceEntry",

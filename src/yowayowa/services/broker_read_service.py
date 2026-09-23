@@ -18,6 +18,7 @@ from yowayowa.acquisition.registry import (
     ConnectorRuntime,
 )
 from yowayowa.acquisition.service import PrivateAcquisitionService
+from yowayowa.broker.session_notify import SessionExpiryNotifier
 from yowayowa.broker_models import BrokerAccountSnapshot, BrokerOrder, BrokerPosition
 from yowayowa.operator_bridge.rakuten_web import (
     RAKUTEN_SECURITIES_BROKER,
@@ -82,8 +83,14 @@ class BrokerReadOutcome(BaseModel):
 class BrokerReadService:
     """Thin orchestration layer composing PrivateAcquisitionService for broker reads."""
 
-    def __init__(self, *, acquisition: PrivateAcquisitionService) -> None:
+    def __init__(
+        self,
+        *,
+        acquisition: PrivateAcquisitionService,
+        expiry_notifier: SessionExpiryNotifier | None = None,
+    ) -> None:
         self._acquisition = acquisition
+        self._expiry_notifier = expiry_notifier
         # Rakuten's legitimate URLs can contain "auth"; the default detector's
         # "auth" URL marker would misclassify them as login pages. Use a
         # Rakuten-specific detector (login/signin/sign-in + login text markers).
@@ -139,7 +146,9 @@ class BrokerReadService:
     # ---------------------------------------------------------------- fetch
 
     def auth_check(self, connector_id: str = RAKUTEN_WEB_CONNECTOR_ID) -> AcquisitionOutcome:
-        return self._acquisition.auth_check(connector_id)
+        outcome = self._acquisition.auth_check(connector_id)
+        self._notify_on_outcome(outcome, connector_id)
+        return outcome
 
     def fetch(
         self,
@@ -164,6 +173,7 @@ class BrokerReadService:
             entry.url,
             force_refresh=force_refresh,
         )
+        self._notify_on_outcome(outcome, connector_id)
         return self._normalize_outcome(outcome, resource=resource, market=market, entry=entry)
 
     def snapshots(
@@ -181,6 +191,29 @@ class BrokerReadService:
         return self._acquisition.diff(rakuten_connector_id_for(entry), entry.url)
 
     # ------------------------------------------------------------ internals
+
+    def _notify_on_outcome(self, outcome: AcquisitionOutcome, connector_id: str) -> None:
+        """Best-effort session-expiry notification on a read outcome.
+
+        AUTH_EXPIRED fires notify_session_expired; a fully authenticated
+        outcome clears the suppression entry. The notifier already swallows
+        its own errors; this second guard keeps the notification strictly
+        best-effort so the outcome itself is never altered.
+        """
+
+        if self._expiry_notifier is None:
+            return
+        try:
+            if outcome.fetch_state == AcquisitionFetchState.AUTH_EXPIRED:
+                self._expiry_notifier.notify_session_expired(
+                    source="broker-read", detail=connector_id
+                )
+            elif outcome.fetch_state == AcquisitionFetchState.OK:
+                self._expiry_notifier.notify_authenticated(connector_id)
+        except Exception:
+            # Double defense: never let a notification problem change the
+            # read outcome.
+            return
 
     def _normalize_outcome(
         self,

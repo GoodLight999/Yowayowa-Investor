@@ -358,6 +358,55 @@ all P2A interlocks (settings arm + runtime `--armed` + notional limits
   snapshot as the operational evidence (separate supervised run, not
   part of this checkpoint).
 
+### P2C checkpoint — session operations hardening (2026-09-23)
+
+Session-expiry notification + pinned verified login URL + persistent
+headful-profile UA pin. No semantics change to the P2B gate order,
+fail-closed behavior, or audit shapes.
+
+- `operator_bridge/rakuten_web.py`: pinned `RAKUTEN_WEB_LOGIN_PATH` /
+  `RAKUTEN_WEB_LOGIN_URL` (VERIFIED 2026-09-23: HTTP 200,
+  「総合口座ログイン | 楽天証券」). Resource catalog untouched.
+- `broker/execution/transport.py`: `auth_probe_path` now imports the
+  pinned login path (single source of truth); `_probe_authenticated`
+  docstring records the max_redirects=0 semantics (alive session → 30x +
+  marker-free Location → authenticated; expired → login page itself with
+  markers → unauthenticated; fail-closed kept). Step 6 gains an
+  `expiry_notifier.notify_session_expired(source="broker-exec")` hook —
+  probe-reached session expiry only; frozen/blocked paths never notify.
+  Optional keyword-only `expiry_notifier` (TYPE_CHECKING import; runtime
+  duck typing; no import cycle).
+- `broker/session_notify.py` (new): `SessionExpiryNotifier` —
+  fingerprint key = connector_id (broker-read + broker-exec dedupe to
+  ONE Telegram message), default suppress 3600s, default sender =
+  `hermes send --to telegram` via subprocess (no shell). State JSON at
+  `YOWAYOWA_BROKER_SESSION_NOTIFY_STATE_PATH` (default
+  `./data/broker-session/notify-state.json`); missing/corrupt state is
+  treated as empty (fail-open for state, notification guaranteed);
+  sender failure writes no state (next detection retries);
+  `notify_authenticated` clears the suppression entry. NOT the M4
+  single-writer audit directory; worst race case = one duplicate
+  notification (accepted).
+- `config.py`: `broker_session_notify_state_path` +
+  `broker_rakuten_web_user_agent` settings.
+- `operator_bridge/web_session.py`: optional keyword-only `user_agent`
+  forwarded to `launch_persistent_context` (default None = real
+  Chromium UA with the same persistent profile + Chromium install).
+- Wiring: `BrokerReadService` gets optional `expiry_notifier` and
+  notifies on AUTH_EXPIRED (source="broker-read") and clears on OK
+  outcomes (best-effort, never alters outcomes; deps + CLI wire
+  `SessionExpiryNotifier(settings.broker_session_notify_state_path)`;
+  sessions get the pinned UA from settings).
+- Tests: 6 new notifier tests (`tests/test_broker_session_notify.py`),
+  3 new read-side notifier tests, 3 new transport notifier/probe tests
+  (incl. frozen-gate-never-notifies regression and pinned-login-path
+  probe), 1 UA-wiring test → repo total **724 passed, 2 skipped**.
+  `make verify` clean.
+- Next: supervised real login in the persistent profile
+  (`YOWAYOWA_BROKER_RAKUTEN_WEB_PROFILE_DIR`), confirmed via
+  `yowayowa broker-read auth-check rakuten-web`, then first supervised
+  live probe per the P2B checkpoint flow.
+
 ### P2B prerequisite checkpoint — Rakuten web base host repoint (2026-09-23)
 
 HEAD `fce2b2f` → environment correction only (CTO ruling, parent card

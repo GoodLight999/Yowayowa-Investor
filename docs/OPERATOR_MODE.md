@@ -81,6 +81,31 @@ Reauthentication uses the same flow as the acquisition toolkit: on `auth_expired
 
 Real-session verification procedure (operator DoD): `docs/RAKUTEN_WEB_SESSION.md`.
 
+### Session expiry notification & persistent profile (P2C)
+
+The pinned, verified login page (CTO live check, 2026-09-23) is
+https://www.rakuten-sec.co.jp/ITS/V_ACT_Login.html (HTTP 200, title
+「総合口座ログイン | 楽天証券」). Both the read-side auth probe and the
+submission-transport authentication probe target this page. When a read or
+submission path reports `auth_expired` / a failed probe, re-login follows the
+reauthentication flow above (complete Rakuten's normal login/MFA in the
+persistent browser profile, then `yowayowa broker-read auth-check rakuten-web`).
+
+On session expiry the operator is notified exactly once through the Telegram
+home channel with「楽天証券のセッションが失効しています。再ログインが必要です。」.
+The notification is fingerprint-deduplicated per connector (`rakuten-web`),
+so broker-read and broker-exec detections collapse into one message. Suppression
+window is 1 hour by default and is cleared by a successful authenticated result
+after re-login. Implementation: the `hermes send` CLI is invoked via subprocess
+(no shell); state is stored at `YOWAYOWA_BROKER_SESSION_NOTIFY_STATE_PATH`
+(default `./data/broker-session/notify-state.json`).
+
+The persistent headful profile stays at `YOWAYOWA_BROKER_RAKUTEN_WEB_PROFILE_DIR`
+(default `./data/broker-profiles/rakuten`). The real Chromium user agent is used
+by default; it can be pinned explicitly via `YOWAYOWA_BROKER_RAKUTEN_WEB_USER_AGENT`.
+A wine/proton-based Windows-app migration remains a fallback positioning, independent
+of any future Windows port.
+
 ## Company IR acquisition (P1C)
 
 A general IR monitoring pipeline for companies whose useful information is not

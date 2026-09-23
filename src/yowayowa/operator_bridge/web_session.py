@@ -38,12 +38,14 @@ class PersistentBrokerWebSession:
         profile_dir: str | Path,
         headless: bool = False,
         channel: str | None = None,
+        user_agent: str | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/") + "/"
         self._base_origin = _origin(self.base_url)
         self.profile_dir = Path(profile_dir).expanduser()
         self.headless = headless
         self.channel = channel
+        self.user_agent = user_agent
         self._playwright: Playwright | None = None
         self._context: BrowserContext | None = None
 
@@ -75,6 +77,8 @@ class PersistentBrokerWebSession:
             }
             if self.channel is not None:
                 kwargs["channel"] = self.channel
+            if self.user_agent:
+                kwargs["user_agent"] = self.user_agent
             context = playwright.chromium.launch_persistent_context(
                 str(self.profile_dir),
                 **kwargs,
