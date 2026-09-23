@@ -5,8 +5,6 @@ from typing import Annotated, Protocol
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from yowayowa.api.deps import require_api_token
-from yowayowa.config import Settings
-from yowayowa.config import get_settings as _get_settings
 from yowayowa.fx_models import (
     SUPPORTED_CRYPTO_ASSETS,
     FxDirection,
@@ -16,8 +14,8 @@ from yowayowa.fx_models import (
     build_fx_proposal,
     normalize_fx_pair,
 )
-from yowayowa.providers.frankfurter import ECB_REFERENCE_CURRENCIES, FrankfurterFxProvider
-from yowayowa.providers.registry import yahoo_market_provider
+from yowayowa.providers.frankfurter import ECB_REFERENCE_CURRENCIES
+from yowayowa.providers.registry import frankfurter_fx_provider, yahoo_market_provider
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_token)])
 
@@ -30,28 +28,31 @@ class _FxAnalysisProvider(Protocol):
     def fx_history(self, pair: str, *, interval: str, period: str) -> FxHistory: ...
 
 
-def _fx_provider(pair: str, settings: Settings) -> _FxAnalysisProvider:
+def _fx_provider(pair: str) -> _FxAnalysisProvider:
     """Resolve the FX provider for one normalized pair — the single routing point.
 
-    ECB-covered fiat pairs always use Frankfurter (OFFICIAL_PUBLIC, public-mode
-    safe). Crypto pairs use the personal-only Yahoo provider, which public mode
-    refuses at provider construction; they 404 there instead of silently mixing
-    sources. No other fallback exists.
+    Providers come from the registry's lru_cache, so the process holds one
+    Frankfurter/Yahoo instance: the provider-internal TTL caches actually
+    absorb repeated pairs and the httpx.Client is reused instead of leaked
+    per request. ECB-covered fiat pairs always use Frankfurter
+    (OFFICIAL_PUBLIC, public-mode safe). Crypto pairs use the personal-only
+    Yahoo provider, which public mode refuses at provider construction; they
+    404 there instead of silently mixing sources. No other fallback exists.
     """
 
     if pair[:3] in SUPPORTED_CRYPTO_ASSETS or pair[3:] in SUPPORTED_CRYPTO_ASSETS:
         return yahoo_market_provider()
     if pair[:3] in ECB_REFERENCE_CURRENCIES and pair[3:] in ECB_REFERENCE_CURRENCIES:
-        return FrankfurterFxProvider(settings)
+        return frankfurter_fx_provider()
     raise LookupError(f"Pair {pair!r} is not available from a licensed provider on this surface")
 
 
-def _fx_quote(pair: str, settings: Settings) -> FxRateSnapshot:
-    provider = _fx_provider(pair, settings)
+def _fx_quote(pair: str) -> FxRateSnapshot:
+    provider = _fx_provider(pair)
     return provider.fx_quote(pair)
 
 
-def _fx_history(pair: str, settings: Settings, interval: str, period: str) -> FxHistory:
+def _fx_history(pair: str, interval: str, period: str) -> FxHistory:
     """FX history through the resolved provider, with per-source interval rules.
 
     ECB reference rates are a once-daily fix: non-daily intervals are a client
@@ -66,18 +67,17 @@ def _fx_history(pair: str, settings: Settings, interval: str, period: str) -> Fx
             f"Unsupported FX history interval {interval!r}: ECB reference rates are "
             "daily only; use interval=1d"
         )
-    provider = _fx_provider(pair, settings)
+    provider = _fx_provider(pair)
     return provider.fx_history(pair, interval=interval, period=period)
 
 
 @router.get("/fx/rate", response_model=FxRateSnapshot)
 def fx_rate(
     pair: Annotated[str, Query(min_length=6, max_length=6, description="FX pair, e.g. USDJPY")],
-    settings: Annotated[Settings, Depends(_get_settings)],
 ) -> FxRateSnapshot:
     normalized = normalize_fx_pair(pair)
     try:
-        return _fx_quote(normalized, settings)
+        return _fx_quote(normalized)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
@@ -89,11 +89,10 @@ def fx_history(
     pair: Annotated[str, Query(min_length=6, max_length=6, description="FX pair, e.g. USDJPY")],
     interval: Annotated[str, Query(pattern=r"^(?:1m|5m|15m|30m|1h|1d|1wk|1mo)$")] = "1d",
     period: Annotated[str, Query(pattern=r"^(?:1d|5d|1mo|3mo|6mo|1y|2y|5y|max)$")] = "1mo",
-    settings: Annotated[Settings, Depends(_get_settings)] = None,  # type: ignore[assignment]
 ) -> FxHistory:
     normalized = normalize_fx_pair(pair)
     try:
-        return _fx_history(normalized, settings, interval, period)
+        return _fx_history(normalized, interval, period)
     except ValueError as exc:
         # Daily-data-only / period constraints are client errors, not 5xx.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -108,13 +107,12 @@ def fx_proposal(
     pair: Annotated[str, Query(min_length=6, max_length=6, description="FX pair, e.g. USDJPY")],
     direction: FxDirection = Query(default=FxDirection.FLAT),
     strength: float | None = Query(default=None, ge=0.0, le=1.0),
-    settings: Settings = Depends(_get_settings),
 ) -> FxProposalSpec:
     """Propose-only FX analysis artifact (never an execution instruction)."""
 
     normalized = normalize_fx_pair(pair)
     try:
-        quote = _fx_quote(normalized, settings)
+        quote = _fx_quote(normalized)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:

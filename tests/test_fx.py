@@ -126,13 +126,18 @@ def _install_fx_app(monkeypatch: pytest.MonkeyPatch, tmp_path, provider: object)
     monkeypatch.delenv("YOWAYOWA_API_TOKEN", raising=False)
     get_settings.cache_clear()
     from yowayowa.api import fx_routes
+    from yowayowa.providers import registry as provider_registry
 
     monkeypatch.setattr(fx_routes, "yahoo_market_provider", lambda: provider)
     monkeypatch.setattr(
         fx_routes,
-        "FrankfurterFxProvider",
-        lambda _settings: provider,
+        "frankfurter_fx_provider",
+        lambda: provider,
     )
+    # The routing module resolved the ECB branch through the registry's
+    # lru_cache since the provider-construction unification; patch the cached
+    # registry entry too so a cache miss cannot rebuild a real provider.
+    monkeypatch.setattr(provider_registry, "frankfurter_fx_provider", lambda: provider)
 
 
 def test_fx_rate_endpoint_returns_snapshot(tmp_path, monkeypatch) -> None:
@@ -502,7 +507,7 @@ def test_fx_routes_fail_closed_in_public_mode_for_crypto_pair(tmp_path, monkeypa
     from yowayowa.api import fx_routes
 
     monkeypatch.setattr(fx_routes, "yahoo_market_provider", lambda: provider)
-    monkeypatch.setattr(fx_routes, "FrankfurterFxProvider", lambda _settings: provider)
+    monkeypatch.setattr(fx_routes, "frankfurter_fx_provider", lambda: provider)
     import yowayowa.api.deps as deps
 
     monkeypatch.setattr(deps, "get_settings", get_settings)
@@ -544,7 +549,6 @@ def test_fx_provider_resolution_unit_fails_closed_without_any_fallback() -> None
     from yowayowa.api.fx_routes import _fx_provider
     from yowayowa.providers.frankfurter import FrankfurterFxProvider
 
-    settings = get_settings()
-    assert isinstance(_fx_provider("USDJPY", settings), FrankfurterFxProvider)
+    assert isinstance(_fx_provider("USDJPY"), FrankfurterFxProvider)
     with pytest.raises(LookupError):
-        _fx_provider("USDVND", settings)
+        _fx_provider("USDVND")
