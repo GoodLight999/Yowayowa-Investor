@@ -578,14 +578,22 @@ def _table_row_maps(payload: Mapping[str, object]) -> list[Mapping[str, object]]
 def _payload_rows(
     payload: Mapping[str, object],
     list_keys: tuple[str, ...],
+    *,
+    include_tables: bool = True,
 ) -> list[dict[str, object]]:
-    """Row dicts from JSON list fields and/or tables-parser output."""
+    """Row dicts from JSON list fields and/or tables-parser output.
+
+    tables rows are materialized as fresh dicts per call; callers that dedup
+    rows by identity across list-key families (``_detail_rows``) must pass
+    include_tables=False and handle tables rows once, separately.
+    """
     rows: list[dict[str, object]] = []
     for key in list_keys:
         value = payload.get(key)
         if isinstance(value, list):
             rows.extend(item for item in value if isinstance(item, dict))
-    rows.extend(dict(row) for row in _table_row_maps(payload))
+    if include_tables:
+        rows.extend(dict(row) for row in _table_row_maps(payload))
     return rows
 
 
@@ -927,10 +935,15 @@ def summarize_payload(payload: Mapping[str, object]) -> dict[str, object]:
 def _detail_rows(payload: Mapping[str, object]) -> list[dict[str, object]]:
     """All order/position/execution rows a detail extractor may scan, deduped.
 
-    Scans every known list-key family (positions, open orders, order history,
-    executions) plus tables-parser rows. The same physical row can be reachable
-    through multiple list keys (e.g. orders and order_history in one payload);
-    identical row dicts are emitted once so fees/names are not double-counted.
+    JSON list-key families are scanned with tables rows excluded
+    (include_tables=False); the same physical row can be reachable through
+    multiple list keys (e.g. orders and order_history sharing one list
+    object), and identical-by-identity (id()) row dicts are emitted once so
+    fees/names are not double-counted. tables-parser rows are identical for
+    every list-key family, so they are materialized once at the end instead
+    of once per family. Distinct physical rows with identical content are
+    kept: separate orders can legitimately share the same values, so
+    content-based dedup is not possible.
     """
     rows: list[dict[str, object]] = []
     seen: set[int] = set()
@@ -940,12 +953,13 @@ def _detail_rows(payload: Mapping[str, object]) -> list[dict[str, object]]:
         _ORDER_HISTORY_LIST_KEYS,
         _EXECUTION_LIST_KEYS,
     ):
-        for row in _payload_rows(payload, keys):
+        for row in _payload_rows(payload, keys, include_tables=False):
             marker = id(row)
             if marker in seen:
                 continue
             seen.add(marker)
             rows.append(row)
+    rows.extend(dict(row) for row in _table_row_maps(payload))
     return rows
 
 

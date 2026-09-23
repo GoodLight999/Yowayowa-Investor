@@ -769,3 +769,94 @@ def test_extract_margin_state_vertical_unparseable_still_notes() -> None:
         {"tables": [{"rows": [{"項目": "拘束保証金", "金額": "—"}]}]}, market="us"
     )
     assert any("拘束保証金" in note and "unparseable" in note for note in notes)
+
+
+# ---------------------------------------------------------------------------
+# N3: tables 行の重複計上防止 (fees / symbol_names)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_fees_tables_rows_counted_once() -> None:
+    # N3: 注文番号列のない tables 行は list-key 族ごとに複製され 4 倍に膨張していた
+    payload = {
+        "tables": [
+            {
+                "rows": [
+                    {"symbol": "7203", "手数料": "55円"},
+                    {"symbol": "6758", "手数料": "110円"},
+                    {"symbol": "9984", "手数料": "165円"},
+                ]
+            }
+        ]
+    }
+    assert extract_fees(payload) == {"row[0]": "55円", "row[1]": "110円", "row[2]": "165円"}
+
+
+def test_extract_fees_tables_rows_with_order_id_not_inflated() -> None:
+    # N3: 注文番号列がある場合もキー上書きで 3 件のまま(膨張しない)
+    payload = {
+        "tables": [
+            {
+                "rows": [
+                    {"symbol": "7203", "注文番号": "T-1", "手数料": "55円"},
+                    {"symbol": "6758", "注文番号": "T-2", "手数料": "110円"},
+                    {"symbol": "9984", "注文番号": "T-3", "手数料": "165円"},
+                ]
+            }
+        ]
+    }
+    assert extract_fees(payload) == {"T-1": "55円", "T-2": "110円", "T-3": "165円"}
+
+
+def test_extract_symbol_names_tables_rows_counted_once() -> None:
+    # N3: tables 行の銘柄名も 1 回ずつ(件数==3、値も確認)
+    payload = {
+        "tables": [
+            {
+                "rows": [
+                    {"symbol": "7203", "銘柄名": "トヨタ自動車"},
+                    {"symbol": "6758", "銘柄名": "アドバンテスト"},
+                    {"symbol": "9984", "銘柄名": "ソフトバンクグループ"},
+                ]
+            }
+        ]
+    }
+    names = extract_symbol_names(payload)
+    assert len(names) == 3
+    assert names == {
+        "7203": "トヨタ自動車",
+        "6758": "アドバンテスト",
+        "9984": "ソフトバンクグループ",
+    }
+
+
+def test_extract_fees_tables_and_explicit_lists_coexist_no_inflation() -> None:
+    # N3: JSON list 行と tables 行の共存。修正前は tables 3行が list-key 族ごとに
+    # 複製され膨張していた。修正後は J-1 + tables 3行の 4件(row index は J-1 が 0)。
+    payload = {
+        "orders": [{"order_id": "J-1", "symbol": "6501", "手数料": "495円"}],
+        "tables": [
+            {
+                "rows": [
+                    {"symbol": "7203", "手数料": "55円"},
+                    {"symbol": "6758", "手数料": "110円"},
+                    {"symbol": "9984", "手数料": "165円"},
+                ]
+            }
+        ],
+    }
+    fees = extract_fees(payload)
+    assert len(fees) == 4
+    assert fees == {
+        "J-1": "495円",
+        "row[1]": "55円",
+        "row[2]": "110円",
+        "row[3]": "165円",
+    }
+
+
+def test_extract_fees_shared_json_list_keys_still_dedup() -> None:
+    # N1 挙動維持の回帰: 同一 list オブジェクトを orders/history で共有すれば 1 件のみ
+    shared = [{"order_id": "H-1", "symbol": "7203", "手数料": "55円"}]
+    payload = {"orders": shared, "history": shared}
+    assert extract_fees(payload) == {"H-1": "55円"}

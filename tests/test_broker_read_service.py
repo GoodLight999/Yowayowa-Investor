@@ -444,6 +444,33 @@ def test_fetch_order_history_stale_serves_detail_from_cache(tmp_path: Path) -> N
     assert len(transport.calls) == 1
 
 
+def test_fetch_order_history_us_tables_detail_fees_not_inflated(tmp_path: Path) -> None:
+    # N3: tables パーサ経由の order_history で detail.fees が list-key 族ぶん膨張しない
+    html = (
+        "<table><tr><th>銘柄コード</th><th>手数料</th></tr>"
+        "<tr><td>7203</td><td>55円</td></tr>"
+        "<tr><td>6758</td><td>110円</td></tr>"
+        "<tr><td>9984</td><td>165円</td></tr></table>"
+    ).encode()
+    transport = ScriptedTransport(
+        [
+            _response(
+                html,
+                url="https://trade.rakuten-sec.co.jp/web/us/orders/history/us",
+                content_type="text/html",
+            )
+        ]
+    )
+    service = _build_service(transport, data_dir=tmp_path)
+    outcome = service.fetch("order_history", "us")
+    assert outcome.fetch_state == AcquisitionFetchState.OK
+    assert outcome.detail is not None
+    fees = outcome.detail.get("fees")
+    assert len(fees) == 3
+    assert fees == {"row[0]": "55円", "row[1]": "110円", "row[2]": "165円"}
+    assert outcome.detail.get("verified") is False
+
+
 def test_fetch_open_orders_does_not_include_cancelled_and_notes_it(tmp_path: Path) -> None:
     transport = ScriptedTransport(
         [_response(_order_history_body(), url="https://trade.rakuten-sec.co.jp/web/orders/open/jp")]
