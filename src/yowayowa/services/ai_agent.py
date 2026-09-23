@@ -37,6 +37,7 @@ from yowayowa.services.codex_cli import codex_cli_status, run_codex_structured
 from yowayowa.services.comparison import compare
 from yowayowa.services.portfolios import get_portfolio, list_portfolios, portfolio_analytics
 from yowayowa.services.screening import derived_metrics
+from yowayowa.services.strategy_calibration import calibration_report
 from yowayowa.services.strategy_outcomes import forward_outcome_report
 from yowayowa.services.strategy_presets import (
     KIYOHARA_GLOBAL_ID,
@@ -190,7 +191,9 @@ class InvestmentResearchAgent:
             "Treat research-priority scores as attention-allocation scores, never as expected "
             "returns or autonomous buy/sell decisions. When prior snapshots exist, use "
             "get_strategy_outcomes to inspect forward results rather than assuming the scoring "
-            "rules work. Explain factor contributions, evidence "
+            "rules work, and check get_strategy_calibration for score-calibration evidence "
+            "(deciles, hit rates, rank IC, sample-size warnings) before claiming a scoring "
+            "rule works. Explain factor contributions, evidence "
             "coverage, first rejection conditions and what evidence would change the view. "
             "Prefer compact, decision-relevant comparisons over generic prose. "
             "For workspace changes, use propose_* tools; never silently mutate state. "
@@ -514,6 +517,15 @@ class InvestmentResearchAgent:
                     "limit": 30,
                 },
             )
+            capture(
+                "get_strategy_calibration",
+                {
+                    "strategy_id": strategy_id,
+                    "region": region or None,
+                    "horizons": [20, 60, 120],
+                    "limit": 30,
+                },
+            )
 
         symbols = list(dict.fromkeys(symbols))[:6]
         if symbols:
@@ -733,6 +745,34 @@ class InvestmentResearchAgent:
                     }
                 ),
                 self._tool_strategy_outcomes,
+            ),
+            ToolSpec(
+                "get_strategy_calibration",
+                "Aggregate prior strategy outcome evidence into calibration buckets per "
+                "scoring version and horizon: score/factor deciles, median/mean total and "
+                "benchmark-excess returns, positive-excess hit rate, rank information "
+                "coefficient, and minimum-sample warnings. Inspect this calibration "
+                "evidence before claiming a scoring rule works.",
+                self._object_schema(
+                    {
+                        "strategy_id": {"type": "string"},
+                        "region": {"type": "string"},
+                        "symbol": {"type": "string"},
+                        "horizons": {
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 1, "maximum": 500},
+                            "maxItems": 6,
+                        },
+                        "benchmark": {"type": "string"},
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 30,
+                        },
+                    }
+                ),
+                self._tool_strategy_calibration,
             ),
             ToolSpec(
                 "compare_symbols",
@@ -1104,6 +1144,34 @@ class InvestmentResearchAgent:
             horizons=horizons,
             benchmark_symbol=benchmark,
         ).model_dump(mode="json")
+
+    def _tool_strategy_calibration(self, args: dict[str, Any]) -> Any:
+        strategy_id = str(args.get("strategy_id") or "").strip() or None
+        region = str(args.get("region") or "").strip() or None
+        symbol = str(args.get("symbol") or "").strip() or None
+        raw_horizons = args.get("horizons")
+        horizons = (
+            [int(item) for item in raw_horizons]
+            if isinstance(raw_horizons, list) and raw_horizons
+            else [20, 60, 120]
+        )
+        raw_benchmark = str(args.get("benchmark") or "").strip()
+        benchmark = normalize_symbol(raw_benchmark) if raw_benchmark else None
+        limit = min(max(int(args.get("limit") or 30), 1), 100)
+        snapshots = list_strategy_snapshots(
+            self.session,
+            strategy_id=strategy_id,
+            region=region,
+            symbol=symbol,
+            limit=limit,
+        )
+        report = forward_outcome_report(
+            snapshots,
+            yahoo_market_provider(),
+            horizons=horizons,
+            benchmark_symbol=benchmark,
+        )
+        return calibration_report(snapshots, report).model_dump(mode="json")
 
     def _tool_compare(self, args: dict[str, Any]) -> Any:
         symbols = [normalize_symbol(str(item)) for item in args.get("symbols", [])][:20]

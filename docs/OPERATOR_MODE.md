@@ -81,6 +81,44 @@ Reauthentication uses the same flow as the acquisition toolkit: on `auth_expired
 
 Real-session verification procedure (operator DoD): `docs/RAKUTEN_WEB_SESSION.md`.
 
+## Strategy research loop (P3)
+
+The strategy research loop keeps point-in-time evidence about whether the
+research-priority scoring actually helped, without ever rewriting history:
+
+- **Snapshots** — every strategy evaluation is recorded as a point-in-time
+  snapshot (`/v1/strategy-research/snapshots`): what was known, what it scored,
+  and why (factor contributions), per scoring version.
+- **Forward outcomes** — `/v1/strategy-research/outcomes` replays each snapshot
+  over 20/60/120-trading-day horizons using only closes strictly after the
+  snapshot date, with benchmark-relative excess returns.
+- **Calibration** — `GET /v1/strategy-research/calibration` aggregates outcome
+  evidence into buckets keyed by (scoring version, horizon): score deciles,
+  factor deciles, median/mean total return, median/mean benchmark excess
+  return, positive-excess hit rate, rank information coefficient
+  (Spearman, score vs excess return), and minimum-sample warnings (statistics
+  carry a warning below 30 available outcomes; deciles are omitted below 10).
+- **Missing data is not zero** — pending/unavailable outcomes are excluded
+  from return statistics but always reported as `sample_pending` /
+  `sample_unavailable`. Outcomes without a benchmark return are excluded from
+  excess-return statistics only, with the count stated in bucket notes.
+- **Provenance invariants** — the calibration report passes through the
+  provenance of the market data used for outcomes (provider, source,
+  license class, retrieved-at, as-of) unchanged; calibration never synthesizes
+  or rewrites provenance.
+- **Read-only by construction** — calibration is a read-time aggregation of
+  snapshots and outcomes; it writes nothing to the database and proposes no
+  orders. It never touches the broker submission surface, which stays
+  propose-only with a fail-closed gate.
+- **Semantics** — the research-priority score is an attention-allocation
+  score, not an expected-return forecast; overlapping snapshot windows are
+  treated as independent observations (stated in bucket notes), and
+  walk-forward / out-of-sample evaluation is not implemented yet.
+- **AI access** — the `get_strategy_calibration` agent tool (same filters as
+  `get_strategy_outcomes`) returns the same evidence, and the agent system
+  prompt directs the model to inspect calibration evidence before claiming a
+  scoring rule works.
+
 ### Session expiry notification & persistent profile (P2C)
 
 The pinned, verified login page (CTO live check, 2026-09-23) is

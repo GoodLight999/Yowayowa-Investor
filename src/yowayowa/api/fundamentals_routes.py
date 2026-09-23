@@ -19,6 +19,7 @@ from yowayowa.providers.edinet import EdinetClient
 from yowayowa.providers.registry import fundamentals_provider, yahoo_market_provider
 from yowayowa.services.comparison import compare
 from yowayowa.services.screening import screen
+from yowayowa.services.strategy_calibration import calibration_report
 from yowayowa.services.strategy_edinet import (
     balance_sheet_supplement as edinet_balance_sheet_supplement,
 )
@@ -42,6 +43,7 @@ from yowayowa.services.strategy_yahoo import (
 from yowayowa.services.valuation import valuation_snapshot
 from yowayowa.strategy_models import (
     StrategyBalanceSheetSupplement,
+    StrategyCalibrationReport,
     StrategyEvaluationRequest,
     StrategyEvaluationResponse,
     StrategyForwardOutcomeReport,
@@ -210,6 +212,44 @@ def strategy_research_outcomes(
             horizons=resolved_horizons,
             benchmark_symbol=normalize_symbol(benchmark) if benchmark else None,
         )
+    except ProviderPolicyError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get(
+    "/strategy-research/calibration",
+    response_model=StrategyCalibrationReport,
+)
+def strategy_research_calibration(
+    strategy_id: str | None = Query(default=None, max_length=80),
+    region: str | None = Query(default=None, max_length=16),
+    symbol: str | None = Query(default=None, max_length=32),
+    horizons: str = Query(default="20,60,120", max_length=64),
+    benchmark: str | None = Query(default=None, max_length=32),
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(db_session),
+) -> StrategyCalibrationReport:
+    try:
+        resolved_horizons = [int(token.strip()) for token in horizons.split(",") if token.strip()]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Outcome horizons must be integers") from exc
+    snapshots = list_strategy_snapshots(
+        session,
+        strategy_id=strategy_id,
+        region=region,
+        symbol=symbol,
+        limit=limit,
+    )
+    try:
+        report = forward_outcome_report(
+            snapshots,
+            yahoo_market_provider(),
+            horizons=resolved_horizons,
+            benchmark_symbol=normalize_symbol(benchmark) if benchmark else None,
+        )
+        return calibration_report(snapshots, report)
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:

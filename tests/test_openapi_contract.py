@@ -34,6 +34,7 @@ def test_agent_facing_openapi_contract_remains_machine_discoverable() -> None:
         "/v1/ai/codex/session-status",
         "/v1/strategy-research/snapshots",
         "/v1/strategy-research/outcomes",
+        "/v1/strategy-research/calibration",
         "/v1/strategy-presets/{strategy_id}/evaluate",
         "/v1/operations/plan",
     }

@@ -151,6 +151,7 @@ def test_ai_status_never_returns_configured_keys() -> None:
     assert "triage_strategy" in status["tools"]
     assert "get_strategy_history" in status["tools"]
     assert "get_strategy_outcomes" in status["tools"]
+    assert "get_strategy_calibration" in status["tools"]
 
 
 def test_ai_strategy_triage_returns_interpretable_priority(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -239,6 +240,89 @@ def test_ai_strategy_triage_returns_interpretable_priority(monkeypatch) -> None:
         "quality",
         "evidence",
     }
+
+
+def test_ai_tool_strategy_calibration_aggregates_with_fixture_provider(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from yowayowa.domain import MarketHistory, PriceBar
+    from yowayowa.providers.base import ProviderDescriptor
+
+    def bar(day: int, value: float) -> PriceBar:
+        return PriceBar(
+            timestamp=datetime(2026, 1, day, tzinfo=UTC),
+            open=value,
+            high=value,
+            low=value,
+            close=value,
+            volume=1,
+        )
+
+    def history(symbol: str, values: list[float]) -> MarketHistory:
+        return MarketHistory(
+            symbol=symbol,
+            interval="1d",
+            bars=[bar(day + 1, value) for day, value in enumerate(values)],
+            provenance=Provenance(
+                provider="fixture",
+                source=f"history:{symbol}",
+                license_class=LicenseClass.PERSONAL_ONLY,
+                retrieved_at=datetime(2026, 2, 1, tzinfo=UTC),
+            ),
+        )
+
+    class FakeMarketProvider:
+        descriptor = ProviderDescriptor(
+            name="fixture",
+            license_class=LicenseClass.PERSONAL_ONLY,
+            redistributable=False,
+            description="fixture",
+        )
+
+        def __init__(self) -> None:
+            self.histories = {
+                "CAL": history("CAL", [100, 100, 110, 121]),
+                "^GSPC": history("^GSPC", [200, 200, 202, 204]),
+            }
+
+        def history(
+            self,
+            symbol: str,
+            period: str,
+            interval: str,
+            indicators: list[str],
+        ) -> MarketHistory:
+            return self.histories[symbol]
+
+    monkeypatch.setattr(ai_agent, "yahoo_market_provider", lambda: FakeMarketProvider())
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from yowayowa.db import Base
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        agent = InvestmentResearchAgent(Settings(database_url="sqlite:///:memory:"), Mock())
+        agent.session = session
+        result = agent._tool_strategy_calibration(
+            {
+                "strategy_id": "kiyohara_global_value_growth",
+                "horizons": [2],
+                "limit": 30,
+            }
+        )
+    engine.dispose()
+
+    # No snapshots recorded in this empty fixture database -> no buckets, no error.
+    assert result["buckets"] == []
+    assert isinstance(result["notes"], list)
+    assert result["provenance"] == []
+
+    # A prompt packet that references a strategy must include calibration evidence.
+    packet = agent.prompt_packet(
+        AIPromptPacketRequest(context={"strategy": "kiyohara_global_value_growth"})
+    )
+    assert "get_strategy_calibration" in packet.included_tools
 
 
 def test_codex_chat_uses_same_yowayowa_tool_loop(monkeypatch) -> None:  # type: ignore[no-untyped-def]

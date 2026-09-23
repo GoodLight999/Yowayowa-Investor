@@ -147,6 +147,61 @@ class StrategyForwardOutcomeReport(BaseModel):
     evaluated_at: datetime
 
 
+StrategyCalibrationMinimumSampleThreshold = 30
+StrategyCalibrationDecileMinimumSample = 10
+
+
+class StrategyOutcomeDecileStatistics(BaseModel):
+    sample_count: int = Field(ge=0)
+    median_total_return: float | None = None
+    mean_total_return: float | None = None
+    median_excess_return: float | None = None
+    mean_excess_return: float | None = None
+    positive_excess_hit_rate: float | None = None
+
+
+class StrategyScoreDecileSummary(StrategyOutcomeDecileStatistics):
+    decile: int = Field(ge=1, le=10)
+    score_min: float
+    score_max: float
+
+
+class StrategyFactorDecileSummary(StrategyOutcomeDecileStatistics):
+    factor_key: StrategyPriorityFactorKey
+    decile: int = Field(ge=1, le=10)
+    factor_score_fraction_min: float
+    factor_score_fraction_max: float
+
+
+class StrategyCalibrationBucket(BaseModel):
+    strategy_id: str
+    scoring_version: str
+    horizon_trading_days: int = Field(gt=0)
+    sample_total: int = Field(ge=0)
+    sample_available: int = Field(ge=0)
+    sample_pending: int = Field(ge=0)
+    sample_unavailable: int = Field(ge=0)
+    minimum_sample_warning: bool
+    score_deciles: list[StrategyScoreDecileSummary] = Field(default_factory=list)
+    factor_deciles: list[StrategyFactorDecileSummary] = Field(default_factory=list)
+    median_total_return: float | None = None
+    mean_total_return: float | None = None
+    median_excess_return: float | None = None
+    mean_excess_return: float | None = None
+    positive_excess_hit_rate: float | None = None
+    rank_ic: float | None = None
+    ic_sample_count: int = Field(ge=0, default=0)
+    ic_insufficient: bool = True
+    notes: list[str] = Field(default_factory=list)
+
+
+class StrategyCalibrationReport(BaseModel):
+    buckets: list[StrategyCalibrationBucket]
+    provenance: list[Provenance] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    evaluated_at: datetime
+
+
 class StrategyEvaluationResponse(BaseModel):
     strategy_id: str
     evaluations: list[StrategyCandidateEvaluation]
