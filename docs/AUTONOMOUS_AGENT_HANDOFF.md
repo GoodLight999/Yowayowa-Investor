@@ -265,6 +265,47 @@ openapi) and via CI run 35850617952 (verify + real-browser E2E + prod
 deploy green); production `/openapi.json` now serves the three new paths
 and fails closed on the hosted environment as designed.
 
+### P2A remedy checkpoint — audit F1/F2/F3 hardening (2026-09-23)
+
+HEAD `9888344`. Remediation of the three findings from the independent
+P2A audit (verdict APPROVE WITH FINDINGS), required before P2B starts
+writing `stage=submit` entries into the same audit file.
+
+- **F1 (tail truncation)**: every append now atomically persists an
+  `audit.state.json` sidecar `{count, last_entry_hash}` (tmp write +
+  fsync + `os.replace`). `verify()` cross-checks it: deleting the tail,
+  the whole file, or reforging the last entry is detected. A missing
+  sidecar self-heals (upgrade path for pre-existing audit dirs); an
+  unparsable sidecar is reported as a problem, never raised.
+- **F2 (shadow overwrite)**: `propose()` / `propose_model()` raise
+  `DuplicateProposalError` on a second propose of the same
+  `client_order_id` — strict first-wins, even for identical economic
+  content. The replay registry absorb path is first-wins too, so the
+  trail holds exactly one `intent` entry per id. API POST
+  `/v1/broker-execution/proposals` returns **409** on duplicates (was
+  silent 200); CLI `proposals-create` exits nonzero.
+- **F3 (torn line kills /audit)**: unparsable JSONL lines never raise.
+  `verify()` reports them as problems with line numbers, `entries()`
+  skips them, `append()` chains off the last clean entry, and the
+  service constructor replays successfully. `GET /audit` returns 200
+  with `verify_problems` non-empty (degraded but diagnosable) instead
+  of a 500 exactly when the trail is broken.
+- **M1** (minor, same files): removed the dead
+  `OrderExecutionPreview.model_post_init` cleanup.
+
+P2B gates carried over from the audit (still binding): single-writer
+audit directory only; `record_request(stage=submit)` written only at
+the actual submit instant; replay-flagged ALLOWED verdicts must never
+be auto-resubmitted.
+
+Tests: 13 new regression tests (`test_30`..`test_42` in
+`tests/test_broker_execution_domain.py`); repo total **684 passed**
+(671 before). `make verify` clean (ruff / format / mypy / openapi).
+CI run 35858245940 green on `9888344`. The auditor's three probes
+(truncation, shadow overwrite, torn-line 500) were re-executed on this
+commit and now detect/reject/survive as designed; evidence handed to
+audit-argus for independent confirmation.
+
 ---
 
 ## Product architecture invariants
