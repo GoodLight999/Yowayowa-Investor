@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from yowayowa.acquisition.transport import PrivateAcquisitionError, TransportResponse
 from yowayowa.operator_bridge.rakuten_web import (
     RAKUTEN_RESOURCES,
@@ -12,6 +14,7 @@ from yowayowa.operator_bridge.rakuten_web import (
     extract_fees,
     extract_margin_state,
     extract_margin_state_with_notes,
+    extract_symbol_names,
     lookup_rakuten_resource,
     normalize_account,
     normalize_account_with_notes,
@@ -660,3 +663,109 @@ def test_normalize_account_us_tables_shape_yields_no_note() -> None:
     payload = {"tables": [{"rows": [{"項目": "信用余力", "金額": "$250,000.00"}]}]}
     _, notes = normalize_account_with_notes(payload, market="us")
     assert notes == []
+
+
+# ---------------------------------------------------------------------------
+# order_history 経由の detail 抽出(fees / symbol_names) — N1 regression guard
+# ---------------------------------------------------------------------------
+
+_HISTORY_KEY_CASES = ("orders", "rows", "list", "history", "order_history", "orderHistory")
+
+
+def _history_row(key_specific: dict[str, str]) -> dict[str, object]:
+    """One order row; key_specific differentiates per-key payloads (e.g. order ids)."""
+    row: dict[str, object] = {
+        "order_id": "H-1",
+        "symbol": "7203",
+        "name": "トヨタ自動車",
+        "side": "買い",
+        "quantity": "100株",
+        "status": "取消",
+        "手数料": "55円",
+    }
+    row.update(key_specific)
+    return row
+
+
+@pytest.mark.parametrize("key", _HISTORY_KEY_CASES)
+def test_extract_fees_from_order_history_keys(key: str) -> None:
+    payload = {key: [_history_row({})]}
+    assert extract_fees(payload) == {"H-1": "55円"}
+
+
+@pytest.mark.parametrize("key", _HISTORY_KEY_CASES)
+def test_extract_symbol_names_from_order_history_keys(key: str) -> None:
+    payload = {key: [_history_row({})]}
+    assert extract_symbol_names(payload) == {"7203": "トヨタ自動車"}
+
+
+def test_extract_fees_order_history_multiple_keys_no_double_count() -> None:
+    # order_historyキーとordersキーが共存するpayload: 同一行の二重計上はしない
+    payload = {"order_history": [_history_row({})], "orders": ["not-a-dict"]}
+    assert extract_fees(payload) == {"H-1": "55円"}
+
+
+def test_extract_fees_disjoint_list_keys_collect_all_rows() -> None:
+    # 別々のlistキーに別行がある場合は両方拾う
+    payload = {
+        "order_history": [_history_row({"order_id": "H-1"})],
+        "executions": [_history_row({"order_id": "E-9", "手数料": "825円"})],
+    }
+    fees = extract_fees(payload)
+    assert fees == {"H-1": "55円", "E-9": "825円"}
+
+
+def test_extract_fees_non_list_history_key_yields_note_via_detail_extractor() -> None:
+    # 認識キーが list でない場合、無言で落とさず形状 note を出す(open_ordersと同様)
+    from yowayowa.operator_bridge.rakuten_web import extract_fees_with_notes
+
+    payload = {"history": "not-a-list"}
+    fees, notes = extract_fees_with_notes(payload)
+    assert fees is None
+    assert any("present but not a list" in note for note in notes)
+
+
+def test_extract_fees_no_order_like_payload_yields_none_without_note() -> None:
+    # account 等、注文明細を持たない payload には note を出さない
+    from yowayowa.operator_bridge.rakuten_web import extract_fees_with_notes
+
+    fees, notes = extract_fees_with_notes({"cash_balance": "1,000円"})
+    assert fees is None
+    assert notes == []
+
+
+def test_extract_symbol_names_order_history_no_dedupe_loss() -> None:
+    # history/orders 同一 payload 内の同一銘柄行は名前を上書きしない(最初の値を維持)
+    payload = {
+        "order_history": [_history_row({})],
+        "executions": [_history_row({"order_id": "E-9", "name": "トヨタ自動車(重複)"})],
+    }
+    assert extract_symbol_names(payload) == {"7203": "トヨタ自動車"}
+
+
+# ---------------------------------------------------------------------------
+# margin note の誤警報窄め込み — N2
+# ---------------------------------------------------------------------------
+
+
+def test_extract_margin_state_label_valued_key_does_not_raise_note() -> None:
+    # キーは無関係(メモ)、値がたまたまラベル文字列でも note を出さない
+    _margin, notes = extract_margin_state_with_notes(
+        {"メモ": "維持率", "買付余力": "1,000円"}, market="us"
+    )
+    assert not any("unparseable" in note for note in notes)
+
+
+def test_extract_margin_state_label_stock_name_does_not_raise_note() -> None:
+    _margin, notes = extract_margin_state_with_notes(
+        {"銘柄名": "信用余力", "数量": "10株"}, market="us"
+    )
+    assert not any("unparseable" in note for note in notes)
+
+
+def test_extract_margin_state_vertical_unparseable_still_notes() -> None:
+    # 縦持ちテーブル行の「ラベル列」が拘束保証金で値が解釈不能な場合は従来どおり note
+    _margin, notes = extract_margin_state_with_notes(
+        {"tables": [{"rows": [{"項目": "拘束保証金", "金額": "—"}]}]}, market="us"
+    )
+    assert any("拘束保証金" in note and "unparseable" in note for note in notes)

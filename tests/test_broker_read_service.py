@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from yowayowa.acquisition.cache import AcquisitionCache
 from yowayowa.acquisition.models import AcquisitionFetchState, AuthState
 from yowayowa.acquisition.registry import ConnectorRegistry
@@ -367,6 +369,79 @@ def test_fetch_order_history_us_reaches_catalog(tmp_path: Path) -> None:
         ("cancel-1", "cancelled")
     ]
     assert outcome.source_url == "https://trade.rakuten-sec.co.jp/web/us/orders/history/us"
+
+
+_ORDER_HISTORY_DETAIL_KEYS = ("orders", "history", "order_history", "orderHistory")
+
+
+def _history_detail_body(list_key: str) -> bytes:
+    return json.dumps(
+        {
+            list_key: [
+                {
+                    "order_id": "H-1",
+                    "symbol": "7203",
+                    "name": "トヨタ自動車",
+                    "side": "買い",
+                    "quantity": "100株",
+                    "status": "取消",
+                    "手数料": "55円",
+                }
+            ]
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+
+@pytest.mark.parametrize("list_key", _ORDER_HISTORY_DETAIL_KEYS)
+def test_fetch_order_history_detail_fees_and_names_all_list_keys(
+    tmp_path: Path, list_key: str
+) -> None:
+    transport = ScriptedTransport(
+        [
+            _response(
+                _history_detail_body(list_key),
+                url="https://trade.rakuten-sec.co.jp/web/orders/history/jp",
+            )
+        ]
+    )
+    service = _build_service(transport, data_dir=tmp_path)
+    outcome = service.fetch("order_history", "jp")
+    assert outcome.fetch_state == AcquisitionFetchState.OK
+    assert outcome.detail is not None
+    assert outcome.detail.get("fees") == {"H-1": "55円"}
+    assert outcome.detail.get("symbol_names") == {"7203": "トヨタ自動車"}
+    assert outcome.detail.get("verified") is False
+    assert "unparseable" not in " ".join(outcome.notes)
+
+
+def test_fetch_order_history_stale_serves_detail_from_cache(tmp_path: Path) -> None:
+    # STALE cache 経由でも detail.fees / detail.symbol_names / verified=False が保持される
+    clock = {"now": datetime(2026, 9, 23, 12, 0, 0, tzinfo=UTC)}
+
+    def now_fn() -> datetime:
+        return clock["now"]
+
+    transport = ScriptedTransport(
+        [
+            _response(
+                _history_detail_body("history"),
+                url="https://trade.rakuten-sec.co.jp/web/orders/history/jp",
+            )
+        ]
+    )
+    service = _build_service(transport, data_dir=tmp_path, now=now_fn)
+    first = service.fetch("order_history", "jp")
+    assert first.fetch_state == AcquisitionFetchState.OK
+
+    clock["now"] = clock["now"].replace(minute=2)  # past ttl, within max-stale
+    stale = service.fetch("order_history", "jp")
+    assert stale.fetch_state == AcquisitionFetchState.STALE
+    assert stale.detail is not None
+    assert stale.detail.get("fees") == {"H-1": "55円"}
+    assert stale.detail.get("symbol_names") == {"7203": "トヨタ自動車"}
+    assert stale.detail.get("verified") is False
+    assert len(transport.calls) == 1
 
 
 def test_fetch_open_orders_does_not_include_cancelled_and_notes_it(tmp_path: Path) -> None:

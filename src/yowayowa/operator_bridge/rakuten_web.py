@@ -371,6 +371,10 @@ _ORDER_LIST_KEYS = ("orders", "open_orders", "rows", "list")
 _ORDER_HISTORY_LIST_KEYS = ("order_history", "orderHistory", "history", "orders", "rows", "list")
 _EXECUTION_LIST_KEYS = ("executions", "fills", "deals", "rows", "list")
 
+# 縦持ちテーブル(label 列 + 値列)の列名候補: _vertical_label_rows が行の
+# 「ラベル列」を特定するために使う。値列候補は _VALUE_KEYS と同一集合。
+_VERTICAL_LABEL_COLUMN_KEYS = ("項目", "label", "名称", "内容", "項目名")
+
 _POSITION_QUANTITY_KEYS = ("quantity", "\u6570\u91cf", "\u4fdd\u6709\u6570\u91cf", "qty")
 _POSITION_AVERAGE_COST_KEYS = (
     "average_cost",
@@ -498,15 +502,39 @@ def _get(row: Mapping[str, object], keys: tuple[str, ...]) -> object | None:
 
 
 def _label_present(maps: list[Mapping[str, object]], labels: tuple[str, ...]) -> str | None:
-    """Return the first label appearing as a key or vertical-table value."""
+    """Return the first label appearing as a key or vertical-table label value.
+
+    Key positions are scanned on every mapping. Value positions are scanned
+    only on vertical-table rows (label column), because a label-shaped string
+    in an arbitrary value slot (e.g. a stock named 信用余力) is not evidence
+    that the broker reported that margin label.
+    """
     for mapping in maps:
         for label in labels:
             if label in mapping:
                 return label
+    for mapping in _vertical_label_rows(maps):
+        for label in labels:
             for value in mapping.values():
                 if isinstance(value, str) and value.strip() == label:
                     return label
     return None
+
+
+def _vertical_label_rows(maps: list[Mapping[str, object]]) -> list[Mapping[str, object]]:
+    """Vertical-table rows: each row is a {label-column: label, value-column: value} map.
+
+    A row qualifies when it has a recognized label column (項目/label/...) AND at
+    least one value column (金額/値/...). Plain payload dicts lack such columns and
+    are excluded, so label-shaped values there are not treated as table labels.
+    """
+    rows: list[Mapping[str, object]] = []
+    for mapping in maps:
+        has_label_column = any(key in mapping for key in _VERTICAL_LABEL_COLUMN_KEYS)
+        has_value_column = any(key in mapping for key in _VALUE_KEYS)
+        if has_label_column and has_value_column:
+            rows.append(mapping)
+    return rows
 
 
 def _symbol_of(row: Mapping[str, object]) -> str | None:
@@ -896,30 +924,53 @@ def summarize_payload(payload: Mapping[str, object]) -> dict[str, object]:
     return summary
 
 
+def _detail_rows(payload: Mapping[str, object]) -> list[dict[str, object]]:
+    """All order/position/execution rows a detail extractor may scan, deduped.
+
+    Scans every known list-key family (positions, open orders, order history,
+    executions) plus tables-parser rows. The same physical row can be reachable
+    through multiple list keys (e.g. orders and order_history in one payload);
+    identical row dicts are emitted once so fees/names are not double-counted.
+    """
+    rows: list[dict[str, object]] = []
+    seen: set[int] = set()
+    for keys in (
+        _POSITION_LIST_KEYS,
+        _ORDER_LIST_KEYS,
+        _ORDER_HISTORY_LIST_KEYS,
+        _EXECUTION_LIST_KEYS,
+    ):
+        for row in _payload_rows(payload, keys):
+            marker = id(row)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            rows.append(row)
+    return rows
+
+
 def extract_symbol_names(payload: Mapping[str, object]) -> dict[str, str]:
     """Symbol -> display name pairs for detail storage (names are not modeled)."""
     names: dict[str, str] = {}
-    rows = [
-        *_payload_rows(payload, _POSITION_LIST_KEYS),
-        *_payload_rows(payload, _ORDER_LIST_KEYS),
-        *_payload_rows(payload, _EXECUTION_LIST_KEYS),
-    ]
-    for row in rows:
+    for row in _detail_rows(payload):
         symbol = _symbol_of(row)
         name = _get(row, _POSITION_NAME_KEYS)
         if symbol is not None and isinstance(name, str) and name.strip():
-            names[symbol] = name.strip()
+            names.setdefault(symbol, name.strip())
     return names
 
 
-def extract_fees(payload: Mapping[str, object]) -> dict[str, str] | None:
-    """Raw fee strings keyed by order number (or row index); None when absent."""
+def extract_fees_with_notes(
+    payload: Mapping[str, object],
+) -> tuple[dict[str, str] | None, list[str]]:
+    """Raw fee strings keyed by order number (or row index); None when absent.
+
+    A recognized order/history list key that is present but not a list (or a
+    payload with no recognized list field and no tables rows) is reported as a
+    shape note instead of silently yielding None — missing data is not zero.
+    """
     fees: dict[str, str] = {}
-    rows = [
-        *_payload_rows(payload, _ORDER_LIST_KEYS),
-        *_payload_rows(payload, _EXECUTION_LIST_KEYS),
-    ]
-    for index, row in enumerate(rows):
+    for index, row in enumerate(_detail_rows(payload)):
         fee = _get(row, _FEE_KEYS)
         if fee is None:
             continue
@@ -927,7 +978,24 @@ def extract_fees(payload: Mapping[str, object]) -> dict[str, str] | None:
         order_id = str(order_id_raw).strip() if order_id_raw is not None else ""
         key = order_id or f"row[{index}]"
         fees[key] = str(fee)
-    return fees or None
+    if fees:
+        return fees, []
+    # Shape notes only for payloads that LOOK order-like: a recognized list key
+    # present but not a list is a silent-drop risk and gets the standard note.
+    # Payloads with no order-like key at all (e.g. account summaries) legitimately
+    # carry no fee rows; resource-level normalize notes already cover unknown
+    # nested shapes, so no duplicate note is added here.
+    for keys in (_ORDER_LIST_KEYS, _ORDER_HISTORY_LIST_KEYS, _EXECUTION_LIST_KEYS):
+        note = _row_source_note(payload, keys, resource_label="fees")
+        if note is not None and "present but not a list" in note:
+            return None, [note]
+    return None, []
+
+
+def extract_fees(payload: Mapping[str, object]) -> dict[str, str] | None:
+    """Raw fee strings keyed by order number (or row index); None when absent."""
+    fees, _notes = extract_fees_with_notes(payload)
+    return fees
 
 
 def extract_margin_state_with_notes(
@@ -998,6 +1066,7 @@ __all__ = [
     "RakutenResourceEntry",
     "RakutenWebFetchTransport",
     "extract_fees",
+    "extract_fees_with_notes",
     "extract_margin_state",
     "extract_margin_state_with_notes",
     "extract_symbol_names",

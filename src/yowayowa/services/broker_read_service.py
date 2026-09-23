@@ -26,7 +26,7 @@ from yowayowa.operator_bridge.rakuten_web import (
     RAKUTEN_WEB_HTML_CONNECTOR_ID,
     RAKUTEN_WEB_RESOURCE_CATALOG,
     RakutenResourceEntry,
-    extract_fees,
+    extract_fees_with_notes,
     extract_margin_state_with_notes,
     extract_symbol_names,
     lookup_rakuten_resource,
@@ -232,7 +232,8 @@ class BrokerReadService:
         elif resource == "executions":
             result.orders, extra = normalize_executions(payload, market=market)
             notes.extend(extra)
-        fees = extract_fees(payload)
+        fees, fee_notes = extract_fees_with_notes(payload)
+        notes.extend(fee_notes)
         if fees is not None:
             detail["fees"] = fees
         margin_state, margin_notes = extract_margin_state_with_notes(payload, market=market)

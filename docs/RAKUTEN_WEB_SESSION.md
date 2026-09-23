@@ -84,13 +84,20 @@ uv run yowayowa broker-read fetch rakuten-web executions    --market us
 - [ ] `order_history` の履歴件数が楽天の注文照会画面の件数と一致すること（取消済み注文が
       含まれること。`open_orders` と件数が違って当然）
 - [ ] 約定: `executions` が約定履歴（status=FILLED, filled_quantity, average_fill_price）と一致
-- [ ] 手数料: `detail.fees`（BrokerOrder に手数料フィールドは無いので detail 行き）
+- [ ] 手数料: `detail.fees`（BrokerOrder に手数料フィールドは無いので detail 行き）。
+      `order_history` 経由でも取得できること: 履歴payloadのリストキーが
+      `orders` / `history` / `order_history` / `orderHistory` / `rows` / `list`
+      のいずれでも `detail.fees` に同一内容が入る（キー名の違いで無言欠落しない）。
+      認識キーが list でない形状の場合は `fees: field '...' present but not a list`
+      の note が出る
 - [ ] 信用 collateral / margin availability: `detail.margin_state` に
       拘束保証金・維持率・建玉明細に加え、信用新規建余力 / 信用建余力 / 信用余力 /
       保証金余裕額 / 委託保証金率 / 委託保証金維持率 / 保証金現金 /
       受入保証金合計 / 必要保証金合計 / 現物買付可能額 が入ること（JPY/USD 別。
       画面に項目が無ければキーが無いのが正しい。値があるのに解釈できない場合は note が出る）
-- [ ] 銘柄名: `detail.symbol_names`（銘柄名は generic model に無いので detail 行き）
+- [ ] 銘柄名: `detail.symbol_names`（銘柄名は generic model に無いので detail 行き）。
+      `order_history` 経由でも同じく `orders` / `history` / `order_history` / `orderHistory` /
+      `rows` / `list` のどのリストキーでも同一内容が入る
 - [ ] 通貨混在: JPY リソースと USD リソースで currency が明示分離されていること（換算は行われない）
 - [ ] 注文番号欠損行: `broker_order_id=""` + note が出るだけで落ちないこと
 
