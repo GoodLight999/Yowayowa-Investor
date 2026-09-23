@@ -243,6 +243,28 @@ Tests: 123 new (mailbox 42, extraction 26, service 38, surfaces 17); repo total
 634 passed (510 at P1C). P1A/P1B/P1C modules unchanged (frozen diff empty).
 Evidence: `docs/P1D_EVIDENCE.md`.
 
+### P2A checkpoint — order domain + interlock layer (2026-09-23)
+
+HEAD `ba827f2` (commit + docs checkpoint). Credentials still not required.
+New `src/yowayowa/broker/execution/`: `OrderProposal` (motivation/research
+link/provenance required by design), immutable-economic-field proposal hash
+(restart-safe idempotency key), network-free preview (missing notional stays
+None), fail-closed interlocks (existing settings gate + explicit runtime
+arming + notional gate + duplicate-submit mismatch), hash-chained append-only
+JSONL audit (fsync, `verify()` tamper detection), restart-safe audit replay
+providing the duplicate registry and JST-day order-count basis.
+Surfaces: `/v1/broker-execution/proposals` (+ `/evaluate`), `GET /audit`,
+CLI `yowayowa broker-exec`. There is deliberately no submit path anywhere;
+`REQUEST_STAGE_SUBMIT` audit entries are reserved for the P2B Rakuten
+submission connector.
+config: `broker_execution_audit_dir` (additive, default
+`./data/broker-execution/audit`).
+Tests: 29 new (`tests/test_broker_execution_domain.py`); repo total
+**671 passed** (642 at P1C-rework). Verified locally (ruff/format/mypy/
+openapi) and via CI run 35850617952 (verify + real-browser E2E + prod
+deploy green); production `/openapi.json` now serves the three new paths
+and fails closed on the hosted environment as designed.
+
 ---
 
 ## Product architecture invariants

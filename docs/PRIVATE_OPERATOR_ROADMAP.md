@@ -229,6 +229,32 @@ Required:
 
 MARKET SPEED II RSS remains an optional Windows accelerator for supported domestic products; it is not the primary architecture.
 
+#### P2A checkpoint — order domain + interlock layer (2026-09-23)
+
+Implemented at HEAD `ba827f2` (no credentials, no transport, no submit path):
+
+- `src/yowayowa/broker/execution/` — new order-domain package:
+  `OrderProposal` (research→proposal traceability, motivation required),
+  proposal hash over immutable economic fields only (idempotency key that
+  survives restarts), order preview (no network, notional None stays None),
+  fail-closed interlocks (settings gate + explicit runtime arming +
+  notional-estimation gate + duplicate-submit mismatch), hash-chained
+  append-only JSONL audit trail (fsync, tamper detection), restart-safe
+  audit replay (duplicate registry + JST-day submit counts).
+- Surfaces: `POST /v1/broker-execution/proposals`,
+  `POST /v1/broker-execution/proposals/{id}/evaluate`, `GET .../audit`;
+  CLI `yowayowa broker-exec` (audit / audit-verify / proposals-create /
+  proposals-evaluate). All evaluate-only, never submit.
+- `config.py`: one additive field `broker_execution_audit_dir`.
+- Tests: 29 new (`tests/test_broker_execution_domain.py`), including JST
+  day boundaries, UTC/JST divergence, tamper detection, restart replay.
+- Verified: ruff/ruff-format/mypy clean, **671 passed** (642 baseline + 29),
+  CI run 35850617952 green (verify + real-browser + prod deploy), production
+  `/openapi.json` serves the three broker-execution paths, and the hosted
+  environment correctly fails closed (`Private acquisition is disabled`).
+- Next: P2B — Rakuten web submission connector inside the authenticated
+  session (the only place `REQUEST_STAGE_SUBMIT` audit entries are written).
+
 ### Exit criteria
 
 A real operator can safely complete:
