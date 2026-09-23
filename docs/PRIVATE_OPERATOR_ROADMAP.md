@@ -255,6 +255,36 @@ Implemented at HEAD `ba827f2` (no credentials, no transport, no submit path):
 - Next: P2B — Rakuten web submission connector inside the authenticated
   session (the only place `REQUEST_STAGE_SUBMIT` audit entries are written).
 
+#### P2B checkpoint — Rakuten web submission transport (2026-09-23)
+
+Implemented at HEAD `ce1cd6b` on top of the F1/F2/F3-hardened audit
+layer (9888344; 20-probe auditor re-check passed → COO unfroze the
+submission path):
+
+- `RakutenWebSubmissionTransport` (`broker/execution/transport.py`):
+  the only component writing `stage=submit` request audit entries.
+  Ships fail-closed behind the COO master gate `submissions_enabled`
+  (default False) — while shut, any submission records
+  `state(submit-frozen)` and returns REJECTED before session access.
+  Pipeline: frozen gate → audited proposal → intent/hash match →
+  idempotent replay (never auto-resubmit) → interlocks → GET-only auth
+  probe → `stage=submit` write (only at the submit instant; daily JST
+  counter) → DOM submit → `record_response` → receipt. `accepted=True`
+  only with a broker order number from the confirmation page; DOM
+  errors are audited (`submit-failed`) and return UNKNOWN.
+- CLI `yowayowa broker-exec submit` (`--submissions-enabled`,
+  `--armed`, `--json`); no HTTP submission route by design.
+- M4 constraint recorded: single-writer audit directory only.
+- Order-form selectors are UNVERIFIED initial assumptions
+  (`verified=False`) pending the first real operator session.
+- Verified: 714 passed + 2 skipped (30 new transport tests + 2
+  live-probe), make verify clean, CI run 35865575151 green, real-data
+  fail-closed demos (frozen-gate rejection with zero session traffic;
+  unauthenticated block before any submit write) in isolated audit dirs.
+- Next: supervised unfreeze run — real login/MFA, one minimum-notional
+  JP equity order, audit JSONL snapshot + broker order-id + portfolio
+  reflection as the operational evidence.
+
 ### Exit criteria
 
 A real operator can safely complete:

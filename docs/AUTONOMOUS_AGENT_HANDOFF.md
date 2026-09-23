@@ -304,7 +304,59 @@ Tests: 13 new regression tests (`test_30`..`test_42` in
 CI run 35858245940 green on `9888344`. The auditor's three probes
 (truncation, shadow overwrite, torn-line 500) were re-executed on this
 commit and now detect/reject/survive as designed; evidence handed to
-audit-argus for independent confirmation.
+audit-argus for independent confirmation (20-probe re-check passed —
+audit closed, COO unfroze the P2B submission path).
+
+### P2B checkpoint — Rakuten web submission transport (2026-09-23)
+
+HEAD `ce1cd6b`. The first real submission path, layered on the P2A
+domain + interlock layer. **Ships fail-closed**: a COO-ruling master
+gate `submissions_enabled` (default False) is evaluated FIRST inside
+`submit_order` — while shut, every path (including a fully-armed happy
+path) records `state(stage=submit-frozen)` and returns REJECTED before
+proposal lookup, session access, DOM, or any `stage=submit` write.
+Unfreezing requires the explicit CLI flag `--submissions-enabled` AND
+all P2A interlocks (settings arm + runtime `--armed` + notional limits
++ authenticated session).
+
+- `src/yowayowa/broker/execution/transport.py` (new):
+  `RakutenWebSubmissionTransport` satisfies the `BrokerConnector`
+  protocol. Sequential pipeline: frozen gate → audited-proposal lookup
+  → intent/hash match → idempotent replay (NEVER auto-resubmits; the
+  receipt is restored from the prior audited response, else UNKNOWN +
+  order-inquiry guidance) → interlock evaluate → GET-only auth probe →
+  `record_request(stage=submit)` (the ONLY write site, at the submit
+  instant; daily JST counter counts this line only) → DOM fill/submit →
+  `record_response` → receipt. `accepted=True` requires a broker order
+  number read from the confirmation page; DOM exceptions are audited as
+  `state(submit-failed)` and return UNKNOWN with check-order-before-
+  resend guidance. Read/cancel protocol methods raise
+  `BrokerConnectorFeatureError` (read path remains the P1B connector).
+  `RAKUTEN_WEB_ORDER_FORM` selectors are UNVERIFIED initial assumptions
+  (`verified=False`, URL-provenance notice like `rakuten_web.py`) and
+  must be confirmed against the real session before first live use.
+- CLI: `yowayowa broker-exec submit <id>` (`--armed/--no-armed`,
+  `--submissions-enabled`, `--json`). No HTTP route is exposed for
+  submission by design (minimal surface; CLI + shared domain service
+  satisfy API-first).
+- **M4 (single-writer audit directory)**: the audit log is
+  read-modify-write; only ONE writer process may open a given audit
+  directory (single uvicorn worker, one CLI run at a time). Concurrent
+  writers would corrupt seq/prev_hash chaining. This constraint binds
+  every P2B submit run.
+- Tests: 30 new (`tests/test_broker_execution_transport.py`) + 2
+  live-probe tests (`tests/test_broker_execution_transport_live.py`,
+  skipped unless `YOWAYOWA_P2B_LIVE_PROBE=1`); repo total **714 passed,
+  2 skipped**. `make verify` clean. Real-data fail-closed demos in
+  isolated temp audit dirs: frozen gate rejects an armed submission
+  with zero session traffic; gate-open + unauthenticated profile blocks
+  before any `stage=submit` write. CI run 35865575151 green on
+  `ce1cd6b` (verify + browser + deploy).
+- Next: operator-side unfreeze flow — real Rakuten login/MFA in the
+  persistent profile, `--submissions-enabled` + `--armed`, and ONE
+  supervised minimum-notional JP equity order with its audit JSONL
+  snapshot as the operational evidence (separate supervised run, not
+  part of this checkpoint).
 
 ---
 
