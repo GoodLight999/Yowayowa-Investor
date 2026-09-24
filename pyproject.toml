@@ -99,6 +99,13 @@ known-first-party = ["yowayowa"]
 "tests/test_screening_pipeline.py" = ["RUF001", "RUF002"]
 "src/yowayowa/services/screening_pipeline.py" = ["RUF001", "RUF002"]
 "src/yowayowa/screening_cli.py" = ["RUF001", "RUF002"]
+# P5-A LLM research brief/ask: strict-prompt text, section headings and the
+# 未取得 marker are Japanese operator-facing strings with fullwidth
+# punctuation; they are product content, not typos.
+"src/yowayowa/services/research_brief.py" = ["RUF001", "RUF002"]
+"src/yowayowa/services/research_ask.py" = ["RUF001", "RUF002"]
+"src/yowayowa/research_cli.py" = ["RUF001", "RUF002"]
+"tests/test_research_brief.py" = ["RUF001", "RUF002"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

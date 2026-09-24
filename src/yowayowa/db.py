@@ -307,6 +307,27 @@ class ScreeningCandidateRecord(Base):
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class ResearchBriefRecord(Base):
+    """One generated LLM research brief for one run date (P5-A).
+
+    Uniqueness is (run_date): a re-generated brief for the same run date
+    replaces that date's row atomically (delete+insert inside one
+    transaction — see services/research_brief.py), so regeneration is
+    idempotent. ``payload`` holds the full ResearchBrief JSON minus its
+    provenance (kept in the dedicated ``provenance`` column, like the
+    screening candidates keep theirs).
+    """
+
+    __tablename__ = "research_briefs"
+    __table_args__ = (UniqueConstraint("run_date", name="uq_research_briefs_run_date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_date: Mapped[date] = mapped_column(Date, index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSON)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 def _normalize_database_url(url: str) -> str:
     if url.startswith("postgres://"):
         return "postgresql+psycopg://" + url.removeprefix("postgres://")

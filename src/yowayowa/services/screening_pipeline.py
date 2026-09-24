@@ -46,6 +46,7 @@ from yowayowa.screening_models import (
 from yowayowa.services.credit_margin import read_credit_margin_by_code
 
 __all__ = [
+    "_DEFAULT_EDINET_PATH",
     "persist_screening_run",
     "read_screening_candidates",
     "run_screening_pipeline",
@@ -592,13 +593,15 @@ def read_screening_candidates(
     run_date: date | None = None,
     source: str | None = None,
     signal: str | None = None,
+    code: str | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     """Persisted screening candidates, newest run date first, id order.
 
     ``provenance`` is restored from the persisted JSON (the exact Provenance
     the pipeline captured); a missing/legacy provenance payload degrades to
-    ``None`` rather than being fabricated.
+    ``None`` rather than being fabricated. ``code`` filters to one JPX code
+    (used by research_ask's deterministic evidence lookup).
     """
 
     statement = select(ScreeningCandidateRecord).order_by(
@@ -611,6 +614,8 @@ def read_screening_candidates(
         statement = statement.where(ScreeningCandidateRecord.source == source)
     if signal is not None:
         statement = statement.where(ScreeningCandidateRecord.signal == signal)
+    if code is not None:
+        statement = statement.where(ScreeningCandidateRecord.code == code)
     statement = statement.limit(max(1, min(int(limit), 250)))
     rows = list(session.scalars(statement))
     return [

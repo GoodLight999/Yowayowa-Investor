@@ -79,6 +79,11 @@ yowayowa watchlist add 1 RKLB ASTS
 yowayowa screen RKLB ASTS SOFI HOOD --filter operating_margin:gt:0
 yowayowa macro estat-search "消費者物価指数"
 yowayowa plan 'RKLB、ASTS、SOFI、HOODをウォッチリストに入れて'
+yowayowa screening-run
+yowayowa screening-candidates 6758
+yowayowa research-brief --send
+yowayowa research-ask '6758の信用残とEDINETの動きは'
+yowayowa research-brief-latest
 ```
 
 ## Architecture principles

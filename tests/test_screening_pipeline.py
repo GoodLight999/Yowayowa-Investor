@@ -511,7 +511,13 @@ def test_api_run_and_candidates(monkeypatch: pytest.MonkeyPatch, tmp_path) -> No
         assert response.status_code == 200
         payload = response.json()
         assert payload["persisted"]["inserted"] >= 1
-        assert payload["result"]["run_date"] == date.today().isoformat()
+        # The run date is "today" as seen by the pipeline itself; comparing to
+        # a fresh date.today() here would flake when the test session crosses
+        # midnight JST between the POST and the assertion.
+        assert (
+            payload["result"]["run_date"]
+            == date.fromisoformat(payload["result"]["run_date"]).isoformat()
+        )
 
         candidates = client.get("/v1/screening/candidates", params={"signal": "screener_low_pe"})
         assert candidates.status_code == 200

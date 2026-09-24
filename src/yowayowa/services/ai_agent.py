@@ -200,6 +200,10 @@ class InvestmentResearchAgent:
             "Machine-discovered screening candidates come from the "
             "get_screening_candidates tool and are research starting points, "
             "never buy/sell recommendations. "
+            "Arithmetic discipline: every number you state must come verbatim "
+            "from a tool result or the supplied evidence; do not perform free-form "
+            "calculations (sums, ratios, comparisons) that the tools did not "
+            "already compute — quote the tool value and cite its source instead. "
             "For workspace changes, use propose_* tools; never silently mutate state. "
             "State uncertainty and data basis. Answer in the user's language. "
             f"Server date: {date.today().isoformat()}. UI context: {context}"
@@ -936,6 +940,24 @@ class InvestmentResearchAgent:
                 ),
                 self._tool_screening_candidates,
             ),
+            ToolSpec(
+                "get_macro_series",
+                "Read the locally persisted macro observations "
+                "(BLS / FRED / Treasury JSONL). Returns the latest value per "
+                "series with retrieved_at; quote values verbatim, never "
+                "recompute them.",
+                self._object_schema(
+                    {
+                        "source": {
+                            "type": "string",
+                            "enum": ["bls", "fred", "treasury"],
+                            "description": "Omit to read every source's latest values.",
+                        },
+                        "series_id": {"type": "string"},
+                    },
+                ),
+                self._tool_macro_series,
+            ),
         ]
         return {item.name: item for item in specs}
 
@@ -1244,6 +1266,25 @@ class InvestmentResearchAgent:
             run_date=run_date,
             limit=limit,
         )
+
+    def _tool_macro_series(self, args: dict[str, Any]) -> Any:
+        from yowayowa.services.macro_store import MACRO_SOURCE_KINDS, default_macro_store
+
+        raw_source = str(args.get("source") or "").strip().lower()
+        raw_series = str(args.get("series_id") or "").strip()
+        store = default_macro_store()
+        if raw_source:
+            if raw_source not in MACRO_SOURCE_KINDS:
+                return {"error": f"Unknown macro source: {raw_source}"}
+            rows, coverage = store.read(raw_source, series_id=raw_series or None)
+            return {"observations": rows, "coverage": coverage}
+        latest = store.latest_by_series()
+        if raw_series:
+            latest = [row for row in latest if row.get("series_id") == raw_series]
+        return {
+            "latest_by_series": latest,
+            "coverage": {"series_count": len(latest), "sources": list(MACRO_SOURCE_KINDS)},
+        }
 
     def _tool_portfolios(self, args: dict[str, Any]) -> Any:
         portfolio_id = args.get("portfolio_id")

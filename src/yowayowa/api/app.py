@@ -37,6 +37,7 @@ from yowayowa.api.macro_routes import router as macro_router
 from yowayowa.api.private_routes import router as private_router
 from yowayowa.api.private_source_routes import router as private_source_router
 from yowayowa.api.rate_routes import router as rate_router
+from yowayowa.api.research_llm_routes import router as research_llm_router
 from yowayowa.api.research_routes import router as research_router
 from yowayowa.api.risk_routes import router as risk_router
 from yowayowa.api.routes import router
@@ -196,6 +197,7 @@ app = FastAPI(
     summary="Provenance-aware investment research API",
     lifespan=lifespan,
 )
+app.include_router(research_llm_router)
 app.include_router(research_router)
 app.include_router(macro_router)
 app.include_router(license_router)
