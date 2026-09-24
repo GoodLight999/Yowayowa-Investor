@@ -187,6 +187,29 @@ SOURCE_POLICIES: tuple[SourceLicensePolicy, ...] = (
         ],
     ),
     SourceLicensePolicy(
+        key="rakuten-ms2-rss",
+        source="Rakuten MARKET SPEED II RSS (operator Windows Node batch export)",
+        provider_patterns=["rakuten-ms2-rss"],
+        license_class=LicenseClass.PERSONAL_ONLY,
+        access=SourceAccess.LOCAL_PERSONAL,
+        commercial_use=False,
+        public_display=False,
+        public_api=False,
+        derived_analysis_public=False,
+        attribution_required=False,
+        attribution="Source: operator Rakuten Securities MARKET SPEED II RSS",
+        terms_url="about:blank",
+        reviewed_on=date(2026, 9, 24),
+        notes=[
+            "Quotes are captured by a local Windows batch (scripts/windows/"
+            "ms2_rss_export.py) from the operator's own Rakuten Securities "
+            "account feed via MARKET SPEED II RSS and ingested as JSONL.",
+            "The VPS side (providers/ms2_rss_file.py) is a receiver only: it "
+            "reads data/ms2/quotes/*.jsonl and never re-serves the data "
+            "publicly.",
+        ],
+    ),
+    SourceLicensePolicy(
         key="yahoo-personal",
         source="Yahoo Finance via yfinance",
         provider_patterns=["yahoo"],
