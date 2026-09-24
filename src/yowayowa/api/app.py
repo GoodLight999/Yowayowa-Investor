@@ -23,6 +23,7 @@ from yowayowa.api.broker_execution_routes import router as broker_execution_rout
 from yowayowa.api.broker_read_routes import router as broker_read_router
 from yowayowa.api.calendar_routes import router as calendar_router
 from yowayowa.api.chart_routes import router as chart_router
+from yowayowa.api.credit_routes import router as credit_router
 from yowayowa.api.edinet_routes import router as edinet_router
 from yowayowa.api.edinet_ux_routes import router as edinet_ux_router
 from yowayowa.api.fundamentals_routes import router as fundamentals_router
@@ -212,6 +213,7 @@ app.include_router(broker_read_router)
 app.include_router(broker_execution_router)
 app.include_router(ir_router)
 app.include_router(jpx_router)
+app.include_router(credit_router)
 app.include_router(private_source_router)
 app.include_router(fundamentals_router)
 app.include_router(web_asset_router)

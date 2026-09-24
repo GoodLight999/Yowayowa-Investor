@@ -10,6 +10,7 @@ from yowayowa.broker_execution_cli import app as broker_execution_app
 from yowayowa.broker_read_cli import app as broker_read_app
 from yowayowa.chart_cli import app as chart_app
 from yowayowa.cli import _client, _percent, app, portfolio_app
+from yowayowa.credit_margin_cli import credit_margin, credit_margin_fetch
 from yowayowa.edinet_cli import app as edinet_app
 from yowayowa.event_cli import app as events_app
 from yowayowa.institutional_cli import app as institutional_app
@@ -25,6 +26,8 @@ from yowayowa.rate_cli import app as rate_app
 app.add_typer(events_app, name="events")
 app.command(name="jpx-margin-ingest")(jpx_margin_ingest)
 app.command(name="jpx-margin")(jpx_margin)
+app.command(name="credit-margin-fetch")(credit_margin_fetch)
+app.command(name="credit-margin")(credit_margin)
 app.add_typer(chart_app, name="chart")
 app.add_typer(rate_app, name="rates")
 app.add_typer(institutional_app, name="13f")

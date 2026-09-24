@@ -240,6 +240,40 @@ class JpxMarginBalanceRecord(Base):
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class CreditMarginWeeklyRecord(Base):
+    """One code's weekly credit balances for one as-of week (P4-C).
+
+    Persisted unit is shares (株 int) for both providers: Yahoo!ファイナンス as
+    published, 株探 converted from 千株 (x1000 ± rounding). Uniqueness is
+    (as_of_date, code) — the weekly key the two independent sources agree on
+    (docs/CREDIT_MARGIN.md). A re-fetch for the same week updates the row
+    (value/retrieved_at/source_url with notes marking the recheck) instead of
+    duplicating it. There are NO amount columns: the sources publish no
+    金額, and missing data is never zero-filled.
+    """
+
+    __tablename__ = "credit_margin_weekly"
+    __table_args__ = (
+        UniqueConstraint(
+            "as_of_date",
+            "code",
+            name="uq_credit_margin_weekly_as_of_date_code",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    as_of_date: Mapped[date] = mapped_column(Date, index=True)
+    code: Mapped[str] = mapped_column(String(4), index=True)
+
+    short_total: Mapped[int] = mapped_column()
+    long_total: Mapped[int] = mapped_column()
+
+    source_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    provider: Mapped[str] = mapped_column(String(32))
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    notes: Mapped[list[Any]] = mapped_column(JSON, default=list)
+
+
 def _normalize_database_url(url: str) -> str:
     if url.startswith("postgres://"):
         return "postgresql+psycopg://" + url.removeprefix("postgres://")
