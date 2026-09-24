@@ -5,7 +5,9 @@ from functools import lru_cache
 from yowayowa.config import Settings, get_settings
 from yowayowa.domain import Fundamentals
 from yowayowa.providers.bea import BeaClient
+from yowayowa.providers.binance import BinanceKlinesProvider
 from yowayowa.providers.bls import BlsClient
+from yowayowa.providers.coingecko import CoinGeckoOhlcProvider
 from yowayowa.providers.edinet import EdinetClient
 from yowayowa.providers.frankfurter import FrankfurterFxProvider
 from yowayowa.providers.fred import FredClient
@@ -49,6 +51,20 @@ def sec_client() -> SecClient:
 @lru_cache(maxsize=1)
 def fundamentals_provider() -> SecClient:
     return sec_client()
+
+
+@lru_cache(maxsize=1)
+def coingecko_ohlc_provider() -> CoinGeckoOhlcProvider:
+    from yowayowa.providers.coingecko import CoinGeckoOhlcProvider
+
+    return CoinGeckoOhlcProvider(get_settings())
+
+
+@lru_cache(maxsize=1)
+def binance_klines_provider() -> BinanceKlinesProvider:
+    from yowayowa.providers.binance import BinanceKlinesProvider
+
+    return BinanceKlinesProvider(get_settings())
 
 
 @lru_cache(maxsize=1)

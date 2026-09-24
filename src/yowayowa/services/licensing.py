@@ -166,6 +166,50 @@ SOURCE_POLICIES: tuple[SourceLicensePolicy, ...] = (
         ],
     ),
     SourceLicensePolicy(
+        key="coingecko",
+        source="CoinGecko public API",
+        provider_patterns=["coingecko"],
+        license_class=LicenseClass.PERSONAL_ONLY,
+        access=SourceAccess.PUBLIC,
+        commercial_use=False,
+        public_display=False,
+        public_api=False,
+        derived_analysis_public=False,
+        attribution_required=False,
+        attribution="Source: CoinGecko",
+        terms_url="https://www.coingecko.com/en/terms",
+        reviewed_on=date(2026, 9, 24),
+        notes=[
+            "CoinGecko is a commercial market aggregator: its public (key-less) API is "
+            "NOT an official reference rate and is not approved for public "
+            "redistribution; personal-use classification only.",
+            "Only the OHLC/rate data is treated as usable under this conservative "
+            "classification; CoinGecko site assets and marks are outside this policy.",
+        ],
+    ),
+    SourceLicensePolicy(
+        key="binance",
+        source="Binance public API",
+        provider_patterns=["binance"],
+        license_class=LicenseClass.PERSONAL_ONLY,
+        access=SourceAccess.PUBLIC,
+        commercial_use=False,
+        public_display=False,
+        public_api=False,
+        derived_analysis_public=False,
+        attribution_required=False,
+        attribution="Source: Binance",
+        terms_url="https://www.binance.com/en/terms",
+        reviewed_on=date(2026, 9, 24),
+        notes=[
+            "Binance is a commercial exchange: its public (key-less) market-data "
+            "endpoint is NOT an official reference rate and is not approved for "
+            "public redistribution; personal-use classification only.",
+            "Only the kline/rate data is treated as usable under this conservative "
+            "classification; Binance assets and marks are outside this policy.",
+        ],
+    ),
+    SourceLicensePolicy(
         key="fred",
         source="Federal Reserve Economic Data (FRED)",
         provider_patterns=["fred"],
