@@ -202,6 +202,7 @@ class JpxMarginBalanceRecord(Base):
     Volume columns are NOT NULL; amount (value) columns are nullable because
     JPX publishes amounts only for application dates from 2026-09-25 onward
     (missing data is never zero-filled).
+    source_url is persisted per row so read provenance keeps the ingest URL.
     """
 
     __tablename__ = "jpx_margin_balances"
@@ -235,6 +236,7 @@ class JpxMarginBalanceRecord(Base):
     long_negotiable_value: Mapped[int | None] = mapped_column(nullable=True)
     long_standardized_value: Mapped[int | None] = mapped_column(nullable=True)
 
+    source_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 

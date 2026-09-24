@@ -87,6 +87,7 @@ def ingest_jpx_margin_csv(
                         short_standardized_value=balance.short_standardized_value,
                         long_negotiable_value=balance.long_negotiable_value,
                         long_standardized_value=balance.long_standardized_value,
+                        source_url=source_url,
                         retrieved_at=retrieved,
                     )
                 )
@@ -124,7 +125,7 @@ def _provenance_from_record(record: JpxMarginBalanceRecord) -> Provenance:
     return Provenance(
         provider="jpx_reference",
         source="JPX総研 銘柄別信用取引残高（日次） reference service",
-        source_url=None,
+        source_url=record.source_url,
         license_class=LicenseClass.PERSONAL_ONLY,
         retrieved_at=record.retrieved_at,
         as_of=record.application_date,

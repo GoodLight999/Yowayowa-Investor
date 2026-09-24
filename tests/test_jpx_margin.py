@@ -296,6 +296,21 @@ def test_ingest_persists_all_rows_and_read_paths_agree() -> None:
         engine.dispose()
 
 
+def test_ingest_source_url_roundtrips_through_read_provenance() -> None:
+    """Ingest URL is persisted and restored in read provenance, not dropped."""
+
+    engine = _memory_engine()
+    try:
+        _ingest_on_engine(engine, EN_CSV.read_bytes(), source_url=SOURCE_URL)
+        with Session(engine) as session:
+            series = read_jpx_margin_by_code(session, "13010")
+            assert series.points[0].provenance.source_url == SOURCE_URL
+            day = read_jpx_margin_by_date(session, date(2026, 4, 23))
+            assert all(point.provenance.source_url == SOURCE_URL for point in day)
+    finally:
+        engine.dispose()
+
+
 def test_reingesting_same_application_date_replaces_atomically() -> None:
     engine = _memory_engine()
     try:
