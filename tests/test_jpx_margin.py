@@ -473,6 +473,12 @@ def test_api_personal_mode_serves_history_and_day(monkeypatch: pytest.MonkeyPatc
         }
         assert day_payload[0]["points"][0]["long_total_value"] == 700_000
 
+        latest = client.get("/v1/jpx/margin/latest")
+        assert latest.status_code == 200
+        latest_payload = latest.json()
+        assert len(latest_payload) == 10
+        assert {item["code"] for item in latest_payload} == {item["code"] for item in day_payload}
+
         missing_day = client.get("/v1/jpx/margin/date/2026-01-01")
         assert missing_day.status_code == 404
 
@@ -497,6 +503,9 @@ def test_api_rejects_invalid_date_and_code_formats(monkeypatch: pytest.MonkeyPat
     with TestClient(app) as client:
         response = client.get("/v1/jpx/margin/date/not-a-date")
         assert response.status_code == 422
+
+        latest_on_empty_db = client.get("/v1/jpx/margin/latest")
+        assert latest_on_empty_db.status_code == 404
 
 
 def test_api_fails_closed_outside_personal_mode(monkeypatch: pytest.MonkeyPatch) -> None:

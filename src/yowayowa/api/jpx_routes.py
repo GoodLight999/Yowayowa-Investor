@@ -43,6 +43,24 @@ def _require_personal_mode() -> None:
         ) from exc
 
 
+@router.get("/margin/latest", response_model=list[JpxMarginSeries])
+def get_jpx_margin_latest(
+    limit: int = Query(default=_DEFAULT_HISTORY_LIMIT, ge=1, le=_MAX_HISTORY_LIMIT),
+) -> list[JpxMarginSeries]:
+    """All persisted issue balances for the most recent application date."""
+
+    _require_personal_mode()
+    session = get_session()
+    try:
+        application_date = latest_jpx_margin_date(session)
+        if application_date is None:
+            raise HTTPException(status_code=404, detail="No JPX margin balances are persisted")
+        points = read_jpx_margin_by_date(session, application_date)
+    finally:
+        session.close()
+    return [JpxMarginSeries(code=point.code, points=[point]) for point in points]
+
+
 @router.get("/margin/{code}", response_model=JpxMarginSeries)
 def get_jpx_margin_history(
     code: str,
@@ -133,21 +151,3 @@ def get_jpx_margin_for_date(application_date: date) -> list[JpxMarginSeries]:
         )
         for point in points
     ]
-
-
-@router.get("/margin/latest", response_model=list[JpxMarginSeries])
-def get_jpx_margin_latest(
-    limit: int = Query(default=_DEFAULT_HISTORY_LIMIT, ge=1, le=_MAX_HISTORY_LIMIT),
-) -> list[JpxMarginSeries]:
-    """All persisted issue balances for the most recent application date."""
-
-    _require_personal_mode()
-    session = get_session()
-    try:
-        application_date = latest_jpx_margin_date(session)
-        if application_date is None:
-            raise HTTPException(status_code=404, detail="No JPX margin balances are persisted")
-        points = read_jpx_margin_by_date(session, application_date)
-    finally:
-        session.close()
-    return [JpxMarginSeries(code=point.code, points=[point]) for point in points]
