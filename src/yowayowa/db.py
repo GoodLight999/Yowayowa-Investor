@@ -193,6 +193,51 @@ class ResearchPresetRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class JpxMarginBalanceRecord(Base):
+    """One issue's margin balances for one application date (申込日).
+
+    Uniqueness is (application_date, code): JPX re-publishes corrected files
+    for an application date, and the last write for that date wins (atomic
+    delete+insert inside one transaction — see services/jpx_margin.py).
+    Volume columns are NOT NULL; amount (value) columns are nullable because
+    JPX publishes amounts only for application dates from 2026-09-25 onward
+    (missing data is never zero-filled).
+    """
+
+    __tablename__ = "jpx_margin_balances"
+    __table_args__ = (
+        UniqueConstraint(
+            "application_date",
+            "code",
+            name="uq_jpx_margin_application_date_code",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    application_date: Mapped[date] = mapped_column(Date, index=True)
+    code: Mapped[str] = mapped_column(String(5), index=True)
+    company_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    isin: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    market_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    margin_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+
+    short_total: Mapped[int] = mapped_column()
+    long_total: Mapped[int] = mapped_column()
+    short_negotiable: Mapped[int] = mapped_column()
+    short_standardized: Mapped[int] = mapped_column()
+    long_negotiable: Mapped[int] = mapped_column()
+    long_standardized: Mapped[int] = mapped_column()
+
+    short_total_value: Mapped[int | None] = mapped_column(nullable=True)
+    long_total_value: Mapped[int | None] = mapped_column(nullable=True)
+    short_negotiable_value: Mapped[int | None] = mapped_column(nullable=True)
+    short_standardized_value: Mapped[int | None] = mapped_column(nullable=True)
+    long_negotiable_value: Mapped[int | None] = mapped_column(nullable=True)
+    long_standardized_value: Mapped[int | None] = mapped_column(nullable=True)
+
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 def _normalize_database_url(url: str) -> str:
     if url.startswith("postgres://"):
         return "postgresql+psycopg://" + url.removeprefix("postgres://")

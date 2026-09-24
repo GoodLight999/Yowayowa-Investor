@@ -29,6 +29,7 @@ from yowayowa.api.fundamentals_routes import router as fundamentals_router
 from yowayowa.api.fx_routes import router as fx_router
 from yowayowa.api.institutional_routes import router as institutional_router
 from yowayowa.api.ir_routes import router as ir_router
+from yowayowa.api.jpx_routes import router as jpx_router
 from yowayowa.api.license_routes import router as license_router
 from yowayowa.api.macro_routes import router as macro_router
 from yowayowa.api.private_routes import router as private_router
@@ -210,6 +211,7 @@ app.include_router(private_router)
 app.include_router(broker_read_router)
 app.include_router(broker_execution_router)
 app.include_router(ir_router)
+app.include_router(jpx_router)
 app.include_router(private_source_router)
 app.include_router(fundamentals_router)
 app.include_router(web_asset_router)

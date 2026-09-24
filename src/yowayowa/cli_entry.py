@@ -14,6 +14,7 @@ from yowayowa.edinet_cli import app as edinet_app
 from yowayowa.event_cli import app as events_app
 from yowayowa.institutional_cli import app as institutional_app
 from yowayowa.ir_cli import app as ir_app
+from yowayowa.jpx_margin_cli import jpx_margin, jpx_margin_ingest
 from yowayowa.license_cli import app as license_app
 from yowayowa.macro_cli import app as macro_app
 from yowayowa.preset_cli import app as preset_app
@@ -22,6 +23,8 @@ from yowayowa.private_source_cli import app as private_source_app
 from yowayowa.rate_cli import app as rate_app
 
 app.add_typer(events_app, name="events")
+app.command(name="jpx-margin-ingest")(jpx_margin_ingest)
+app.command(name="jpx-margin")(jpx_margin)
 app.add_typer(chart_app, name="chart")
 app.add_typer(rate_app, name="rates")
 app.add_typer(institutional_app, name="13f")

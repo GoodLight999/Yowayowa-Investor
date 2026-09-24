@@ -85,6 +85,15 @@ known-first-party = ["yowayowa"]
 "tests/test_rakuten_web_read.py" = ["RUF001"]
 "tests/test_ir_acquisition.py" = ["RUF001", "RUF002"]
 "src/yowayowa/acquisition/ir.py" = ["RUF001", "RUF002"]
+# JPX margin ingestion carries the official Japanese CSV headers verbatim
+# (銘柄別信用取引残高の全角括弧付き列名) and Japanese docstrings; the fullwidth
+# characters are source data, not typos.
+"src/yowayowa/jpx_models.py" = ["RUF001", "RUF002"]
+"src/yowayowa/providers/jpx_margin.py" = ["RUF001", "RUF002"]
+"src/yowayowa/services/jpx_margin.py" = ["RUF001", "RUF002"]
+"src/yowayowa/api/jpx_routes.py" = ["RUF001", "RUF002"]
+"src/yowayowa/jpx_margin_cli.py" = ["RUF001", "RUF002"]
+"tests/test_jpx_margin.py" = ["RUF001", "RUF002"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
