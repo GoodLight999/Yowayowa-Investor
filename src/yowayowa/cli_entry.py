@@ -24,6 +24,7 @@ from yowayowa.private_cli import app as private_app
 from yowayowa.private_source_cli import app as private_source_app
 from yowayowa.rate_cli import app as rate_app
 from yowayowa.screening_cli import screening_candidates, screening_run
+from yowayowa.stock_cli import stock_fetch, stock_ohlcv
 
 app.add_typer(events_app, name="events")
 app.command(name="jpx-margin-ingest")(jpx_margin_ingest)
@@ -32,6 +33,8 @@ app.command(name="credit-margin-fetch")(credit_margin_fetch)
 app.command(name="credit-margin")(credit_margin)
 app.command(name="crypto-fetch")(crypto_fetch)
 app.command(name="crypto-ohlcv")(crypto_ohlcv)
+app.command(name="stock-fetch")(stock_fetch)
+app.command(name="stock-ohlcv")(stock_ohlcv)
 app.command(name="screening-run")(screening_run)
 app.command(name="screening-candidates")(screening_candidates)
 app.add_typer(chart_app, name="chart")

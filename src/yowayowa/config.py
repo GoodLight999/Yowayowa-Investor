@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     bls_api_key: str | None = None
     bea_api_key: str | None = None
     estat_app_id: str | None = None
+    # Alpaca Market Data (P4-F): US stock daily bars, personal-only source.
+    # Keys live in the operator environment, never in the repo (.env is
+    # gitignored); values are only ever sent as request headers.
+    alpaca_key_id: str | None = None
+    alpaca_secret_key: str | None = None
+    alpaca_data_base_url: str = "https://data.alpaca.markets"
+    alpaca_stock_symbols: str = "AAPL,MSFT,NVDA"
     market_provider: Literal["yahoo"] = "yahoo"
     request_timeout_seconds: float = Field(default=20.0, gt=0)
     cache_ttl_seconds: int = Field(default=900, ge=0)

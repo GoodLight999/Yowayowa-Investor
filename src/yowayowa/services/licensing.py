@@ -210,6 +210,31 @@ SOURCE_POLICIES: tuple[SourceLicensePolicy, ...] = (
         ],
     ),
     SourceLicensePolicy(
+        key="alpaca",
+        source="Alpaca Market Data API (US stock daily bars, SIP feed)",
+        provider_patterns=["alpaca"],
+        license_class=LicenseClass.PERSONAL_ONLY,
+        access=SourceAccess.REGISTERED_KEY,
+        commercial_use=False,
+        public_display=False,
+        public_api=False,
+        derived_analysis_public=False,
+        attribution_required=False,
+        attribution="Source: Alpaca Market Data",
+        terms_url="https://www.alpaca.markets/disclosures",
+        reviewed_on=date(2026, 9, 24),
+        notes=[
+            "Alpaca is a commercial broker/data-vendor: its market data is NOT "
+            "an official reference rate and is not approved for public "
+            "redistribution; personal-use classification only.",
+            "SIP feed history is consumed within the personal scope of Alpaca's "
+            "data terms (free plan serves SIP data with a 15-minute delay).",
+            "Alpaca FX rates are outside this policy: the operator key has no "
+            "FX grant (HTTP 403, verified 2026-09-24). Official reference "
+            "rates keep flowing through frankfurter (ECB).",
+        ],
+    ),
+    SourceLicensePolicy(
         key="fred",
         source="Federal Reserve Economic Data (FRED)",
         provider_patterns=["fred"],

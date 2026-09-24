@@ -469,6 +469,91 @@ Four cleanups and where the new single sources of truth live:
   testbot experiment B (t_684920c7) — all gated on CTO acceptance of
   review card t_9cba22c7.
 
+### P4-F checkpoint — Alpaca US stock daily bars (2026-09-24, worker-flash)
+
+Uncommitted working tree on top of HEAD `41045e3` (commit is CTO-owned after
+acceptance). US equities daily-OHLCV acquisition via Alpaca Market Data,
+parallel to the P4-E crypto surface (task per CTO brief 2026-09-24; all
+design decisions CTO-fixed).
+
+Surfaces and files:
+
+- `src/yowayowa/stock_models.py` (new): `StockOhlcvRecord` (adds `vwap` +
+  `trade_count` vs crypto records), `StockOhlcvPoint`,
+  `normalize_stock_symbol` (`^[A-Z]{1,5}(\.[A-Z])?$` — dotted class shares
+  live-verified against Alpaca SIP: BRK.B answers 200 with 7 bars),
+  `stock_bar_timestamp` (Alpaca RFC-3339 `t` → UTC bar-start `as_of`).
+  Existing crypto models untouched (CTO-fixed).
+- `src/yowayowa/providers/alpaca.py` (new): `AlpacaMarketDataProvider`
+  tracing binance.py structure (TTLCache + shared httpx.Client +
+  ProviderDescriptor + enforce_provider_policy). Data API
+  (`data.alpaca.markets/v2/stocks/bars`, timeframe=1Day, feed=sip) only —
+  never the trading API. next_page_token pagination, 0.35s request pacing
+  (free plan 200 req/min), malformed/all-zero bars skipped (no zero-fill),
+  404/422 → LookupError, 401/403/429/5xx/transport → AlpacaTransportError.
+- `src/yowayowa/stock_acquisition.py` (new): `StockOhlcvStore`
+  (`data/stock-ohlcv/{SYM}/ohlcv.jsonl`, crypto-parallel structure),
+  idempotent per (provider, currency, as_of), newest-first read with
+  provider filter, corrupt-line skip; `fetch_stock_ohlcv` per-symbol
+  error isolation.
+- `src/yowayowa/api/stock_routes.py` (new): `/v1/stocks/{symbol}/bars`
+  (json|csv, store-read-only) + `/latest` declared FIRST (P4-A route-order
+  lesson), personal-mode 404 fail-closed via the alpaca descriptor,
+  401 via require_api_token; registered in `api/app.py` next to crypto.
+- `src/yowayowa/stock_cli.py` (new) + `cli_entry.py`: `stock-fetch
+  [SYMBOLS...] --days N` (default AAPL,MSFT,NVDA; 5-3650) with per-symbol
+  isolation and a `+N rows` stdout summary, `stock-ohlcv SYMBOL
+  [--provider alpaca] [--limit N] [--json]`.
+- `config.py`: `alpaca_key_id` / `alpaca_secret_key` (None),
+  `alpaca_data_base_url`, `alpaca_stock_symbols` (env_prefix YOWAYOWA_).
+- `services/licensing.py`: `key="alpaca"`, PERSONAL_ONLY,
+  access=REGISTERED_KEY, reviewed 2026-09-24; notes record that Alpaca is a
+  commercial broker/data-vendor (NOT an official reference rate), SIP is
+  used within personal scope of Alpaca's terms, and FX is outside the key's
+  grants (403 live-verified) with frankfurter/ECB staying the official-rate
+  path.
+- `tests/test_stock_ohlcv.py` (new, 42 tests): provider provenance, zero/
+  malformed-bar skip, pagination, window contract, 401/403/429/422/404
+  mapping, public-mode construction refusal, store idempotency/corruption/
+  ordering, API both route orders + fail-closed + token enforcement, CLI,
+  licensing entry. Existing tests untouched.
+- `docs/STOCKS.md` (new): commands, symbol grammar, CTO-fixed decisions,
+  FX ruling, cron operations.
+
+Live-verified behavior (free-plan key, 2026-09-24):
+
+- The free plan rejects SIP queries whose window includes the current
+  calendar day with 403 "subscription does not permit querying recent SIP
+  data". The provider therefore requests `end = yesterday(UTC)` (and
+  `start = today - days - 1`), which both avoids the 403 and guarantees
+  every bar is a finalized session. (CTO's original 200 probe omitted
+  `end`, so Alpaca returned history only.)
+- Real data persisted: AAPL/MSFT/NVDA × 4 finalized daily bars each
+  (as_of 2026-09-18..2026-09-23, UTC 04:00 bar starts), full provenance
+  per line, re-run idempotent (+0 rows on refetch). Live API checks passed
+  against a local uvicorn instance (bars/latest 200, newest-first, CSV,
+  empty-symbol 404).
+- Alpaca FX rates 403 insufficient grants → not implemented (CTO ruling);
+  snapshots endpoint also 403 on this key.
+
+Operations:
+
+- Cron registered (this profile): `yowayowa-alpaca-daily`, id
+  `3fa045e0d8a2`, `30 8 * * *` JST (right after US 16:00 ET close; SIP
+  15-min margin), script `yowayowa_alpaca_daily.sh` + `--no-agent`,
+  deliver local. Script sources keys from `/root/.hermes/.env` by grep
+  (never echoed), sets `YOWAYOWA_MODE=personal`, runs
+  `.venv/bin/yowayowa stock-fetch AAPL MSFT NVDA --days 5` (idempotent).
+- Verification: `make verify` green (968 passed, 2 skipped, lint + mypy +
+  openapi clean) under TZ=UTC (CI parity). NOTE: with a JST host
+  localtime, the pre-existing P4-D test
+  `tests/test_screening_pipeline.py::test_api_run_and_candidates` fails
+  after 15:00 UTC (its `date.today()` local-vs-UTC run_date assertion
+  straddles midnight); not caused by P4-F, file untouched.
+
+Next queued: CTO acceptance + commit of this tree; crypto 3rd-source
+addition (Alpaca crypto bars) is explicitly beyond this task's scope.
+
 ### P2B prerequisite checkpoint — Rakuten web base host repoint (2026-09-23)
 
 HEAD `fce2b2f` → environment correction only (CTO ruling, parent card
