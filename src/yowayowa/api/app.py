@@ -40,6 +40,7 @@ from yowayowa.api.rate_routes import router as rate_router
 from yowayowa.api.research_routes import router as research_router
 from yowayowa.api.risk_routes import router as risk_router
 from yowayowa.api.routes import router
+from yowayowa.api.screening_routes import router as screening_router
 from yowayowa.api.sector_routes import router as sector_router
 from yowayowa.api.settings_routes import router as settings_router
 from yowayowa.api.web_asset_routes import router as web_asset_router
@@ -216,6 +217,7 @@ app.include_router(ir_router)
 app.include_router(jpx_router)
 app.include_router(credit_router)
 app.include_router(crypto_router)
+app.include_router(screening_router)
 app.include_router(private_source_router)
 app.include_router(fundamentals_router)
 app.include_router(web_asset_router)

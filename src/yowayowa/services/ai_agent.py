@@ -37,6 +37,7 @@ from yowayowa.services.codex_cli import codex_cli_status, run_codex_structured
 from yowayowa.services.comparison import compare
 from yowayowa.services.portfolios import get_portfolio, list_portfolios, portfolio_analytics
 from yowayowa.services.screening import derived_metrics
+from yowayowa.services.screening_pipeline import read_screening_candidates
 from yowayowa.services.strategy_calibration import calibration_report
 from yowayowa.services.strategy_outcomes import forward_outcome_report
 from yowayowa.services.strategy_presets import (
@@ -196,6 +197,9 @@ class InvestmentResearchAgent:
             "rule works. Explain factor contributions, evidence "
             "coverage, first rejection conditions and what evidence would change the view. "
             "Prefer compact, decision-relevant comparisons over generic prose. "
+            "Machine-discovered screening candidates come from the "
+            "get_screening_candidates tool and are research starting points, "
+            "never buy/sell recommendations. "
             "For workspace changes, use propose_* tools; never silently mutate state. "
             "State uncertainty and data basis. Answer in the user's language. "
             f"Server date: {date.today().isoformat()}. UI context: {context}"
@@ -921,6 +925,17 @@ class InvestmentResearchAgent:
                 self._tool_propose_screen,
                 mutating=True,
             ),
+            ToolSpec(
+                "get_screening_candidates",
+                "Get today's machine-discovered screening candidates with reasons and provenance.",
+                self._object_schema(
+                    {
+                        "run_date": {"type": "string"},
+                        "limit": {"type": "integer"},
+                    },
+                ),
+                self._tool_screening_candidates,
+            ),
         ]
         return {item.name: item for item in specs}
 
@@ -1219,6 +1234,16 @@ class InvestmentResearchAgent:
 
     def _tool_watchlists(self, _: dict[str, Any]) -> Any:
         return [item.model_dump(mode="json") for item in list_watchlists(self.session)]
+
+    def _tool_screening_candidates(self, args: dict[str, Any]) -> Any:
+        run_date = self._date_arg(args.get("run_date"))
+        raw_limit = args.get("limit")
+        limit = min(max(int(raw_limit), 1), 100) if raw_limit is not None else 50
+        return read_screening_candidates(
+            self.session,
+            run_date=run_date,
+            limit=limit,
+        )
 
     def _tool_portfolios(self, args: dict[str, Any]) -> Any:
         portfolio_id = args.get("portfolio_id")

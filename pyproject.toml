@@ -94,6 +94,11 @@ known-first-party = ["yowayowa"]
 "src/yowayowa/api/jpx_routes.py" = ["RUF001", "RUF002"]
 "src/yowayowa/jpx_margin_cli.py" = ["RUF001", "RUF002"]
 "tests/test_jpx_margin.py" = ["RUF001", "RUF002"]
+# EDINET screening carries the official Japanese descriptions verbatim
+# (訂正有価証券報告書 etc. with fullwidth characters); they are source data.
+"tests/test_screening_pipeline.py" = ["RUF001", "RUF002"]
+"src/yowayowa/services/screening_pipeline.py" = ["RUF001", "RUF002"]
+"src/yowayowa/screening_cli.py" = ["RUF001", "RUF002"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

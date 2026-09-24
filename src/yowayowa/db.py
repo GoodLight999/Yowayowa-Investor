@@ -274,6 +274,39 @@ class CreditMarginWeeklyRecord(Base):
     notes: Mapped[list[Any]] = mapped_column(JSON, default=list)
 
 
+class ScreeningCandidateRecord(Base):
+    """One machine-discovered screening candidate for one run date (P4-D).
+
+    Uniqueness is (run_date, source, code, signal): a re-run for the same
+    run date replaces that date's rows atomically (delete+insert inside one
+    transaction — see services/screening_pipeline.py), so re-running the
+    pipeline is idempotent. ``provenance`` holds the candidate provenance;
+    absent numbers are never zero-filled here either.
+    """
+
+    __tablename__ = "screening_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_date",
+            "source",
+            "code",
+            "signal",
+            name="uq_screening_candidates_run_source_code_signal",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_date: Mapped[date] = mapped_column(Date, index=True)
+    source: Mapped[str] = mapped_column(String(32), index=True)
+    code: Mapped[str] = mapped_column(String(5), index=True)
+    signal: Mapped[str] = mapped_column(String(40), index=True)
+    company_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    value: Mapped[dict[str, Any]] = mapped_column(JSON)
+    reason: Mapped[str] = mapped_column(String(500))
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSON)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 def _normalize_database_url(url: str) -> str:
     if url.startswith("postgres://"):
         return "postgresql+psycopg://" + url.removeprefix("postgres://")
