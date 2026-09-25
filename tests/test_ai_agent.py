@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
+
+import pytest
 
 from yowayowa.config import Settings
 from yowayowa.domain import Fundamentals, LicenseClass, MetricPoint, MetricSeries, Provenance
@@ -442,3 +446,64 @@ def test_hosted_codex_refreshes_browser_credential(monkeypatch) -> None:  # type
     assert seen_credentials == ["sealed-one", "sealed-two"]
     assert result.answer == "done"
     assert result.provider_credential == "sealed-three"
+
+
+def test_get_ohlcv_tool_reads_persisted_stores(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The get_ohlcv tool returns saved rows verbatim via the evidence collector."""
+
+    stock_dir = tmp_path / "stock-ohlcv" / "AAPL"
+    stock_dir.mkdir(parents=True)
+    row = {
+        "symbol": "AAPL",
+        "currency": "USD",
+        "provider": "alpaca",
+        "as_of": "2026-09-24T04:00:00Z",
+        "open": 1.0,
+        "high": 2.0,
+        "low": 0.5,
+        "close": 1.5,
+        "volume": 100.0,
+        "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=AAPL",
+        "retrieved_at": "2026-09-24T15:25:05Z",
+    }
+    (stock_dir / "ohlcv.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    agent = InvestmentResearchAgent(Settings(database_url="sqlite:///:memory:"), Mock())
+    assert "get_ohlcv" in agent.tools
+
+    import yowayowa.services.ohlcv_evidence as ohlcv_module
+
+    real_stock = ohlcv_module.collect_stock_evidence
+    real_crypto = ohlcv_module.collect_crypto_evidence
+
+    monkeypatch.setattr(
+        ohlcv_module,
+        "collect_stock_evidence",
+        lambda root, question, **kwargs: real_stock(tmp_path / "stock-ohlcv", question, **kwargs),
+    )
+    monkeypatch.setattr(
+        ohlcv_module,
+        "collect_crypto_evidence",
+        lambda root, question, **kwargs: real_crypto(tmp_path / "crypto-ohlcv", question, **kwargs),
+    )
+
+    result = agent._tool_ohlcv({"market": "stock", "symbol": "aapl", "limit": 5})
+    assert result["symbol"] == "AAPL"
+    assert result["market"] == "stock"
+    assert result["row_count"] == 1
+    assert result["rows"][0]["close"] == 1.5  # verbatim, never recomputed
+
+    # limit is clamped into 1..60 and defaults to 10.
+    clamped = agent._tool_ohlcv({"market": "stock", "symbol": "AAPL", "limit": 999})
+    assert clamped["row_count"] == 1
+    assert agent._tool_ohlcv({"market": "stock", "symbol": "AAPL"})["rows"] == result["rows"]
+
+    # Unknown market fails closed with an error dict.
+    assert "error" in agent._tool_ohlcv({"market": "fx", "symbol": "AAPL"})
+
+    # Missing symbol: empty rows, never invented.
+    missing = agent._tool_ohlcv({"market": "crypto", "symbol": "DOGE"})
+    assert missing["row_count"] == 0
+    assert missing["rows"] == []

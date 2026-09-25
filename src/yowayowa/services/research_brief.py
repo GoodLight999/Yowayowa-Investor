@@ -41,6 +41,10 @@ from yowayowa.research_brief_models import BriefCitation, ResearchBrief
 from yowayowa.research_models import AIChatRequest, AIChatResponse, AIMessage, AIProviderConfig
 from yowayowa.services.ai_agent import InvestmentResearchAgent
 from yowayowa.services.macro_store import MacroObservationStore
+from yowayowa.services.ohlcv_evidence import (
+    collect_crypto_evidence,
+    collect_stock_evidence,
+)
 from yowayowa.services.screening_pipeline import (
     _DEFAULT_EDINET_PATH,
     classify_edinet_filing,
@@ -61,6 +65,7 @@ BRIEF_SECTIONS: tuple[str, ...] = (
     "3. 信用残急変銘柄",
     "4. マクロ更新（本日発表を明記）",
     "5. 次の調査アクション",
+    "6. 市場データ（米株・暗号資産）",
 )
 
 DEFAULT_NOTIFY_TARGET = "telegram"
@@ -73,6 +78,7 @@ _MAX_EDINET_LARGE_FILINGS = 12
 _MAX_EDINET_SIGNALS = 12
 _MAX_CREDIT_CANDIDATES = 12
 _MAX_MACRO_SERIES = 12
+_PRICE_ROWS_PER_SYMBOL = 3
 
 
 def _default_sender(message: str) -> None:
@@ -96,6 +102,8 @@ class MorningBriefService:
         *,
         edinet_path: str | Path | None = None,
         macro_store: MacroObservationStore | None = None,
+        stock_ohlcv_root: Path | None = None,
+        crypto_ohlcv_root: Path | None = None,
         provider_config: AIProviderConfig | None = None,
         agent_factory: Callable[[Settings, Session | None], InvestmentResearchAgent] | None = None,
     ) -> None:
@@ -103,6 +111,12 @@ class MorningBriefService:
         self.session = session
         self.edinet_path = Path(edinet_path) if edinet_path is not None else _DEFAULT_EDINET_PATH
         self.macro_store = macro_store
+        self.stock_ohlcv_root = (
+            stock_ohlcv_root if stock_ohlcv_root is not None else Path("./data/stock-ohlcv")
+        )
+        self.crypto_ohlcv_root = (
+            crypto_ohlcv_root if crypto_ohlcv_root is not None else Path("./data/crypto-ohlcv")
+        )
         self.provider_config = provider_config
         self._agent_factory = agent_factory
 
@@ -217,8 +231,37 @@ class MorningBriefService:
             coverage["reason"] = "no_macro_observation_files"
         return {"series": series_out[:_MAX_MACRO_SERIES], "coverage": coverage}
 
+    def assemble_price_summary(self) -> dict[str, Any]:
+        """Saved daily OHLCV for stocks + crypto (section 6 input).
+
+        Ambient collection over the whole store (``question=""`` so nothing
+        counts as "mentioned"): newest three rows per symbol. A missing or
+        empty store is an explicit coverage entry — never zero-fill.
+        """
+
+        stocks = collect_stock_evidence(
+            self.stock_ohlcv_root, "", rows_per_symbol=_PRICE_ROWS_PER_SYMBOL
+        )
+        crypto = collect_crypto_evidence(
+            self.crypto_ohlcv_root, "", rows_per_symbol=_PRICE_ROWS_PER_SYMBOL
+        )
+        return {
+            "stocks": stocks,
+            "crypto": crypto,
+            "coverage": {
+                "stock_symbols": stocks["coverage"]["symbol_count"],
+                "stock_row_count": stocks["coverage"]["row_count_total"],
+                "crypto_symbols": crypto["coverage"]["symbol_count"],
+                "crypto_row_count": crypto["coverage"]["row_count_total"],
+            },
+        }
+
     def collect_citations(
-        self, edinet: dict[str, Any], credit: dict[str, Any], macro: dict[str, Any]
+        self,
+        edinet: dict[str, Any],
+        credit: dict[str, Any],
+        macro: dict[str, Any],
+        prices: dict[str, Any] | None = None,
     ) -> list[BriefCitation]:
         citations: list[BriefCitation] = []
         for entry in [*edinet["filings"], *edinet["large_filings"]]:
@@ -259,6 +302,25 @@ class MorningBriefService:
                     code_or_series=row.get("series_id"),
                 )
             )
+        if prices:
+            for market, kind in (("stocks", "stock_ohlcv"), ("crypto", "crypto_ohlcv")):
+                market_evidence = prices.get(market) or {}
+                for symbol, symbol_evidence in market_evidence.get("symbols", {}).items():
+                    latest_rows = symbol_evidence.get("latest_rows") or []
+                    if not latest_rows:
+                        continue  # no persisted rows -> 未取得 in coverage, not a citation
+                    row = latest_rows[0]
+                    citations.append(
+                        BriefCitation(
+                            provider=str(row.get("provider") or kind),
+                            source=row.get("source_url"),
+                            source_url=row.get("source_url"),
+                            retrieved_at=row.get("retrieved_at"),
+                            as_of=row.get("as_of"),
+                            kind=kind,
+                            code_or_series=symbol,
+                        )
+                    )
         return citations
 
     # -------------------------------------------------------------- prompt
@@ -269,8 +331,9 @@ class MorningBriefService:
         edinet: dict[str, Any],
         credit: dict[str, Any],
         macro: dict[str, Any],
+        prices: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        return {
+        packet: dict[str, Any] = {
             "run_date": run_date.isoformat(),
             "edinet": edinet,
             "credit_margin": credit,
@@ -284,6 +347,9 @@ class MorningBriefService:
                 ],
             },
         }
+        if prices is not None:
+            packet["prices"] = prices
+        return packet
 
     def _brief_prompt(self, evidence: dict[str, Any]) -> str:
         sections = "\n".join(BRIEF_SECTIONS)
@@ -292,7 +358,7 @@ class MorningBriefService:
                 (
                     "あなたはYowayowa-Investorの朝のリサーチブリーフ作成エージェントです。"
                     "以下のEvidence JSONだけを根拠に、日本語でブリーフを書いてください。"
-                    f"構成は必ず次の5セクション順に従ってください:\n{sections}"
+                    f"構成は必ず次の{len(BRIEF_SECTIONS)}セクション順に従ってください:\n{sections}"
                 ),
                 "EVIDENCE JSON:\n"
                 + json.dumps(evidence, ensure_ascii=False, default=str, indent=2),
@@ -335,13 +401,15 @@ class MorningBriefService:
         edinet = self.assemble_edinet_summary(resolved_date)
         credit = self.assemble_credit_summary(resolved_date)
         macro = self.assemble_macro_summary(resolved_date)
-        evidence = self._evidence_packet(resolved_date, edinet, credit, macro)
-        citations = self.collect_citations(edinet, credit, macro)
+        prices = self.assemble_price_summary()
+        evidence = self._evidence_packet(resolved_date, edinet, credit, macro, prices)
+        citations = self.collect_citations(edinet, credit, macro, prices)
 
         coverage: dict[str, Any] = {
             "edinet": edinet["coverage"],
             "credit_margin": credit["coverage"],
             "macro": macro["coverage"],
+            "prices": prices["coverage"],
             "missing_inputs": [],
         }
         if edinet["coverage"].get("reason") == "file_missing":
@@ -352,6 +420,10 @@ class MorningBriefService:
             coverage["missing_inputs"].append("credit_margin_surges: 未取得")
         if not macro["series"]:
             coverage["missing_inputs"].append("macro_observations: 未取得")
+        if not prices["stocks"]["coverage"]["row_count_total"]:
+            coverage["missing_inputs"].append("stock_ohlcv: 未取得")
+        if not prices["crypto"]["coverage"]["row_count_total"]:
+            coverage["missing_inputs"].append("crypto_ohlcv: 未取得")
 
         request = AIChatRequest(
             messages=[AIMessage(role="user", content=self._brief_prompt(evidence))],
@@ -376,7 +448,8 @@ class MorningBriefService:
             "LLM-generated summary over locally captured evidence; "
             "deterministic coverage in ResearchBrief.coverage.",
             f"evidence providers: edinet-v2, credit_margin_weekly, "
-            f"macro-observations JSONL; model: {response.model}",
+            f"macro-observations JSONL, stock-ohlcv JSONL, crypto-ohlcv JSONL; "
+            f"model: {response.model}",
         ]
         tool_sources = sorted({trace.tool for trace in response.tool_trace})
         if tool_sources:
@@ -384,7 +457,8 @@ class MorningBriefService:
         return Provenance(
             provider=f"yowayowa-research-brief/{response.provider}",
             source="Morning brief assembled from EDINET daily list, credit margin "
-            "screening candidates and macro observation JSONL",
+            "screening candidates, macro observation JSONL and the persisted "
+            "stock/crypto daily OHLCV stores",
             license_class=LicenseClass.OFFICIAL_PUBLIC
             if self._all_sources_official()
             else LicenseClass.PERSONAL_ONLY,

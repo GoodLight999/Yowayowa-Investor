@@ -16,6 +16,8 @@ uv run yowayowa stock-ohlcv AAPL --json     # JSON出力
   1行=1レコード、全量provenance）
 - 再実行は (provider, currency, as_of) 単位で冪等。APIの欠落日は zero/fwd-fill しない。
 - 各行に `vwap`（Alpaca vw）と `trade_count`（n）を保持。crypto行には無いフィールド。
+- `research_ask` と朝ブリーフのEvidenceに自動取り込み済み
+  (`services/ohlcv_evidence.py` 経由・読み取り専用。AIツール `get_ohlcv` でも参照可)。
 
 ## シンボル
 

@@ -958,6 +958,31 @@ class InvestmentResearchAgent:
                 ),
                 self._tool_macro_series,
             ),
+            ToolSpec(
+                "get_ohlcv",
+                "Read the locally persisted daily OHLCV JSONL stores "
+                "(US stocks under data/stock-ohlcv, crypto under "
+                "data/crypto-ohlcv). Returns saved daily bars (open/high/low/"
+                "close/volume) with provider and as-of provenance for one "
+                "symbol; quote values verbatim, never recompute them. If a "
+                "symbol has no persisted rows the answer is 未取得 — do not "
+                "invent prices.",
+                self._object_schema(
+                    {
+                        "market": {
+                            "type": "string",
+                            "enum": ["stock", "crypto"],
+                        },
+                        "symbol": {"type": "string"},
+                        "limit": {
+                            "type": "integer",
+                            "description": "Newest-first rows to return (1-60, default 10).",
+                        },
+                    },
+                    ["market", "symbol"],
+                ),
+                self._tool_ohlcv,
+            ),
         ]
         return {item.name: item for item in specs}
 
@@ -1284,6 +1309,42 @@ class InvestmentResearchAgent:
         return {
             "latest_by_series": latest,
             "coverage": {"series_count": len(latest), "sources": list(MACRO_SOURCE_KINDS)},
+        }
+
+    def _tool_ohlcv(self, args: dict[str, Any]) -> Any:
+        from pathlib import Path
+
+        from yowayowa.services.ohlcv_evidence import collect_crypto_evidence
+
+        market = str(args.get("market") or "").strip().lower()
+        if market not in ("stock", "crypto"):
+            return {"error": f"Unknown market: {market} (expected 'stock' or 'crypto')"}
+        symbol = str(args.get("symbol") or "").strip().upper()
+        raw_limit = args.get("limit")
+        try:
+            limit = min(max(int(raw_limit), 1), 60) if raw_limit is not None else 10
+        except (TypeError, ValueError):
+            return {"error": f"Invalid limit: {raw_limit!r}"}
+        if market == "stock":
+            from yowayowa.services.ohlcv_evidence import collect_stock_evidence
+
+            evidence = collect_stock_evidence(Path("./data/stock-ohlcv"), "")
+        else:
+            evidence = collect_crypto_evidence(Path("./data/crypto-ohlcv"), "")
+        symbol_evidence = evidence["symbols"].get(symbol)
+        if symbol_evidence is None:
+            return {
+                "symbol": symbol,
+                "market": market,
+                "row_count": 0,
+                "rows": [],
+                "available_symbols": evidence["available_symbols"],
+            }
+        return {
+            "symbol": symbol,
+            "market": market,
+            "row_count": symbol_evidence["row_count"],
+            "rows": symbol_evidence["latest_rows"][:limit],
         }
 
     def _tool_portfolios(self, args: dict[str, Any]) -> Any:

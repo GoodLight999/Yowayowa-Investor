@@ -13,6 +13,8 @@ uv run yowayowa crypto-fetch SOL        # → エラー（SUPPORTED_CRYPTO_ASSET
 
 - Store: `data/crypto-ohlcv/{SYMBOL}/ohlcv.jsonl`（1行=1レコード、全量provenance）
 - 再実行は (provider, currency, as_of) 単位で冪等。APIの欠落日は zero/fwd-fill しない。
+- `research_ask` と朝ブリーフのEvidenceに自動取り込み済み
+  (`services/ohlcv_evidence.py` 経由・読み取り専用。AIツール `get_ohlcv` でも参照可)。
 
 ## API
 

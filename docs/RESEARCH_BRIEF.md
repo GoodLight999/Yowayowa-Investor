@@ -37,6 +37,8 @@ Two LLM-driven research surfaces over locally captured evidence:
 | EDINET daily list | `data/edinet-daily.jsonl` | Keyword classification reuses `classify_edinet_filing` from the P4-D screening pipeline; `docTypeCode=030` (有価証券届出書) rows are additionally flagged 大口提出 (A-3 large-filing input). |
 | Credit margin surges | `screening_candidates` table via `read_screening_candidates` | Signals with the `credit_` prefix only; provenance is the persisted capture provenance (PERSONAL_ONLY). |
 | Macro updates | `data/macro-observations/{bls,fred,treasury}.jsonl` | Latest value per series with `retrieved_at`; `as_of == run_date` rows are flagged 本日発表 (A-3 macro input). Per-source rows are never merged. |
+| Stock daily OHLCV | `data/stock-ohlcv/{SYMBOL}/ohlcv.jsonl` via `services/ohlcv_evidence.py` | Read-only collector over `StockOhlcvStore` (`read`, `_TIMELINE_MAX_READ` cap). Newest rows per symbol with full per-row provenance; a missing/empty store is 「未取得」+ coverage, never zero-fill. |
+| Crypto daily OHLCV | `data/crypto-ohlcv/{SYMBOL}/ohlcv.jsonl` via `services/ohlcv_evidence.py` | Same collector pattern over `CryptoOhlcvStore`. Symbols mentioned in the question are matched case-insensitively on word boundaries; asked-but-unsaved tickers render `stock_ohlcv TSLA: 未取得`-style missing inputs. |
 
 Financial-correctness invariants (same class as P4-D):
 
@@ -54,7 +56,8 @@ Financial-correctness invariants (same class as P4-D):
 `compose_brief` and `research_ask` wrap the evidence packet in a prompt that
 requires:
 
-- the five fixed sections (`BRIEF_SECTIONS`) in order (brief only);
+- the six fixed sections (`BRIEF_SECTIONS`, including
+  「6. 市場データ（米株・暗号資産）」) in order (brief only);
 - no number that is not present in the evidence JSON (捏造禁止) and no
   free-form arithmetic (sums/ratios/comparisons the tools did not compute);
 - 「未取得」 marking for every missing input;
@@ -62,9 +65,12 @@ requires:
 - screening candidates framed as research starting points, never as
   buy/sell recommendations.
 
-The same arithmetic rule was added to the global agent system prompt, and a
-new `get_macro_series` AI tool exposes the macro JSONL store to every agent
-surface (JSON backend, `series_id` filter, verbatim values only).
+The same arithmetic rule was added to the global agent system prompt, and
+new `get_macro_series` / `get_ohlcv` AI tools expose the macro JSONL store
+and the stock/crypto OHLCV JSONL stores to every agent surface (JSON
+backend, symbol filter, verbatim values only — `get_ohlcv` clamps `limit`
+to 1..60 and returns empty rows + `row_count: 0` for unknown symbols
+instead of inventing prices).
 
 ## API
 
@@ -119,13 +125,14 @@ real delivery is exercised by the CTO end-to-end (one live send).
 - EDINET summary: classification parity with the screening pipeline, 大口提出
   flag for docTypeCode 030, missing-file coverage;
 - macro summary: 本日発表 flag when as_of equals the run date;
-- compose: strict prompt contents (5 sections, 捏造禁止, 未取得, evidence
-  embedding), coverage for all three families, citation provenance,
-  PERSONAL_ONLY inheritance, persistence idempotency;
+- compose: strict prompt contents (6 sections, 捏造禁止, 未取得, evidence
+  embedding incl. stock/crypto OHLCV), coverage for all five families,
+  citation provenance, PERSONAL_ONLY inheritance, persistence idempotency;
 - send: injected sender, and the default sender's exact `hermes send` argv
   with `shell` never set;
-- ask: deterministic tool trace order/content, code matching, evidence
-  embedding in the prompt, missing-evidence coverage;
+- ask: deterministic tool trace order/content (incl. stock_ohlcv_lookup /
+  crypto_ohlcv_lookup), code + ticker matching, evidence embedding in the
+  prompt, missing-evidence and asked-but-unsaved-symbol coverage;
 - API: ask/brief round-trip through TestClient, 403 fail-closed outside
   personal mode, OpenAPI paths present;
 - CLI: ask and brief through the Typer runner with patched agent.

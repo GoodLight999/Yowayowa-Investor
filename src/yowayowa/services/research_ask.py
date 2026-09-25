@@ -30,6 +30,11 @@ from yowayowa.research_brief_models import BriefCitation, ResearchAskResponse
 from yowayowa.research_models import AIChatRequest, AIMessage, AIProviderConfig
 from yowayowa.services.ai_agent import InvestmentResearchAgent
 from yowayowa.services.macro_store import MacroObservationStore
+from yowayowa.services.ohlcv_evidence import (
+    collect_crypto_evidence,
+    collect_stock_evidence,
+    question_ticker_tokens,
+)
 from yowayowa.services.research_brief import MorningBriefService
 from yowayowa.services.screening_pipeline import _DEFAULT_EDINET_PATH, read_screening_candidates
 
@@ -40,6 +45,8 @@ _CODE_TOKEN = re.compile(r"(?<!\d)(\d{4,5})(?!\d)")
 _MAX_CANDIDATES_PER_CODE = 8
 _MAX_MACRO_SERIES = 12
 _MAX_QUESTION_CHARS = 2000
+_DEFAULT_STOCK_OHLCV_ROOT = Path("./data/stock-ohlcv")
+_DEFAULT_CRYPTO_OHLCV_ROOT = Path("./data/crypto-ohlcv")
 
 
 def _mentioned_codes(question: str) -> list[str]:
@@ -107,6 +114,8 @@ def research_ask(
     provider_config: AIProviderConfig | None = None,
     edinet_path: str | Path | None = None,
     macro_store: MacroObservationStore | None = None,
+    stock_store: Path | None = None,
+    crypto_store: Path | None = None,
     agent_factory: Any = None,
 ) -> ResearchAskResponse:
     """Answer one research question from local evidence + one agent round."""
@@ -114,6 +123,8 @@ def research_ask(
     clean_question = question.strip()[:_MAX_QUESTION_CHARS]
     now = datetime.now(UTC)
     resolved_edinet = Path(edinet_path) if edinet_path is not None else _DEFAULT_EDINET_PATH
+    resolved_stock_root = stock_store if stock_store is not None else _DEFAULT_STOCK_OHLCV_ROOT
+    resolved_crypto_root = crypto_store if crypto_store is not None else _DEFAULT_CRYPTO_OHLCV_ROOT
     codes = _mentioned_codes(clean_question)
 
     tool_trace: list[dict[str, Any]] = []
@@ -142,6 +153,29 @@ def research_ask(
         }
     )
 
+    stock_evidence = collect_stock_evidence(resolved_stock_root, clean_question)
+    tool_trace.append(
+        {
+            "tool": "stock_ohlcv_lookup",
+            "arguments": {"mentioned": stock_evidence["mentioned"]},
+            "matched": stock_evidence["coverage"]["row_count_total"],
+        }
+    )
+    crypto_evidence = collect_crypto_evidence(resolved_crypto_root, clean_question)
+    tool_trace.append(
+        {
+            "tool": "crypto_ohlcv_lookup",
+            "arguments": {"mentioned": crypto_evidence["mentioned"]},
+            "matched": crypto_evidence["coverage"]["row_count_total"],
+        }
+    )
+    # Ticker-like tokens the question wrote but neither store has are the
+    # OHLCV missing-symbol candidates (e.g. TSLA with an AAPL/MSFT store).
+    asked_tickers = question_ticker_tokens(clean_question)
+    ohlcv_mentioned = sorted(
+        set(stock_evidence["mentioned"]) | set(crypto_evidence["mentioned"]) | set(asked_tickers)
+    )
+
     brief_service = MorningBriefService(
         settings,
         session,
@@ -163,6 +197,8 @@ def research_ask(
         "mentioned_codes": codes,
         "screening_candidates": candidates,
         "edinet_filings": edinet_rows[:_MAX_CANDIDATES_PER_CODE],
+        "stock_ohlcv": stock_evidence,
+        "crypto_ohlcv": crypto_evidence,
         "macro_latest": macro["series"][:_MAX_MACRO_SERIES],
         "coverage_notes": {
             "rules": [
@@ -190,11 +226,19 @@ def research_ask(
     )
     response = agent.chat(request)
 
-    citations = _collect_ask_citations(candidates, edinet_rows, macro["series"])
+    citations = _collect_ask_citations(
+        candidates,
+        edinet_rows,
+        macro["series"],
+        stock_evidence,
+        crypto_evidence,
+    )
     coverage: dict[str, Any] = {
         "mentioned_codes": codes,
         "screening_candidates_matched": len(candidates),
         "edinet_filings_matched": len(edinet_rows),
+        "stock_ohlcv_rows": stock_evidence["coverage"]["row_count_total"],
+        "crypto_ohlcv_rows": crypto_evidence["coverage"]["row_count_total"],
         "macro_series": len(macro["series"]),
         "missing_inputs": [],
     }
@@ -202,6 +246,18 @@ def research_ask(
         coverage["missing_inputs"].append("screening_candidates: 未取得")
     if codes and not edinet_rows:
         coverage["missing_inputs"].append("edinet_daily_filings: 未取得")
+    for symbol in ohlcv_mentioned:
+        # A ticker the question asked for that either store does not carry
+        # (or carries with zero rows) is 未取得 — never zero-filled. A ticker
+        # is stock-shaped by default; it counts for crypto only when the
+        # crypto store actually lists it.
+        stock_rows = stock_evidence["symbols"].get(symbol, {}).get("row_count", 0)
+        if stock_rows == 0:
+            coverage["missing_inputs"].append(f"stock_ohlcv {symbol}: 未取得")
+        if symbol in crypto_evidence["symbols"]:
+            crypto_rows = crypto_evidence["symbols"][symbol].get("row_count", 0)
+            if crypto_rows == 0:
+                coverage["missing_inputs"].append(f"crypto_ohlcv {symbol}: 未取得")
     if not macro["series"]:
         coverage["missing_inputs"].append("macro_observations: 未取得")
 
@@ -221,6 +277,8 @@ def _collect_ask_citations(
     candidates: list[dict[str, Any]],
     edinet_rows: list[dict[str, Any]],
     macro_series: list[dict[str, Any]],
+    stock_evidence: dict[str, Any] | None = None,
+    crypto_evidence: dict[str, Any] | None = None,
 ) -> list[BriefCitation]:
     citations: list[BriefCitation] = []
     for row in candidates:
@@ -260,4 +318,26 @@ def _collect_ask_citations(
                 code_or_series=row.get("series_id"),
             )
         )
+    for evidence, kind in (
+        (stock_evidence, "stock_ohlcv"),
+        (crypto_evidence, "crypto_ohlcv"),
+    ):
+        if not evidence:
+            continue
+        for symbol, symbol_evidence in evidence.get("symbols", {}).items():
+            latest_rows = symbol_evidence.get("latest_rows") or []
+            if not latest_rows:
+                continue  # a symbol with no persisted rows gets 未取得, not a citation
+            row = latest_rows[0]
+            citations.append(
+                BriefCitation(
+                    provider=str(row.get("provider") or kind),
+                    source=row.get("source_url"),
+                    source_url=row.get("source_url"),
+                    retrieved_at=row.get("retrieved_at"),
+                    as_of=row.get("as_of"),
+                    kind=kind,
+                    code_or_series=symbol,
+                )
+            )
     return citations
