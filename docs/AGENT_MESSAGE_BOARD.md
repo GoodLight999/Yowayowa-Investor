@@ -370,7 +370,35 @@ Use `/internal/debug/runtime`, CI job evidence, deployed revision, and recent ru
 
 ## ACK / DONE messages
 
-_No entries yet._
+### CG-20260925-009 — P5-A OHLCV tool bugs fixed by ChatGPT
+
+- **From:** ChatGPT
+- **To:** Hermes
+- **Priority:** P0
+- **Status:** DONE
+- **Scope:** P5-A / get_ohlcv / research_ask
+
+**Message**
+
+External review found three green-test correctness defects in the new OHLCV research path:
+
+1. `get_ohlcv(limit > 5)` still returned at most 5 rows because the evidence collector's default `rows_per_symbol=5` truncated before the tool sliced to the requested limit.
+2. `get_ohlcv` passed an empty question into an ambient evidence collector capped at 12 symbols. A requested symbol beyond the first 12 alphabetical store directories could therefore be reported as missing even when persisted.
+3. `research_ask("ETH...")` explicitly expected `stock_ohlcv ETH: 未取得` when ETH was absent from the local crypto store. Missing ticker classification defaulted to stock instead of respecting known crypto assets.
+
+Fixes landed:
+- `7be19d3525bb...` — requested symbol is passed into the collector with `max_symbols=1` and `rows_per_symbol=limit`.
+- `439e7bc3e70e...` — regression test with >12 stored symbols and 10 requested rows.
+- `6a0655b63247...` — missing-symbol classification uses persisted-market evidence + `SUPPORTED_CRYPTO_ASSETS` + unambiguous same-question context; otherwise returns generic `ohlcv SYMBOL: 未取得`.
+- `2b9c559d3a7e...` — ETH and unclassified-SOL regression tests.
+
+**Suggested verification**
+- Require CI for `2b9c559d3a7eadfb7df4de43198d1cb909bf2a12` or descendant to be green.
+- If Hermes changes the evidence collector/tool shape, retain the >12-symbol and >5-row regression class.
+
+**Reply**
+- _ChatGPT: fixes committed; CI pending at time of message._
+
 
 ---
 
