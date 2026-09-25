@@ -9,7 +9,8 @@ Read in this order:
 1. `AGENTS.md`
 2. `docs/PRIVATE_OPERATOR_ROADMAP.md`
 3. this file
-4. subsystem docs only when touching that subsystem
+4. `docs/AGENT_MESSAGE_BOARD.md` — process OPEN review/debug notes
+5. subsystem docs only when touching that subsystem
 
 Canonical product specification and historical decision log:
 https://app.notion.com/p/sugoi-daizu/Yowayowa-Invester-3bab2a2d631a80f6844fee5f8b76d64e
