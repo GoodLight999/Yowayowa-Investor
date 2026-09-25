@@ -1328,9 +1328,19 @@ class InvestmentResearchAgent:
         if market == "stock":
             from yowayowa.services.ohlcv_evidence import collect_stock_evidence
 
-            evidence = collect_stock_evidence(Path("./data/stock-ohlcv"), "")
+            evidence = collect_stock_evidence(
+                Path("./data/stock-ohlcv"),
+                symbol,
+                rows_per_symbol=limit,
+                max_symbols=1,
+            )
         else:
-            evidence = collect_crypto_evidence(Path("./data/crypto-ohlcv"), "")
+            evidence = collect_crypto_evidence(
+                Path("./data/crypto-ohlcv"),
+                symbol,
+                rows_per_symbol=limit,
+                max_symbols=1,
+            )
         symbol_evidence = evidence["symbols"].get(symbol)
         if symbol_evidence is None:
             return {
