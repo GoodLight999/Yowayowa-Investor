@@ -11,6 +11,7 @@ https://app.notion.com/p/sugoi-daizu/Yowayowa-Invester-3bab2a2d631a80f6844fee5f8
 
 The current completion roadmap is `docs/PRIVATE_OPERATOR_ROADMAP.md`.
 The current execution handoff is `docs/AUTONOMOUS_AGENT_HANDOFF.md`.
+The cross-agent review/debug message board is `docs/AGENT_MESSAGE_BOARD.md`.
 
 Hermes is the primary long-running autonomous development agent unless the operator explicitly changes that assignment. Do not wait for the user to micromanage implementation. Research, design, implement, test, debug, document, and verify autonomously whenever the product direction is already established.
 
@@ -82,6 +83,7 @@ Read these before changing the corresponding subsystem:
 - `docs/ESTAT.md` — Japanese government statistics integration
 - `docs/PRIVATE_OPERATOR_ROADMAP.md` — authoritative Private / Family Operator completion roadmap
 - `docs/AUTONOMOUS_AGENT_HANDOFF.md` — current Hermes execution queue, blockers, checkpoint, and handoff state
+- `docs/AGENT_MESSAGE_BOARD.md` — ChatGPT ↔ Hermes review/debug notes; read OPEN messages at the start of a fresh autonomous context
 
 ## Strategy preset rules
 
