@@ -26,6 +26,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from yowayowa.config import Settings
+from yowayowa.fx_models import SUPPORTED_CRYPTO_ASSETS
 from yowayowa.research_brief_models import BriefCitation, ResearchAskResponse
 from yowayowa.research_models import AIChatRequest, AIMessage, AIProviderConfig
 from yowayowa.services.ai_agent import InvestmentResearchAgent
@@ -246,18 +247,34 @@ def research_ask(
         coverage["missing_inputs"].append("screening_candidates: 未取得")
     if codes and not edinet_rows:
         coverage["missing_inputs"].append("edinet_daily_filings: 未取得")
+    stock_available = set(stock_evidence["available_symbols"])
+    crypto_available = set(crypto_evidence["available_symbols"])
+    stock_mentions = set(stock_evidence["mentioned"])
+    crypto_mentions = set(crypto_evidence["mentioned"])
     for symbol in ohlcv_mentioned:
-        # A ticker the question asked for that either store does not carry
-        # (or carries with zero rows) is 未取得 — never zero-filled. A ticker
-        # is stock-shaped by default; it counts for crypto only when the
-        # crypto store actually lists it.
-        stock_rows = stock_evidence["symbols"].get(symbol, {}).get("row_count", 0)
-        if stock_rows == 0:
-            coverage["missing_inputs"].append(f"stock_ohlcv {symbol}: 未取得")
-        if symbol in crypto_evidence["symbols"]:
-            crypto_rows = crypto_evidence["symbols"][symbol].get("row_count", 0)
+        # Classify missing symbols only when there is evidence for the asset
+        # class. Never silently call an unknown token a stock: BTC/ETH are
+        # known crypto assets even when their local store is empty, and an
+        # otherwise unknown token can inherit a single unambiguous market
+        # context from another symbol in the same question.
+        stock_known = symbol in stock_available
+        crypto_known = symbol in crypto_available or symbol in SUPPORTED_CRYPTO_ASSETS
+        if not stock_known and not crypto_known:
+            if stock_mentions and not crypto_mentions:
+                stock_known = True
+            elif crypto_mentions and not stock_mentions:
+                crypto_known = True
+
+        if stock_known:
+            stock_rows = stock_evidence["symbols"].get(symbol, {}).get("row_count", 0)
+            if stock_rows == 0:
+                coverage["missing_inputs"].append(f"stock_ohlcv {symbol}: 未取得")
+        if crypto_known:
+            crypto_rows = crypto_evidence["symbols"].get(symbol, {}).get("row_count", 0)
             if crypto_rows == 0:
                 coverage["missing_inputs"].append(f"crypto_ohlcv {symbol}: 未取得")
+        if not stock_known and not crypto_known:
+            coverage["missing_inputs"].append(f"ohlcv {symbol}: 未取得")
     if not macro["series"]:
         coverage["missing_inputs"].append("macro_observations: 未取得")
 
