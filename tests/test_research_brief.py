@@ -705,14 +705,39 @@ def test_research_ask_missing_crypto_symbol_records_coverage(tmp_path: Path) -> 
         engine.dispose()
 
     assert response.coverage["crypto_ohlcv_rows"] == 2  # BTC persisted, ambient
-    # ETH is asked but neither store carries it: stock-shaped by default, and
-    # the crypto store does not list it either.
-    assert "stock_ohlcv ETH: 未取得" in response.coverage["missing_inputs"]
-    assert "crypto_ohlcv ETH: 未取得" not in response.coverage["missing_inputs"]
+    # ETH is a supported crypto asset even when its local store is empty.
+    assert "crypto_ohlcv ETH: 未取得" in response.coverage["missing_inputs"]
+    assert "stock_ohlcv ETH: 未取得" not in response.coverage["missing_inputs"]
     # BTC exists in the store: ambient rows are cited with full provenance.
     crypto_citations = [c for c in response.citations if c.kind == "crypto_ohlcv"]
     assert [c.code_or_series for c in crypto_citations] == ["BTC"]
     assert "stock_ohlcv_rows" in response.coverage
+
+
+def test_research_ask_unknown_ticker_does_not_assume_stock(tmp_path: Path) -> None:
+    """An unclassified missing ticker remains generic instead of being mislabeled."""
+
+    _write_macro_files(tmp_path)
+    engine = _memory_engine()
+    try:
+        settings = Settings(database_url="sqlite:///:memory:")
+        with Session(engine, expire_on_commit=False) as session:
+            response = research_ask(
+                "SOLの日足を持ってる?",
+                session,
+                settings,
+                edinet_path=EDINET_EMPTY,
+                macro_store=default_macro_store(tmp_path),
+                stock_store=tmp_path / "absent-stock",
+                crypto_store=tmp_path / "absent-crypto",
+                agent_factory=lambda s, sess: FakeAgent(s, sess),
+            )
+    finally:
+        engine.dispose()
+
+    assert "ohlcv SOL: 未取得" in response.coverage["missing_inputs"]
+    assert "stock_ohlcv SOL: 未取得" not in response.coverage["missing_inputs"]
+    assert "crypto_ohlcv SOL: 未取得" not in response.coverage["missing_inputs"]
 
 
 def test_research_ask_existing_crypto_symbol_matches(tmp_path: Path) -> None:
