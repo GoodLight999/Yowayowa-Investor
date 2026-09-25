@@ -216,12 +216,69 @@ def _write_macro_files(root: Path) -> None:
     )
 
 
+def _write_ohlcv_files(root: Path) -> None:
+    """Raw-dict OHLCV fixtures: 3 stock rows (AAPL) + 2 crypto rows (BTC).
+
+    Raw dicts are enough — the stores' ``read`` only JSON-parses lines.
+    """
+
+    stock_dir = root / "stock-ohlcv" / "AAPL"
+    stock_dir.mkdir(parents=True, exist_ok=True)
+    stock_rows = []
+    for index, day in enumerate(["2026-09-22", "2026-09-23", "2026-09-24"]):
+        stock_rows.append(
+            {
+                "symbol": "AAPL",
+                "interval": "1d",
+                "currency": "USD",
+                "provider": "alpaca",
+                "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=AAPL",
+                "license_class": "personal_only",
+                "retrieved_at": "2026-09-24T15:25:05Z",
+                "as_of": f"{day}T04:00:00Z",
+                "open": 335.0 + index,
+                "high": 339.0 + index,
+                "low": 332.0 + index,
+                "close": 336.0 + index,
+                "volume": 86726840.0,
+            }
+        )
+    (stock_dir / "ohlcv.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in stock_rows), encoding="utf-8"
+    )
+    crypto_dir = root / "crypto-ohlcv" / "BTC"
+    crypto_dir.mkdir(parents=True, exist_ok=True)
+    crypto_rows = []
+    for index, day in enumerate(["2026-09-23", "2026-09-24"]):
+        crypto_rows.append(
+            {
+                "symbol": "BTC",
+                "interval": "1d",
+                "currency": "USD",
+                "provider": "coingecko",
+                "source_url": "https://api.coingecko.com/api/v3/coins/bitcoin/ohlc",
+                "license_class": "personal_only",
+                "retrieved_at": "2026-09-24T15:25:05Z",
+                "as_of": f"{day}T00:00:00Z",
+                "open": 95000.0 + index,
+                "high": 97000.0 + index,
+                "low": 94000.0 + index,
+                "close": 96000.0 + index,
+                "volume": None,
+            }
+        )
+    (crypto_dir / "ohlcv.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in crypto_rows), encoding="utf-8"
+    )
+
+
 def _service(
     engine,
     tmp_path: Path,
     *,
     edinet_path: Path = EDINET_SAMPLE,
     agent_factory: Any = FakeAgent,
+    with_ohlcv: bool = False,
 ) -> MorningBriefService:
     settings = Settings(database_url="sqlite:///:memory:")
     with Session(engine, expire_on_commit=False) as session:
@@ -230,6 +287,10 @@ def _service(
             session,
             edinet_path=edinet_path,
             macro_store=default_macro_store(tmp_path),
+            stock_ohlcv_root=tmp_path / "stock-ohlcv" if with_ohlcv else tmp_path / "absent-stock",
+            crypto_ohlcv_root=(
+                tmp_path / "crypto-ohlcv" if with_ohlcv else tmp_path / "absent-crypto"
+            ),
             agent_factory=agent_factory,
         )
 
@@ -346,10 +407,11 @@ def test_assemble_macro_summary_flags_announced_today(tmp_path: Path) -> None:
 
 def test_compose_brief_uses_strict_prompt_and_records_coverage(tmp_path: Path) -> None:
     _write_macro_files(tmp_path)
+    _write_ohlcv_files(tmp_path)
     engine = _memory_engine()
     try:
         _seed_screening(engine)
-        service = _service(engine, tmp_path)
+        service = _service(engine, tmp_path, with_ohlcv=True)
         brief = service.compose_brief(run_date=RUN_DATE, detected_at=NOW)
     finally:
         engine.dispose()
@@ -357,35 +419,48 @@ def test_compose_brief_uses_strict_prompt_and_records_coverage(tmp_path: Path) -
     assert isinstance(brief, ResearchBrief)
     assert brief.run_date == RUN_DATE
     assert brief.sections == list(BRIEF_SECTIONS)
-    assert len(brief.sections) == 5
+    assert len(brief.sections) == 6
     assert brief.provider == "openai_compatible"
     assert brief.model == "fake-model"
 
     agent = FakeAgent.instances[-1]
     prompt = agent.requests[-1].messages[0].content
-    # Strict prompt discipline: five sections, citation requirement,
+    # Strict prompt discipline: six sections, citation requirement,
     # fabrication ban, 未取得 rule.
-    assert "5セクション" in prompt
+    assert "6セクション" in prompt
     assert "捏造禁止" in prompt
     assert "未取得" in prompt
     assert "EVIDENCE JSON" in prompt
     assert "S100TEST1" in prompt  # evidence actually embedded
     assert "credit_short_surge" in prompt
     assert "CPIAUCSL" in prompt
+    # OHLCV evidence packet embedded: symbols + row counts.
+    assert "AAPL" in prompt
+    assert "BTC" in prompt
+    assert "row_count" in prompt
 
-    # Coverage records every family; EDINET+credit+macro all present here.
+    # Coverage records every family; EDINET+credit+macro+prices all present.
     coverage = brief.coverage
     assert coverage["edinet"]["row_count"] == 12
     assert coverage["credit_margin"]["credit_candidates"] >= 1
     assert coverage["macro"]["series_count"] >= 3
+    assert coverage["prices"]["stock_row_count"] == 3
+    assert coverage["prices"]["crypto_row_count"] == 2
     assert coverage["missing_inputs"] == []
 
     # Citations carry provenance for every family.
     kinds = {citation.kind for citation in brief.citations}
-    assert {"edinet_filing", "credit_margin", "macro"} <= kinds
+    assert {"edinet_filing", "credit_margin", "macro", "stock_ohlcv", "crypto_ohlcv"} <= kinds
     macro_citation = next(c for c in brief.citations if c.kind == "macro")
     assert macro_citation.source_url
     assert macro_citation.retrieved_at
+    stock_citation = next(c for c in brief.citations if c.kind == "stock_ohlcv")
+    assert stock_citation.code_or_series == "AAPL"
+    assert stock_citation.provider == "alpaca"
+    assert stock_citation.source_url
+    crypto_citation = next(c for c in brief.citations if c.kind == "crypto_ohlcv")
+    assert crypto_citation.code_or_series == "BTC"
+    assert crypto_citation.provider == "coingecko"
 
     # Provenance: credit candidates are personal-only -> brief is personal-only.
     assert brief.provenance.license_class == LicenseClass.PERSONAL_ONLY
@@ -405,8 +480,12 @@ def test_compose_brief_missing_inputs_rendered_as_coverage(tmp_path: Path) -> No
     assert "edinet" in missing or "edinet_signal" in missing
     assert "credit_margin" in missing
     assert "macro" in missing
+    assert "stock_ohlcv: 未取得" in brief.coverage["missing_inputs"]
+    assert "crypto_ohlcv: 未取得" in brief.coverage["missing_inputs"]
     assert brief.coverage["macro"]["reason"] == "no_macro_observation_files"
     assert brief.coverage["edinet"]["row_count"] == 0
+    assert brief.coverage["prices"]["stock_row_count"] == 0
+    assert brief.coverage["prices"]["crypto_row_count"] == 0
 
 
 # --------------------------------------------------------------- persistence
@@ -499,6 +578,7 @@ def test_cli_default_sender_runs_hermes_send(
 
 def test_research_ask_collects_deterministic_evidence(tmp_path: Path) -> None:
     _write_macro_files(tmp_path)
+    _write_ohlcv_files(tmp_path)
     engine = _memory_engine()
     try:
         _seed_screening(engine)
@@ -514,6 +594,8 @@ def test_research_ask_collects_deterministic_evidence(tmp_path: Path) -> None:
                 settings,
                 edinet_path=EDINET_SAMPLE,
                 macro_store=default_macro_store(tmp_path),
+                stock_store=tmp_path / "stock-ohlcv",
+                crypto_store=tmp_path / "crypto-ohlcv",
                 agent_factory=factory,
             )
     finally:
@@ -525,20 +607,28 @@ def test_research_ask_collects_deterministic_evidence(tmp_path: Path) -> None:
     # 11115 appears in the EDINET fixture (S100TEST1 訂正有価証券報告書).
     assert response.coverage["edinet_filings_matched"] >= 1
     assert response.coverage["macro_series"] >= 3
+    # Ambient OHLCV evidence (no symbol mentioned -> 0 missing-input rows).
+    assert response.coverage["stock_ohlcv_rows"] == 3
+    assert response.coverage["crypto_ohlcv_rows"] == 2
 
     # Deterministic tool trace runs before the agent call.
-    tools = [entry["tool"] for entry in response.tool_trace[:4]]
+    tools = [entry["tool"] for entry in response.tool_trace[:6]]
     assert tools[0] == "read_screening_candidates"
     assert "edinet_daily_lookup" in tools
+    assert "stock_ohlcv_lookup" in tools
+    assert "crypto_ohlcv_lookup" in tools
     assert "macro_latest_by_series" in tools
     by_tool = {entry["tool"]: entry for entry in response.tool_trace}
     assert by_tool["edinet_daily_lookup"]["matched"] >= 1
+    assert by_tool["stock_ohlcv_lookup"]["matched"] == 3
+    assert by_tool["crypto_ohlcv_lookup"]["matched"] == 2
     assert by_tool["macro_latest_by_series"]["matched"] >= 3
 
     # Evidence packet the agent saw mentions the code's rows.
     agent = FakeAgent.instances[-1]
     prompt = agent.requests[-1].messages[0].content
     assert "6758" in prompt
+    assert "AAPL" in prompt  # OHLCV evidence embedded
     assert "自由計算" in prompt  # arithmetic ban discipline
     assert "未取得" in prompt
 
@@ -546,6 +636,117 @@ def test_research_ask_collects_deterministic_evidence(tmp_path: Path) -> None:
     kinds = {citation.kind for citation in response.citations}
     assert "edinet_filing" in kinds
     assert "edinet_filing" in kinds and "macro" in kinds
+    assert "stock_ohlcv" in kinds
+    assert "crypto_ohlcv" in kinds
+
+
+def test_research_ask_mentions_stock_symbol_and_reports_missing(tmp_path: Path) -> None:
+    """AAPL in the question matches the store; TSLA renders 未取得."""
+
+    _write_macro_files(tmp_path)
+    _write_ohlcv_files(tmp_path)
+    engine = _memory_engine()
+    try:
+        settings = Settings(database_url="sqlite:///:memory:")
+        with Session(engine, expire_on_commit=False) as session:
+            response = research_ask(
+                "AAPLの保存済み日足は何日分? TSLAは持ってる?",
+                session,
+                settings,
+                edinet_path=EDINET_EMPTY,
+                macro_store=default_macro_store(tmp_path),
+                stock_store=tmp_path / "stock-ohlcv",
+                crypto_store=tmp_path / "crypto-ohlcv",
+                agent_factory=lambda s, sess: FakeAgent(s, sess),
+            )
+    finally:
+        engine.dispose()
+
+    # Evidence the agent saw contains AAPL rows with row_count.
+    agent = FakeAgent.instances[-1]
+    prompt = agent.requests[-1].messages[0].content
+    assert "AAPL" in prompt
+    assert "row_count" in prompt
+    assert "TSLA" in prompt  # mentioned-but-missing symbol listed in available_symbols
+
+    by_tool = {entry["tool"]: entry for entry in response.tool_trace}
+    assert by_tool["stock_ohlcv_lookup"]["arguments"]["mentioned"] == ["AAPL"]
+    assert by_tool["stock_ohlcv_lookup"]["matched"] == 3
+
+    assert response.coverage["stock_ohlcv_rows"] == 3
+    assert "stock_ohlcv TSLA: 未取得" in response.coverage["missing_inputs"]
+
+    stock_citations = [c for c in response.citations if c.kind == "stock_ohlcv"]
+    assert len(stock_citations) == 1
+    assert stock_citations[0].code_or_series == "AAPL"
+    assert stock_citations[0].provider == "alpaca"
+
+
+def test_research_ask_missing_crypto_symbol_records_coverage(tmp_path: Path) -> None:
+    """A mentioned crypto symbol that is not persisted renders 未取得."""
+
+    _write_macro_files(tmp_path)
+    _write_ohlcv_files(tmp_path)
+    engine = _memory_engine()
+    try:
+        settings = Settings(database_url="sqlite:///:memory:")
+        with Session(engine, expire_on_commit=False) as session:
+            response = research_ask(
+                "ETHの保存済み日足を教えて",
+                session,
+                settings,
+                edinet_path=EDINET_EMPTY,
+                macro_store=default_macro_store(tmp_path),
+                stock_store=tmp_path / "stock-ohlcv",
+                crypto_store=tmp_path / "crypto-ohlcv",
+                agent_factory=lambda s, sess: FakeAgent(s, sess),
+            )
+    finally:
+        engine.dispose()
+
+    assert response.coverage["crypto_ohlcv_rows"] == 2  # BTC persisted, ambient
+    # ETH is asked but neither store carries it: stock-shaped by default, and
+    # the crypto store does not list it either.
+    assert "stock_ohlcv ETH: 未取得" in response.coverage["missing_inputs"]
+    assert "crypto_ohlcv ETH: 未取得" not in response.coverage["missing_inputs"]
+    # BTC exists in the store: ambient rows are cited with full provenance.
+    crypto_citations = [c for c in response.citations if c.kind == "crypto_ohlcv"]
+    assert [c.code_or_series for c in crypto_citations] == ["BTC"]
+    assert "stock_ohlcv_rows" in response.coverage
+
+
+def test_research_ask_existing_crypto_symbol_matches(tmp_path: Path) -> None:
+    """A persisted crypto symbol asked by name is mentioned + cited."""
+
+    _write_macro_files(tmp_path)
+    _write_ohlcv_files(tmp_path)
+    engine = _memory_engine()
+    try:
+        settings = Settings(database_url="sqlite:///:memory:")
+        with Session(engine, expire_on_commit=False) as session:
+            response = research_ask(
+                "BTCの保存済み日足は何日分?",
+                session,
+                settings,
+                edinet_path=EDINET_EMPTY,
+                macro_store=default_macro_store(tmp_path),
+                stock_store=tmp_path / "stock-ohlcv",
+                crypto_store=tmp_path / "crypto-ohlcv",
+                agent_factory=lambda s, sess: FakeAgent(s, sess),
+            )
+    finally:
+        engine.dispose()
+
+    by_tool = {entry["tool"]: entry for entry in response.tool_trace}
+    assert by_tool["crypto_ohlcv_lookup"]["arguments"]["mentioned"] == ["BTC"]
+    assert by_tool["crypto_ohlcv_lookup"]["matched"] == 2
+    assert response.coverage["crypto_ohlcv_rows"] == 2
+    assert "crypto_ohlcv BTC: 未取得" not in response.coverage["missing_inputs"]
+    crypto_citations = [c for c in response.citations if c.kind == "crypto_ohlcv"]
+    assert len(crypto_citations) == 1
+    assert crypto_citations[0].code_or_series == "BTC"
+    assert crypto_citations[0].provider == "coingecko"
+    assert crypto_citations[0].source_url
 
 
 def test_research_ask_missing_evidence_records_coverage(tmp_path: Path) -> None:
@@ -559,6 +760,8 @@ def test_research_ask_missing_evidence_records_coverage(tmp_path: Path) -> None:
                 settings,
                 edinet_path=EDINET_EMPTY,
                 macro_store=default_macro_store(tmp_path),
+                stock_store=tmp_path / "absent-stock",
+                crypto_store=tmp_path / "absent-crypto",
                 agent_factory=lambda s, sess: FakeAgent(s, sess),
             )
     finally:
@@ -567,6 +770,9 @@ def test_research_ask_missing_evidence_records_coverage(tmp_path: Path) -> None:
     assert "screening_candidates: 未取得" in response.coverage["missing_inputs"]
     assert "edinet_daily_filings: 未取得" in response.coverage["missing_inputs"]
     assert "macro_observations: 未取得" in response.coverage["missing_inputs"]
+    # 7203 is a JPX code, never a stock ticker: absent store adds no OHLCV row.
+    assert response.coverage["stock_ohlcv_rows"] == 0
+    assert response.coverage["crypto_ohlcv_rows"] == 0
 
 
 # ------------------------------------------------------------------------- API
@@ -633,7 +839,7 @@ def test_api_ask_and_brief_roundtrip(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         assert brief_response.status_code == 200, brief_response.text
         brief_payload = brief_response.json()
         assert brief_payload["persisted"] == {"inserted": 1, "updated": 0}
-        assert len(brief_payload["brief"]["sections"]) == 5
+        assert len(brief_payload["brief"]["sections"]) == 6
         assert brief_payload["brief"]["run_date"] == RUN_DATE.isoformat()
 
         latest = client.get("/v1/research/brief")
