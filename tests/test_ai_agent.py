@@ -507,3 +507,55 @@ def test_get_ohlcv_tool_reads_persisted_stores(
     missing = agent._tool_ohlcv({"market": "crypto", "symbol": "DOGE"})
     assert missing["row_count"] == 0
     assert missing["rows"] == []
+
+
+def test_get_ohlcv_tool_honors_limit_and_finds_symbol_beyond_ambient_cap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Requested symbols must not be hidden by the evidence collector's ambient cap."""
+
+    stock_root = tmp_path / "stock-ohlcv"
+    # More than the collector's ambient 12-symbol cap. Under the old tool
+    # implementation (question=""), ZZZZ was never selected and appeared missing.
+    for suffix in "ABCDEFGHIJKLM":
+        (stock_root / f"AA{suffix}").mkdir(parents=True)
+
+    target = stock_root / "ZZZZ"
+    target.mkdir(parents=True)
+    rows = [
+        {
+            "symbol": "ZZZZ",
+            "currency": "USD",
+            "provider": "alpaca",
+            "as_of": f"2026-09-{day:02d}T04:00:00Z",
+            "open": float(day),
+            "high": float(day) + 1,
+            "low": float(day) - 1,
+            "close": float(day) + 0.5,
+            "volume": 100.0 + day,
+            "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=ZZZZ",
+            "retrieved_at": "2026-09-25T00:00:00Z",
+        }
+        for day in range(1, 11)
+    ]
+    (target / "ohlcv.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+
+    import yowayowa.services.ohlcv_evidence as ohlcv_module
+
+    real_stock = ohlcv_module.collect_stock_evidence
+    monkeypatch.setattr(
+        ohlcv_module,
+        "collect_stock_evidence",
+        lambda root, question, **kwargs: real_stock(stock_root, question, **kwargs),
+    )
+
+    agent = InvestmentResearchAgent(Settings(database_url="sqlite:///:memory:"), Mock())
+    result = agent._tool_ohlcv({"market": "stock", "symbol": "ZZZZ", "limit": 10})
+
+    assert result["row_count"] == 10
+    assert len(result["rows"]) == 10
+    assert result["rows"][0]["as_of"] == "2026-09-10T04:00:00Z"
+    assert result["rows"][-1]["as_of"] == "2026-09-01T04:00:00Z"
