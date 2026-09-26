@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}{{ t('screener.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-head"><h1>{{ t('screener.title') }}</h1></section>
+{% if app_mode == 'personal' %}
+<section class="panel">
+  <div class="section-heading"><h2>{{ x('discover.preset') }}</h2><span id="screen-preset-status" class="muted">—</span></div>
+  <div class="toolbar">
+    <select id="screen-preset-select" aria-label="{{ x('discover.preset') }}"><option value="">—</option></select>
+    <input id="screen-preset-name" maxlength="100" placeholder="{{ x('discover.preset') }}">
+    <button id="screen-preset-save" class="ghost" type="button">{{ '保存' if locale == 'ja' else 'Save' }}</button>
+    <button id="screen-preset-load" class="ghost" type="button">{{ '読込' if locale == 'ja' else 'Load' }}</button>
+    <button id="screen-preset-delete" class="ghost" type="button">{{ '削除' if locale == 'ja' else 'Delete' }}</button>
+  </div>
+</section>
+{% endif %}
+<section class="panel" style="margin-top:12px">
+  <form id="screen-form" class="screen-form">
+    <div class="field">
+      <label for="screen-symbols">{{ t('screener.universe') }}</label>
+      <textarea id="screen-symbols" rows="2">AAPL, MSFT, 7203.T</textarea>
+      <div class="field-actions">
+        <small>{{ t('screener.max_symbols') }}</small>
+        {% if app_mode == 'personal' %}<button id="screen-use-watchlist" class="ghost" type="button">{{ t('compare.use_watchlist') }}</button>{% endif %}
+      </div>
+    </div>
+    <div id="screen-filters" class="screen-filters">
+      <div class="filter-row screen-filter-row">
+        <select id="filter-metric" class="screen-filter-metric" aria-label="{{ t('common.metric') }}">
+          <optgroup label="{{ x('screener.group.growth') }}">
+            <option value="revenue_growth_yoy">{{ t('metric.revenue_growth_yoy') }}</option>
+            <option value="gross_profit_growth_yoy">{{ x('metric.gross_profit_growth_yoy') }}</option>
+            <option value="operating_income_growth_yoy">{{ x('metric.operating_income_growth_yoy') }}</option>
+            <option value="net_income_growth_yoy">{{ x('metric.net_income_growth_yoy') }}</option>
+            <option value="eps_growth_yoy">{{ x('metric.eps_growth_yoy') }}</option>
+            <option value="operating_cash_flow_growth_yoy">{{ x('metric.operating_cash_flow_growth_yoy') }}</option>
+          </optgroup>
+          <optgroup label="{{ x('screener.group.profitability') }}">
+            <option value="gross_margin">{{ t('metric.gross_margin') }}</option>
+            <option value="operating_margin">{{ t('metric.operating_margin') }}</option>
+            <option value="net_margin">{{ t('metric.net_margin') }}</option>
+            <option value="operating_cash_flow_margin">{{ x('metric.operating_cash_flow_margin') }}</option>
+            <option value="free_cash_flow_margin">{{ x('metric.free_cash_flow_margin') }}</option>
+          </optgroup>
+          <optgroup label="{{ x('screener.group.efficiency') }}">
+            <option value="return_on_assets">{{ t('metric.return_on_assets') }}</option>
+            <option value="return_on_equity">{{ x('metric.return_on_equity') }}</option>
+            <option value="asset_turnover">{{ x('metric.asset_turnover') }}</option>
+            <option value="capex_to_revenue">{{ x('metric.capex_to_revenue') }}</option>
+          </optgroup>
+          <optgroup label="{{ x('screener.group.liquidity') }}">
+            <option value="current_ratio">{{ x('metric.current_ratio') }}</option>
+            <option value="cash_ratio">{{ x('metric.cash_ratio') }}</option>
+            <option value="liabilities_to_equity">{{ t('metric.liabilities_to_equity') }}</option>
+            <option value="equity_to_assets">{{ x('metric.equity_to_assets') }}</option>
+            <option value="liabilities_to_assets">{{ x('metric.liabilities_to_assets') }}</option>
+            <option value="cash_to_assets">{{ x('metric.cash_to_assets') }}</option>
+          </optgroup>
+          <optgroup label="{{ x('screener.group.cashflow') }}">
+            <option value="free_cash_flow">{{ t('metric.free_cash_flow') }}</option>
+            <option value="working_capital">{{ x('metric.working_capital') }}</option>
+          </optgroup>
+          <optgroup label="{{ x('screener.group.absolute') }}">
+            <option value="revenue">{{ t('metric.revenue') }}</option>
+            <option value="gross_profit">{{ t('metric.gross_profit') }}</option>
+            <option value="operating_income">{{ t('metric.operating_income') }}</option>
+            <option value="net_income">{{ t('metric.net_income') }}</option>
+            <option value="operating_cash_flow">{{ t('metric.operating_cash_flow') }}</option>
+            <option value="current_assets">{{ x('metric.current_assets') }}</option>
+            <option value="current_liabilities">{{ x('metric.current_liabilities') }}</option>
+          </optgroup>
+        </select>
+        <select id="filter-operator" class="screen-filter-operator"><option value="gt">&gt;</option><option value="gte">≥</option><option value="lt">&lt;</option><option value="lte">≤</option><option value="eq">=</option></select>
+        <input id="filter-value" class="screen-filter-value" type="number" step="any" value="0">
+        <button class="ghost filter-remove" type="button" disabled>{{ t('common.remove') }}</button>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button id="add-filter" class="ghost" type="button">+ {{ t('common.add') }}</button>
+      <button class="primary" type="submit">{{ t('common.run') }}</button>
+    </div>
+  </form>
+</section>
+<section class="panel" style="margin-top:12px">
+  <div class="section-heading"><h2>{{ t('common.results') }}</h2></div>
+  <div id="screen-results" class="table-wrap muted" style="padding:12px">{{ t('screener.prompt') }}</div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/screener.js"></script>{% endblock %}

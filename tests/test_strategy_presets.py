@@ -1,0 +1,380 @@
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+import pytest
+from starlette.testclient import TestClient
+
+from yowayowa.domain import (
+    Fundamentals,
+    LicenseClass,
+    MetricPoint,
+    MetricSeries,
+    Provenance,
+)
+from yowayowa.services.strategy_presets import (
+    KIYOHARA_GLOBAL_ID,
+    evaluate_kiyohara_candidate,
+    get_builtin_strategy,
+)
+from yowayowa.strategy_models import StrategyBalanceSheetSupplement, StrategyCandidateInput
+
+
+def _provenance(source: str = "fixture statements") -> Provenance:
+    return Provenance(
+        provider="fixture",
+        source=source,
+        license_class=LicenseClass.OFFICIAL_PUBLIC,
+        retrieved_at=datetime(2026, 8, 25, tzinfo=UTC),
+        as_of=date(2025, 12, 31),
+    )
+
+
+def _fundamentals(symbol: str = "TEST") -> Fundamentals:
+    provenance = _provenance()
+
+    def series(key: str, value: float) -> MetricSeries:
+        return MetricSeries(
+            key=key,
+            label=key,
+            points=[
+                MetricPoint(
+                    period_start=date(2025, 1, 1),
+                    period_end=date(2025, 12, 31),
+                    fiscal_year=2025,
+                    fiscal_period="FY",
+                    value=Decimal(str(value)),
+                    unit="USD",
+                )
+            ],
+        )
+
+    return Fundamentals(
+        symbol=symbol,
+        cik="0000000001",
+        company_name=f"{symbol} Corp",
+        metrics={
+            "current_assets": series("current_assets", 120),
+            "liabilities": series("liabilities", 40),
+            "revenue": series("revenue", 100),
+            "net_income": series("net_income", 10),
+            "operating_cash_flow": series("operating_cash_flow", 15),
+            "capex": series("capex", 5),
+            "equity": series("equity", 60),
+        },
+        provenance=provenance,
+    )
+
+
+def test_kiyohara_builtin_is_global_regional_workflow_not_fixed_jpy_cap() -> None:
+    strategy = get_builtin_strategy(KIYOHARA_GLOBAL_ID)
+
+    assert strategy.name_ja == "清原達郎モード"
+    assert strategy.default_region == "jp"
+    assert strategy.region_required is True
+    assert strategy.discovery.sort_field == "intradaymarketcap"
+    assert strategy.discovery.sort_ascending is True
+    assert not any(item.field == "region" for item in strategy.discovery.filters)
+    assert not any(
+        item.field == "intradaymarketcap" and item.operator in {"lt", "lte"}
+        for item in strategy.discovery.filters
+    )
+    assert "yowayowa_conservative_net_cash_ratio" in strategy.research_metrics
+    assert any("net-cash" in source.note.lower() for source in strategy.sources)
+
+
+def test_kiyohara_formula_uses_seventy_percent_of_investment_securities() -> None:
+    result = evaluate_kiyohara_candidate(
+        _fundamentals(),
+        StrategyCandidateInput(
+            symbol="TEST",
+            market_cap=100,
+            pe_ratio=10,
+            investment_securities=30,
+        ),
+    )
+
+    assert result.yowayowa_conservative_net_cash == 80
+    assert result.yowayowa_conservative_net_cash_ratio == 0.8
+    assert result.net_cash == 101
+    assert result.net_cash_ratio == 1.01
+    assert result.deep_value_net_cash is True
+    assert result.cash_neutral_pe is None
+    assert result.net_cash_ratio_is_lower_bound is False
+    assert result.basis == "kiyohara_formula_with_investment_securities"
+
+
+def test_edinet_supplement_replaces_all_three_balance_sheet_inputs_together() -> None:
+    supplement = StrategyBalanceSheetSupplement(
+        current_assets=200,
+        liabilities=50,
+        investment_securities=50,
+        provenance=_provenance("EDINET annual filing"),
+    )
+    result = evaluate_kiyohara_candidate(
+        _fundamentals("7203.T"),
+        StrategyCandidateInput(symbol="7203.T", market_cap=250, pe_ratio=10),
+        supplement,
+    )
+
+    assert result.current_assets == 200
+    assert result.liabilities == 50
+    assert result.investment_securities == 50
+    assert result.yowayowa_conservative_net_cash_ratio == pytest.approx(0.6)
+    assert result.net_cash_ratio == pytest.approx(0.74)
+    assert result.cash_neutral_pe == pytest.approx(2.6)
+    assert result.net_cash_ratio_is_lower_bound is False
+    assert result.supplemental_provenance[0].source == "EDINET annual filing"
+
+
+def test_supplement_never_mixes_candidate_investment_value_with_provider_balance_sheet() -> None:
+    supplement = StrategyBalanceSheetSupplement(
+        current_assets=120,
+        liabilities=40,
+        investment_securities=None,
+        provenance=_provenance("same-filing provider balance sheet"),
+    )
+    result = evaluate_kiyohara_candidate(
+        _fundamentals(),
+        StrategyCandidateInput(
+            symbol="TEST",
+            market_cap=100,
+            pe_ratio=10,
+            investment_securities=999,
+        ),
+        supplement,
+    )
+
+    assert result.current_assets == 120
+    assert result.liabilities == 40
+    assert result.investment_securities is None
+    assert result.net_cash_ratio == pytest.approx(0.8)
+    assert result.net_cash_ratio_is_lower_bound is True
+    assert result.basis == "conservative_floor_ex_investment_securities"
+
+
+def test_missing_investment_securities_produces_conservative_bounds() -> None:
+    result = evaluate_kiyohara_candidate(
+        _fundamentals(),
+        StrategyCandidateInput(symbol="TEST", market_cap=100, pe_ratio=10),
+    )
+
+    assert result.yowayowa_conservative_net_cash == 80
+    assert result.yowayowa_conservative_net_cash_ratio == pytest.approx(0.8)
+    assert result.net_cash == 80
+    assert result.net_cash_ratio == pytest.approx(0.8)
+    assert result.net_cash_ratio_is_lower_bound is True
+    assert result.cash_neutral_pe == pytest.approx(2)
+    assert result.cash_neutral_pe_is_upper_bound is True
+    assert result.basis == "conservative_floor_ex_investment_securities"
+    assert "investment_securities" in result.missing
+
+
+def test_strategy_api_returns_partial_results_and_preserves_errors(monkeypatch) -> None:
+    from yowayowa.api import fundamentals_routes
+    from yowayowa.api.app import app
+
+    def fake_fundamentals(symbol: str) -> Fundamentals:
+        if symbol == "MISS":
+            raise LookupError("fixture unavailable")
+        return _fundamentals(symbol)
+
+    monkeypatch.setattr(fundamentals_routes, "_fundamentals", fake_fundamentals)
+
+    with TestClient(app) as client:
+        catalog = client.get("/v1/strategy-presets")
+        assert catalog.status_code == 200
+        assert catalog.json()[0]["id"] == KIYOHARA_GLOBAL_ID
+
+        response = client.post(
+            f"/v1/strategy-presets/{KIYOHARA_GLOBAL_ID}/evaluate",
+            json={
+                "candidates": [
+                    {"symbol": "GOOD", "market_cap": 100, "pe_ratio": 10},
+                    {"symbol": "MISS", "market_cap": 100, "pe_ratio": 10},
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["symbol"] for item in payload["evaluations"]] == ["GOOD"]
+    assert payload["evaluations"][0]["yowayowa_conservative_net_cash_ratio"] == pytest.approx(0.8)
+    assert "MISS" in payload["errors"]
+
+
+def test_strategy_api_uses_same_filing_sec_noncurrent_marketable_securities(monkeypatch) -> None:
+    from yowayowa.api import fundamentals_routes
+    from yowayowa.api.app import app
+
+    accession = "0000000000-26-000001"
+
+    def instant_series(key: str, value: float) -> MetricSeries:
+        return MetricSeries(
+            key=key,
+            label=key,
+            points=[
+                MetricPoint(
+                    period_end=date(2026, 6, 30),
+                    fiscal_year=2026,
+                    fiscal_period="Q2",
+                    value=Decimal(str(value)),
+                    unit="USD",
+                    accession=accession,
+                    filed=date(2026, 8, 1),
+                    form="10-Q",
+                )
+            ],
+        )
+
+    facts = _fundamentals("US")
+    facts = facts.model_copy(
+        update={
+            "metrics": {
+                **facts.metrics,
+                "current_assets": instant_series("current_assets", 120),
+                "liabilities": instant_series("liabilities", 40),
+                "marketable_securities_noncurrent": instant_series(
+                    "marketable_securities_noncurrent",
+                    30,
+                ),
+            },
+            "provenance": Provenance(
+                provider="sec-edgar",
+                source="SEC EDGAR Company Facts",
+                source_url="https://data.sec.gov/api/xbrl/companyfacts/CIK0000000001.json",
+                license_class=LicenseClass.OFFICIAL_PUBLIC,
+                retrieved_at=datetime(2026, 8, 2, tzinfo=UTC),
+                as_of=date(2026, 6, 30),
+            ),
+        }
+    )
+    monkeypatch.setattr(fundamentals_routes, "_fundamentals", lambda symbol: facts)
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/v1/strategy-presets/{KIYOHARA_GLOBAL_ID}/evaluate",
+            json={
+                "candidates": [
+                    {"symbol": "US", "market_cap": 100, "pe_ratio": 10},
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()["evaluations"][0]
+    assert result["current_assets"] == 120
+    assert result["liabilities"] == 40
+    assert result["investment_securities"] == 30
+    assert result["net_cash_ratio"] == pytest.approx(1.01)
+    assert result["net_cash_ratio_is_lower_bound"] is False
+    assert result["basis"] == "kiyohara_formula_with_investment_securities"
+    assert result["supplemental_provenance"][0]["provider"] == "sec-edgar"
+
+
+def test_strategy_api_uses_period_aligned_yahoo_conservative_bound(monkeypatch) -> None:
+    from yowayowa.api import fundamentals_routes
+    from yowayowa.api.app import app
+
+    def balance_series(key: str, points: list[tuple[date, float]]) -> MetricSeries:
+        return MetricSeries(
+            key=key,
+            label=key,
+            points=[
+                MetricPoint(
+                    period_start=date(period_end.year, 1, 1),
+                    period_end=period_end,
+                    fiscal_period="FY",
+                    value=Decimal(str(value)),
+                    unit="GBP",
+                    form="Yahoo normalized statement",
+                )
+                for period_end, value in points
+            ],
+        )
+
+    facts = _fundamentals("TEST.L").model_copy(
+        update={
+            "metrics": {
+                "current_assets": balance_series(
+                    "current_assets",
+                    [(date(2025, 12, 31), 100), (date(2026, 12, 31), 999)],
+                ),
+                "liabilities": balance_series(
+                    "liabilities",
+                    [(date(2025, 12, 31), 40)],
+                ),
+            },
+            "provenance": Provenance(
+                provider="yahoo/yfinance",
+                source="Yahoo Finance financial statements",
+                source_url="https://finance.yahoo.com/",
+                license_class=LicenseClass.PERSONAL_ONLY,
+                retrieved_at=datetime(2026, 9, 21, tzinfo=UTC),
+                as_of=date(2026, 12, 31),
+            ),
+        }
+    )
+    monkeypatch.setattr(fundamentals_routes, "_fundamentals", lambda symbol: facts)
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/v1/strategy-presets/{KIYOHARA_GLOBAL_ID}/evaluate",
+            json={
+                "candidates": [
+                    {"symbol": "TEST.L", "market_cap": 100, "pe_ratio": 10},
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    result = response.json()["evaluations"][0]
+    assert result["current_assets"] == 100
+    assert result["liabilities"] == 40
+    assert result["investment_securities"] is None
+    assert result["net_cash_ratio"] == pytest.approx(0.6)
+    assert result["net_cash_ratio_is_lower_bound"] is True
+    assert result["cash_neutral_pe"] == pytest.approx(4.0)
+    assert result["cash_neutral_pe_is_upper_bound"] is True
+    assert result["supplemental_provenance"][0]["provider"] == "yahoo/yfinance"
+
+
+def test_strategy_api_can_record_and_list_point_in_time_research(monkeypatch) -> None:
+    from yowayowa.api import fundamentals_routes
+    from yowayowa.api.app import app
+
+    monkeypatch.setattr(
+        fundamentals_routes,
+        "_fundamentals",
+        lambda symbol: _fundamentals(symbol),
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/v1/strategy-presets/{KIYOHARA_GLOBAL_ID}/evaluate",
+            json={
+                "candidates": [
+                    {"symbol": "TEST", "market_cap": 100, "pe_ratio": 10},
+                ],
+                "region": "us",
+                "record": True,
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert len(payload["snapshot_ids"]) == 1
+
+        listed = client.get(
+            "/v1/strategy-research/snapshots",
+            params={
+                "strategy_id": KIYOHARA_GLOBAL_ID,
+                "region": "us",
+                "symbol": "TEST",
+            },
+        )
+
+    assert listed.status_code == 200
+    rows = listed.json()
+    assert len(rows) == 1
+    assert rows[0]["id"] == payload["snapshot_ids"][0]
+    assert rows[0]["scoring_version"] == "kiyohara_priority_v1"
+    assert rows[0]["evaluation"]["research_priority"]["score"] > 0

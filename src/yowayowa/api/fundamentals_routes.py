@@ -1,0 +1,335 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.orm import Session
+
+from yowayowa.api.deps import db_session, request_data_source_settings, require_api_token
+from yowayowa.config import get_settings
+from yowayowa.domain import (
+    ComparisonRequest,
+    ComparisonResponse,
+    Fundamentals,
+    ScreenRequest,
+    ScreenResponse,
+    ScreenRow,
+    ValuationSnapshot,
+)
+from yowayowa.providers.base import ProviderPolicyError
+from yowayowa.providers.edinet import EdinetClient
+from yowayowa.providers.registry import fundamentals_provider, yahoo_market_provider
+from yowayowa.services.comparison import compare
+from yowayowa.services.screening import screen
+from yowayowa.services.strategy_calibration import calibration_report
+from yowayowa.services.strategy_edinet import (
+    balance_sheet_supplement as edinet_balance_sheet_supplement,
+)
+from yowayowa.services.strategy_edinet import tokyo_security_code
+from yowayowa.services.strategy_outcomes import forward_outcome_report
+from yowayowa.services.strategy_presets import (
+    KIYOHARA_GLOBAL_ID,
+    evaluate_kiyohara_candidate,
+    evaluated_at,
+    get_builtin_strategy,
+    list_builtin_strategies,
+)
+from yowayowa.services.strategy_sec import balance_sheet_supplement as sec_balance_sheet_supplement
+from yowayowa.services.strategy_tracking import (
+    list_strategy_snapshots,
+    record_strategy_snapshots,
+)
+from yowayowa.services.strategy_yahoo import (
+    balance_sheet_supplement as yahoo_balance_sheet_supplement,
+)
+from yowayowa.services.valuation import valuation_snapshot
+from yowayowa.strategy_models import (
+    StrategyBalanceSheetSupplement,
+    StrategyCalibrationReport,
+    StrategyEvaluationRequest,
+    StrategyEvaluationResponse,
+    StrategyForwardOutcomeReport,
+    StrategyPresetDefinition,
+    StrategyResearchSnapshot,
+)
+from yowayowa.symbols import normalize_symbol
+
+router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_token)])
+
+
+def _fundamentals(symbol: str) -> Fundamentals:
+    return fundamentals_provider().company_facts(normalize_symbol(symbol))
+
+
+def _strategy_edinet_supplement(
+    request: Request,
+    session: Session,
+    symbol: str,
+) -> StrategyBalanceSheetSupplement | None:
+    if tokyo_security_code(symbol) is None:
+        return None
+    settings = request_data_source_settings(request, get_settings(), "edinet")
+    if not settings.edinet_api_key:
+        return None
+    return edinet_balance_sheet_supplement(session, EdinetClient(settings), symbol)
+
+
+def _strategy_balance_sheet_supplement(
+    request: Request,
+    session: Session,
+    symbol: str,
+    fundamentals: Fundamentals,
+) -> StrategyBalanceSheetSupplement | None:
+    if tokyo_security_code(symbol) is not None:
+        edinet = _strategy_edinet_supplement(request, session, symbol)
+        if edinet is not None:
+            return edinet
+    return sec_balance_sheet_supplement(fundamentals) or yahoo_balance_sheet_supplement(
+        fundamentals
+    )
+
+
+@router.get("/fundamentals/{symbol}", response_model=Fundamentals)
+def fundamentals_anywhere(symbol: str) -> Fundamentals:
+    try:
+        return _fundamentals(symbol)
+    except ProviderPolicyError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/valuation/{symbol}", response_model=ValuationSnapshot)
+def valuation_anywhere(symbol: str) -> ValuationSnapshot:
+    normalized = normalize_symbol(symbol)
+    try:
+        facts = _fundamentals(normalized)
+        quotes = yahoo_market_provider().quotes([normalized])
+        return valuation_snapshot(facts, quotes)
+    except ProviderPolicyError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/screen", response_model=ScreenResponse)
+def screen_anywhere(payload: ScreenRequest) -> ScreenResponse:
+    data: list[Fundamentals] = []
+    failures: list[str] = []
+    for symbol in payload.symbols:
+        try:
+            data.append(_fundamentals(symbol))
+        except Exception:
+            failures.append(normalize_symbol(symbol))
+    result = screen(data, payload.filters)
+    for symbol in failures:
+        result.rows.append(
+            ScreenRow(symbol=symbol, metrics={}, matched=False, failures=["data_unavailable"])
+        )
+    return result
+
+
+@router.post("/compare", response_model=ComparisonResponse)
+def compare_anywhere(payload: ComparisonRequest) -> ComparisonResponse:
+    data: list[Fundamentals] = []
+    unavailable: list[str] = []
+    for symbol in dict.fromkeys(normalize_symbol(item) for item in payload.symbols):
+        try:
+            data.append(_fundamentals(symbol))
+        except Exception:
+            unavailable.append(symbol)
+    if len(data) < 2:
+        detail = "At least two issuers with comparable financial statements are required"
+        if unavailable:
+            detail += f"; unavailable: {', '.join(unavailable)}"
+        raise HTTPException(status_code=422, detail=detail)
+    return compare(data, payload.metrics or None)
+
+
+@router.get("/strategy-presets", response_model=list[StrategyPresetDefinition])
+def builtin_strategy_presets() -> list[StrategyPresetDefinition]:
+    return list_builtin_strategies()
+
+
+@router.get("/strategy-presets/{strategy_id}", response_model=StrategyPresetDefinition)
+def builtin_strategy_preset(strategy_id: str) -> StrategyPresetDefinition:
+    try:
+        return get_builtin_strategy(strategy_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/strategy-research/snapshots",
+    response_model=list[StrategyResearchSnapshot],
+)
+def strategy_research_snapshots(
+    strategy_id: str | None = Query(default=None, max_length=80),
+    region: str | None = Query(default=None, max_length=16),
+    symbol: str | None = Query(default=None, max_length=32),
+    limit: int = Query(default=200, ge=1, le=1000),
+    session: Session = Depends(db_session),
+) -> list[StrategyResearchSnapshot]:
+    return list_strategy_snapshots(
+        session,
+        strategy_id=strategy_id,
+        region=region,
+        symbol=symbol,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/strategy-research/outcomes",
+    response_model=StrategyForwardOutcomeReport,
+)
+def strategy_research_outcomes(
+    strategy_id: str | None = Query(default=None, max_length=80),
+    region: str | None = Query(default=None, max_length=16),
+    symbol: str | None = Query(default=None, max_length=32),
+    horizons: str = Query(default="20,60,120", max_length=64),
+    benchmark: str | None = Query(default=None, max_length=32),
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(db_session),
+) -> StrategyForwardOutcomeReport:
+    try:
+        resolved_horizons = [int(token.strip()) for token in horizons.split(",") if token.strip()]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Outcome horizons must be integers") from exc
+    snapshots = list_strategy_snapshots(
+        session,
+        strategy_id=strategy_id,
+        region=region,
+        symbol=symbol,
+        limit=limit,
+    )
+    try:
+        return forward_outcome_report(
+            snapshots,
+            yahoo_market_provider(),
+            horizons=resolved_horizons,
+            benchmark_symbol=normalize_symbol(benchmark) if benchmark else None,
+        )
+    except ProviderPolicyError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get(
+    "/strategy-research/calibration",
+    response_model=StrategyCalibrationReport,
+)
+def strategy_research_calibration(
+    strategy_id: str | None = Query(default=None, max_length=80),
+    region: str | None = Query(default=None, max_length=16),
+    symbol: str | None = Query(default=None, max_length=32),
+    horizons: str = Query(default="20,60,120", max_length=64),
+    benchmark: str | None = Query(default=None, max_length=32),
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(db_session),
+) -> StrategyCalibrationReport:
+    try:
+        resolved_horizons = [int(token.strip()) for token in horizons.split(",") if token.strip()]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Outcome horizons must be integers") from exc
+    snapshots = list_strategy_snapshots(
+        session,
+        strategy_id=strategy_id,
+        region=region,
+        symbol=symbol,
+        limit=limit,
+    )
+    try:
+        report = forward_outcome_report(
+            snapshots,
+            yahoo_market_provider(),
+            horizons=resolved_horizons,
+            benchmark_symbol=normalize_symbol(benchmark) if benchmark else None,
+        )
+        return calibration_report(snapshots, report)
+    except ProviderPolicyError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/strategy-presets/{strategy_id}/evaluate",
+    response_model=StrategyEvaluationResponse,
+)
+def evaluate_builtin_strategy(
+    strategy_id: str,
+    payload: StrategyEvaluationRequest,
+    request: Request,
+    session: Session = Depends(db_session),
+) -> StrategyEvaluationResponse:
+    try:
+        get_builtin_strategy(strategy_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if strategy_id != KIYOHARA_GLOBAL_ID:
+        raise HTTPException(
+            status_code=501,
+            detail=f"Strategy evaluator not implemented: {strategy_id}",
+        )
+
+    evaluations = []
+    errors: dict[str, str] = {}
+    supplement_errors: dict[str, str] = {}
+    seen: set[str] = set()
+    for candidate in payload.candidates:
+        symbol = normalize_symbol(candidate.symbol)
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        normalized_candidate = candidate.model_copy(update={"symbol": symbol})
+        try:
+            facts = _fundamentals(symbol)
+        except Exception as exc:
+            errors[symbol] = f"{type(exc).__name__}: {exc}"
+            continue
+
+        supplement = None
+        try:
+            supplement = _strategy_balance_sheet_supplement(
+                request,
+                session,
+                symbol,
+                facts,
+            )
+        except Exception as exc:
+            supplement_errors[symbol] = f"{type(exc).__name__}: {exc}"
+        evaluations.append(evaluate_kiyohara_candidate(facts, normalized_candidate, supplement))
+
+    evaluations.sort(
+        key=lambda item: (
+            -(item.research_priority.score if item.research_priority is not None else -1.0),
+            item.net_cash_ratio is None,
+            -item.net_cash_ratio if item.net_cash_ratio is not None else float("inf"),
+            item.cash_neutral_pe is None,
+            item.cash_neutral_pe if item.cash_neutral_pe is not None else float("inf"),
+            item.symbol,
+        )
+    )
+    evaluation_time = evaluated_at()
+    snapshot_ids: list[int] = []
+    if payload.record and evaluations:
+        snapshots = record_strategy_snapshots(
+            session,
+            strategy_id,
+            payload.region or "unknown",
+            evaluations,
+            captured_at=evaluation_time,
+        )
+        snapshot_ids = [item.id for item in snapshots]
+    return StrategyEvaluationResponse(
+        strategy_id=strategy_id,
+        evaluations=evaluations,
+        errors=errors,
+        supplement_errors=supplement_errors,
+        snapshot_ids=snapshot_ids,
+        evaluated_at=evaluation_time,
+    )

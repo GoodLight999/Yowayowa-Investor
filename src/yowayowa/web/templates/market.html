@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ t('markets.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-head">
+  <h1>{{ t('markets.title') }}</h1>
+  <div class="toolbar">
+    <span id="market-as-of" class="pill">{{ t('common.loading') }}</span>
+    <button id="refresh-market" class="primary" type="button">{{ t('common.refresh') }}</button>
+  </div>
+</section>
+
+<section id="market-overview" class="market-overview" aria-live="polite">
+  <div class="panel"><div class="list-state muted">{{ t('markets.loading') }}</div></div>
+</section>
+
+<section class="panel" style="margin-top:18px">
+  <div class="section-heading">
+    <div><h2>{{ s('sector.title') }}</h2><p class="ux-note">{{ s('sector.subtitle') }}</p></div>
+    <div class="sector-toolbar">
+      <span class="muted">{{ s('sector.horizon') }}</span>
+      <div class="sector-horizon" role="group" aria-label="{{ s('sector.horizon') }}">
+        <button type="button" data-sector-horizon="change_1d">{{ s('sector.1d') }}</button>
+        <button type="button" data-sector-horizon="change_1m" class="is-active">{{ s('sector.1m') }}</button>
+        <button type="button" data-sector-horizon="change_3m">{{ s('sector.3m') }}</button>
+        <button type="button" data-sector-horizon="change_1y">{{ s('sector.1y') }}</button>
+      </div>
+    </div>
+  </div>
+  <div id="sector-heatmap" class="sector-heatmap"><div class="list-state muted">{{ s('sector.loading') }}</div></div>
+  <div id="sector-source" class="source-strip muted provider-source-note"></div>
+</section>
+
+<section class="panel market-provenance-panel">
+  <div class="section-heading"><h2>{{ t('common.source') }}</h2></div>
+  <div id="market-provenance" class="provenance-card muted provider-source-note">{{ t('common.loading_ellipsis') }}</div>
+</section>
+{% endblock %}

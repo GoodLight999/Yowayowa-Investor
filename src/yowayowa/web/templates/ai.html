@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ x('ai.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-heading ai-page-heading">
+  <div>
+    <h1>{{ x('ai.title') }}</h1>
+    <p class="ux-subtitle">{{ x('ai.subtitle') }}</p>
+  </div>
+  <div class="ai-connection-summary">
+    <span id="ai-current-provider" class="provider-source-note">—</span>
+    <a class="ghost button" href="/settings">{{ u('settings.title') }} →</a>
+  </div>
+</section>
+
+<section class="sheet ai-chat ai-workspace">
+  <div class="section-title-line">
+    <div>
+      <h2>{% if locale == 'ja' %}調べたいことを入力{% else %}Ask a research question{% endif %}</h2>
+      <p class="ux-note">{{ u('ai.context.evidence') }}</p>
+    </div>
+    <div class="toolbar">
+      <button class="ghost" id="ai-export-prompt" type="button">{% if locale == 'ja' %}外部AI用プロンプト{% else %}External AI prompt{% endif %}</button>
+      <button class="ghost" id="ai-clear" type="button">{{ x('ai.clear') }}</button>
+    </div>
+  </div>
+
+  <div class="ai-quick" aria-label="{% if locale == 'ja' %}質問例{% else %}Example questions{% endif %}">
+    <button class="ghost ai-quick-prompt" type="button">{{ x('ai.quick1') }}</button>
+    <button class="ghost ai-quick-prompt" type="button">{{ x('ai.quick2') }}</button>
+    <button class="ghost ai-quick-prompt" type="button">{{ x('ai.quick3') }}</button>
+  </div>
+
+  <div class="ai-messages" id="ai-messages"></div>
+  <form class="ai-compose" id="ai-form">
+    <label class="sr-only" for="ai-prompt">{{ x('ai.prompt') }}</label>
+    <textarea id="ai-prompt" placeholder="{{ x('ai.prompt') }}"></textarea>
+    <button class="primary" id="ai-send" type="submit">{{ x('ai.send') }}</button>
+  </form>
+  <div id="ai-status" class="provider-source-note"></div>
+
+  <details id="ai-prompt-packet-panel" class="ai-diagnostics" hidden>
+    <summary class="section-heading">{% if locale == 'ja' %}外部AIへ渡す研究パケット{% else %}Research packet for external AI{% endif %}</summary>
+    <p class="ux-note">{% if locale == 'ja' %}Yowayowaが取得した財務・評価・ニュース・イベント・戦略履歴とprovenanceを、単一の長いプロンプトへまとめます。{% else %}Bundles Yowayowa financial, valuation, news, event, strategy-history and provenance data into one long prompt.{% endif %}</p>
+    <div class="toolbar">
+      <button id="ai-copy-prompt-packet" class="ghost" type="button">{% if locale == 'ja' %}コピー{% else %}Copy{% endif %}</button>
+      <span id="ai-prompt-packet-meta" class="provider-source-note"></span>
+    </div>
+    <textarea id="ai-prompt-packet" class="ai-prompt-packet" readonly></textarea>
+  </details>
+
+  <details class="ai-diagnostics">
+    <summary class="section-heading">{% if locale == 'ja' %}根拠・ツール実行を確認{% else %}Inspect evidence and tool activity{% endif %}</summary>
+    <div class="ai-side-output">
+      <section><h3>{{ x('ai.tools') }}</h3><div class="ai-trace-list" id="ai-trace"><span class="muted">{{ x('ai.no_tools') }}</span></div></section>
+      <section><h3>{{ x('ai.proposals') }}</h3><div class="ai-proposals-list" id="ai-proposals"><span class="muted">{{ x('ai.no_proposals') }}</span></div></section>
+    </div>
+  </details>
+</section>
+{% endblock %}
