@@ -13,7 +13,32 @@ from yowayowa.providers.base import ProviderDescriptor, enforce_provider_policy
 
 FAIL_CLOSED_NOTE = "Quotes missing a filtered field are excluded (fail-closed)."
 
+SERVER_SIDE_FILTER_NOTE = (
+    "Numeric filters on fields absent from screener quotes rely on the server-side filter."
+)
+
 NUMERIC_FILTER_OPERATORS = frozenset({"eq", "gt", "lt", "gte", "lte", "btwn"})
+
+# Yahoo screener quotes carry camelCase quote keys, never the dotted screener
+# field names. Only fields measured to exist in real quote responses are
+# mapped; everything else (beta, margins, growth, ESG, ...) has no reliable
+# quote-dict key and is left to the server-side filter.
+SCREENER_FIELD_TO_QUOTE_KEY: dict[str, str] = {
+    "pricebookratio.quarterly": "priceToBook",
+    "peratio.lasttwelvemonths": "trailingPE",
+    "lastclosepriceearnings.lasttwelvemonths": "trailingPE",
+    "dayvolume": "regularMarketVolume",
+    "avgdailyvol3m": "averageDailyVolume3Month",
+    "intradayprice": "regularMarketPrice",
+    "intradaymarketcap": "marketCap",
+    "percentchange": "regularMarketChangePercent",
+    "fiftytwowkpercentchange": "fiftyTwoWeekChangePercent",
+    "lastclose52weekhigh.lasttwelvemonths": "fiftyTwoWeekHigh",
+    "lastclose52weeklow.lasttwelvemonths": "fiftyTwoWeekLow",
+    "totalsharesoutstanding": "sharesOutstanding",
+    "forward_dividend_per_share": "dividendRate",
+    "forward_dividend_yield": "dividendYield",
+}
 
 SCREENER_FIELDS: dict[str, tuple[str, ...]] = {
     "identity": ("region", "exchange", "sector", "industry", "peer_group"),
@@ -231,7 +256,9 @@ class YahooScreenerProvider:
         ]
         filtered_out = 0
         if not request.predefined:
-            checks = self._numeric_checks(request.filters)
+            checks, deferred_to_server = self._numeric_checks(request.filters)
+            if deferred_to_server:
+                notes.append(SERVER_SIDE_FILTER_NOTE)
             if checks:
                 kept: list[dict[str, Any]] = []
                 for quote in quotes:
@@ -264,21 +291,30 @@ class YahooScreenerProvider:
     def _numeric_checks(
         self,
         filters: list[research_models.MarketScreenFilter],
-    ) -> list[tuple[str, str, tuple[float, ...]]]:
+    ) -> tuple[list[tuple[str, str, tuple[float, ...]]], bool]:
         """Extract locally re-checkable numeric filters from the request.
 
-        Identity-style fields (region, exchange, ...) and ``is-in`` membership
-        filters are excluded: they cannot be re-evaluated numerically and a
-        missing identity value does not create the missing-number hazard this
-        post-filter exists to close.
+        Each check resolves its screener field to the real quote-dict key via
+        ``SCREENER_FIELD_TO_QUOTE_KEY``. Identity-style fields (region,
+        exchange, ...) and ``is-in`` membership filters are excluded: they
+        cannot be re-evaluated numerically and a missing identity value does
+        not create the missing-number hazard this post-filter exists to close.
+        Numeric filters on fields without a quote key cannot be verified
+        locally at all; the returned flag reports that they rely on the
+        server-side filter.
         """
 
         identity_fields = SCREENER_FIELDS["identity"]
         checks: list[tuple[str, str, tuple[float, ...]]] = []
+        deferred_to_server = False
         for item in filters:
             if item.operator not in NUMERIC_FILTER_OPERATORS:
                 continue
             if item.field in identity_fields:
+                continue
+            quote_key = SCREENER_FIELD_TO_QUOTE_KEY.get(item.field)
+            if quote_key is None:
+                deferred_to_server = True
                 continue
             if item.operator == "btwn":
                 if not isinstance(item.value, list) or len(item.value) != 2:
@@ -293,18 +329,18 @@ class YahooScreenerProvider:
                     bounds = (float(raw),)
                 except (TypeError, ValueError):
                     continue
-            checks.append((item.field, item.operator, bounds))
-        return checks
+            checks.append((quote_key, item.operator, bounds))
+        return checks, deferred_to_server
 
     @staticmethod
     def _passes_numeric_checks(
         quote: dict[str, Any],
         checks: list[tuple[str, str, tuple[float, ...]]],
     ) -> bool:
-        """Re-evaluate numeric filters locally; missing data fails closed."""
+        """Re-evaluate numeric filters on real quote keys; missing data fails closed."""
 
-        for field, operator, bounds in checks:
-            raw = quote.get(field)
+        for quote_key, operator, bounds in checks:
+            raw = quote.get(quote_key)
             if isinstance(raw, bool) or not isinstance(raw, (int, float)):
                 return False
             value = float(raw)

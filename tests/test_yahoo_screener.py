@@ -21,8 +21,8 @@ def test_custom_screener_builds_equity_query(monkeypatch) -> None:  # type: igno
         return {
             "total": 2,
             "quotes": [
-                {"symbol": "RKLB", "intradaymarketcap": 40_000_000_000},
-                {"symbol": "ASTS", "intradaymarketcap": 20_000_000_000},
+                {"symbol": "RKLB", "marketCap": 40_000_000_000},
+                {"symbol": "ASTS", "marketCap": 20_000_000_000},
             ],
         }
 
@@ -91,8 +91,8 @@ def test_screen_excludes_quotes_missing_filtered_field(monkeypatch) -> None:  # 
     _patch_custom_screen(
         monkeypatch,
         quotes=[
-            {"symbol": "6178.T", "pricebookratio.quarterly": None, "dayvolume": 150000},
-            {"symbol": "7203.T", "pricebookratio.quarterly": 0.7, "dayvolume": 900000},
+            {"symbol": "6178.T", "priceToBook": None, "regularMarketVolume": 150000},
+            {"symbol": "7203.T", "priceToBook": 0.7, "regularMarketVolume": 900000},
         ],
         total=2,
     )
@@ -114,6 +114,10 @@ def test_screen_excludes_quotes_missing_filtered_field(monkeypatch) -> None:  # 
     assert "Quotes missing a filtered field are excluded (fail-closed)." in (
         result.provenance.notes
     )
+    assert (
+        "Numeric filters on fields absent from screener quotes rely on the server-side filter."
+        not in result.provenance.notes
+    )
 
 
 def test_screen_compound_filter_excludes_missing_field_even_when_other_matches(
@@ -122,8 +126,8 @@ def test_screen_compound_filter_excludes_missing_field_even_when_other_matches(
     _patch_custom_screen(
         monkeypatch,
         quotes=[
-            {"symbol": "FLST", "dayvolume": 500000, "pricebookratio.quarterly": None},
-            {"symbol": "7203.T", "dayvolume": 900000, "pricebookratio.quarterly": 0.7},
+            {"symbol": "FLST", "regularMarketVolume": 500000, "priceToBook": None},
+            {"symbol": "7203.T", "regularMarketVolume": 900000, "priceToBook": 0.7},
         ],
         total=2,
     )
@@ -147,8 +151,8 @@ def test_screen_local_recheck_overrides_server_verdict(monkeypatch) -> None:  # 
     _patch_custom_screen(
         monkeypatch,
         quotes=[
-            {"symbol": "BAD.T", "pricebookratio.quarterly": 1.5},
-            {"symbol": "GOOD.T", "pricebookratio.quarterly": 0.7},
+            {"symbol": "BAD.T", "priceToBook": 1.5},
+            {"symbol": "GOOD.T", "priceToBook": 0.7},
         ],
         total=2,
     )
@@ -168,8 +172,8 @@ def test_screen_region_filter_does_not_exclude(monkeypatch) -> None:  # type: ig
     _patch_custom_screen(
         monkeypatch,
         quotes=[
-            {"symbol": "6178.T", "dayvolume": 150000},
-            {"symbol": "7203.T", "dayvolume": 900000},
+            {"symbol": "6178.T", "regularMarketVolume": 150000},
+            {"symbol": "7203.T", "regularMarketVolume": 900000},
         ],
         total=2,
     )
@@ -185,4 +189,57 @@ def test_screen_region_filter_does_not_exclude(monkeypatch) -> None:  # type: ig
     assert result.filtered_out == 0
     assert "Quotes missing a filtered field are excluded (fail-closed)." not in (
         result.provenance.notes
+    )
+
+
+def test_screen_unresolvable_field_relies_on_server_side_filter(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    _patch_custom_screen(
+        monkeypatch,
+        quotes=[
+            {"symbol": "6178.T", "priceToBook": 1.2},
+            {"symbol": "7203.T", "priceToBook": 0.7},
+        ],
+        total=2,
+    )
+    provider = YahooScreenerProvider(Settings(database_url="sqlite:///:memory:"))
+    request = MarketScreenRequest(
+        filters=[
+            MarketScreenFilter(field="region", operator="is-in", value=["jp"]),
+            MarketScreenFilter(field="esg_score", operator="lt", value=10),
+        ],
+        size=100,
+    )
+
+    result = provider.screen(request)
+
+    assert [row["symbol"] for row in result.quotes] == ["6178.T", "7203.T"]
+    assert result.filtered_out == 0
+    assert (
+        "Numeric filters on fields absent from screener quotes rely on the server-side filter."
+        in result.provenance.notes
+    )
+    assert "Quotes missing a filtered field are excluded (fail-closed)." not in (
+        result.provenance.notes
+    )
+
+
+def test_screen_beta_filter_is_not_locally_verified(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    _patch_custom_screen(
+        monkeypatch,
+        quotes=[{"symbol": "7203.T", "priceToBook": 0.7}],
+        total=1,
+    )
+    provider = YahooScreenerProvider(Settings(database_url="sqlite:///:memory:"))
+    request = MarketScreenRequest(
+        filters=[MarketScreenFilter(field="beta", operator="gt", value=1.0)],
+        size=100,
+    )
+
+    result = provider.screen(request)
+
+    assert [row["symbol"] for row in result.quotes] == ["7203.T"]
+    assert result.filtered_out == 0
+    assert (
+        "Numeric filters on fields absent from screener quotes rely on the server-side filter."
+        in result.provenance.notes
     )
