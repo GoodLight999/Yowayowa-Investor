@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import math
+from collections import Counter
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, ClassVar
 
 import pandas as pd
@@ -115,6 +116,9 @@ class YahooFundamentalsProvider:
                 dedup[(point.period_end, point.fiscal_period, point.value)] = point
             series.points = sorted(dedup.values(), key=lambda item: item.period_end)
 
+        self._fill_fiscal_years(metrics, self._yearly_period_ends(frames))
+        self._derive_eps_diluted(metrics, currency)
+
         if not metrics:
             raise LookupError(f"No Yahoo financial statements available for {normalized}")
 
@@ -151,6 +155,10 @@ class YahooFundamentalsProvider:
                     (
                         "Capital expenditure is normalized to a positive cash outflow before "
                         "FCF calculations."
+                    ),
+                    (
+                        "Diluted EPS is derived as net income / diluted shares for periods "
+                        "where Yahoo reports no usable EPS row."
                     ),
                     "Do not redistribute this normalized Yahoo dataset from public mode.",
                 ],
@@ -233,6 +241,132 @@ class YahooFundamentalsProvider:
                     MetricSeries(key=key, label=cls.LABELS.get(key, key), points=[]),
                 )
                 series.points.append(point)
+
+    @staticmethod
+    def _yearly_period_ends(frames: dict[str, list[pd.DataFrame]]) -> list[date]:
+        """Collect every period end across all yearly-frequency statement frames."""
+
+        ends: list[date] = []
+        for frame in frames.get("yearly", []):
+            for column in frame.columns:
+                try:
+                    timestamp = pd.Timestamp(str(column))
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if pd.isna(timestamp):
+                    continue
+                ends.append(timestamp.date())
+        return ends
+
+    @classmethod
+    def _fill_fiscal_years(
+        cls,
+        metrics: dict[str, MetricSeries],
+        yearly_period_ends: list[date],
+    ) -> None:
+        """Assign fiscal years to every point from the inferred fiscal year-end month.
+
+        The fiscal year-end month is the most common month among yearly statement
+        period ends (needs at least two). A period ending in the fiscal-end month
+        closes that fiscal year; a period ending in a later month belongs to the
+        next fiscal year; a period ending before it belongs to the current one.
+        Without enough yearly frames, only FY points can be safely labeled with
+        their period-end year and quarterly points stay unlabeled.
+        """
+
+        fiscal_month: int | None = None
+        if len(yearly_period_ends) >= 2:
+            month_counts = Counter(period.month for period in yearly_period_ends)
+            fiscal_month = max(month_counts, key=lambda month: (month_counts[month], -month))
+        for series in metrics.values():
+            for point in series.points:
+                point.fiscal_year = cls._fiscal_year_for(point, fiscal_month)
+
+    @staticmethod
+    def _fiscal_year_for(point: MetricPoint, fiscal_month: int | None) -> int | None:
+        if fiscal_month is None:
+            return point.period_end.year if point.fiscal_period == "FY" else None
+        month = point.period_end.month
+        if month == fiscal_month:
+            return point.period_end.year
+        if month > fiscal_month:
+            return point.period_end.year + 1
+        return point.period_end.year
+
+    @classmethod
+    def _derive_eps_diluted(cls, metrics: dict[str, MetricSeries], currency: str) -> None:
+        """Derive diluted EPS as net income / diluted shares when Yahoo has no usable EPS.
+
+        Fails closed per period: division is refused unless both inputs exist and
+        diluted shares are non-zero. A non-zero Yahoo-provided EPS value is never
+        overwritten; a zero-valued one is replaced.
+        """
+
+        net_income = metrics.get("net_income")
+        shares = metrics.get("shares_diluted")
+        if net_income is None or shares is None:
+            return
+        net_by_period: dict[tuple[date, str | None], MetricPoint] = {
+            (point.period_end, point.fiscal_period): point for point in net_income.points
+        }
+        shares_by_period: dict[tuple[date, str | None], MetricPoint] = {
+            (point.period_end, point.fiscal_period): point for point in shares.points
+        }
+        eps_series = metrics.get("eps_diluted")
+        eps_by_period: dict[tuple[date, str | None], MetricPoint] = {
+            (point.period_end, point.fiscal_period): point
+            for point in (eps_series.points if eps_series is not None else [])
+        }
+        unit = f"{currency}/share" if currency else "per share"
+        derived: list[MetricPoint] = []
+        for period_key, net_point in net_by_period.items():
+            share_point = shares_by_period.get(period_key)
+            if share_point is None:
+                continue
+            shares_value = share_point.value
+            if not shares_value.is_finite() or shares_value == 0:
+                continue
+            if not net_point.value.is_finite():
+                continue
+            existing = eps_by_period.get(period_key)
+            if existing is not None and existing.value != Decimal("0"):
+                continue
+            value = (net_point.value / shares_value).quantize(
+                Decimal("0.000001"),
+                rounding=ROUND_HALF_UP,
+            )
+            derived.append(
+                MetricPoint(
+                    period_start=net_point.period_start,
+                    period_end=net_point.period_end,
+                    fiscal_year=net_point.fiscal_year,
+                    fiscal_period=net_point.fiscal_period,
+                    value=value,
+                    unit=unit,
+                    accession=net_point.accession,
+                    filed=net_point.filed,
+                    form="Yahoo normalized statement",
+                )
+            )
+        if not derived:
+            return
+        series = metrics.setdefault(
+            "eps_diluted",
+            MetricSeries(
+                key="eps_diluted",
+                label=cls.LABELS.get("eps_diluted", "eps_diluted"),
+                points=[],
+            ),
+        )
+        derived_keys = {(point.period_end, point.fiscal_period) for point in derived}
+        series.points = [
+            point
+            for point in series.points
+            if point.value != Decimal("0")
+            or (point.period_end, point.fiscal_period) not in derived_keys
+        ]
+        series.points.extend(derived)
+        series.points.sort(key=lambda point: point.period_end)
 
     @staticmethod
     def _normalize_row_name(value: object) -> str:

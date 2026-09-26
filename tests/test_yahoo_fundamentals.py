@@ -100,6 +100,97 @@ def test_yahoo_metadata_failure_does_not_discard_japanese_statements(monkeypatch
     assert result.metrics["eps_diluted"].points[-1].unit == "JPY/share"
 
 
+class _EpsTicker(FakeTicker):
+    """Frequency-aware FakeTicker variant whose income rows are per-test."""
+
+    def get_income_stmt(
+        self,
+        *,
+        freq: str | None = None,
+        frequency: str | None = None,
+        **_: object,
+    ) -> pd.DataFrame:
+        if (freq or frequency) == "quarterly":
+            return pd.DataFrame()
+        return self._income()
+
+    def _income(self) -> pd.DataFrame:
+        raise NotImplementedError
+
+
+def _income_frame(eps: list[float]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            pd.Timestamp("2025-12-31"): [1000, 400, eps[0], 20],
+            pd.Timestamp("2024-12-31"): [800, 40, eps[1], 20],
+        },
+        index=[
+            "Total Revenue",
+            "Net Income",
+            "Diluted EPS",
+            "Diluted Average Shares",
+        ],
+    )
+
+
+def test_eps_diluted_derived_when_row_missing(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    class NoEpsRowTicker(_EpsTicker):
+        def _income(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    pd.Timestamp("2025-12-31"): [1000, 400, 20],
+                    pd.Timestamp("2024-12-31"): [800, 40, 20],
+                },
+                index=["Total Revenue", "Net Income", "Diluted Average Shares"],
+            )
+
+    monkeypatch.setattr(yahoo_fundamentals.yf, "Ticker", NoEpsRowTicker)
+    provider = YahooFundamentalsProvider(Settings(database_url="sqlite:///:memory:"))
+
+    result = provider.company_facts("7203.T")
+
+    points = result.metrics["eps_diluted"].points
+    assert len(points) == 2
+    assert float(points[-1].value) == pytest.approx(20.0, rel=0.01)
+    assert float(points[-2].value) == pytest.approx(2.0, rel=0.01)
+    assert points[-1].unit == "JPY/share"
+    assert points[-1].period_end == date(2025, 12, 31)
+    assert points[-1].fiscal_year == 2025
+
+
+def test_eps_diluted_zero_is_replaced_by_derivation(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    class ZeroEpsTicker(_EpsTicker):
+        def _income(self) -> pd.DataFrame:
+            return _income_frame([0.0, 0.0])
+
+    monkeypatch.setattr(yahoo_fundamentals.yf, "Ticker", ZeroEpsTicker)
+    provider = YahooFundamentalsProvider(Settings(database_url="sqlite:///:memory:"))
+
+    result = provider.company_facts("7203.T")
+
+    points = result.metrics["eps_diluted"].points
+    assert len(points) == 2
+    assert float(points[-1].value) == pytest.approx(20.0, rel=0.01)
+    assert float(points[-2].value) == pytest.approx(2.0, rel=0.01)
+    assert all(point.value != 0 for point in points)
+
+
+def test_eps_diluted_yahoo_value_not_overwritten(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    class YahooEpsTicker(_EpsTicker):
+        def _income(self) -> pd.DataFrame:
+            return _income_frame([2.5, 2.0])
+
+    monkeypatch.setattr(yahoo_fundamentals.yf, "Ticker", YahooEpsTicker)
+    provider = YahooFundamentalsProvider(Settings(database_url="sqlite:///:memory:"))
+
+    result = provider.company_facts("7203.T")
+
+    points = result.metrics["eps_diluted"].points
+    assert len(points) == 2
+    assert float(points[-1].value) == pytest.approx(2.5, rel=0.01)
+    assert float(points[-2].value) == pytest.approx(2.0, rel=0.01)
+
+
 class PrimaryMissing:
     def company_facts(self, symbol: str) -> Fundamentals:
         raise LookupError(symbol)

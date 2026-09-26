@@ -77,3 +77,112 @@ def test_predefined_screener_uses_count_parameter(monkeypatch) -> None:  # type:
     assert captured["query"] == "most_actives"
     assert captured["count"] == 25
     assert result.quotes == []
+
+
+def _patch_custom_screen(monkeypatch, quotes: list[dict[str, object]], total: int) -> None:  # type: ignore[no-untyped-def]
+    def fake_screen(query: object, **kwargs: object) -> dict[str, object]:
+        return {"total": total, "quotes": quotes}
+
+    monkeypatch.setattr(yahoo_screener.yf, "EquityQuery", FakeEquityQuery)
+    monkeypatch.setattr(yahoo_screener.yf, "screen", fake_screen)
+
+
+def test_screen_excludes_quotes_missing_filtered_field(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    _patch_custom_screen(
+        monkeypatch,
+        quotes=[
+            {"symbol": "6178.T", "pricebookratio.quarterly": None, "dayvolume": 150000},
+            {"symbol": "7203.T", "pricebookratio.quarterly": 0.7, "dayvolume": 900000},
+        ],
+        total=2,
+    )
+    provider = YahooScreenerProvider(Settings(database_url="sqlite:///:memory:"))
+    request = MarketScreenRequest(
+        filters=[
+            MarketScreenFilter(field="region", operator="is-in", value=["jp"]),
+            MarketScreenFilter(field="pricebookratio.quarterly", operator="lt", value=1.0),
+        ],
+        sort_field="intradaymarketcap",
+        size=100,
+    )
+
+    result = provider.screen(request)
+
+    assert [row["symbol"] for row in result.quotes] == ["7203.T"]
+    assert result.filtered_out == 1
+    assert result.total == 2
+    assert "Quotes missing a filtered field are excluded (fail-closed)." in (
+        result.provenance.notes
+    )
+
+
+def test_screen_compound_filter_excludes_missing_field_even_when_other_matches(
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    _patch_custom_screen(
+        monkeypatch,
+        quotes=[
+            {"symbol": "FLST", "dayvolume": 500000, "pricebookratio.quarterly": None},
+            {"symbol": "7203.T", "dayvolume": 900000, "pricebookratio.quarterly": 0.7},
+        ],
+        total=2,
+    )
+    provider = YahooScreenerProvider(Settings(database_url="sqlite:///:memory:"))
+    request = MarketScreenRequest(
+        filters=[
+            MarketScreenFilter(field="region", operator="is-in", value=["jp"]),
+            MarketScreenFilter(field="dayvolume", operator="gt", value=100000),
+            MarketScreenFilter(field="pricebookratio.quarterly", operator="lt", value=1.0),
+        ],
+        size=100,
+    )
+
+    result = provider.screen(request)
+
+    assert [row["symbol"] for row in result.quotes] == ["7203.T"]
+    assert result.filtered_out == 1
+
+
+def test_screen_local_recheck_overrides_server_verdict(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    _patch_custom_screen(
+        monkeypatch,
+        quotes=[
+            {"symbol": "BAD.T", "pricebookratio.quarterly": 1.5},
+            {"symbol": "GOOD.T", "pricebookratio.quarterly": 0.7},
+        ],
+        total=2,
+    )
+    provider = YahooScreenerProvider(Settings(database_url="sqlite:///:memory:"))
+    request = MarketScreenRequest(
+        filters=[MarketScreenFilter(field="pricebookratio.quarterly", operator="lt", value=1.0)],
+        size=100,
+    )
+
+    result = provider.screen(request)
+
+    assert [row["symbol"] for row in result.quotes] == ["GOOD.T"]
+    assert result.filtered_out == 1
+
+
+def test_screen_region_filter_does_not_exclude(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    _patch_custom_screen(
+        monkeypatch,
+        quotes=[
+            {"symbol": "6178.T", "dayvolume": 150000},
+            {"symbol": "7203.T", "dayvolume": 900000},
+        ],
+        total=2,
+    )
+    provider = YahooScreenerProvider(Settings(database_url="sqlite:///:memory:"))
+    request = MarketScreenRequest(
+        filters=[MarketScreenFilter(field="region", operator="is-in", value=["jp"])],
+        size=100,
+    )
+
+    result = provider.screen(request)
+
+    assert [row["symbol"] for row in result.quotes] == ["6178.T", "7203.T"]
+    assert result.filtered_out == 0
+    assert "Quotes missing a filtered field are excluded (fail-closed)." not in (
+        result.provenance.notes
+    )

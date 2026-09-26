@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 from typing import Any
 
@@ -9,6 +10,10 @@ import yowayowa.research_models as research_models
 from yowayowa.config import Settings
 from yowayowa.domain import LicenseClass, Provenance
 from yowayowa.providers.base import ProviderDescriptor, enforce_provider_policy
+
+FAIL_CLOSED_NOTE = "Quotes missing a filtered field are excluded (fail-closed)."
+
+NUMERIC_FILTER_OPERATORS = frozenset({"eq", "gt", "lt", "gte", "lte", "btwn"})
 
 SCREENER_FIELDS: dict[str, tuple[str, ...]] = {
     "identity": ("region", "exchange", "sector", "industry", "peer_group"),
@@ -220,12 +225,30 @@ class YahooScreenerProvider:
         quotes = [dict(item) for item in quotes_raw if isinstance(item, dict)]
         total_raw = payload.get("total")
         total = int(total_raw) if isinstance(total_raw, (int, float)) else None
+        notes = [
+            "Yahoo custom screener supports up to 250 rows per request.",
+            "Field availability varies by market and security.",
+        ]
+        filtered_out = 0
+        if not request.predefined:
+            checks = self._numeric_checks(request.filters)
+            if checks:
+                kept: list[dict[str, Any]] = []
+                for quote in quotes:
+                    if self._passes_numeric_checks(quote, checks):
+                        kept.append(quote)
+                    else:
+                        filtered_out += 1
+                quotes = kept
+                if filtered_out > 0:
+                    notes.append(FAIL_CLOSED_NOTE)
         now = datetime.now(UTC)
         return research_models.MarketScreenResponse(
             quotes=quotes,
             total=total,
             offset=request.offset,
             size=request.size,
+            filtered_out=filtered_out,
             query=query_repr,
             provenance=Provenance(
                 provider="yahoo/yfinance",
@@ -234,12 +257,76 @@ class YahooScreenerProvider:
                 license_class=LicenseClass.PERSONAL_ONLY,
                 retrieved_at=now,
                 as_of=now,
-                notes=[
-                    "Yahoo custom screener supports up to 250 rows per request.",
-                    "Field availability varies by market and security.",
-                ],
+                notes=notes,
             ),
         )
+
+    def _numeric_checks(
+        self,
+        filters: list[research_models.MarketScreenFilter],
+    ) -> list[tuple[str, str, tuple[float, ...]]]:
+        """Extract locally re-checkable numeric filters from the request.
+
+        Identity-style fields (region, exchange, ...) and ``is-in`` membership
+        filters are excluded: they cannot be re-evaluated numerically and a
+        missing identity value does not create the missing-number hazard this
+        post-filter exists to close.
+        """
+
+        identity_fields = SCREENER_FIELDS["identity"]
+        checks: list[tuple[str, str, tuple[float, ...]]] = []
+        for item in filters:
+            if item.operator not in NUMERIC_FILTER_OPERATORS:
+                continue
+            if item.field in identity_fields:
+                continue
+            if item.operator == "btwn":
+                if not isinstance(item.value, list) or len(item.value) != 2:
+                    continue
+                try:
+                    bounds: tuple[float, ...] = (float(item.value[0]), float(item.value[1]))
+                except (TypeError, ValueError):
+                    continue
+            else:
+                raw = item.value[0] if isinstance(item.value, list) else item.value
+                try:
+                    bounds = (float(raw),)
+                except (TypeError, ValueError):
+                    continue
+            checks.append((item.field, item.operator, bounds))
+        return checks
+
+    @staticmethod
+    def _passes_numeric_checks(
+        quote: dict[str, Any],
+        checks: list[tuple[str, str, tuple[float, ...]]],
+    ) -> bool:
+        """Re-evaluate numeric filters locally; missing data fails closed."""
+
+        for field, operator, bounds in checks:
+            raw = quote.get(field)
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                return False
+            value = float(raw)
+            if not math.isfinite(value):
+                return False
+            if operator == "btwn":
+                low, high = bounds
+                if not low <= value <= high:
+                    return False
+                continue
+            (threshold,) = bounds
+            if operator == "eq" and value != threshold:
+                return False
+            if operator == "gt" and not value > threshold:
+                return False
+            if operator == "lt" and not value < threshold:
+                return False
+            if operator == "gte" and not value >= threshold:
+                return False
+            if operator == "lte" and not value <= threshold:
+                return False
+        return True
 
     def _query(
         self,

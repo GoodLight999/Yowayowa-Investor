@@ -10,7 +10,12 @@ from yowayowa.domain import (
     Provenance,
     ScreenFilter,
 )
-from yowayowa.services.screening import derived_metrics, screen
+from yowayowa.services.screening import (
+    annual_points,
+    derived_metrics,
+    latest_annual_point,
+    screen,
+)
 
 
 def fundamentals(symbol: str) -> Fundamentals:
@@ -150,3 +155,64 @@ def test_screen_missing_or_failed_condition_does_not_pass() -> None:
     )
     assert result.rows[0].matched is False
     assert result.rows[0].failures == ["return_on_equity"]
+
+
+def test_latest_annual_point_prefers_latest_fy_over_newer_quarter() -> None:
+    item = fundamentals("AAA")
+    item.metrics["revenue"] = MetricSeries(
+        key="revenue",
+        label="revenue",
+        points=[
+            MetricPoint(
+                period_end=date(2023, 12, 31),
+                fiscal_year=2023,
+                fiscal_period="FY",
+                value=Decimal("80"),
+                unit="USD",
+            ),
+            MetricPoint(
+                period_end=date(2024, 6, 30),
+                fiscal_year=2024,
+                fiscal_period="Q",
+                value=Decimal("30"),
+                unit="USD",
+            ),
+            MetricPoint(
+                period_end=date(2024, 12, 31),
+                fiscal_year=2024,
+                fiscal_period="FY",
+                value=Decimal("100"),
+                unit="USD",
+            ),
+        ],
+    )
+
+    point = latest_annual_point(item, "revenue")
+    annual = annual_points(item, "revenue")
+
+    assert point is not None
+    assert point.period_end == date(2024, 12, 31)
+    assert point.fiscal_period == "FY"
+    assert [item.period_end for item in annual] == [date(2023, 12, 31), date(2024, 12, 31)]
+
+
+def test_latest_annual_point_returns_none_without_fy_points() -> None:
+    item = fundamentals("AAA")
+    item.metrics["revenue"] = MetricSeries(
+        key="revenue",
+        label="revenue",
+        points=[
+            MetricPoint(
+                period_end=date(2024, 6, 30),
+                fiscal_year=2024,
+                fiscal_period="Q",
+                value=Decimal("30"),
+                unit="USD",
+            )
+        ],
+    )
+
+    assert latest_annual_point(item, "revenue") is None
+    assert annual_points(item, "revenue") == []
+    assert latest_annual_point(item, "missing_metric") is None
+    assert annual_points(item, "missing_metric") == []

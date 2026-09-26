@@ -59,6 +59,7 @@ class MarketScreenResponse(BaseModel):
     total: int | None = None
     offset: int
     size: int
+    filtered_out: int = 0
     query: dict[str, Any] = Field(default_factory=dict)
     provenance: Provenance
 

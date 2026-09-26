@@ -19,6 +19,25 @@ def latest_point(fundamentals: Fundamentals, metric: str) -> MetricPoint | None:
     return max(series.points, key=lambda item: (item.period_end, item.filed or item.period_end))
 
 
+def annual_points(fundamentals: Fundamentals, metric: str) -> list[MetricPoint]:
+    """Return the metric's full-fiscal-year points in ascending period order."""
+
+    series = fundamentals.metrics.get(metric)
+    if not series or not series.points:
+        return []
+    annual = [point for point in series.points if point.fiscal_period == "FY"]
+    return sorted(annual, key=lambda item: (item.period_end, item.filed or date.min))
+
+
+def latest_annual_point(fundamentals: Fundamentals, metric: str) -> MetricPoint | None:
+    """Return the most recent full-fiscal-year point, ignoring interim quarters."""
+
+    points = annual_points(fundamentals, metric)
+    if not points:
+        return None
+    return points[-1]
+
+
 def latest_metric(fundamentals: Fundamentals, metric: str) -> float | None:
     point = latest_point(fundamentals, metric)
     return float(point.value) if point is not None else None
