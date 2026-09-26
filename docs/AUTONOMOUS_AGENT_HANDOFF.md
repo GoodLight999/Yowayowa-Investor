@@ -36,7 +36,13 @@ Primary loop:
 
 **discover -> investigate -> falsify -> compare -> size -> propose execution -> execute -> observe outcome -> recalibrate**
 
-Current weighted Private / Family Operator v1 completion baseline: **68%**.
+Current weighted Private / Family Operator v1 completion baseline: **67%**
+(re-baselined 2026-09-26 from current code and real blocked criteria — see
+`docs/PRIVATE_OPERATOR_ROADMAP.md` "Progress baseline". The dominant
+deduction is real-machine / real-session / live-broker acceptance, which
+stays BLOCKED on operator action and is never credited as code progress.
+The previous 68% figure was stale; percentages are re-baselined in place,
+never stacked as history paragraphs).
 
 ## Development ownership
 

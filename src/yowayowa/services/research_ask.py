@@ -27,7 +27,12 @@ from sqlalchemy.orm import Session
 
 from yowayowa.config import Settings
 from yowayowa.fx_models import SUPPORTED_CRYPTO_ASSETS
-from yowayowa.research_brief_models import BriefCitation, ResearchAskResponse
+from yowayowa.research_brief_models import (
+    BriefCitation,
+    EvidenceFact,
+    ModelInference,
+    ResearchAskResponse,
+)
 from yowayowa.research_models import AIChatRequest, AIMessage, AIProviderConfig
 from yowayowa.services.ai_agent import InvestmentResearchAgent
 from yowayowa.services.macro_store import MacroObservationStore
@@ -48,6 +53,8 @@ _MAX_MACRO_SERIES = 12
 _MAX_QUESTION_CHARS = 2000
 _DEFAULT_STOCK_OHLCV_ROOT = Path("./data/stock-ohlcv")
 _DEFAULT_CRYPTO_OHLCV_ROOT = Path("./data/crypto-ohlcv")
+
+_MAX_FACTS = 48
 
 
 def _mentioned_codes(question: str) -> list[str]:
@@ -100,11 +107,171 @@ def _ask_prompt(question: str, evidence: dict[str, Any]) -> str:
                 "してはいけません。数値はEvidenceまたはツール結果からそのまま引用し、"
                 "出典（docID/series_id/source_url/retrieved_at）を添えてください。"
                 "根拠が無い部分は『未取得』と明記してください。"
+                "さらに、数値を引用する箇所には必ず対応するfact IDを [F12] のように添えてください。"
+                "回答の末尾には必ず次の2セクションを付けてください:\n"
+                "###推論\n"
+                "- [F1,F5] モデルの解釈（根拠fact IDを添える）\n"
+                "###反証条件\n"
+                "- この結論が反証される条件"
             ),
             f"USER QUESTION:\n{question}",
             "EVIDENCE JSON:\n" + json.dumps(evidence, ensure_ascii=False, default=str, indent=2),
         ]
     )
+
+
+def _fact_statement_limit(text: Any, limit: int = 80) -> str:
+    """First ``limit`` chars of a row value as-is (no reformatting)."""
+
+    return str(text or "")[:limit]
+
+
+def _build_facts(
+    candidates: list[dict[str, Any]],
+    edinet_rows: list[dict[str, Any]],
+    stock_evidence: dict[str, Any] | None,
+    crypto_evidence: dict[str, Any] | None,
+    macro_series: list[dict[str, Any]],
+    *,
+    max_facts: int = _MAX_FACTS,
+) -> tuple[list[EvidenceFact], bool]:
+    """Deterministic fact list (CG-006): no LLM, no recomputed numbers.
+
+    Order: screening -> edinet -> stock_ohlcv -> crypto_ohlcv -> macro.
+    Over the cap rows are dropped (never smoothed) and the caller records
+    ``facts_truncated`` in coverage.
+    """
+
+    facts: list[EvidenceFact] = []
+
+    def _add(**kwargs: Any) -> bool:
+        if len(facts) >= max_facts:
+            return False
+        facts.append(EvidenceFact(**kwargs))
+        return True
+
+    for row in candidates:
+        provenance = row.get("provenance") or {}
+        source = str(row.get("source") or "screening")
+        reason = _fact_statement_limit(row.get("reason"))
+        if not _add(
+            id=f"F{len(facts) + 1}",
+            kind="screening",
+            statement=f"{source} {row.get('code')}: {reason}",
+            provider=provenance.get("provider"),
+            source_url=provenance.get("source_url"),
+            retrieved_at=str(row.get("retrieved_at")) if row.get("retrieved_at") else None,
+            as_of=str(row.get("run_date")) if row.get("run_date") else None,
+            code_or_series=row.get("code"),
+        ):
+            return facts, True
+    for row in edinet_rows:
+        doc_id = str(row.get("docID") or "")
+        doc_type = row.get("docTypeCode")
+        description = _fact_statement_limit(row.get("docDescription"), 40)
+        known = " / ".join(
+            part for part in [f"docType={doc_type}" if doc_type else "", description] if part
+        )
+        if not _add(
+            id=f"F{len(facts) + 1}",
+            kind="edinet_filing",
+            statement=f"docID={doc_id} {known} submit={row.get('submitDateTime')}",
+            provider="edinet-v2",
+            source_url=row.get("source_url"),
+            retrieved_at=row.get("retrieved_at"),
+            as_of=(str(row.get("submitDateTime")) or "")[:10] or None,
+            code_or_series=doc_id,
+        ):
+            return facts, True
+    for evidence, kind in (
+        (stock_evidence, "stock_ohlcv"),
+        (crypto_evidence, "crypto_ohlcv"),
+    ):
+        if not evidence:
+            continue
+        for symbol, symbol_evidence in evidence.get("symbols", {}).items():
+            latest_rows = symbol_evidence.get("latest_rows") or []
+            if not latest_rows:
+                continue  # no persisted rows: 未取得 stays in missing_inputs, no fact
+            row = latest_rows[0]
+            if not _add(
+                id=f"F{len(facts) + 1}",
+                kind=kind,
+                statement=(
+                    f"{symbol} {row.get('as_of')} close={row.get('close')} "
+                    f"volume={row.get('volume')}（provider={row.get('provider')}）"
+                ),
+                provider=row.get("provider"),
+                source_url=row.get("source_url"),
+                retrieved_at=row.get("retrieved_at"),
+                as_of=row.get("as_of"),
+                code_or_series=symbol,
+            ):
+                return facts, True
+    for row in macro_series:
+        if not _add(
+            id=f"F{len(facts) + 1}",
+            kind="macro",
+            statement=(
+                f"{row.get('series_id')}={row.get('value')} as_of={row.get('as_of')}"
+                f"（{row.get('provider') or row.get('source_kind')}）"
+            ),
+            provider=str(row.get("provider") or row.get("source_kind")),
+            source_url=row.get("source_url"),
+            retrieved_at=row.get("retrieved_at"),
+            as_of=row.get("as_of"),
+            code_or_series=row.get("series_id"),
+        ):
+            return facts, True
+    return facts, False
+
+
+_FACT_ID_TOKEN = re.compile(r"F\d+")
+
+
+def _parse_inference_sections(
+    answer: str,
+) -> tuple[list[ModelInference], list[str]]:
+    """Parse the trailing ###推論 / ###反証条件 sections (deterministic).
+
+    Returns (inferences, invalidation_conditions); both empty when either
+    section is absent — the caller records the absence in coverage.
+    """
+
+    lines = answer.splitlines()
+    inference_lines: list[str] = []
+    invalidation_lines: list[str] = []
+    section: str | None = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("###推論"):
+            section = "inference"
+            continue
+        if stripped.startswith("###反証条件"):
+            section = "invalidation"
+            continue
+        if stripped.startswith("###"):
+            section = None  # any other section ends the trailing pair
+            continue
+        if section == "inference" and stripped:
+            inference_lines.append(stripped)
+        elif section == "invalidation" and stripped:
+            invalidation_lines.append(stripped)
+
+    def _clean_bullet(line: str) -> str:
+        """Strip one leading bullet marker from a parsed section line."""
+
+        return re.sub(r"^(?:[-*\u30fb]\s*|\d+[.)]\s+)", "", line).strip()
+
+    inferences = [
+        ModelInference(
+            statement=_clean_bullet(re.sub(r"\[[^\]]*\]", "", line)),
+            supporting_fact_ids=sorted(set(_FACT_ID_TOKEN.findall(line))),
+        )
+        for line in inference_lines
+    ]
+    invalidation_conditions = [_clean_bullet(line) for line in invalidation_lines]
+    return inferences, invalidation_conditions
 
 
 def research_ask(
@@ -193,6 +360,14 @@ def research_ask(
         }
     )
 
+    facts, facts_truncated = _build_facts(
+        candidates,
+        edinet_rows,
+        stock_evidence,
+        crypto_evidence,
+        macro["series"][:_MAX_MACRO_SERIES],
+    )
+
     evidence = {
         "question": clean_question,
         "mentioned_codes": codes,
@@ -201,6 +376,7 @@ def research_ask(
         "stock_ohlcv": stock_evidence,
         "crypto_ohlcv": crypto_evidence,
         "macro_latest": macro["series"][:_MAX_MACRO_SERIES],
+        "facts": [fact.model_dump() for fact in facts],
         "coverage_notes": {
             "rules": [
                 "数値はEvidence JSONとツール結果からのみ。自由計算禁止。",
@@ -278,6 +454,12 @@ def research_ask(
     if not macro["series"]:
         coverage["missing_inputs"].append("macro_observations: 未取得")
 
+    if facts_truncated:
+        coverage["facts_truncated"] = True
+    inferences, invalidation_conditions = _parse_inference_sections(response.answer)
+    if not inferences and not invalidation_conditions:
+        coverage["inference_sections"] = "\u672a\u8a18\u8f09"
+
     return ResearchAskResponse(
         question=clean_question,
         answer=response.answer,
@@ -287,6 +469,11 @@ def research_ask(
         provider=response.provider,
         model=response.model,
         generated_at=now,
+        facts=facts,
+        calculations=[],  # research_ask v1 forbids free computation (CG-006)
+        inferences=inferences,
+        invalidation_conditions=invalidation_conditions,
+        missing_inputs=coverage["missing_inputs"],
     )
 
 

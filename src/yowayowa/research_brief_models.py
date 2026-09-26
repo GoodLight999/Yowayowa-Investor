@@ -24,6 +24,8 @@ from yowayowa.domain import Provenance
 
 __all__ = [
     "BriefCitation",
+    "EvidenceFact",
+    "ModelInference",
     "ResearchAskResponse",
     "ResearchBrief",
 ]
@@ -47,6 +49,37 @@ class BriefCitation(BaseModel):
         description="JPX/EDINET code or macro series_id this citation points at",
     )
     note: str | None = None
+
+
+class EvidenceFact(BaseModel):
+    """Deterministic, source-backed fact with provenance (CG-006).
+
+    ``statement`` is assembled verbatim from the collected evidence row —
+    numbers are never recomputed or reformatted, so a fact is exactly as
+    trustworthy as the source row it came from. Every fact gets a stable
+    id (``F1``, ``F2``, ...) so model prose can cite ``[F12]`` and the
+    citation can be checked against the deterministic packet.
+    """
+
+    id: str
+    kind: str = Field(
+        description=(
+            "evidence family: screening / edinet_filing / stock_ohlcv / crypto_ohlcv / macro"
+        )
+    )
+    statement: str
+    provider: str | None = None
+    source_url: str | None = None
+    retrieved_at: str | None = None
+    as_of: str | None = None
+    code_or_series: str | None = None
+
+
+class ModelInference(BaseModel):
+    """Model interpretation tied to supporting fact IDs (CG-006)."""
+
+    statement: str
+    supporting_fact_ids: list[str] = Field(default_factory=list)
 
 
 class ResearchBrief(BaseModel):
@@ -74,3 +107,16 @@ class ResearchAskResponse(BaseModel):
     provider: str
     model: str
     generated_at: datetime
+    # CG-006 provenance separation (all additive with defaults):
+    # - facts: deterministic source-backed rows, assembled verbatim;
+    # - calculations: deterministic transforms of facts (research_ask v1
+    #   forbids free computation, so this stays empty for now);
+    # - inferences: model interpretation, each tied to fact ids;
+    # - invalidation_conditions: what would falsify the conclusion;
+    # - missing_inputs: same list as coverage["missing_inputs"] as a
+    #   first-class field (coverage stays for backward compatibility).
+    facts: list[EvidenceFact] = Field(default_factory=list)
+    calculations: list[str] = Field(default_factory=list)
+    inferences: list[ModelInference] = Field(default_factory=list)
+    invalidation_conditions: list[str] = Field(default_factory=list)
+    missing_inputs: list[str] = Field(default_factory=list)

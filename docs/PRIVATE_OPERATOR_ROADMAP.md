@@ -1,6 +1,6 @@
 # Private / Family Operator Roadmap
 
-Updated: 2026-09-22
+Updated: 2026-09-26
 
 ## Product target
 
@@ -20,18 +20,36 @@ without routinely leaving Yowayowa.
 
 ## Progress baseline
 
-Weighted completion baseline for **Private / Family Operator v1: 68%**.
+Re-baselined 2026-09-26 from current code and real blocked criteria
+(CG-20260925-001/002). Statuses below use exactly these words:
+**DONE** (implemented, tested, merged on this branch),
+**CODE-COMPLETE / REAL-SESSION BLOCKED** (implemented and green, but the
+acceptance criterion requires a real operator session or live machine and is
+gated there), **IN PROGRESS**, **NOT STARTED**, **FROZEN**.
 
-| Area | Weight | Approx. completion | Completion meaning |
-|---|---:|---:|---|
-| Core research workstation | 25% | 90% | Search, instruments, charts, fundamentals, valuation, screeners, comparison, markets, portfolio, news/calendar/macro, provenance |
-| AI-led / interpretable operation | 20% | 75% | Structured tools, operation plans, strategy triage/history/outcomes, BYOK, Codex bridge, tool traces |
-| Broker / execution plane | 20% | 30% | Domain/interlocks/RSS foundation exist; real Linux broker-web execution remains major work |
-| Private data advantage / Japan edge | 15% | 65% | SEC/EDINET/macros exist; authenticated scraping and private sources are underused |
-| Reliability / API / agent parity | 15% | 80% | FastAPI/OpenAPI/CLI/tests/browser CI/observability exist; parity must remain enforced |
-| Product closure / UX audit | 5% | 60% | Broad surface exists, but workflow dead ends and drift still require audit |
+Weighted completion baseline for **Private / Family Operator v1: 67%**
+(was 68% on 2026-09-22). The percentage is deliberately not inflated:
+the largest single deduction is real-session / real-machine / live-broker
+acceptance, which no amount of code progress can satisfy. Percentages are
+re-baselined in place — historical estimates live in git history, not in
+stacked paragraphs.
 
-The percentage is a product-completion estimate, not a commit-count or test-count metric.
+| Area | Weight | Status | Completion meaning |
+|---|---:|---|---|
+| Core research workstation | 25% | DONE-equivalent (90%) | Search, instruments, charts, fundamentals, valuation, screeners, comparison, markets, portfolio, news/calendar/macro, provenance all implemented and tested |
+| AI-led / interpretable operation | 20% | DONE-equivalent (80%) | Structured tools (25-tool agent catalog, CI-pinned), operation plans, strategy triage/history/outcomes/calibration, BYOK, Codex bridge (real-device-auth step: NEED-HUMAN), tool traces, cited research Q&A + morning brief (P5-A) |
+| Broker / execution plane | 20% | CODE-COMPLETE / REAL-SESSION BLOCKED (20%) | Order domain, interlocks, audited submission transport, order-status inquiry, cancel design all code-complete; every write-side and selector step awaits the first real authenticated Rakuten session (see docs/BROKER_ACCEPTANCE_MATRIX.md) |
+| Private data advantage / Japan edge | 15% | DONE-equivalent for code paths (65%) | P1A acquisition toolkit, P1B Rakuten read connector (selectors unverified), P1C IR pipeline, P1D mailbox, JPX margin, credit-margin weekly, machine screening, crypto/US OHLCV, MS2 RSS bridge; Rakuten read URLs remain real-session blocked |
+| Reliability / API / agent parity | 15% | DONE-equivalent (80%) | FastAPI/OpenAPI with CI-pinned core machine paths + agent tool catalog (CG-003), CLI parity, contract tests, real-Chrome E2E in CI |
+| Product closure / UX audit | 5% | IN PROGRESS (50%) | P5-A research surfaces shipped; full workflow dead-end audit not started |
+
+Human-blocked items (explicit, not counted as complete):
+- ChatGPT hosted Codex: one real device-code authorization + one tool-calling
+  research request + refresh/revoke checks (CG-007, NEED-HUMAN);
+- Rakuten Web: catalog URL/selector confirmation, first authenticated read,
+  preview, submit, status, cancel, fill reconciliation
+  (CG-004 matrix, NEED-HUMAN for every real-write row);
+- JPX daily margin: live production format inspection (starts 2026-09-28).
 
 ---
 
@@ -71,7 +89,18 @@ Make AI access boring and reliable, then stop spending disproportionate time on 
 - Agent tool catalog includes research, strategies, portfolio, alerts, and outcome history.
 - OpenAPI contract protects core machine-facing endpoints.
 
-### Remaining work
+### Status (2026-09-26): **CODE-COMPLETE / NEED-HUMAN for the real device-code acceptance.**
+
+- OpenAI-compatible and Anthropic-style provider support: DONE.
+- Hosted Codex bridge in Vercel Services: DONE (production reports enabled).
+- Browser-only ChatGPT device-code flow: DONE.
+- External-AI research-packet generation: DONE.
+- Agent tool catalog (research/strategies/portfolio/alerts/outcome history,
+  25 tools): DONE, pinned by CI.
+- OpenAPI contract protecting core machine-facing endpoints: DONE,
+  pinned by CI (CG-20260925-003).
+
+### Remaining work (all NEED-HUMAN, see CG-20260925-007)
 
 - Complete one real production ChatGPT device-code authorization.
 - Run one real end-to-end Codex research request that calls Yowayowa tools.
@@ -94,60 +123,61 @@ Real ChatGPT authorization requires operator action. If it is not immediately av
 
 ## P1 — Convert scraping permission into private data advantage
 
-This is the largest underused opportunity created by the Private / Family Operator direction.
+Current status (2026-09-26 re-baseline): **substantially DONE in code; the
+Rakuten read-side URL/selector confirmation is CODE-COMPLETE /
+REAL-SESSION BLOCKED.** The 2026-09-22 framing of P1 as "largest underused
+opportunity" is outdated — P1A/C/D are implemented end-to-end against real
+sources and P1B has a real connector foundation.
 
 ### P1A — General authenticated acquisition toolkit
 
-Build a reusable acquisition layer around the existing private HTTP and persistent browser-session foundations.
+**Status: DONE.**
 
-Required capabilities:
+Implemented (all verified by unit/integration tests):
 - persistent local Chromium profile;
-- authenticated-state detection;
+- authenticated-state detection (`AuthState`);
 - same-session HTTP/JSON requests;
-- network request/response instrumentation;
-- structured download capture;
+- network request/response instrumentation (`NetworkExchange`, provenance-safe);
+- structured download capture (`DownloadCapture`);
 - HTML parser adapters;
 - parser/schema version metadata;
-- cache/freshness policy;
+- cache/freshness policy (`FreshnessPolicy`, `CacheStatus`);
 - provenance and as-of timestamps;
-- explicit stale/auth-expired/failure states;
-- snapshot/diff support for changing pages;
-- API/CLI surfaces for debugging individual connectors.
-
-The acquisition framework must make it easy for an agent to inspect:
-- what URL/transport was used;
-- what was parsed;
-- when the parser last succeeded;
-- what changed since the previous snapshot;
-- whether the source requires operator reauthentication.
+- explicit stale/auth-expired/failure states (`AcquisitionFetchState`);
+- snapshot/diff support (`SnapshotRecord`, `SnapshotDiff`);
+- API/CLI surfaces for debugging individual connectors
+  (`/v1/private/connectors*`, `yowayowa private ...`).
 
 ### P1B — Broker read-side first
 
-Before live execution, use authenticated broker sessions as a high-value read source.
+**Status: CODE-COMPLETE / REAL-SESSION BLOCKED (read-side).**
 
-First target: Rakuten Securities Web.
+First target: Rakuten Securities Web — implemented read-only:
+- `operator_bridge/rakuten_web.py` versioned resource catalog
+  (account/positions/open_orders/order_history/executions × jp/us),
+  GET-only host-checked transport, Japanese amount parsers, normalizers
+  into generic `broker_models`;
+- `services/broker_read_service.py` composes the acquisition toolkit
+  (TTL cache, auth detection, snapshots, provenance);
+- `/v1/broker-read/*` API + `yowayowa broker-read` CLI;
+- reconciliation of order status against the audit trail
+  (`services/order_inquiry_service.py`, P2C1).
 
-Ingest where legitimately available:
-- account balances;
-- buying power;
-- cash/margin availability;
-- positions;
-- average acquisition prices;
-- unrealized P/L;
-- open orders;
-- executions/fills;
-- order history;
-- fees;
-- margin positions / collateral state;
-- Japanese and U.S. equity account information.
+**Blocked on the first real authenticated session:** catalog URLs/selectors
+are unverified initial assumptions (`verified=False`); account/position/
+order reads for JP and US must be confirmed live per
+`docs/RAKUTEN_WEB_SESSION.md` (see `docs/BROKER_ACCEPTANCE_MATRIX.md`).
 
-Normalize these into the generic broker models and portfolio state.
-
-Why first: it immediately joins research with the operator's real portfolio while carrying much lower operational risk than live order submission.
+Still to ingest once reads are verified: fees detail, margin/collateral
+state, average acquisition prices, unrealized P/L where the catalog does
+not yet cover them.
 
 ### P1C — Company IR acquisition
 
-Add a general IR monitoring pipeline for companies where valuable information is not fully represented by SEC/EDINET/Yahoo.
+**Status: DONE (verified end-to-end against Nitori Holdings, 2026-09-23).**
+
+General IR monitoring pipeline for companies whose valuable information is
+not fully represented by SEC/EDINET/Yahoo.
 
 Target documents/data:
 - earnings presentations;
@@ -179,7 +209,9 @@ P1A toolkit and `diff_payloads` are unchanged.
 
 ### P1D — Authorized private information sources
 
-For services the operator/family legitimately subscribes to or can access, allow personal-use authenticated connectors when useful.
+**Status: DONE (verified end-to-end against the operator's real mailbox, 2026-09-23).**
+
+For sources the operator/family legitimately subscribes to or can access, personal-use authenticated connectors are allowed when useful.
 
 Keep source-specific credentials/session state local whenever practical. Do not turn private access into redistribution.
 
@@ -201,6 +233,14 @@ operator's real mailbox; see the P1D checkpoint in
 ---
 
 ## P2 — Real Linux broker execution plane
+
+**Status (2026-09-26 re-baseline): code path substantially DONE and
+fail-closed — every real-session acceptance row is BLOCKED on the
+operator (see `docs/BROKER_ACCEPTANCE_MATRIX.md`).**
+Implemented: order domain + interlocks (P2A), audited submission
+transport behind the frozen master gate (P2B), audit-matched order-status
+inquiry (P2C1), cancellation design frozen pending `cancels_enabled` +
+real-session proof (P2C2, NOT IMPLEMENTED by design).
 
 ### Objective
 
@@ -348,18 +388,26 @@ Existing foundation:
 - benchmark-relative outcomes;
 - AI history/outcome tools.
 
-Remaining:
-- aggregate calibration by scoring version;
-- sample counts and minimum-sample warnings;
+### Status (2026-09-26 re-baseline): **aggregate calibration DONE in code — walk-forward/out-of-sample and portfolio-aware sizing NOT STARTED.**
+
+Implemented in `services/strategy_calibration.py` + AI tool
+`get_strategy_calibration` (verified by `tests/test_strategy_calibration.py`):
+- per-(strategy, scoring_version, horizon) aggregate calibration buckets;
+- sample total/available/pending/unavailable counts with a
+  minimum-sample warning (30) and decile minimum (10);
 - score-decile and factor-decile outcome summaries;
 - median/mean total return;
 - median/mean benchmark excess return;
 - positive-excess hit rate;
-- rank correlation / information coefficient where statistically meaningful;
-- walk-forward / out-of-sample evaluation;
+- Spearman rank IC with explicit `ic_insufficient` state
+  (never a fabricated coefficient);
+- outcome provenance propagated unchanged;
+- AI access to calibration evidence via the agent tool catalog.
+
+Remaining (NOT STARTED):
+- walk-forward / out-of-sample evaluation (the rank IC currently treats
+  overlapping windows as independent — flagged in bucket notes);
 - bootstrap/confidence intervals where useful;
-- explicit separation of research-priority score from expected-return forecasts;
-- AI access to calibration evidence;
 - portfolio-aware sizing proposals;
 - hypothesis/invalidation records that can later be evaluated.
 
@@ -390,6 +438,10 @@ The system can answer:
 
 JPX announced daily all-issue margin-balance publication beginning 2026-09-28 if migration proceeds.
 
+**Status: weekly credit-margin scraping DONE (parser/persistence/API/CLI +
+`yowayowa-alpaca`-style weekly cron); the NEW daily all-issue feed is NOT
+STARTED until the live production format exists (from 2026-09-28).**
+
 When the live production format exists:
 - inspect actual format and semantics;
 - ingest daily history with provenance;
@@ -412,6 +464,19 @@ Japanese equities have a meaningful information advantage over the generic Yahoo
 ---
 
 ## P5 — Product-completion audit
+
+**Status (2026-09-26): IN PROGRESS — P5-A (AI-led research surfaces) is
+shipped; the workflow-dead-end audit itself is NOT STARTED.**
+
+Shipped under P5-A:
+- cited research Q&A (`research_ask`): deterministic evidence packet +
+  one grounded agent round; facts/calculations/inferences/
+  invalidation_conditions/missing_inputs separation (CG-20260925-006);
+- morning research brief with Telegram delivery;
+- OHLCV (stock + crypto) and macro evidence joined into the packet with
+  provenance; `get_ohlcv` / `get_macro_series` agent tools;
+- machine screening candidates as research starting points (P4-D);
+- API/agent parity pinned in CI (CG-20260925-003).
 
 Audit workflows, not feature names.
 
