@@ -62,12 +62,17 @@ class ScreeningCandidate(BaseModel):
     weekly-source spelling or (for EDINET issuers) the 5-digit security code
     EDINET publishes; value decoration is never repaired. ``value`` holds the
     concrete numbers that triggered the signal — absent numbers are omitted,
-    never replaced with zeros.
+    never replaced with zeros. ``document_id`` is the per-document evidence
+    key when the candidate comes from one filing (EDINET ``docID``); sources
+    without a document leave it ``None`` — two different documents for the
+    same issuer/signal are two candidates, the same document is one fact
+    (audit Y03).
     """
 
     code: str
     source: ScreeningSource
     signal: ScreeningSignal
+    document_id: str | None = None
     company_name: str | None = None
     value: dict[str, Any]
     reason: str

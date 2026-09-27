@@ -11,12 +11,13 @@ All tests here are offline:
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import Session
 from starlette.testclient import TestClient
 from typer.testing import CliRunner
@@ -478,6 +479,163 @@ def test_pipeline_combines_sources_without_dedup() -> None:
             source=ScreeningSource.EDINET_FILING,
             signal=ScreeningSignal.FILING_BUYBACK,
         )
+
+
+# ---------------------------------------------------- audit Y03: document keys
+
+
+def _edinet_filing_rows(*doc_ids: str) -> ScreeningRunResult:
+    """One EDINET run with one 訂正有価証券報告書 row per given docID."""
+
+    path = FIXTURES / f"audit-y03-{'-'.join(doc_ids)}.jsonl"
+    path.write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "docID": doc_id,
+                    "secCode": "67580",
+                    "filerName": "合成企業",
+                    "docDescription": "訂正有価証券報告書",
+                    "submitDateTime": "2026-09-24 09:00",
+                },
+                ensure_ascii=False,
+            )
+            for doc_id in doc_ids
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    result = run_screening_pipeline(
+        session=None,
+        edinet_path=path,
+        screener_mode="off",
+        credit_margin_mode="off",
+        run_date=SIGNAL_DATE,
+    )
+    path.unlink()
+    return result
+
+
+def test_two_filings_same_issuer_signal_persist_both_documents() -> None:
+    """Audit Y03: DOC1/DOC2 for one issuer+signal must both persist."""
+
+    result = _edinet_filing_rows("DOC1", "DOC2")
+    assert [c.document_id for c in result.candidates] == ["DOC1", "DOC2"]
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            persisted = persist_screening_run(session, result)
+            assert persisted == {"inserted": 2, "updated": 0}
+            with Session(engine, expire_on_commit=False) as fresh:
+                rows = read_screening_candidates(fresh, run_date=SIGNAL_DATE)
+                assert sorted(row["document_id"] for row in rows) == ["DOC1", "DOC2"]
+    finally:
+        engine.dispose()
+
+
+def test_duplicate_docid_rows_in_one_file_are_skipped() -> None:
+    """Audit Y03: the same document twice is one candidate fact."""
+
+    result = _edinet_filing_rows("DOC1", "DOC1")
+    assert [c.document_id for c in result.candidates] == ["DOC1"]
+    counts = result.per_source_counts[ScreeningSource.EDINET_FILING.value]
+    assert counts["row_count"] == 2
+    assert counts["skipped_duplicate_doc"] == 1
+    assert counts["candidates"] == 1
+
+
+def test_read_screening_candidates_returns_document_id() -> None:
+    provenance = Provenance(
+        provider="edinet-v2",
+        source="fixture",
+        license_class=LicenseClass.OFFICIAL_PUBLIC,
+        retrieved_at=SIGNAL_RETRIEVED,
+        as_of=SIGNAL_DATE,
+    )
+    result = ScreeningRunResult(
+        run_date=SIGNAL_DATE,
+        candidates=[
+            ScreeningCandidate(
+                code="11115",
+                source=ScreeningSource.EDINET_FILING,
+                signal=ScreeningSignal.FILING_FORECAST_REVISION,
+                document_id="S100TEST1",
+                value={"doc_id": "S100TEST1"},
+                reason="訂正有価証券報告書",
+                provenance=provenance,
+                detected_at=SIGNAL_RETRIEVED,
+            ),
+        ],
+        per_source_counts={"edinet_filing": {"candidates": 1}},
+        coverage={},
+        provenance=provenance,
+    )
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            persist_screening_run(session, result)
+            with Session(engine, expire_on_commit=False) as fresh:
+                rows = read_screening_candidates(fresh, run_date=SIGNAL_DATE)
+                assert rows[0]["document_id"] == "S100TEST1"
+    finally:
+        engine.dispose()
+
+
+def test_init_database_migrates_legacy_screening_table(tmp_path: Path) -> None:
+    """Audit Y03: the legacy 4-column-unique table is rebuilt in place."""
+
+    from yowayowa import db as db_module
+    from yowayowa.db import init_database
+
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE screening_candidates (
+                id INTEGER NOT NULL,
+                run_date DATE NOT NULL,
+                source VARCHAR(32) NOT NULL,
+                code VARCHAR(5) NOT NULL,
+                signal VARCHAR(40) NOT NULL,
+                company_name VARCHAR(500),
+                value JSON NOT NULL,
+                reason VARCHAR(500) NOT NULL,
+                provenance JSON NOT NULL,
+                retrieved_at DATETIME NOT NULL,
+                PRIMARY KEY (id),
+                CONSTRAINT uq_screening_candidates_run_source_code_signal
+                    UNIQUE (run_date, source, code, signal)
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO screening_candidates VALUES (1, '2026-09-24', 'edinet_filing', "
+            "'6758', 'filing_forecast_revision', '合成企業', '{}', 'r', '{}', "
+            "'2026-09-24 12:00:00.000000')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    settings = Settings(database_url=f"sqlite:///{db_path}")
+    db_module.dispose_database()
+    try:
+        init_database(settings)
+        engine = db_module._engine
+        assert engine is not None
+        columns = {column["name"] for column in inspect(engine).get_columns("screening_candidates")}
+        assert "document_id" in columns
+        with Session(engine, expire_on_commit=False) as session:
+            legacy_rows = read_screening_candidates(session, run_date=SIGNAL_DATE)
+            assert len(legacy_rows) == 1
+            assert legacy_rows[0]["document_id"] is None
+            # Remains idempotent: re-running init_database is a no-op.
+            init_database(settings)
+            with Session(db_module._engine, expire_on_commit=False) as fresh:
+                assert len(read_screening_candidates(fresh, run_date=SIGNAL_DATE)) == 1
+    finally:
+        db_module.dispose_database()
 
 
 def test_run_result_with_no_sources_still_records_coverage(tmp_path: Path) -> None:

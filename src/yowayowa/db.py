@@ -15,7 +15,9 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     create_engine,
+    inspect,
     select,
+    text,
 )
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import (
@@ -277,11 +279,14 @@ class CreditMarginWeeklyRecord(Base):
 class ScreeningCandidateRecord(Base):
     """One machine-discovered screening candidate for one run date (P4-D).
 
-    Uniqueness is (run_date, source, code, signal): a re-run for the same
-    run date replaces that date's rows atomically (delete+insert inside one
-    transaction — see services/screening_pipeline.py), so re-running the
-    pipeline is idempotent. ``provenance`` holds the candidate provenance;
-    absent numbers are never zero-filled here either.
+    Uniqueness is (run_date, source, code, signal, document_id): a re-run for
+    the same run date replaces that date's rows atomically (delete+insert
+    inside one transaction — see services/screening_pipeline.py), so
+    re-running the pipeline is idempotent. ``document_id`` carries the
+    per-document evidence key (EDINET docID; NULL for sources without one):
+    two different documents for the same issuer/signal are two rows, while
+    the same document is one fact (audit Y03). ``provenance`` holds the
+    candidate provenance; absent numbers are never zero-filled here either.
     """
 
     __tablename__ = "screening_candidates"
@@ -291,7 +296,8 @@ class ScreeningCandidateRecord(Base):
             "source",
             "code",
             "signal",
-            name="uq_screening_candidates_run_source_code_signal",
+            "document_id",
+            name="uq_screening_candidates_run_source_code_signal_doc",
         ),
     )
 
@@ -300,6 +306,7 @@ class ScreeningCandidateRecord(Base):
     source: Mapped[str] = mapped_column(String(32), index=True)
     code: Mapped[str] = mapped_column(String(5), index=True)
     signal: Mapped[str] = mapped_column(String(40), index=True)
+    document_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     company_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     value: Mapped[dict[str, Any]] = mapped_column(JSON)
     reason: Mapped[str] = mapped_column(String(500))
@@ -363,6 +370,112 @@ def init_database(settings: Settings | None = None) -> None:
     _engine = make_engine(settings)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
     Base.metadata.create_all(_engine)
+    _ensure_screening_candidates_document_id(_engine)
+
+
+def _ensure_screening_candidates_document_id(engine: Engine) -> None:
+    """Idempotent lightweight migration for audit Y03 (no alembic in repo).
+
+    The screening_candidates unique key gained a ``document_id`` column
+    (was (run_date, source, code, signal), is now
+    (run_date, source, code, signal, document_id)). Production runs on
+    SQLite, where the old 4-column unique index can only be dropped by a
+    table rebuild — the old constraint cannot simply be altered away.
+
+    - SQLite: inspect ``PRAGMA table_info``; when ``document_id`` is absent,
+      rebuild the table with the new schema (CREATE … new → INSERT … SELECT
+      keeping every existing column and id, with NULL AS document_id →
+      DROP → ALTER TABLE RENAME). The old 4-column unique constraint is
+      replaced by the new 5-column one in the rebuild. Existing rows are
+      preserved with ``document_id = NULL``. A fresh database created by
+      ``create_all`` already has the column, so this is a no-op there.
+    - Non-SQLite: try an ``ALTER TABLE ADD COLUMN document_id VARCHAR(64)``
+      and swallow the error when the column already exists. The old unique
+      constraint is intentionally NOT rebuilt here (the 4-column index is
+      strictly tighter than the 5-column one for NULL document ids only
+      when document_id is always non-NULL; production is SQLite, where the
+      rebuild path runs).
+    """
+
+    dialect = engine.dialect.name
+    inspector = inspect(engine)
+    columns = {column["name"] for column in inspector.get_columns("screening_candidates")}
+    if "document_id" in columns:
+        return
+
+    if dialect == "sqlite":
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE screening_candidates_new (
+                        id INTEGER NOT NULL,
+                        run_date DATE NOT NULL,
+                        source VARCHAR(32) NOT NULL,
+                        code VARCHAR(5) NOT NULL,
+                        signal VARCHAR(40) NOT NULL,
+                        document_id VARCHAR(64),
+                        company_name VARCHAR(500),
+                        value JSON NOT NULL,
+                        reason VARCHAR(500) NOT NULL,
+                        provenance JSON NOT NULL,
+                        retrieved_at DATETIME NOT NULL,
+                        PRIMARY KEY (id),
+                        CONSTRAINT uq_screening_candidates_run_source_code_signal_doc
+                            UNIQUE (run_date, source, code, signal, document_id)
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO screening_candidates_new (
+                        id, run_date, source, code, signal, document_id,
+                        company_name, value, reason, provenance, retrieved_at
+                    )
+                    SELECT id, run_date, source, code, signal, NULL,
+                           company_name, value, reason, provenance, retrieved_at
+                    FROM screening_candidates
+                    """
+                )
+            )
+            conn.execute(text("DROP TABLE screening_candidates"))
+            conn.execute(
+                text("ALTER TABLE screening_candidates_new RENAME TO screening_candidates")
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX ix_screening_candidates_run_date "
+                    "ON screening_candidates (run_date)"
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX ix_screening_candidates_source ON screening_candidates (source)")
+            )
+            conn.execute(
+                text("CREATE INDEX ix_screening_candidates_code ON screening_candidates (code)")
+            )
+            conn.execute(
+                text("CREATE INDEX ix_screening_candidates_signal ON screening_candidates (signal)")
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX ix_screening_candidates_retrieved_at "
+                    "ON screening_candidates (retrieved_at)"
+                )
+            )
+        return
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE screening_candidates ADD COLUMN document_id VARCHAR(64)")
+            )
+    except Exception:
+        # Column already exists on this non-SQLite backend (or the backend
+        # forbids the ADD COLUMN): the desired end state is already there.
+        pass
 
 
 def dispose_database() -> None:

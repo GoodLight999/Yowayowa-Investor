@@ -146,13 +146,20 @@ def _edinet_candidates(
     skipped_unclassified = 0
     skipped_unparseable = 0
     skipped_missing_code = 0
+    skipped_duplicate_doc = 0
     row_count = 0
     first_provenance: Provenance | None = None
+    seen_doc_ids: set[str] = set()
     for row in _iter_edinet_jsonl(path):
         row_count += 1
         doc_id = row.get("docID")
         if not isinstance(doc_id, str) or not doc_id.strip():
             skipped_unparseable += 1
+            continue
+        # Same document, same fact: repeated docIDs inside one file are one
+        # candidate (audit Y03) — later rows are counted and skipped.
+        if doc_id in seen_doc_ids:
+            skipped_duplicate_doc += 1
             continue
         description_raw = row.get("docDescription")
         description = description_raw.strip() if isinstance(description_raw, str) else ""
@@ -172,6 +179,7 @@ def _edinet_candidates(
             # code there is no watchable issuer (never inferred).
             skipped_missing_code += 1
             continue
+        seen_doc_ids.add(doc_id)
         submit_at = _parse_submit_time(row.get("submitDateTime"))
         provenance = Provenance(
             provider="edinet-v2",
@@ -189,6 +197,7 @@ def _edinet_candidates(
                 code=sec_code,
                 source=ScreeningSource.EDINET_FILING,
                 signal=signal,
+                document_id=doc_id,
                 company_name=row.get("filerName") or None,
                 value={
                     "doc_id": doc_id,
@@ -207,6 +216,7 @@ def _edinet_candidates(
         "skipped_unclassified": skipped_unclassified,
         "skipped_unparseable": skipped_unparseable,
         "skipped_missing_code": skipped_missing_code,
+        "skipped_duplicate_doc": skipped_duplicate_doc,
     }
     return candidates, counts, first_provenance
 
@@ -668,6 +678,7 @@ def persist_screening_run(
                     source=candidate.source.value,
                     code=candidate.code,
                     signal=candidate.signal.value,
+                    document_id=candidate.document_id,
                     company_name=candidate.company_name,
                     value=candidate.value,
                     reason=candidate.reason,
@@ -719,6 +730,7 @@ def read_screening_candidates(
             "source": row.source,
             "code": row.code,
             "signal": row.signal,
+            "document_id": row.document_id,
             "company_name": row.company_name,
             "value": row.value,
             "reason": row.reason,
