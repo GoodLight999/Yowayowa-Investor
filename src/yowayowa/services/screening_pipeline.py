@@ -11,12 +11,22 @@ Pipeline contract (docs/PRIVATE_OPERATOR_ROADMAP.md, P4-D):
   database and a screener failure each yield zero candidates plus a recorded
   coverage entry — the run still succeeds with whatever the other sources
   found; nothing is zero-filled and no run aborts another source's work.
+  The same holds for a *fatal* source failure (an unparseable EDINET file, a
+  database error while reading credit margins): the failing source records
+  ``source_error: <exception type>`` in its ``per_source_counts`` entry, its
+  coverage entries become ``None``, its provenance is simply absent (never
+  fabricated), and the remaining sources still run. Line-level broken EDINET
+  rows stay line-level: they are counted as ``skipped_unparseable`` and do
+  not fail the source.
 - The result is deliberately NOT deduplicated: the same code appearing under
   several sources/signals is corroboration, and different signals are
   different candidates.
 - Persistence is idempotent per run date: re-running the pipeline for the
   same run date replaces that date's rows atomically (delete+insert inside
-  one transaction).
+  one transaction) — except when the new run's fetch failed for a source
+  that already has persisted rows for that date: then persistence is
+  refused (see :func:`persist_screening_run`) so a degraded run can never
+  erase the previous good snapshot.
 """
 
 from __future__ import annotations
@@ -408,8 +418,12 @@ def run_screening_pipeline(
     The EDINET source reads the local daily JSONL
     (``data/edinet-daily.jsonl`` by default; passing an explicit path wins;
     a missing file yields no candidates with recorded coverage). Every
-    source is independent: a failure in one source is recorded in
-    ``per_source_counts``/``coverage`` and never aborts the remaining ones.
+    source is independent: a missing file, an empty database and a fatal
+    per-source error (unparseable EDINET file, DB failure, provider/network
+    error) are each recorded in ``per_source_counts``/``coverage`` — fatal
+    errors as ``source_error: <exception type>`` (screener:
+    ``provider_error: <exception type>``) — and never abort the remaining
+    sources. A failed source contributes no provenance (never fabricated).
     """
 
     resolved_date = run_date or datetime.now(UTC).date()
@@ -423,16 +437,25 @@ def run_screening_pipeline(
     resolved_edinet = Path(edinet_path) if edinet_path is not None else _DEFAULT_EDINET_PATH
     coverage["edinet_daily_jsonl_path"] = str(resolved_edinet)
     if resolved_edinet.is_file():
-        edinet_candidates, edinet_counts, edinet_provenance = _edinet_candidates(
-            resolved_edinet,
-            detected_at=detected_at,
-        )
-        candidates.extend(edinet_candidates)
-        per_source_counts[ScreeningSource.EDINET_FILING.value] = edinet_counts
-        coverage["edinet_daily_record_count"] = edinet_counts["row_count"]
-        coverage["edinet_coverage_complete"] = edinet_counts["row_count"] > 0
-        if edinet_provenance is not None:
-            provenances.append(edinet_provenance)
+        try:
+            edinet_candidates, edinet_counts, edinet_provenance = _edinet_candidates(
+                resolved_edinet,
+                detected_at=detected_at,
+            )
+        except Exception as exc:  # corrupt file etc.: recorded, never fatal
+            per_source_counts[ScreeningSource.EDINET_FILING.value] = {
+                "candidates": 0,
+                "reason": f"source_error: {type(exc).__name__}",
+            }
+            coverage["edinet_daily_record_count"] = None
+            coverage["edinet_coverage_complete"] = None
+        else:
+            candidates.extend(edinet_candidates)
+            per_source_counts[ScreeningSource.EDINET_FILING.value] = edinet_counts
+            coverage["edinet_daily_record_count"] = edinet_counts["row_count"]
+            coverage["edinet_coverage_complete"] = edinet_counts["row_count"] > 0
+            if edinet_provenance is not None:
+                provenances.append(edinet_provenance)
     else:
         per_source_counts[ScreeningSource.EDINET_FILING.value] = {
             "candidates": 0,
@@ -444,19 +467,28 @@ def run_screening_pipeline(
     # Source B: persisted weekly credit margins (empty DB = 0 candidates,
     # recorded coverage — never a failure).
     if credit_margin_mode != "off" and session is not None:
-        credit_candidates, credit_counts, credit_provenance = _credit_margin_weekly_candidates(
-            session, detected_at=detected_at
-        )
-        candidates.extend(credit_candidates)
-        per_source_counts[ScreeningSource.CREDIT_MARGIN_WEEKLY.value] = credit_counts
-        coverage["credit_margin_weekly_record_count"] = (
-            credit_counts["codes_with_two_weeks"] + credit_counts["codes_without_two_weeks"]
-        )
-        coverage["credit_margin_weekly_coverage_complete"] = (
-            credit_counts["codes_with_two_weeks"] > 0
-        )
-        if credit_provenance is not None:
-            provenances.append(credit_provenance)
+        try:
+            credit_candidates, credit_counts, credit_provenance = _credit_margin_weekly_candidates(
+                session, detected_at=detected_at
+            )
+        except Exception as exc:  # DB failure: recorded, never fatal
+            per_source_counts[ScreeningSource.CREDIT_MARGIN_WEEKLY.value] = {
+                "candidates": 0,
+                "reason": f"source_error: {type(exc).__name__}",
+            }
+            coverage["credit_margin_weekly_record_count"] = None
+            coverage["credit_margin_weekly_coverage_complete"] = None
+        else:
+            candidates.extend(credit_candidates)
+            per_source_counts[ScreeningSource.CREDIT_MARGIN_WEEKLY.value] = credit_counts
+            coverage["credit_margin_weekly_record_count"] = (
+                credit_counts["codes_with_two_weeks"] + credit_counts["codes_without_two_weeks"]
+            )
+            coverage["credit_margin_weekly_coverage_complete"] = (
+                credit_counts["codes_with_two_weeks"] > 0
+            )
+            if credit_provenance is not None:
+                provenances.append(credit_provenance)
     else:
         per_source_counts[ScreeningSource.CREDIT_MARGIN_WEEKLY.value] = {
             "candidates": 0,

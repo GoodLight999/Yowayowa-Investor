@@ -10,8 +10,10 @@ All tests here are offline:
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -325,6 +327,80 @@ def test_screener_candidates_and_unparseable_skips(monkeypatch: pytest.MonkeyPat
     assert failed.per_source_counts[ScreeningSource.MARKET_SCREENER.value]["candidates"] == 0
     failed_counts = failed.per_source_counts[ScreeningSource.MARKET_SCREENER.value]
     assert "provider_error" in failed_counts["reason"]
+
+
+# ------------------------------------------------- audit Y01: source isolation
+
+
+def test_invalid_edinet_json_isolated_screener_still_runs(tmp_path: Path) -> None:
+    """Audit Y01: a corrupt EDINET JSONL line must not abort the whole run."""
+
+    broken = tmp_path / "broken.jsonl"
+    broken.write_text("{invalid-json\n", encoding="utf-8")
+    fake = FakeScreenerProvider(quotes=[{"symbol": "6758.T", "regularMarketPrice": 1200.0}])
+    result = run_screening_pipeline(
+        session=None,
+        edinet_path=broken,
+        screener_mode="on",
+        screener_factory=lambda: fake,
+        credit_margin_mode="off",
+        run_date=SIGNAL_DATE,
+    )
+    counts = result.per_source_counts[ScreeningSource.EDINET_FILING.value]
+    assert counts["candidates"] == 0
+    assert counts["reason"] == "source_error: JSONDecodeError"
+    assert result.coverage["edinet_daily_record_count"] is None
+    assert result.coverage["edinet_coverage_complete"] is None
+    # The healthy screener source still ran and produced its candidate.
+    assert fake.calls, "screener factory must be called despite the EDINET failure"
+    screener = [c for c in result.candidates if c.source == ScreeningSource.MARKET_SCREENER]
+    assert [c.code for c in screener] == ["6758"]
+    # The failed source contributes no provenance (never fabricated).
+    assert all(p.provider != "edinet-v2" for p in [result.provenance])
+
+
+def test_credit_margin_session_error_isolated_other_sources_unaffected(
+    tmp_path: Path,
+) -> None:
+    """Audit Y01: a credit-margin DB failure must not abort the other sources."""
+
+    broken_edinet = tmp_path / "sample.jsonl"
+    broken_edinet.write_text(
+        json.dumps(
+            {
+                "docID": "S100TEST1",
+                "secCode": "67580",
+                "docDescription": "訂正有価証券報告書",
+                "filerName": "合成企業",
+                "submitDateTime": "2026-09-24 09:00",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    exploding_session = Mock()
+    exploding_session.scalars.side_effect = RuntimeError("db gone")
+    fake = FakeScreenerProvider(quotes=[{"symbol": "6758.T", "regularMarketPrice": 1200.0}])
+    result = run_screening_pipeline(
+        exploding_session,  # type: ignore[arg-type]
+        edinet_path=broken_edinet,
+        screener_mode="on",
+        screener_factory=lambda: fake,
+        credit_margin_mode="on",
+        run_date=SIGNAL_DATE,
+    )
+    credit_counts = result.per_source_counts[ScreeningSource.CREDIT_MARGIN_WEEKLY.value]
+    assert credit_counts["candidates"] == 0
+    assert credit_counts["reason"] == "source_error: RuntimeError"
+    assert result.coverage["credit_margin_weekly_record_count"] is None
+    assert result.coverage["credit_margin_weekly_coverage_complete"] is None
+    # The other sources are unaffected: EDINET still produced its candidate
+    # (5-digit security code as EDINET publishes it).
+    edinet = [c for c in result.candidates if c.source == ScreeningSource.EDINET_FILING]
+    assert [c.code for c in edinet] == ["67580"]
+    screener = [c for c in result.candidates if c.source == ScreeningSource.MARKET_SCREENER]
+    assert [c.code for c in screener] == ["6758"]
 
 
 def test_public_mode_policy_disables_screener(monkeypatch: pytest.MonkeyPatch) -> None:
