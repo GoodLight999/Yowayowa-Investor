@@ -379,3 +379,143 @@ def test_eps_diluted_derives_value_from_finite_inputs() -> None:
     assert points[0].value == Decimal("20.000000")
     assert points[0].unit == "JPY/share"
     assert points[0].form == "Yahoo normalized statement"
+
+
+def test_safe_frame_falls_back_to_frequency_kwarg() -> None:
+    calls: list[dict[str, str]] = []
+
+    def legacy_loader(**kwargs: str) -> pd.DataFrame:
+        calls.append(kwargs)
+        if "freq" in kwargs:
+            raise TypeError("legacy yfinance uses frequency=")
+        return pd.DataFrame({"2025-12-31": [1]})
+
+    frame = YahooFundamentalsProvider._safe_frame(legacy_loader, "yearly")
+
+    assert not frame.empty
+    assert calls == [{"freq": "yearly"}, {"frequency": "yearly"}]
+
+
+def test_safe_frame_returns_empty_when_both_signatures_fail() -> None:
+    def broken_loader(**_: str) -> pd.DataFrame:
+        raise RuntimeError("boom")
+
+    assert YahooFundamentalsProvider._safe_frame(broken_loader, "yearly").empty
+
+
+def test_safe_frame_rejects_non_dataframe_payload() -> None:
+    assert YahooFundamentalsProvider._safe_frame(lambda **_: "not-a-frame", "yearly").empty
+
+
+def test_point_rejects_unparseable_value_or_period() -> None:
+    build = YahooFundamentalsProvider._point
+
+    assert build("assets", "2025-12-31", "not-a-number", "yearly", "JPY") is None
+    assert build("assets", "2025-12-31", float("nan"), "yearly", "JPY") is None
+    assert build("assets", "garbage-period", "100", "yearly", "JPY") is None
+    assert build("assets", None, "100", "yearly", "JPY") is None
+
+
+def test_point_normalizes_capex_to_positive_outflow() -> None:
+    point = YahooFundamentalsProvider._point("capex", "2025-12-31", "-120.5", "yearly", "JPY")
+
+    assert point is not None
+    assert point.value == Decimal("120.5")
+    assert point.unit == "JPY"
+
+
+def test_point_units_differ_by_key_and_currency() -> None:
+    shares = YahooFundamentalsProvider._point(
+        "shares_diluted", "2025-12-31", "20", "quarterly", "JPY"
+    )
+    eps = YahooFundamentalsProvider._point("eps_diluted", "2025-12-31", "2.5", "quarterly", "JPY")
+    eps_without_currency = YahooFundamentalsProvider._point(
+        "eps_diluted", "2025-12-31", "2.5", "quarterly", ""
+    )
+
+    assert shares is not None and shares.unit == "shares"
+    assert eps is not None and eps.unit == "JPY/share"
+    assert eps_without_currency is not None
+    assert eps_without_currency.unit == "per share"
+    assert shares is not None and shares.period_start == date(2025, 10, 3)
+    assert eps is not None and eps.period_start == date(2025, 10, 3)
+    assert shares is not None and shares.fiscal_period == "Q"
+
+
+def test_fill_fiscal_years_infers_fiscal_month_and_labels_points() -> None:
+    metrics = {
+        "assets": MetricSeries(
+            key="assets",
+            label="Assets",
+            points=[
+                MetricPoint(
+                    period_start=date(2025, 3, 1),
+                    period_end=date(2026, 2, 20),
+                    value=Decimal("1"),
+                    unit="JPY",
+                    fiscal_period="Q",
+                ),
+                MetricPoint(
+                    period_start=date(2025, 3, 1),
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("2"),
+                    unit="JPY",
+                    fiscal_period="Q",
+                ),
+                MetricPoint(
+                    period_start=date(2024, 3, 1),
+                    period_end=date(2024, 3, 31),
+                    value=Decimal("3"),
+                    unit="JPY",
+                    fiscal_period="Q",
+                ),
+            ],
+        )
+    }
+
+    YahooFundamentalsProvider._fill_fiscal_years(
+        metrics,
+        [
+            date(2023, 12, 31),
+            date(2024, 12, 31),
+            date(2025, 12, 31),
+        ],
+    )
+
+    points = metrics["assets"].points
+    # Fiscal month inferred as December: Feb-end belongs to next FY, Mar 2024
+    # (before December) stays in its own year.
+    assert points[0].fiscal_year == 2026
+    assert points[1].fiscal_year == 2025
+    assert points[2].fiscal_year == 2024
+
+
+def test_fill_fiscal_years_without_two_yearly_ends_labels_fy_only() -> None:
+    metrics = {
+        "assets": MetricSeries(
+            key="assets",
+            label="Assets",
+            points=[
+                MetricPoint(
+                    period_start=date(2025, 1, 1),
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("1"),
+                    unit="JPY",
+                    fiscal_period="FY",
+                ),
+                MetricPoint(
+                    period_start=date(2025, 10, 1),
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("2"),
+                    unit="JPY",
+                    fiscal_period="Q",
+                ),
+            ],
+        )
+    }
+
+    YahooFundamentalsProvider._fill_fiscal_years(metrics, [date(2025, 12, 31)])
+
+    points = metrics["assets"].points
+    assert points[0].fiscal_year == 2025  # FY keeps period-end year
+    assert points[1].fiscal_year is None  # quarterly stays unlabeled
