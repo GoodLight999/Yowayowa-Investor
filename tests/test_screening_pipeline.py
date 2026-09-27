@@ -34,6 +34,7 @@ from yowayowa.screening_models import (
     ScreeningSource,
 )
 from yowayowa.services.screening_pipeline import (
+    ScreeningRunDegradedError,
     classify_edinet_filing,
     persist_screening_run,
     read_screening_candidates,
@@ -563,6 +564,171 @@ def test_persist_screening_run_is_idempotent_per_run_date() -> None:
             del total
     finally:
         engine.dispose()
+
+
+# ---------------------------------------------------- audit Y02: degraded guard
+
+
+def _degraded_screener_result(run_date: date) -> ScreeningRunResult:
+    """One screener-origin run whose screener fetch failed (audit Y02)."""
+
+    provenance = Provenance(
+        provider="test",
+        source="fixture",
+        license_class=LicenseClass.PERSONAL_ONLY,
+        retrieved_at=SIGNAL_RETRIEVED,
+        as_of=run_date,
+    )
+    return ScreeningRunResult(
+        run_date=run_date,
+        candidates=[],
+        per_source_counts={
+            "market_screener": {
+                "candidates": 0,
+                "reason": "provider_error: RuntimeError",
+            },
+        },
+        coverage={},
+        provenance=provenance,
+    )
+
+
+def _screener_candidate_result() -> ScreeningRunResult:
+    """One previous good snapshot whose rows came from the screener."""
+
+    provenance = Provenance(
+        provider="test",
+        source="fixture",
+        license_class=LicenseClass.PERSONAL_ONLY,
+        retrieved_at=SIGNAL_RETRIEVED,
+        as_of=SIGNAL_DATE,
+    )
+    return ScreeningRunResult(
+        run_date=SIGNAL_DATE,
+        candidates=[
+            ScreeningCandidate(
+                code="6758",
+                source=ScreeningSource.MARKET_SCREENER,
+                signal=ScreeningSignal.SCREENER_LOW_PE,
+                value={"symbol": "6758.T"},
+                reason="合成データ",
+                provenance=provenance,
+                detected_at=SIGNAL_RETRIEVED,
+            ),
+        ],
+        per_source_counts={"market_screener": {"candidates": 1}},
+        coverage={},
+        provenance=provenance,
+    )
+
+
+def test_degraded_same_day_run_does_not_erase_previous_candidates() -> None:
+    """Audit Y02: a failed same-day re-fetch must refuse to replace rows."""
+
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            persist_screening_run(session, _screener_candidate_result())
+            degraded = _degraded_screener_result(SIGNAL_DATE)
+            with pytest.raises(ScreeningRunDegradedError) as excinfo:
+                persist_screening_run(session, degraded)
+            message = str(excinfo.value)
+            assert "market_screener" in message
+            assert "provider_error: RuntimeError" in message
+            # Nothing was written: the original snapshot survives untouched.
+            with Session(engine, expire_on_commit=False) as fresh:
+                rows = read_screening_candidates(fresh, run_date=SIGNAL_DATE)
+                assert {row["code"] for row in rows} == {"6758"}
+    finally:
+        engine.dispose()
+
+
+def test_degraded_run_persists_when_failed_source_has_no_existing_rows() -> None:
+    """Audit Y02: no existing rows for the failed source -> nothing to lose."""
+
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            # Only credit-margin rows exist for today; the degraded run's
+            # failure is EDINET file_missing (no edinet rows to lose).
+            credit_only = _two_candidate_result()
+            credit_only.candidates = [
+                c
+                for c in credit_only.candidates
+                if c.source == ScreeningSource.CREDIT_MARGIN_WEEKLY
+            ]
+            persist_screening_run(session, credit_only)
+            degraded = ScreeningRunResult(
+                run_date=SIGNAL_DATE,
+                candidates=[],
+                per_source_counts={
+                    "edinet_filing": {"candidates": 0, "reason": "file_missing"},
+                },
+                coverage={},
+                provenance=credit_only.provenance,
+            )
+            persisted = persist_screening_run(session, degraded)
+            assert persisted == {"inserted": 0, "updated": 1}
+            with Session(engine, expire_on_commit=False) as fresh:
+                rows = read_screening_candidates(fresh, run_date=SIGNAL_DATE)
+                assert rows == []  # credit row replaced by the empty re-run
+    finally:
+        engine.dispose()
+
+
+def test_clean_same_day_rerun_still_replaces_rows() -> None:
+    """Audit Y02: a healthy same-day re-run stays idempotent (no guard trip)."""
+
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            first = persist_screening_run(session, _two_candidate_result())
+            assert first == {"inserted": 2, "updated": 0}
+            rerun = _two_candidate_result()
+            rerun.per_source_counts = {"edinet_filing": {"candidates": 1}}
+            second = persist_screening_run(session, rerun)
+            assert second == {"inserted": 2, "updated": 2}
+            with Session(engine, expire_on_commit=False) as fresh:
+                rows = read_screening_candidates(fresh, run_date=SIGNAL_DATE)
+                assert {row["code"] for row in rows} == {"11115", "6758"}
+    finally:
+        engine.dispose()
+
+
+def test_api_degraded_rerun_returns_409_and_keeps_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Audit Y02: the API converts the degraded guard into HTTP 409."""
+
+    _api_db_engine(monkeypatch, tmp_path)
+    fake = FakeScreenerProvider(quotes=[{"symbol": "6758.T", "regularMarketPrice": 1200.0}])
+    monkeypatch.setattr(
+        "yowayowa.services.screening_pipeline._screener_factory",
+        lambda: fake,
+    )
+    with TestClient(app) as client:
+        first = client.post("/v1/screening/run")
+        assert first.status_code == 200
+        assert first.json()["persisted"]["inserted"] >= 1
+
+        # Second run: screener fetch now fails while rows exist for today.
+        def _boom() -> FakeScreenerProvider:
+            raise RuntimeError("取得障害")
+
+        monkeypatch.setattr(
+            "yowayowa.services.screening_pipeline._screener_factory",
+            _boom,
+        )
+        second = client.post("/v1/screening/run")
+        assert second.status_code == 409
+        assert "market_screener" in second.json()["detail"]
+
+        # The first snapshot's rows survive the refused re-run.
+        candidates = client.get("/v1/screening/candidates", params={"signal": "screener_low_pe"})
+        assert candidates.status_code == 200
+        rows = candidates.json()
+        assert rows and rows[0]["code"] == "6758"
 
 
 # ------------------------------------------------------------------------ API

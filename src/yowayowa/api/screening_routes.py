@@ -6,7 +6,9 @@ Exposes the screening pipeline run and the persisted candidates:
   result (idempotent per run date). Runs regardless of EDINET/credit-margin
   coverage; the market screener is personal-only (Yahoo custom screener), so
   the whole POST fails closed outside personal mode with HTTP 403 —
-  mirroring ``jpx_routes``/``credit_routes``.
+  mirroring ``jpx_routes``/``credit_routes``. A degraded re-run whose fetch
+  failed for a source that already has rows today is refused with HTTP 409
+  and the previous snapshot is kept (audit Y02).
 - ``GET /v1/screening/candidates`` reads persisted candidates with their
   read-provenance; same personal-mode gate.
 
@@ -27,6 +29,7 @@ from yowayowa.db import get_session
 from yowayowa.providers.yahoo_screener import YahooScreenerProvider
 from yowayowa.screening_models import ScreeningRunResult
 from yowayowa.services.screening_pipeline import (
+    ScreeningRunDegradedError,
     persist_screening_run,
     read_screening_candidates,
     run_screening_pipeline,
@@ -68,7 +71,12 @@ def post_screening_run() -> ScreeningRunResponse:
     session = get_session()
     try:
         result = run_screening_pipeline(session, market_size=50)
-        persisted = persist_screening_run(session, result)
+        try:
+            persisted = persist_screening_run(session, result)
+        except ScreeningRunDegradedError as exc:
+            # Audit Y02: a degraded re-run (failed re-fetch for a source with
+            # existing rows today) must not erase the previous good snapshot.
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     finally:
         session.close()
     return ScreeningRunResponse(result=result, persisted=persisted)

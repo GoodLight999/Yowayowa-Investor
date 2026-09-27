@@ -57,6 +57,7 @@ from yowayowa.services.credit_margin import read_credit_margin_by_code
 
 __all__ = [
     "_DEFAULT_EDINET_PATH",
+    "ScreeningRunDegradedError",
     "persist_screening_run",
     "read_screening_candidates",
     "run_screening_pipeline",
@@ -578,6 +579,41 @@ def _provenance_none(retrieved_at: datetime) -> Provenance:
 # ------------------------------------------------------------------ persistence
 
 
+class ScreeningRunDegradedError(Exception):
+    """Persistence refused: the new run degraded sources with existing rows.
+
+    Raised by :func:`persist_screening_run` when the run being persisted has
+    fetch failures for sources that already have persisted rows for the same
+    run date. Replacing those rows would silently erase the previous good
+    snapshot behind a zero-candidate run, so the replacement is refused and
+    nothing is written.
+    """
+
+
+_FAILURE_REASON_PREFIXES = ("source_error: ", "provider_error: ")
+
+
+def _source_failure_reasons(result: ScreeningRunResult) -> dict[str, str]:
+    """Map source value -> failure reason for the run's failed sources.
+
+    A source has failed when its ``per_source_counts`` reason starts with
+    ``"source_error: "``/``"provider_error: "``, or equals ``"file_missing"``.
+    ``"disabled"``, ``"policy_or_off"`` and ``"no_session"`` are explicit
+    opt-outs, not failures.
+    """
+
+    failures: dict[str, str] = {}
+    for source_value, counts in (result.per_source_counts or {}).items():
+        if not isinstance(counts, dict):
+            continue
+        reason = counts.get("reason")
+        if not isinstance(reason, str):
+            continue
+        if reason.startswith(_FAILURE_REASON_PREFIXES) or reason == "file_missing":
+            failures[str(source_value)] = reason
+    return failures
+
+
 def persist_screening_run(
     session: Session,
     result: ScreeningRunResult,
@@ -586,10 +622,37 @@ def persist_screening_run(
 
     Re-running for the same run date is therefore idempotent: the second run
     deletes the first run's rows and re-inserts the same keys.
+
+    Degraded-run guard (audit Y02), evaluated before the delete: if the run's
+    fetch failed for a source (``source_error:``/``provider_error:`` reason,
+    or EDINET ``file_missing``) that already has persisted rows for the same
+    run date, :class:`ScreeningRunDegradedError` is raised and nothing is
+    written — a failed re-fetch must never erase the previous good snapshot
+    behind a zero-candidate run. A failure for a source with no existing rows
+    (nothing can be lost) and clean re-runs persist as before.
+
     Returns ``{"inserted": n, "updated": n}`` where ``updated`` counts the
     rows deleted (replaced) by this run.
     """
 
+    failures = _source_failure_reasons(result)
+    if failures:
+        blocked: list[str] = []
+        for source_value, reason in sorted(failures.items()):
+            existing = session.scalar(
+                select(ScreeningCandidateRecord.id)
+                .where(ScreeningCandidateRecord.run_date == result.run_date)
+                .where(ScreeningCandidateRecord.source == source_value)
+                .limit(1)
+            )
+            if existing is not None:
+                blocked.append(f"{source_value} ({reason})")
+        if blocked:
+            raise ScreeningRunDegradedError(
+                "Refusing to replace run date "
+                f"{result.run_date.isoformat()}: fetch failed for source(s) with "
+                "existing rows this date: " + ", ".join(blocked)
+            )
     try:
         replaced_result = session.execute(
             delete(ScreeningCandidateRecord).where(
