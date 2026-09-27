@@ -64,6 +64,7 @@ class MarketQuote(BaseModel):
     symbol: str
     price: float
     previous_close: float | None = None
+    currency: str | None = None
     as_of: datetime
 
 
@@ -100,6 +101,7 @@ class MetricPoint(BaseModel):
     fiscal_period: str | None = None
     value: Decimal
     unit: str
+    currency: str | None = None
     accession: str | None = None
     filed: date | None = None
     form: str | None = None

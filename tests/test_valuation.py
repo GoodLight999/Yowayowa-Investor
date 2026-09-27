@@ -146,3 +146,240 @@ def test_valuation_does_not_report_misleading_negative_multiple() -> None:
     result = valuation_snapshot(facts, quotes)
     assert result.metrics["price_to_earnings"] is None
     assert result.metrics["earnings_yield"] is None
+
+
+# --------------------------------------------------- audit Y04/Y05: valuation
+
+
+def _annual_point(
+    value: str,
+    *,
+    start: date = date(2025, 1, 1),
+    end: date = date(2025, 12, 31),
+    currency: str | None = None,
+    accession: str | None = None,
+    fiscal_year: int | None = 2025,
+    fiscal_period: str | None = "FY",
+    form: str | None = None,
+    unit: str = "USD",
+) -> MetricPoint:
+    return MetricPoint(
+        period_start=start,
+        period_end=end,
+        fiscal_year=fiscal_year,
+        fiscal_period=fiscal_period,
+        value=Decimal(value),
+        unit=unit,
+        currency=currency,
+        accession=accession,
+        form=form,
+    )
+
+
+def _simple_series(key: str, point: MetricPoint) -> MetricSeries:
+    return MetricSeries(key=key, label=key, points=[point])
+
+
+def _valuation_facts(**metrics: MetricSeries) -> Fundamentals:
+    return Fundamentals(
+        symbol="AUDIT",
+        cik="",
+        company_name="合成企業",
+        metrics=metrics,
+        provenance=Provenance(
+            provider="test",
+            source="fixture",
+            license_class=LicenseClass.OFFICIAL_PUBLIC,
+            retrieved_at="2026-08-13T00:00:00Z",
+        ),
+    )
+
+
+def _quote_batch(currency: str | None = None) -> MarketQuoteBatch:
+    return MarketQuoteBatch(
+        quotes={
+            "AUDIT": MarketQuote(
+                symbol="AUDIT",
+                price=20,
+                currency=currency,
+                as_of="2026-08-12T00:00:00Z",
+            )
+        },
+        provenance=Provenance(
+            provider="market",
+            source="Market",
+            license_class=LicenseClass.PERSONAL_ONLY,
+            retrieved_at="2026-08-13T00:00:00Z",
+        ),
+    )
+
+
+def test_valuation_currency_mismatch_refuses_price_to_earnings() -> None:
+    """Audit Y04: USD quote vs JPY net income -> no P/E; None quote computes."""
+
+    facts = _valuation_facts(
+        net_income=_simple_series(
+            "net_income", _annual_point("10", currency="JPY", accession="doc-J")
+        ),
+        shares_diluted=_simple_series("shares_diluted", _annual_point("10", unit="shares")),
+    )
+    usd_result = valuation_snapshot(facts, _quote_batch(currency="USD"))
+    assert usd_result.metrics["price_to_earnings"] is None
+    assert usd_result.metrics["earnings_yield"] is None
+
+    # Unknown quote currency stays computed (currency-unverified, legacy).
+    unknown_result = valuation_snapshot(facts, _quote_batch(currency=None))
+    assert unknown_result.metrics["price_to_earnings"] == 20.0
+
+
+def test_valuation_same_currency_still_computes() -> None:
+    """Audit Y04: matching quote/statement currencies keep the ratio."""
+
+    facts = _valuation_facts(
+        net_income=_simple_series(
+            "net_income", _annual_point("10", currency="USD", accession="doc-U")
+        ),
+        shares_diluted=_simple_series("shares_diluted", _annual_point("10", unit="shares")),
+    )
+    result = valuation_snapshot(facts, _quote_batch(currency="USD"))
+    assert result.metrics["price_to_earnings"] == 20.0
+    assert result.metrics["earnings_yield"] == 0.05
+
+
+def test_annual_fcf_does_not_mix_q4_capex_with_full_year_operating_cf() -> None:
+    """Audit Y05: FY operating CF with a Q4-stub capex produces no FCF."""
+
+    facts = _valuation_facts(
+        operating_cash_flow=_simple_series(
+            "operating_cash_flow",
+            _annual_point(
+                "100",
+                start=date(2025, 1, 1),
+                end=date(2025, 12, 31),
+                fiscal_period="FY",
+            ),
+        ),
+        capex=_simple_series(
+            "capex",
+            _annual_point(
+                "10",
+                start=date(2025, 10, 1),
+                end=date(2025, 12, 31),
+                fiscal_period="Q4",
+            ),
+        ),
+    )
+    result = valuation_snapshot(facts, _quote_batch())
+    assert result.metrics["annual_free_cash_flow"] is None
+    assert result.metrics["price_to_free_cash_flow"] is None
+    assert result.metrics["free_cash_flow_yield"] is None
+
+
+def test_annual_fcf_computes_for_matching_full_year_points() -> None:
+    """Audit Y05: matching full-year CF+capex still yields FCF (90)."""
+
+    facts = _valuation_facts(
+        operating_cash_flow=_simple_series(
+            "operating_cash_flow",
+            _annual_point(
+                "100",
+                start=date(2025, 1, 1),
+                end=date(2025, 12, 31),
+                currency="USD",
+                accession="doc-U",
+                fiscal_period="FY",
+            ),
+        ),
+        capex=_simple_series(
+            "capex",
+            _annual_point(
+                "10",
+                start=date(2025, 1, 1),
+                end=date(2025, 12, 31),
+                currency="USD",
+                accession="doc-U",
+                fiscal_period="FY",
+            ),
+        ),
+    )
+    result = valuation_snapshot(facts, _quote_batch())
+    assert result.metrics["annual_free_cash_flow"] == 90.0
+
+
+def test_annual_fcf_refuses_currency_accession_or_year_mismatch() -> None:
+    """Audit Y05: same span but different currency/accession/year -> None."""
+
+    base_kwargs = dict(start=date(2025, 1, 1), end=date(2025, 12, 31))
+    variants = [
+        # currency mismatch
+        dict(operating=dict(currency="USD"), capex=dict(currency="JPY")),
+        # accession mismatch
+        dict(operating=dict(accession="doc-A"), capex=dict(accession="doc-B")),
+        # fiscal_year mismatch
+        dict(operating=dict(fiscal_year=2025), capex=dict(fiscal_year=2024)),
+    ]
+    for variant in variants:
+        facts = _valuation_facts(
+            operating_cash_flow=_simple_series(
+                "operating_cash_flow",
+                _annual_point("100", **{**base_kwargs, **variant["operating"]}),  # type: ignore[arg-type]
+            ),
+            capex=_simple_series(
+                "capex",
+                _annual_point("10", **{**base_kwargs, **variant["capex"]}),  # type: ignore[arg-type]
+            ),
+        )
+        result = valuation_snapshot(facts, _quote_batch())
+        assert result.metrics["annual_free_cash_flow"] is None, variant
+
+
+def test_latest_annual_point_ignores_newer_q4_stub_without_full_year() -> None:
+    """Audit Y05: the newest point wins only when its real span is a year."""
+
+    from yowayowa.services.valuation import _latest_annual_point
+
+    facts = _valuation_facts(
+        net_income=_simple_series(
+            "net_income",
+            _annual_point(
+                "10",
+                start=date(2024, 1, 1),
+                end=date(2024, 12, 31),
+                fiscal_year=2024,
+                fiscal_period="FY",
+            ),
+        ),
+    )
+    # Newest point is a Q4 stub (90 days) — must be ignored; the previous
+    # real-year FY point is selected.
+    facts.metrics["net_income"].points.append(
+        _annual_point(
+            "30",
+            start=date(2025, 10, 1),
+            end=date(2025, 12, 31),
+            fiscal_year=2025,
+            fiscal_period="Q4",
+        )
+    )
+    point = _latest_annual_point(facts, "net_income")
+    assert point is not None
+    assert point.period_end == date(2024, 12, 31)
+
+
+def test_fy_label_alone_is_not_evidence_of_annual_period() -> None:
+    """Audit Y05: fiscal_period='FY' with a 90-day span is not annual."""
+
+    from yowayowa.services.valuation import _latest_annual_point
+
+    facts = _valuation_facts(
+        net_income=_simple_series(
+            "net_income",
+            _annual_point(
+                "30",
+                start=date(2025, 10, 1),
+                end=date(2025, 12, 31),
+                fiscal_period="FY",
+            ),
+        ),
+    )
+    assert _latest_annual_point(facts, "net_income") is None

@@ -43,8 +43,23 @@ def latest_metric(fundamentals: Fundamentals, metric: str) -> float | None:
     return float(point.value) if point is not None else None
 
 
-def _period_key(point: MetricPoint) -> tuple[date | None, date, str | None]:
-    return point.period_start, point.period_end, point.fiscal_period
+def _period_key(point: MetricPoint) -> tuple[date | None, date, str | None, str, str]:
+    """Common-period selection key: period + currency + filing version.
+
+    Currency and accession (提出版) participate (audit Y04): metrics from
+    different currencies or different filings are never divided or
+    subtracted. ``None`` currency/accession (legacy data) is treated as its
+    own value, so two unset fields match each other (legacy behaviour
+    preserved) while None never matches a set one — fail closed.
+    """
+
+    return (
+        point.period_start,
+        point.period_end,
+        point.fiscal_period,
+        point.currency or "",
+        point.accession or "",
+    )
 
 
 def _latest_common_points(
@@ -53,12 +68,12 @@ def _latest_common_points(
 ) -> list[MetricPoint] | None:
     if not metric_names:
         return None
-    keyed: list[dict[tuple[date | None, date, str | None], MetricPoint]] = []
+    keyed: list[dict[tuple[date | None, date, str | None, str, str], MetricPoint]] = []
     for metric in metric_names:
         series = fundamentals.metrics.get(metric)
         if not series or not series.points:
             return None
-        by_period: dict[tuple[date | None, date, str | None], MetricPoint] = {}
+        by_period: dict[tuple[date | None, date, str | None, str, str], MetricPoint] = {}
         for point in series.points:
             key = _period_key(point)
             current = by_period.get(key)
@@ -140,8 +155,20 @@ def _annualized_flow_to_average_balance(
     if flow is None or flow.period_start is None or not balances or not balances.points:
         return None
 
-    end_candidates = [point for point in balances.points if point.period_end == flow.period_end]
-    start_candidates = [point for point in balances.points if point.period_end <= flow.period_start]
+    # Currency must match the flow's (audit Y04): mixing a USD flow with a
+    # JPY balance would fabricate a ratio. Unset currencies (legacy data)
+    # compare equal to each other; a set currency never matches an unset one.
+    flow_currency = flow.currency or ""
+    end_candidates = [
+        point
+        for point in balances.points
+        if point.period_end == flow.period_end and (point.currency or "") == flow_currency
+    ]
+    start_candidates = [
+        point
+        for point in balances.points
+        if point.period_end <= flow.period_start and (point.currency or "") == flow_currency
+    ]
     if not end_candidates or not start_candidates:
         return None
 

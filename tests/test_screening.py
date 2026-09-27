@@ -216,3 +216,159 @@ def test_latest_annual_point_returns_none_without_fy_points() -> None:
     assert annual_points(item, "revenue") == []
     assert latest_annual_point(item, "missing_metric") is None
     assert annual_points(item, "missing_metric") == []
+
+
+# ------------------------------------------------------- audit Y04: currency
+
+
+def _currency_metric(
+    key: str,
+    value: str,
+    *,
+    currency: str | None = None,
+    accession: str | None = None,
+) -> MetricSeries:
+    return MetricSeries(
+        key=key,
+        label=key,
+        points=[
+            MetricPoint(
+                period_start=date(2025, 1, 1),
+                period_end=date(2025, 12, 31),
+                fiscal_year=2025,
+                fiscal_period="FY",
+                value=Decimal(value),
+                unit=currency or "USD",
+                currency=currency,
+                accession=accession,
+            )
+        ],
+    )
+
+
+def _instant_currency_metric(
+    key: str,
+    value: str,
+    *,
+    currency: str | None = None,
+    accession: str | None = None,
+) -> MetricSeries:
+    return MetricSeries(
+        key=key,
+        label=key,
+        points=[
+            MetricPoint(
+                period_end=date(2025, 12, 31),
+                value=Decimal(value),
+                unit=currency or "USD",
+                currency=currency,
+                accession=accession,
+            )
+        ],
+    )
+
+
+def _currency_fundamentals(**metrics: MetricSeries) -> Fundamentals:
+    return Fundamentals(
+        symbol="AUDIT",
+        cik="",
+        company_name="合成企業",
+        metrics=metrics,
+        provenance=Provenance(
+            provider="test",
+            source="fixture",
+            license_class=LicenseClass.OFFICIAL_PUBLIC,
+            retrieved_at="2026-01-01T00:00:00Z",
+        ),
+    )
+
+
+def test_mixed_currency_current_items_produce_no_liquidity_metrics() -> None:
+    """Audit Y04: 100 USD / 10 JPY must not fabricate ratio or difference."""
+
+    facts = _currency_fundamentals(
+        current_assets=_instant_currency_metric("current_assets", "100", currency="USD"),
+        current_liabilities=_instant_currency_metric("current_liabilities", "10", currency="JPY"),
+    )
+    values = derived_metrics(facts)
+    assert values["current_ratio"] is None
+    assert values["working_capital"] is None
+    assert values["cash_ratio"] is None
+
+
+def test_same_currency_and_accession_still_computes_liquidity() -> None:
+    """Audit Y04: matching currency + accession keeps the legacy result."""
+
+    facts = _currency_fundamentals(
+        current_assets=_instant_currency_metric(
+            "current_assets", "100", currency="USD", accession="filing-A"
+        ),
+        current_liabilities=_instant_currency_metric(
+            "current_liabilities", "10", currency="USD", accession="filing-A"
+        ),
+    )
+    values = derived_metrics(facts)
+    assert values["current_ratio"] == 10.0
+    assert values["working_capital"] == 90.0
+
+
+def test_cross_filing_and_cross_currency_margins_are_refused() -> None:
+    """Audit Y04: net_income / revenue across filings or currencies is None."""
+
+    facts = _currency_fundamentals(
+        net_income=_currency_metric("net_income", "100", currency="USD", accession="filing-A"),
+        revenue=_currency_metric("revenue", "10000", currency="JPY", accession="filing-B"),
+    )
+    values = derived_metrics(facts)
+    assert values["net_margin"] is None
+
+    # Same currency but different accession (訂正 vs original) still refuses.
+    facts_same_currency = _currency_fundamentals(
+        net_income=_currency_metric("net_income", "100", currency="USD", accession="filing-A"),
+        revenue=_currency_metric("revenue", "10000", currency="USD", accession="filing-B"),
+    )
+    values = derived_metrics(facts_same_currency)
+    assert values["net_margin"] is None
+
+
+def test_roa_refuses_currency_mismatch_between_flow_and_balance() -> None:
+    """Audit Y04: USD net income over JPY assets produces no ROA."""
+
+    facts = _currency_fundamentals(
+        net_income=_currency_metric("net_income", "10", currency="USD"),
+        assets=_instant_currency_metric("assets", "200", currency="JPY"),
+    )
+    values = derived_metrics(facts)
+    assert values["return_on_assets"] is None
+
+
+def test_currency_mismatch_flow_metrics_are_refused() -> None:
+    """Audit Y04: FCF and its margin refuse mixed currency across CF/capex."""
+
+    facts = _currency_fundamentals(
+        operating_cash_flow=_currency_metric(
+            "operating_cash_flow", "30", currency="USD", accession="filing-A"
+        ),
+        capex=_currency_metric("capex", "5", currency="JPY", accession="filing-A"),
+        revenue=_currency_metric("revenue", "100", currency="USD", accession="filing-A"),
+    )
+    values = derived_metrics(facts)
+    # CF and capex mix USD/JPY -> no FCF anywhere; OCF and revenue share
+    # currency+accession, so that ratio still computes (fail closed only
+    # on actual mismatch).
+    assert values["free_cash_flow"] is None
+    assert values["free_cash_flow_margin"] is None
+    assert values["operating_cash_flow_margin"] == 0.3
+    assert values["capex_to_revenue"] is None
+
+    # An accession mismatch between OCF and revenue refuses that ratio too.
+    facts_accession = _currency_fundamentals(
+        operating_cash_flow=_currency_metric(
+            "operating_cash_flow", "30", currency="USD", accession="filing-A"
+        ),
+        capex=_currency_metric("capex", "5", currency="USD", accession="filing-A"),
+        revenue=_currency_metric("revenue", "100", currency="USD", accession="filing-B"),
+    )
+    values = derived_metrics(facts_accession)
+    assert values["operating_cash_flow_margin"] is None
+    assert values["capex_to_revenue"] is None
