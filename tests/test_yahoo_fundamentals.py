@@ -1,10 +1,11 @@
 from datetime import date
+from decimal import Decimal
 
 import pandas as pd
 import pytest
 
 from yowayowa.config import Settings
-from yowayowa.domain import Fundamentals, LicenseClass, Provenance
+from yowayowa.domain import Fundamentals, LicenseClass, MetricPoint, MetricSeries, Provenance
 from yowayowa.providers import yahoo_fundamentals
 from yowayowa.providers.fundamentals import (
     ListingAwareFundamentalsProvider,
@@ -257,3 +258,124 @@ def test_sec_first_provider_does_not_hide_primary_outage() -> None:
     with pytest.raises(RuntimeError):
         provider.company_facts("RKLB")
     assert fallback.calls == []
+
+
+def test_eps_diluted_non_finite_shares_are_skipped() -> None:
+    metrics = {
+        "net_income": MetricSeries(
+            key="net_income",
+            label="Net income",
+            points=[
+                MetricPoint(
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("400"),
+                    unit="JPY",
+                )
+            ],
+        ),
+        # model_construct bypasses pydantic's finite-number validation, which is
+        # exactly how a non-finite value can reach the derivation guard.
+        "shares_diluted": MetricSeries.model_construct(
+            key="shares_diluted",
+            label="Diluted shares",
+            points=[
+                MetricPoint.model_construct(
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("NaN"),
+                    unit="shares",
+                )
+            ],
+        ),
+    }
+
+    YahooFundamentalsProvider._derive_eps_diluted(metrics, "JPY")
+
+    assert "eps_diluted" not in metrics
+
+
+def test_eps_diluted_zero_shares_are_skipped() -> None:
+    metrics = {
+        "net_income": _series("net_income", "400"),
+        "shares_diluted": _series("shares_diluted", "0"),
+    }
+
+    YahooFundamentalsProvider._derive_eps_diluted(metrics, "JPY")
+
+    assert "eps_diluted" not in metrics
+
+
+def test_eps_diluted_non_finite_net_income_is_skipped() -> None:
+    metrics = {
+        "net_income": MetricSeries.model_construct(
+            key="net_income",
+            label="Net income",
+            points=[
+                MetricPoint.model_construct(
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("Infinity"),
+                    unit="JPY",
+                )
+            ],
+        ),
+        "shares_diluted": MetricSeries(
+            key="shares_diluted",
+            label="Diluted shares",
+            points=[
+                MetricPoint(
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("20"),
+                    unit="shares",
+                )
+            ],
+        ),
+    }
+
+    YahooFundamentalsProvider._derive_eps_diluted(metrics, "JPY")
+
+    assert "eps_diluted" not in metrics
+
+
+def test_eps_diluted_missing_counterpart_series_is_noop() -> None:
+    YahooFundamentalsProvider._derive_eps_diluted({}, "JPY")
+
+    only_net = {
+        "net_income": _series("net_income", "400"),
+    }
+    YahooFundamentalsProvider._derive_eps_diluted(only_net, "JPY")
+
+    assert "eps_diluted" not in only_net
+    only_shares = {
+        "shares_diluted": _series("shares_diluted", "20"),
+    }
+    YahooFundamentalsProvider._derive_eps_diluted(only_shares, "JPY")
+
+    assert "eps_diluted" not in only_shares
+
+
+def _series(key: str, value: str) -> MetricSeries:
+    return MetricSeries(
+        key=key,
+        label=key.replace("_", " "),
+        points=[
+            MetricPoint(
+                period_end=date(2025, 12, 31),
+                value=Decimal(value),
+                unit="JPY" if key == "net_income" else "shares",
+            )
+        ],
+    )
+
+
+def test_eps_diluted_derives_value_from_finite_inputs() -> None:
+    metrics = {
+        "net_income": _series("net_income", "400"),
+        "shares_diluted": _series("shares_diluted", "20"),
+    }
+
+    YahooFundamentalsProvider._derive_eps_diluted(metrics, "JPY")
+
+    points = metrics["eps_diluted"].points
+    assert len(points) == 1
+    assert points[0].value == Decimal("20.000000")
+    assert points[0].unit == "JPY/share"
+    assert points[0].form == "Yahoo normalized statement"
