@@ -117,7 +117,7 @@
 ### BACKTEST_FOUNDATION_DESIGN.md
 - タイトル: Backtest foundation design（バックテスト研究基盤 設計）
 - 目的: 投資バックテストを「正しく」行える研究基盤の設計提案。実装はまだ行わない旨を冒頭に明示した design only 文書。
-- 主要セクション: 設計判断 D1〜D8（CTO固定 2026-09-28: 単一イベントエンジン・PIT原則・universe_id 3種と通貨固定・Hyperliquidデータプレーン・既存canonical metricsのas-of再利用・実行モデル/provenance・提案モジュール構成）、優先順位付き機能提案5件（Hyperliquid取得/PIT accessor/エンジンMVP/アラート拡張/IRイベントスタディ・工数S/M/L表）、ロードマップP3/P4との整合、Open Questions。
+- 主要セクション: 設計判断 D1〜D10（CTO固定 2026-09-28・第2版: 単一イベントエンジン・PIT原則・ユニバース14種（jp/us株式＋暗号現物＋MT5 5種＋HL 6種）×通貨/カレンダー分離・Hyperliquidデータプレーン（3層＝メイン234/現物330/HIP-3 294・流動性ゲート・candleSnapshot非ページング）・MT5データプレーン（1,316銘柄・金2007年〜の長期深度・取得契約）・既存canonical metricsのas-of再利用・レバレッジ/証拠金/強制ロスカットモデル（本改訂の核心）・実行モデル/provenance・提案モジュール構成）、優先順位付き機能提案7件（HL取得/MT5取得/証拠金モデル/PIT accessor/エンジンMVP/アラート拡張/IRイベントスタディ・工数S/M/L表）、ロードマップP3/P4との整合、Open Questions15件。
 
 ## 実測証跡
 
