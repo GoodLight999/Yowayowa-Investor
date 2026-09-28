@@ -491,7 +491,7 @@ P3 walk-forward / out-of-sample evaluation is implemented
   bucket note now describes the implemented purged walk-forward semantics.
 
 **Suggested verification**
-- `TZ=UTC make V=<shared>/.venv verify` (1333 passed, 2 skipped at commit time).
+- `TZ=UTC make V=<shared>/.venv verify` (1336 passed, 2 skipped at commit time).
 - `tests/test_strategy_calibration.py::test_oos_*` cover counts, boundary
   (n=m, n=m+1), insufficiency, purge, disjointness/identity, value-invariance,
   bootstrap CI bounds/degenerate cases, and endpoint/tool symmetry.
