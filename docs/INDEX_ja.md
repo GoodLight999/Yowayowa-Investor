@@ -1,7 +1,7 @@
 # docs/INDEX_ja.md — ドキュメント日本語インデックス
 
-対象: `docs/` 配下の全 Markdown 20 ファイル。各ファイルのタイトル/目的/主要セクションを3行で要約。
-最終更新: 2026-09-27（JST）。内容の正本は各英語原文ドキュメント。食い違いがあれば原文を優先。
+対象: `docs/` 配下の全 Markdown 21 ファイル。各ファイルのタイトル/目的/主要セクションを3行で要約。
+最終更新: 2026-09-28（JST）。内容の正本は各英語原文ドキュメント。食い違いがあれば原文を優先。
 
 ## 目次（カテゴリ別）
 
@@ -9,6 +9,7 @@
 - データソース・取得: DATA_POLICY / SEC / EDINET / ESTAT / JPX_DAILY_MARGIN / CREDIT_MARGIN / CRYPTO / STOCKS / MS2_RSS
 - ブローカー・実行: BROKER_ACCEPTANCE_MATRIX / RAKUTEN_WEB_SESSION
 - 研究・AI: RESEARCH_BRIEF
+- 研究基盤: BACKTEST_FOUNDATION_DESIGN
 - 実測証跡: P1C_EVIDENCE / P1D_EVIDENCE
 
 ---
@@ -110,6 +111,13 @@
 - タイトル: P5-A: LLM research brief & ask（朝ブリーフ・研究Q&A）
 - 目的: ローカルに蓄積した証拠の上に動く2つのLLM研究サーフェス（朝ブリーフと自然言語研究Q&A）の設計と不変条件を定める。
 - 主要セクション: What this is（MorningBriefService と research_ask。決定論的証拠パケット→BYOKプロバイダで5セクション日本語ブリーフ/1回のagentラウンドQ&A）、Provider lane（OpenRouter deepseek-chat-v3.1・ローカルshimは不使用）、Data sources and invariants（EDINET日次/信用残シグナル/マクロ/株・暗号OHLCV。欠損は zero-fill せず「未取得」・出典必須・ライセンスは入力の最も厳しいクラスを継承）、Strict prompt discipline（証拠に無い数値の捏造禁止・自由算術禁止）、API（personalモード外は403 fail-closed）。
+
+## 研究基盤
+
+### BACKTEST_FOUNDATION_DESIGN.md
+- タイトル: Backtest foundation design（バックテスト研究基盤 設計）
+- 目的: 投資バックテストを「正しく」行える研究基盤の設計提案。実装はまだ行わない旨を冒頭に明示した design only 文書。
+- 主要セクション: 設計判断 D1〜D8（CTO固定 2026-09-28: 単一イベントエンジン・PIT原則・universe_id 3種と通貨固定・Hyperliquidデータプレーン・既存canonical metricsのas-of再利用・実行モデル/provenance・提案モジュール構成）、優先順位付き機能提案5件（Hyperliquid取得/PIT accessor/エンジンMVP/アラート拡張/IRイベントスタディ・工数S/M/L表）、ロードマップP3/P4との整合、Open Questions。
 
 ## 実測証跡
 
