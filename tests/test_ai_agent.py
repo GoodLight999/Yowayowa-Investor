@@ -329,6 +329,153 @@ def test_ai_tool_strategy_calibration_aggregates_with_fixture_provider(monkeypat
     assert "get_strategy_calibration" in packet.included_tools
 
 
+def test_ai_tool_strategy_calibration_reports_oos_fields(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """OOS fields from the purged walk-forward split surface through the AI tool."""
+    from datetime import timedelta
+
+    from yowayowa.domain import MarketHistory, PriceBar
+    from yowayowa.providers.base import ProviderDescriptor
+
+    base_day = datetime(2026, 1, 1, tzinfo=UTC)
+
+    def bar(offset: int, value: float) -> PriceBar:
+        return PriceBar(
+            timestamp=base_day + timedelta(days=offset),
+            open=value,
+            high=value,
+            low=value,
+            close=value,
+            volume=1,
+        )
+
+    def history(symbol: str, values: list[float]) -> MarketHistory:
+        return MarketHistory(
+            symbol=symbol,
+            interval="1d",
+            bars=[bar(offset, value) for offset, value in enumerate(values)],
+            provenance=Provenance(
+                provider="fixture",
+                source=f"history:{symbol}",
+                license_class=LicenseClass.PERSONAL_ONLY,
+                retrieved_at=datetime(2026, 2, 1, tzinfo=UTC),
+            ),
+        )
+
+    class FakeMarketProvider:
+        descriptor = ProviderDescriptor(
+            name="fixture",
+            license_class=LicenseClass.PERSONAL_ONLY,
+            redistributable=False,
+            description="fixture",
+        )
+
+        def __init__(self, histories: dict[str, MarketHistory]) -> None:
+            self.histories = histories
+
+        def history(
+            self,
+            symbol: str,
+            period: str,
+            interval: str,
+            indicators: list[str],
+        ) -> MarketHistory:
+            return self.histories[symbol]
+
+    # 11 snapshots at 10-day spacing with a 2-day horizon (windows never
+    # overlap) and strictly increasing forward returns -> in-sample 1 /
+    # out-of-sample 10 with a perfect OOS rank IC. Per-day drift rises with the
+    # index so each snapshot's 2-day forward return is strictly larger than the
+    # previous one; ~117 daily bars cover every capture + horizon.
+    histories: dict[str, MarketHistory] = {
+        "^GSPC": history("^GSPC", [200.0] * 130),
+    }
+    snapshots = []
+    for index in range(11):
+        symbol = f"OO{index}"
+        drift = 0.001 + 0.0005 * index
+        closes: list[float] = []
+        value = 100.0
+        for _day in range(130):
+            value = value * (1 + drift)
+            closes.append(round(value, 6))
+        histories[symbol] = history(symbol, [100.0, *closes])
+        snapshots.append(
+            SimpleNamespace(
+                id=index + 1,
+                strategy_id="kiyohara_global_value_growth",
+                scoring_version="kiyohara_priority_v1",
+                region="us",
+                symbol=symbol,
+                score=50 + 5 * index,
+                confidence=0.9,
+                captured_at=base_day + timedelta(days=10 * index, hours=12),
+                evaluation=SimpleNamespace(research_priority=None),
+            )
+        )
+
+    monkeypatch.setattr(
+        ai_agent,
+        "list_strategy_snapshots",
+        lambda *_args, **_kwargs: snapshots,
+    )
+    monkeypatch.setattr(
+        ai_agent,
+        "yahoo_market_provider",
+        lambda: FakeMarketProvider(histories),
+    )
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from yowayowa.db import Base
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        agent = InvestmentResearchAgent(Settings(database_url="sqlite:///:memory:"), Mock())
+        agent.session = session
+        result = agent._tool_strategy_calibration(
+            {
+                "strategy_id": "kiyohara_global_value_growth",
+                "horizons": [2],
+                "limit": 30,
+            }
+        )
+    engine.dispose()
+
+    assert len(result["buckets"]) == 1
+    bucket = result["buckets"][0]
+    assert bucket["sample_available"] == 11
+    assert bucket["oos_sample_count"] == 10
+    assert bucket["is_sample_count"] == 1
+    assert bucket["purged_count"] == 0
+    assert bucket["oos_split_at"] is not None
+    # Strictly increasing returns -> perfect positive OOS rank IC.
+    assert bucket["oos_rank_ic"] == pytest.approx(1.0)
+    assert bucket["oos_ic_insufficient"] is False
+    assert bucket["is_ic_insufficient"] is True  # 1 in-sample outcome
+    # The is_*-are-not-a-fitted-fit disclaimer always ships.
+    assert any("never fitted" in note for note in bucket["oos_notes"])
+    # Explicit oos_min_sample passes through the tool arguments.
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        agent = InvestmentResearchAgent(Settings(database_url="sqlite:///:memory:"), Mock())
+        agent.session = session
+        clamped = agent._tool_strategy_calibration(
+            {
+                "strategy_id": "kiyohara_global_value_growth",
+                "horizons": [2],
+                "limit": 30,
+                "oos_min_sample": 3,
+            }
+        )
+    engine.dispose()
+    bucket = clamped["buckets"][0]
+    assert bucket["oos_sample_count"] == 3
+    assert bucket["is_sample_count"] == 8
+
+
 def test_codex_chat_uses_same_yowayowa_tool_loop(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     replies = iter(
         [

@@ -229,6 +229,7 @@ def strategy_research_calibration(
     horizons: str = Query(default="20,60,120", max_length=64),
     benchmark: str | None = Query(default=None, max_length=32),
     limit: int = Query(default=50, ge=1, le=200),
+    oos_min_sample: int | None = Query(default=None, ge=1, le=1000),
     session: Session = Depends(db_session),
 ) -> StrategyCalibrationReport:
     try:
@@ -249,7 +250,7 @@ def strategy_research_calibration(
             horizons=resolved_horizons,
             benchmark_symbol=normalize_symbol(benchmark) if benchmark else None,
         )
-        return calibration_report(snapshots, report)
+        return calibration_report(snapshots, report, oos_min_sample=oos_min_sample)
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:

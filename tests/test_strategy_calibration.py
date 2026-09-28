@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -18,10 +18,60 @@ from yowayowa.services.strategy_calibration import (
 from yowayowa.services.strategy_outcomes import forward_outcome_report
 from yowayowa.strategy_models import (
     StrategyCandidateEvaluation,
+    StrategyForwardOutcome,
+    StrategyForwardOutcomeReport,
     StrategyPriorityFactor,
     StrategyResearchPriority,
     StrategyResearchSnapshot,
 )
+
+
+def _outcome(
+    snapshot_id: int,
+    captured_at: datetime,
+    *,
+    score: float,
+    total_return: float | None = None,
+    excess_return: float | None = None,
+    horizon: int = 2,
+    exit_at: datetime | str | None = "auto",
+) -> StrategyForwardOutcome:
+    """Direct outcome fixture. ``exit_at="auto"`` derives captured_at + horizon days."""
+    resolved_exit: datetime | None
+    if exit_at == "auto":
+        resolved_exit = captured_at + timedelta(days=horizon)
+    elif exit_at == "none":
+        resolved_exit = None
+    else:
+        resolved_exit = exit_at  # type: ignore[assignment]
+    return StrategyForwardOutcome(
+        snapshot_id=snapshot_id,
+        strategy_id="kiyohara_global_value_growth",
+        scoring_version="kiyohara_priority_v1",
+        region="us",
+        symbol=f"S{snapshot_id}",
+        research_priority_score=score,
+        captured_at=captured_at,
+        horizon_trading_days=horizon,
+        status="available",
+        entry_at=captured_at + timedelta(days=1),
+        exit_at=resolved_exit,
+        entry_price=100.0,
+        exit_price=110.0,
+        total_return=total_return,
+        benchmark_symbol="^GSPC",
+        benchmark_return=0.0 if excess_return is not None else None,
+        excess_return=excess_return,
+    )
+
+
+def _outcome_report(outcomes: list[StrategyForwardOutcome]) -> StrategyForwardOutcomeReport:
+    return StrategyForwardOutcomeReport(
+        outcomes=outcomes,
+        provenance=[],
+        notes=[],
+        evaluated_at=datetime(2026, 12, 31, tzinfo=UTC),
+    )
 
 
 def _provenance(symbol: str) -> Provenance:
@@ -550,3 +600,306 @@ def test_calibration_api_route_with_fixture_database(tmp_path, monkeypatch) -> N
             engine.dispose()
     finally:
         get_settings.cache_clear()
+
+
+# --------------------------------------------------------------------------
+# Walk-forward / out-of-sample (purged split) tests T1-T8.
+# --------------------------------------------------------------------------
+
+
+def _spaced_outcomes(
+    count: int,
+    *,
+    interval_days: int,
+    horizon: int,
+    oos_min_sample: int,
+) -> list[StrategyForwardOutcome]:
+    """Deterministic outcome fixtures: 10-day spacing with horizon 2 gives
+    non-overlapping windows (interval > horizon); daily spacing with horizon 10
+    gives overlapping windows. Scores and returns are positively correlated."""
+    outcomes: list[StrategyForwardOutcome] = []
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    for index in range(count):
+        captured_at = base + timedelta(days=interval_days * index)
+        score = 50.0 + 5.0 * (index % 7)
+        total = 0.01 + 0.001 * (index % 7)
+        outcomes.append(
+            _outcome(
+                snapshot_id=index + 1,
+                captured_at=captured_at,
+                score=score,
+                total_return=total,
+                excess_return=total - 0.005,
+                horizon=horizon,
+            )
+        )
+    assert oos_min_sample > 0
+    return outcomes
+
+
+def test_oos_split_non_overlapping_windows_counts_and_ic() -> None:
+    """T1: interval > horizon, n=20, m=10 -> is 10 / oos 10 / purge 0, IC computable."""
+    outcomes = _spaced_outcomes(20, interval_days=10, horizon=2, oos_min_sample=10)
+    report = calibration_report([], _outcome_report(outcomes))
+    bucket = report.buckets[0]
+    assert bucket.sample_available == 20
+    assert bucket.oos_sample_count == 10
+    assert bucket.is_sample_count == 10
+    assert bucket.purged_count == 0
+    assert bucket.exit_at_unknown_count == 0
+    assert bucket.oos_ic_insufficient is False
+    assert bucket.is_ic_insufficient is False
+    assert bucket.oos_split_at == outcomes[10].captured_at
+    # oos_rank_ic is the Spearman IC over the last 10 outcomes; recompute directly.
+    expected_oos = spearman_rank_correlation(
+        [outcome.research_priority_score for outcome in outcomes[10:]],
+        [outcome.excess_return for outcome in outcomes[10:]],
+    )
+    assert bucket.oos_rank_ic == pytest.approx(expected_oos)
+    assert bucket.oos_ic_sample_count == 10
+    assert bucket.is_ic_sample_count == 10
+    # In-sample = windows fully closed at or before the split.
+    assert all(outcome.exit_at <= bucket.oos_split_at for outcome in outcomes[:10])
+
+
+def test_oos_disjoint_sets_identity_and_value_invariance() -> None:
+    """T2: is ∩ oos = ∅, count identity, and split independent of sample values."""
+    outcomes = _spaced_outcomes(20, interval_days=10, horizon=2, oos_min_sample=10)
+    report = calibration_report([], _outcome_report(outcomes))
+    bucket = report.buckets[0]
+
+    split_at = bucket.oos_split_at
+    assert split_at is not None
+    # Recompute segment membership exactly as the design prescribes.
+    oos_ids = {outcome.snapshot_id for outcome in outcomes[10:]}
+    is_ids = {
+        outcome.snapshot_id
+        for outcome in outcomes[:10]
+        if not (outcome.captured_at < split_at <= outcome.exit_at)
+    }
+    assert is_ids & oos_ids == set()
+    assert (
+        bucket.is_sample_count
+        + bucket.oos_sample_count
+        + bucket.purged_count
+        + bucket.exit_at_unknown_count
+        == bucket.sample_available
+    )
+
+    # Scale all sample values: scores x3, returns +1000. The split is pure
+    # point-in-time, so nothing segment-related may move (no leakage).
+    scaled = [
+        StrategyForwardOutcome.model_validate(
+            {
+                **outcome.model_dump(mode="json"),
+                "research_priority_score": outcome.research_priority_score * 3,
+                "total_return": (
+                    outcome.total_return + 1000.0 if outcome.total_return is not None else None
+                ),
+                "excess_return": (
+                    outcome.excess_return + 1000.0 if outcome.excess_return is not None else None
+                ),
+            }
+        )
+        for outcome in outcomes
+    ]
+    scaled_report = calibration_report([], _outcome_report(scaled))
+    scaled_bucket = scaled_report.buckets[0]
+    assert scaled_bucket.oos_split_at == bucket.oos_split_at
+    assert scaled_bucket.is_sample_count == bucket.is_sample_count
+    assert scaled_bucket.oos_sample_count == bucket.oos_sample_count
+    assert scaled_bucket.purged_count == bucket.purged_count
+    assert scaled_bucket.exit_at_unknown_count == bucket.exit_at_unknown_count
+
+
+def test_oos_boundary_n_equals_m_and_n_equals_m_plus_one() -> None:
+    """T3: n=11 -> is 1 / oos 10; n=10 -> is 0 / oos 10, is_rank_ic None, no exception."""
+    eleven = _spaced_outcomes(11, interval_days=10, horizon=2, oos_min_sample=10)
+    report = calibration_report([], _outcome_report(eleven))
+    bucket = report.buckets[0]
+    assert bucket.is_sample_count == 1
+    assert bucket.oos_sample_count == 10
+    assert bucket.purged_count == 0
+
+    ten = _spaced_outcomes(10, interval_days=10, horizon=2, oos_min_sample=10)
+    report = calibration_report([], _outcome_report(ten))
+    bucket = report.buckets[0]
+    assert bucket.is_sample_count == 0
+    assert bucket.oos_sample_count == 10
+    assert bucket.purged_count == 0
+    assert bucket.is_rank_ic is None
+    assert bucket.is_ic_insufficient is True
+    assert bucket.oos_ic_insufficient is False
+    assert bucket.oos_split_at == ten[0].captured_at
+    assert any("In-sample rank IC omitted" in note for note in bucket.oos_notes)
+
+    # Explicit oos_min_sample overrides the default.
+    three = _spaced_outcomes(6, interval_days=10, horizon=2, oos_min_sample=3)
+    explicit = calibration_report([], _outcome_report(three), oos_min_sample=3)
+    bucket = explicit.buckets[0]
+    assert bucket.oos_sample_count == 3
+    assert bucket.is_sample_count == 3
+    assert bucket.oos_split_at == three[3].captured_at
+
+
+def test_oos_insufficient_sample_skips_without_zero_filling() -> None:
+    """T4: available < oos_min_sample -> oos counts stay 0/None/True with a reason."""
+    outcomes = _spaced_outcomes(9, interval_days=10, horizon=2, oos_min_sample=10)
+    report = calibration_report([], _outcome_report(outcomes))
+    bucket = report.buckets[0]
+    assert bucket.oos_sample_count == 0
+    assert bucket.oos_rank_ic is None
+    assert bucket.oos_ic_insufficient is True
+    assert bucket.oos_split_at is None
+    assert bucket.purged_count == 0
+    assert any("skipped" in note and "split not defined" in note for note in bucket.oos_notes)
+    # Existing aggregate semantics unchanged.
+    assert bucket.sample_available == 9
+    assert bucket.ic_insufficient is True  # 9 < 10 decile minimum
+
+
+def test_oos_purge_removes_windows_crossing_the_split() -> None:
+    """T5: interval <= horizon, n=20, m=10 -> is 0 / oos 10 / purged 10 (probed)."""
+    outcomes = _spaced_outcomes(20, interval_days=1, horizon=10, oos_min_sample=10)
+    report = calibration_report([], _outcome_report(outcomes))
+    bucket = report.buckets[0]
+    assert bucket.oos_sample_count == 10
+    assert bucket.purged_count == 10
+    assert bucket.is_sample_count == 0
+
+    split_at = bucket.oos_split_at
+    assert split_at is not None
+    oos_ids = {outcome.snapshot_id for outcome in outcomes[10:]}
+    purged_ids = {
+        outcome.snapshot_id
+        for outcome in outcomes[:10]
+        if outcome.captured_at < split_at <= outcome.exit_at
+    }
+    assert len(purged_ids) == 10
+    # Purged snapshot ids appear in neither segment.
+    assert purged_ids & oos_ids == set()
+    assert bucket.is_sample_count == 0
+    # Every pre-split window crosses the split -> all purged, none in-sample.
+    assert (
+        bucket.is_sample_count + bucket.oos_sample_count + bucket.purged_count
+        == bucket.sample_available
+    )
+
+
+def test_bootstrap_ci_bounds_and_degenerate_cases() -> None:
+    """T6: CI low <= median <= high; n<2 or zero variance -> None, no exception."""
+    from statistics import median as stat_median
+
+    from yowayowa.services.strategy_calibration import _bootstrap_ci
+
+    values = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10]
+    ci = _bootstrap_ci(values, statistic=stat_median, resamples=200, seed=20260928)
+    assert ci is not None
+    low, high = ci
+    assert low <= stat_median(values) <= high
+
+    # n < 2 -> None.
+    assert _bootstrap_ci([0.05], statistic=stat_median, resamples=200) is None
+    # Zero variance -> None (never 0.0).
+    flat = _bootstrap_ci([0.05, 0.05, 0.05, 0.05], statistic=stat_median, resamples=200)
+    assert flat is None
+    # Determinism: identical seed reproduces identical bounds.
+    again = _bootstrap_ci(values, statistic=stat_median, resamples=200, seed=20260928)
+    assert again == ci
+
+
+def test_oos_bootstrap_ci_on_bucket_and_empty_bucket_none_defaults() -> None:
+    """T6b/T4b: bucket-level CI sanity; empty-bucket OOS stays None (not 0)."""
+    outcomes = _spaced_outcomes(20, interval_days=10, horizon=2, oos_min_sample=10)
+    report = calibration_report([], _outcome_report(outcomes))
+    bucket = report.buckets[0]
+    assert bucket.oos_median_total_return is not None
+    assert bucket.oos_median_total_return_ci_low is not None
+    assert bucket.oos_median_total_return_ci_high is not None
+    assert (
+        bucket.oos_median_total_return_ci_low
+        <= bucket.oos_median_total_return
+        <= bucket.oos_median_total_return_ci_high
+    )
+    assert bucket.oos_median_excess_return_ci_low <= bucket.oos_median_excess_return
+    assert bucket.oos_median_excess_return_ci_high >= bucket.oos_median_excess_return
+    assert any(
+        "front-half statistics" in note and "never fitted" in note for note in bucket.oos_notes
+    )
+
+    # Empty bucket: OOS fields are None/0/True defaults, never fabricated zeros.
+    empty = calibration_report([], _outcome_report([]))
+    assert empty.buckets == []
+    unavailable = [
+        StrategyForwardOutcome(
+            snapshot_id=1,
+            strategy_id="s",
+            scoring_version="v",
+            region="us",
+            symbol="X",
+            research_priority_score=1.0,
+            captured_at=datetime(2026, 1, 1, tzinfo=UTC),
+            horizon_trading_days=2,
+            status="unavailable",
+        )
+    ]
+    none_bucket = calibration_report([], _outcome_report(unavailable)).buckets[0]
+    assert none_bucket.oos_median_total_return is None
+    assert none_bucket.oos_mean_total_return is None
+    assert none_bucket.oos_rank_ic is None
+    assert none_bucket.oos_sample_count == 0
+    assert none_bucket.oos_ic_insufficient is True
+    assert none_bucket.oos_split_at is None
+
+
+def test_calibration_endpoint_oos_min_sample_query_and_tool_schema() -> None:
+    """T8: ?oos_min_sample=5 -> 200; oos_min_sample=0 -> 422; tool schema carries the key."""
+    monkeypatch_env = {"YOWAYOWA_MODE": "personal"}
+    import os
+
+    saved = {key: os.environ.get(key) for key in monkeypatch_env}
+    os.environ.update({key: value for key, value in monkeypatch_env.items() if value is not None})
+    try:
+        from starlette.testclient import TestClient
+
+        from yowayowa.api.app import app
+
+        with TestClient(app) as client:
+            ok = client.get("/v1/strategy-research/calibration", params={"oos_min_sample": 5})
+            assert ok.status_code == 200
+            assert ok.json()["buckets"] == []  # empty production-like DB path
+
+            bad = client.get("/v1/strategy-research/calibration", params={"oos_min_sample": 0})
+            assert bad.status_code == 422
+
+            too_big = client.get(
+                "/v1/strategy-research/calibration", params={"oos_min_sample": 1001}
+            )
+            assert too_big.status_code == 422
+
+            schema = app.openapi()
+            parameter_names = {
+                parameter["name"]
+                for parameter in schema["paths"]["/v1/strategy-research/calibration"]["get"][
+                    "parameters"
+                ]
+            }
+            assert "oos_min_sample" in parameter_names
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    # Tool schema: the parameter exists and the tool name is unchanged (CI pin).
+    from unittest.mock import Mock
+
+    from yowayowa.config import Settings
+    from yowayowa.services.ai_agent import InvestmentResearchAgent
+
+    agent = InvestmentResearchAgent(Settings(database_url="sqlite:///:memory:"), Mock())
+    spec = agent.tools["get_strategy_calibration"]
+    assert "oos_min_sample" in spec.parameters["properties"]
+    assert spec.parameters["properties"]["oos_min_sample"]["minimum"] == 1
+    assert spec.parameters["properties"]["oos_min_sample"]["maximum"] == 1000

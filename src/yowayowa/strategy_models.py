@@ -149,6 +149,7 @@ class StrategyForwardOutcomeReport(BaseModel):
 
 StrategyCalibrationMinimumSampleThreshold = 30
 StrategyCalibrationDecileMinimumSample = 10
+StrategyCalibrationOosMinimumSample = 10
 
 
 class StrategyOutcomeDecileStatistics(BaseModel):
@@ -193,6 +194,36 @@ class StrategyCalibrationBucket(BaseModel):
     ic_sample_count: int = Field(ge=0, default=0)
     ic_insufficient: bool = True
     notes: list[str] = Field(default_factory=list)
+    # Walk-forward / out-of-sample evaluation (additive; all defaults preserve
+    # the pre-OOS schema). ``is_*`` fields describe the pre-split segment only;
+    # they are time-series-front-half statistics, never a fitted-model in-sample
+    # fit (the score is deterministic, not learned).
+    oos_rank_ic: float | None = None
+    oos_ic_sample_count: int = Field(ge=0, default=0)
+    oos_ic_insufficient: bool = True
+    oos_median_total_return: float | None = None
+    oos_mean_total_return: float | None = None
+    oos_median_excess_return: float | None = None
+    oos_mean_excess_return: float | None = None
+    oos_positive_excess_hit_rate: float | None = None
+    is_rank_ic: float | None = None
+    is_ic_sample_count: int = Field(ge=0, default=0)
+    is_ic_insufficient: bool = True
+    is_median_total_return: float | None = None
+    is_mean_total_return: float | None = None
+    is_median_excess_return: float | None = None
+    is_mean_excess_return: float | None = None
+    is_positive_excess_hit_rate: float | None = None
+    oos_sample_count: int = Field(ge=0, default=0)
+    is_sample_count: int = Field(ge=0, default=0)
+    purged_count: int = Field(ge=0, default=0)
+    exit_at_unknown_count: int = Field(ge=0, default=0)
+    oos_split_at: datetime | None = None
+    oos_median_total_return_ci_low: float | None = None
+    oos_median_total_return_ci_high: float | None = None
+    oos_median_excess_return_ci_low: float | None = None
+    oos_median_excess_return_ci_high: float | None = None
+    oos_notes: list[str] = Field(default_factory=list)
 
 
 class StrategyCalibrationReport(BaseModel):

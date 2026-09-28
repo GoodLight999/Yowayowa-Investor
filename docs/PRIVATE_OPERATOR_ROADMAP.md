@@ -388,7 +388,7 @@ Existing foundation:
 - benchmark-relative outcomes;
 - AI history/outcome tools.
 
-### Status (2026-09-26 re-baseline): **aggregate calibration DONE in code — walk-forward/out-of-sample and portfolio-aware sizing NOT STARTED.**
+### Status (2026-09-28): **aggregate calibration + purged walk-forward / out-of-sample DONE in code — portfolio-aware sizing NOT STARTED.**
 
 Implemented in `services/strategy_calibration.py` + AI tool
 `get_strategy_calibration` (verified by `tests/test_strategy_calibration.py`):
@@ -402,12 +402,21 @@ Implemented in `services/strategy_calibration.py` + AI tool
 - Spearman rank IC with explicit `ic_insufficient` state
   (never a fabricated coefficient);
 - outcome provenance propagated unchanged;
-- AI access to calibration evidence via the agent tool catalog.
+- AI access to calibration evidence via the agent tool catalog;
+- purged walk-forward / out-of-sample evaluation: deterministic split on
+  `captured_at` (never on sample values), last `oos_min_sample` outcomes by
+  decision time as OOS, windows crossing the split purged from both segments
+  (`purged_count`), per-segment `is_*` / `oos_*` statistics and rank ICs with
+  independent `*_ic_insufficient` states, `oos_split_at`, `exit_at_unknown_count`,
+  and `oos_notes` stating that `is_*` are front-half time-series statistics,
+  not a fitted-model in-sample fit;
+- fixed-seed (20260928) percentile bootstrap confidence intervals for the OOS
+  median total / excess returns (`None` kept for n<2 or zero variance);
+- `oos_min_sample` override on `calibration_report()`, the
+  `GET /v1/strategy-research/calibration` query (1..1000), and the
+  `get_strategy_calibration` tool schema.
 
 Remaining (NOT STARTED):
-- walk-forward / out-of-sample evaluation (the rank IC currently treats
-  overlapping windows as independent — flagged in bucket notes);
-- bootstrap/confidence intervals where useful;
 - portfolio-aware sizing proposals;
 - hypothesis/invalidation records that can later be evaluated.
 

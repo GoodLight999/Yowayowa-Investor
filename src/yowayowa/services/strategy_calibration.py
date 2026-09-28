@@ -14,14 +14,18 @@ benchmark return) are excluded from that metric only.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
+from random import Random
 from statistics import fmean, median
+
+import numpy as np
 
 from yowayowa.strategy_models import (
     StrategyCalibrationBucket,
     StrategyCalibrationDecileMinimumSample,
     StrategyCalibrationMinimumSampleThreshold,
+    StrategyCalibrationOosMinimumSample,
     StrategyCalibrationReport,
     StrategyFactorDecileSummary,
     StrategyForwardOutcome,
@@ -36,6 +40,9 @@ from yowayowa.strategy_models import (
 ScoreRow = tuple[float, float | None, float | None]
 # (factor_key, score/max_score fraction, total_return, excess_return)
 FactorRow = tuple[str, float, float | None, float | None]
+# A purged walk-forward split of the ordered available outcomes: the OOS tail,
+# the surviving in-sample head, the split instant, and the purged count.
+PurgedSplit = tuple[list[StrategyForwardOutcome], list[StrategyForwardOutcome], datetime, int]
 
 
 def _mean(values: list[float]) -> float:
@@ -155,6 +162,79 @@ def _factor_deciles(rows: list[FactorRow]) -> list[StrategyFactorDecileSummary]:
     return summaries
 
 
+def _purged_split(
+    available: list[StrategyForwardOutcome],
+    *,
+    oos_min_sample: int,
+) -> tuple[PurgedSplit | None, int]:
+    """Split available outcomes into (oos, in-sample, split_at, purged) by decision time.
+
+    Deterministic walk-forward split per the confirmed design (D2/D3):
+
+    - ``ordered`` = available outcomes with a known ``exit_at``, ascending by
+      ``captured_at`` (ties broken by ``snapshot_id``); the split depends only
+      on timestamps and identifiers, never on sample values (no leakage).
+    - ``n < oos_min_sample``: no OOS evaluation (returns ``None`` with the
+      ``exit_at``-unknown count).
+    - Otherwise the candidate OOS tail is the last ``oos_min_sample`` ordered
+      observations, ``split_at = ordered[n - m].captured_at``.
+    - Assignment order matters and is fixed: candidate OOS first, then purge
+      (an observation decided before the split whose window crosses it,
+      ``captured_at < split_at <= exit_at``, is purged from both sides), and
+      only then in-sample (windows fully closed at or before the split).
+    """
+    ordered = sorted(
+        (outcome for outcome in available if outcome.exit_at is not None),
+        key=lambda outcome: (outcome.captured_at, outcome.snapshot_id),
+    )
+    exit_at_unknown_count = len(available) - len(ordered)
+    if len(ordered) < oos_min_sample:
+        return None, exit_at_unknown_count
+
+    oos = list(ordered[len(ordered) - oos_min_sample :])
+    split_at = oos[0].captured_at
+    in_sample: list[StrategyForwardOutcome] = []
+    purged: list[StrategyForwardOutcome] = []
+    for outcome in ordered[: len(ordered) - oos_min_sample]:
+        exit_at = outcome.exit_at
+        if exit_at is not None and outcome.captured_at < split_at <= exit_at:
+            # Strict priority: purge before in-sample so no pre-split window
+            # that crosses the split can leak post-split information.
+            purged.append(outcome)
+        else:
+            in_sample.append(outcome)
+    return (oos, in_sample, split_at, len(purged)), exit_at_unknown_count
+
+
+def _bootstrap_ci(
+    values: Sequence[float],
+    *,
+    statistic: Callable[[Sequence[float]], float],
+    resamples: int = 2000,
+    seed: int = 20260928,
+) -> tuple[float, float] | None:
+    """Percentile bootstrap CI for ``statistic``; ``None`` when undefined.
+
+    Uses ``random.Random(seed)`` driving ``numpy`` resampling so results are
+    fully reproducible across processes and runs. Returns ``None`` (never 0.0)
+    when fewer than 2 samples exist or every value is identical (zero
+    variance), where a bootstrap distribution is degenerate.
+    """
+    if len(values) < 2:
+        return None
+    if all(value == values[0] for value in values):
+        return None
+    rng = Random(seed)
+    array = np.asarray(list(values), dtype=np.float64)
+    size = array.size
+    statistics = np.empty(resamples, dtype=np.float64)
+    for index in range(resamples):
+        draw = np.fromiter((rng.randrange(size) for _ in range(size)), dtype=np.intp, count=size)
+        statistics[index] = statistic(array[draw].tolist())
+    low, high = np.percentile(statistics, [2.5, 97.5])
+    return float(low), float(high)
+
+
 def _factor_rows(
     snapshots: list[StrategyResearchSnapshot],
     outcomes: list[StrategyForwardOutcome],
@@ -192,9 +272,13 @@ def calibration_report(
     outcome_report: StrategyForwardOutcomeReport,
     *,
     evaluated_at: datetime | None = None,
+    oos_min_sample: int | None = None,
 ) -> StrategyCalibrationReport:
     """Aggregate a forward-outcome report into per-(strategy, version, horizon) buckets."""
     evaluated_at = evaluated_at or datetime.now(UTC)
+    resolved_oos_min_sample = (
+        StrategyCalibrationOosMinimumSample if oos_min_sample is None else oos_min_sample
+    )
 
     grouped: dict[tuple[str, str, int], list[StrategyForwardOutcome]] = defaultdict(list)
     for outcome in outcome_report.outcomes:
@@ -225,10 +309,13 @@ def calibration_report(
                 "statistics use outcomes with a non-None excess_return."
             ),
             (
-                "Overlapping snapshot windows are treated as independent point-in-time "
-                "observations, which can overstate the effective sample size of the rank "
-                "information coefficient; walk-forward / out-of-sample evaluation is not "
-                "implemented."
+                "Walk-forward / out-of-sample evaluation is implemented: the split is a "
+                "pure point-in-time boundary on captured_at (never on sample values), the "
+                "last m outcomes by decision time form the out-of-sample segment, windows "
+                "that cross the split are purged from both segments, and the purged "
+                "walk-forward halves the overlapping-window dependence that the raw rank "
+                "IC treats as independent. In-sample adequacy below the 30-outcome "
+                "threshold still warns: statistics stay indicative under <30 outcomes."
             ),
             (
                 "The research-priority score is an attention-allocation score, never an "
@@ -291,6 +378,125 @@ def calibration_report(
                 "Rank IC omitted: no available outcome has a benchmark excess return."
             )
 
+        oos_notes: list[str] = [
+            (
+                "is_* fields are time-series front-half statistics of the pre-split "
+                "observations, not an in-sample fit of learned model weights; the "
+                "research-priority score is deterministic and never fitted."
+            )
+        ]
+        split, exit_at_unknown_count = _purged_split(
+            available, oos_min_sample=resolved_oos_min_sample
+        )
+
+        def _segment_ic(
+            outcomes: Sequence[StrategyForwardOutcome],
+        ) -> tuple[float | None, int, bool]:
+            pairs = [
+                (outcome.research_priority_score, outcome.excess_return)
+                for outcome in outcomes
+                if outcome.excess_return is not None
+            ]
+            if len(pairs) < StrategyCalibrationDecileMinimumSample:
+                return None, len(pairs), True
+            try:
+                return (
+                    spearman_rank_correlation(
+                        [pair[0] for pair in pairs],
+                        [pair[1] for pair in pairs],
+                    ),
+                    len(pairs),
+                    False,
+                )
+            except ValueError:
+                return None, len(pairs), True
+
+        oos_rank_ic: float | None = None
+        oos_ic_sample_count = 0
+        oos_ic_insufficient = True
+        is_rank_ic: float | None = None
+        is_ic_sample_count = 0
+        is_ic_insufficient = True
+        oos_sample_count = 0
+        is_sample_count = 0
+        purged_count = 0
+        oos_split_at: datetime | None = None
+        oos_median_total_return_ci_low: float | None = None
+        oos_median_total_return_ci_high: float | None = None
+        oos_median_excess_return_ci_low: float | None = None
+        oos_median_excess_return_ci_high: float | None = None
+        oos_stats = _statistics([])
+        is_stats = _statistics([])
+        if split is None:
+            oos_notes.append(
+                "Out-of-sample evaluation skipped: fewer than "
+                f"{resolved_oos_min_sample} ordered outcomes with a known exit_at "
+                f"({len(available) - exit_at_unknown_count}); split not defined."
+            )
+        else:
+            oos_outcomes, is_outcomes, oos_split_at, purged_count = split
+            oos_sample_count = len(oos_outcomes)
+            is_sample_count = len(is_outcomes)
+
+            oos_rank_ic, oos_ic_sample_count, oos_ic_insufficient = _segment_ic(oos_outcomes)
+            is_rank_ic, is_ic_sample_count, is_ic_insufficient = _segment_ic(is_outcomes)
+            oos_stats = _statistics(
+                [(outcome.total_return, outcome.excess_return) for outcome in oos_outcomes]
+            )
+            is_stats = _statistics(
+                [(outcome.total_return, outcome.excess_return) for outcome in is_outcomes]
+            )
+            for label, segment_stats in (
+                ("out-of-sample", oos_stats),
+                ("in-sample", is_stats),
+            ):
+                if segment_stats.median_total_return is None:
+                    oos_notes.append(
+                        f"{label} total-return statistics omitted: no outcome carries a "
+                        "total_return."
+                    )
+                if segment_stats.median_excess_return is None:
+                    oos_notes.append(
+                        f"{label} excess-return statistics omitted: no outcome carries a "
+                        "benchmark excess return."
+                    )
+            if oos_ic_insufficient:
+                oos_notes.append(
+                    "Out-of-sample rank IC omitted: fewer than "
+                    f"{StrategyCalibrationDecileMinimumSample} out-of-sample outcomes with "
+                    f"a benchmark excess return ({oos_ic_sample_count}) or zero variance."
+                )
+            if is_ic_insufficient:
+                oos_notes.append(
+                    "In-sample rank IC omitted: fewer than "
+                    f"{StrategyCalibrationDecileMinimumSample} in-sample outcomes with a "
+                    f"benchmark excess return ({is_ic_sample_count}) or zero variance."
+                )
+
+            oos_total_values = [
+                outcome.total_return for outcome in oos_outcomes if outcome.total_return is not None
+            ]
+            oos_excess_values = [
+                outcome.excess_return
+                for outcome in oos_outcomes
+                if outcome.excess_return is not None
+            ]
+            for label, values in (
+                ("total_return", oos_total_values),
+                ("excess_return", oos_excess_values),
+            ):
+                if len(values) < 2 or all(value == values[0] for value in values):
+                    oos_notes.append(
+                        f"Out-of-sample bootstrap CI for median {label} omitted: "
+                        "fewer than 2 samples or zero variance."
+                    )
+            total_ci = _bootstrap_ci(oos_total_values, statistic=median)
+            if total_ci is not None:
+                oos_median_total_return_ci_low, oos_median_total_return_ci_high = total_ci
+            excess_ci = _bootstrap_ci(oos_excess_values, statistic=median)
+            if excess_ci is not None:
+                oos_median_excess_return_ci_low, oos_median_excess_return_ci_high = excess_ci
+
         buckets.append(
             StrategyCalibrationBucket(
                 strategy_id=strategy_id,
@@ -312,6 +518,32 @@ def calibration_report(
                 ic_sample_count=ic_sample_count,
                 ic_insufficient=ic_insufficient,
                 notes=bucket_notes,
+                oos_rank_ic=oos_rank_ic,
+                oos_ic_sample_count=oos_ic_sample_count,
+                oos_ic_insufficient=oos_ic_insufficient,
+                oos_median_total_return=oos_stats.median_total_return,
+                oos_mean_total_return=oos_stats.mean_total_return,
+                oos_median_excess_return=oos_stats.median_excess_return,
+                oos_mean_excess_return=oos_stats.mean_excess_return,
+                oos_positive_excess_hit_rate=oos_stats.positive_excess_hit_rate,
+                is_rank_ic=is_rank_ic,
+                is_ic_sample_count=is_ic_sample_count,
+                is_ic_insufficient=is_ic_insufficient,
+                is_median_total_return=is_stats.median_total_return,
+                is_mean_total_return=is_stats.mean_total_return,
+                is_median_excess_return=is_stats.median_excess_return,
+                is_mean_excess_return=is_stats.mean_excess_return,
+                is_positive_excess_hit_rate=is_stats.positive_excess_hit_rate,
+                oos_sample_count=oos_sample_count,
+                is_sample_count=is_sample_count,
+                purged_count=purged_count,
+                exit_at_unknown_count=exit_at_unknown_count,
+                oos_split_at=oos_split_at,
+                oos_median_total_return_ci_low=oos_median_total_return_ci_low,
+                oos_median_total_return_ci_high=oos_median_total_return_ci_high,
+                oos_median_excess_return_ci_low=oos_median_excess_return_ci_low,
+                oos_median_excess_return_ci_high=oos_median_excess_return_ci_high,
+                oos_notes=oos_notes,
             )
         )
 

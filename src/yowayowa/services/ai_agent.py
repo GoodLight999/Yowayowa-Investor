@@ -778,6 +778,16 @@ class InvestmentResearchAgent:
                             "maximum": 100,
                             "default": 30,
                         },
+                        "oos_min_sample": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 1000,
+                            "description": (
+                                "Minimum number of decision-time-ordered outcomes with a "
+                                "known exit_at required to run the purged walk-forward "
+                                "out-of-sample evaluation (default 10)."
+                            ),
+                        },
                     }
                 ),
                 self._tool_strategy_calibration,
@@ -1220,6 +1230,10 @@ class InvestmentResearchAgent:
         raw_benchmark = str(args.get("benchmark") or "").strip()
         benchmark = normalize_symbol(raw_benchmark) if raw_benchmark else None
         limit = min(max(int(args.get("limit") or 30), 1), 100)
+        raw_oos_min_sample = args.get("oos_min_sample")
+        oos_min_sample = (
+            min(max(int(raw_oos_min_sample), 1), 1000) if raw_oos_min_sample is not None else None
+        )
         snapshots = list_strategy_snapshots(
             self.session,
             strategy_id=strategy_id,
@@ -1233,7 +1247,11 @@ class InvestmentResearchAgent:
             horizons=horizons,
             benchmark_symbol=benchmark,
         )
-        return calibration_report(snapshots, report).model_dump(mode="json")
+        return calibration_report(
+            snapshots,
+            report,
+            oos_min_sample=oos_min_sample,
+        ).model_dump(mode="json")
 
     def _tool_compare(self, args: dict[str, Any]) -> Any:
         symbols = [normalize_symbol(str(item)) for item in args.get("symbols", [])][:20]

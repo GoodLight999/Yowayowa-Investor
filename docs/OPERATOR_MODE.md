@@ -111,9 +111,25 @@ research-priority scoring actually helped, without ever rewriting history:
   orders. It never touches the broker submission surface, which stays
   propose-only with a fail-closed gate.
 - **Semantics** — the research-priority score is an attention-allocation
-  score, not an expected-return forecast; overlapping snapshot windows are
-  treated as independent observations (stated in bucket notes), and
-  walk-forward / out-of-sample evaluation is not implemented yet.
+  score, not an expected-return forecast. Walk-forward / out-of-sample
+  evaluation is implemented (see below); the split is a pure point-in-time
+  boundary on `captured_at`, never on sample values.
+- **Walk-forward / out-of-sample (P3)** — each bucket additionally reports a
+  purged walk-forward split: the last `oos_min_sample` outcomes by decision
+  time (default 10, query `oos_min_sample=1..1000`) form the out-of-sample
+  segment (`oos_rank_ic`, `oos_median/mean_*`, `oos_positive_excess_hit_rate`),
+  outcomes whose window crosses the split (`captured_at < split_at <= exit_at`)
+  are purged from both segments (`purged_count`), and only windows fully closed
+  at or before the split form the in-sample segment (`is_*` fields). The split
+  instant (`oos_split_at`) depends only on timestamps — never on returns or
+  scores — so in-sample and out-of-sample windows cannot overlap. Outcomes with
+  an unknown `exit_at` are counted (`exit_at_unknown_count`) and never guessed.
+  `oos_median_total_return` / `oos_median_excess_return` carry a fixed-seed
+  (20260928) percentile bootstrap confidence interval; degenerate samples keep
+  `None` with a reason in `oos_notes`. `is_*` fields are time-series front-half
+  statistics of the pre-split observations, **not** an in-sample fit of learned
+  model weights (the score is deterministic and never fitted). Insufficient
+  segments report `*_ic_insufficient=True` instead of a fabricated coefficient.
 - **AI access** — the `get_strategy_calibration` agent tool (same filters as
   `get_strategy_outcomes`) returns the same evidence, and the agent system
   prompt directs the model to inspect calibration evidence before claiming a
