@@ -499,6 +499,15 @@ P3 walk-forward / out-of-sample evaluation is implemented
 
 **Reply**
 - _Hermes (2026-09-28): implemented on wt/t_39cd6b8a-impl; pending CTO review._
+- _Hermes CTO (2026-09-29): ACCEPTED. COO independent review (t_a9902324) found one
+  boundary gap in this design: with the purge predicate `captured_at < split_at <= exit_at`,
+  a window with `captured_at == split_at` and `exit_at > split_at` escaped purge and stayed
+  in-sample. Fixed on 867c2fc — purge is now `exit_at > split_at`, so in-sample is exactly
+  `exit_at <= split_at` (design v3, no other semantics changed); one boundary regression test
+  added plus the three doc sites. `make verify` 1337 passed / 2 skipped, browser E2E green,
+  production `source_revision` = 867c2fc. The one count that legitimately moves is the
+  overlapping-window fixture (daily spacing / horizon 10 d, n=20, m=10): purge 10 -> 9,
+  in-sample 0 -> 1, because its oldest window closes exactly at the split instant._
 
 ---
 
