@@ -119,16 +119,16 @@
 | 2 | `us_equity` | 米国株 | store (Alpaca) | USD | 営業日（NYSE） | なし | `^GSPC` |
 | 3 | `crypto_spot` | 暗号現物 | store (CoinGecko/Binance) | USD/USDT | 24/7 UTC 暦日 | なし | 任意（BTC 等） |
 | 4 | `mt5_fx` | FX | MT5 copy_rates | **建玉ごと（下記 3.2）** | 24/5 | 実効 1000 倍（口座） | 任意 |
-| 5 | `mt5_metal` | 貴金属 | MT5 copy_rates | USD | 24/5 | 100〜1000 倍（品目別） | 任意 |
+| 5 | `mt5_metal` | 貴金属 | MT5 copy_rates | USD | 24/5 | 20〜1000 倍（品目別・金/銀 1000/100） | 任意 |
 | 6 | `mt5_commodity` | エネルギー・金属 | MT5 copy_rates | USD | 24/5 | 20〜500 倍（品目別） | 任意 |
 | 7 | `mt5_index` | 株価指数 CFD | MT5 copy_rates | 建玉ごと（USD/EUR/JPY/GBP） | 24/5 | 377〜500 倍（品目別） | 同一指数 |
-| 8 | `mt5_cfd_stock` | 米国株 CFD | MT5 copy_rates | USD | 24/5 | 20 倍 | 現物株（`us_equity` とは別 run） |
-| 9 | `hl_perp` | 暗号無期限 | HL 公開 API | USDC | 24/7 UTC 暦日 | 品目別 3〜40 倍 | 任意（none 許容） |
-| 10 | `hl_stock` | 株式無期限（HIP-3） | HL 公開 API | USDC | 24/5（配当なし） | 3〜50 倍 | 任意（none 許容） |
-| 11 | `hl_commodity` | コモディティ無期限（HIP-3） | HL 公開 API | USDC | 24/7（ブロックごと精算） | 3〜30 倍 | 任意（none 許容） |
-| 12 | `hl_index` | 指数無期限（HIP-3） | HL 公開 API | USDC | 24/7（ブロックごと精算） | 10〜50 倍 | 任意（none 許容） |
-| 13 | `hl_fx` | FX・債券無期限（HIP-3） | HL 公開 API | USDC | 24/7（ブロックごと精算） | 10〜50 倍 | 任意（none 許容） |
-| 14 | `hl_private` | 未上場株無期限（HIP-3） | HL 公開 API | USDC | 24/7（ブロックごと精算） | 3〜20 倍 | none 固定 |
+| 8 | `mt5_cfd_stock` | 米国株 CFD | MT5 copy_rates | USD | 24/5 | 20 倍（実測。全域は 824 銘柄・品目別に要確認） | 現物株（`us_equity` とは別 run） |
+| 9 | `hl_perp` | 暗号無期限 | HL 公開 API | USDC | 24/7 UTC 暦日 | **3〜40 倍**（`max` 分布 3:130/5:63/10:35/20:4/25:1/40:1・実測） | 任意（none 許容） |
+| 10 | `hl_stock` | 株式無期限（HIP-3） | HL 公開 API | USDC | 24/5（配当なし） | 3〜50 倍（`xyz` 実測。dex 間で最大 50） | 任意（none 許容） |
+| 11 | `hl_commodity` | コモディティ無期限（HIP-3） | HL 公開 API | USDC | 24/7（ブロックごと精算） | 3〜30 倍（`xyz` 実測） | 任意（none 許容） |
+| 12 | `hl_index` | 指数無期限（HIP-3） | HL 公開 API | USDC | 24/7（ブロックごと精算） | 10〜50 倍（`xyz`/`km` 実測） | 任意（none 許容） |
+| 13 | `hl_fx` | FX・債券無期限（HIP-3） | HL 公開 API | USDC | 24/7（ブロックごと精算） | 10〜50 倍（`xyz`/`km` 実測） | 任意（none 許容） |
+| 14 | `hl_private` | 未上場株無期限（HIP-3） | HL 公開 API | USDC | 24/7（ブロックごと精算） | 3〜20 倍（`vntl` 実測） | none 固定 |
 
 > 表は 14 行（ID 14 種）。第1版の 3 種に `mt5_*` 5 種と `hl_*` 6 種を加えたものである。
 > `hl_stock` のカレンダーは **24/5**（HIP-3 の株式 Perp は現物市場の閉場中も取引できるが、原資産の取引時間に規律される）。`hl_index`/`hl_fx` は 24/7。この差は D4 のカレンダー契約として明示する。
