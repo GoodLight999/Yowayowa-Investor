@@ -672,11 +672,7 @@ def test_oos_disjoint_sets_identity_and_value_invariance() -> None:
     assert split_at is not None
     # Recompute segment membership exactly as the design prescribes.
     oos_ids = {outcome.snapshot_id for outcome in outcomes[10:]}
-    is_ids = {
-        outcome.snapshot_id
-        for outcome in outcomes[:10]
-        if not (outcome.captured_at < split_at <= outcome.exit_at)
-    }
+    is_ids = {outcome.snapshot_id for outcome in outcomes[:10] if outcome.exit_at <= split_at}
     assert is_ids & oos_ids == set()
     assert (
         bucket.is_sample_count
@@ -759,29 +755,93 @@ def test_oos_insufficient_sample_skips_without_zero_filling() -> None:
 
 
 def test_oos_purge_removes_windows_crossing_the_split() -> None:
-    """T5: interval <= horizon, n=20, m=10 -> is 0 / oos 10 / purged 10 (probed)."""
+    """T5: interval <= horizon, n=20, m=10 -> is 1 / oos 10 / purged 9 (probed)."""
     outcomes = _spaced_outcomes(20, interval_days=1, horizon=10, oos_min_sample=10)
     report = calibration_report([], _outcome_report(outcomes))
     bucket = report.buckets[0]
     assert bucket.oos_sample_count == 10
-    assert bucket.purged_count == 10
-    assert bucket.is_sample_count == 0
+    assert bucket.purged_count == 9
+    assert bucket.is_sample_count == 1
 
     split_at = bucket.oos_split_at
     assert split_at is not None
     oos_ids = {outcome.snapshot_id for outcome in outcomes[10:]}
-    purged_ids = {
-        outcome.snapshot_id
-        for outcome in outcomes[:10]
-        if outcome.captured_at < split_at <= outcome.exit_at
-    }
-    assert len(purged_ids) == 10
+    purged_ids = {outcome.snapshot_id for outcome in outcomes[:10] if outcome.exit_at > split_at}
+    assert len(purged_ids) == 9
     # Purged snapshot ids appear in neither segment.
     assert purged_ids & oos_ids == set()
-    assert bucket.is_sample_count == 0
-    # Every pre-split window crosses the split -> all purged, none in-sample.
+    # All pre-split windows cross the split (purged) except the oldest, which
+    # closes exactly at the split instant (in-sample).
+    assert {outcome.snapshot_id for outcome in outcomes[:10]} - purged_ids == {1}
+    assert outcomes[0].exit_at == split_at
     assert (
         bucket.is_sample_count + bucket.oos_sample_count + bucket.purged_count
+        == bucket.sample_available
+    )
+
+
+def test_oos_split_same_instant_tie_crossing_window_is_purged() -> None:
+    """T5b: boundary regression — a window with ``captured_at == split_at`` and
+    ``exit_at > split_at`` is a crossing window and is purged (the old
+    implementation kept it in the in-sample segment)."""
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    split = base + timedelta(days=10)
+    outcomes = [
+        _outcome(
+            snapshot_id=1,
+            captured_at=base,
+            score=51.0,
+            total_return=0.011,
+            excess_return=0.006,
+            exit_at=base + timedelta(days=2),
+        ),
+        _outcome(
+            snapshot_id=2,
+            captured_at=base + timedelta(days=5),
+            score=52.0,
+            total_return=0.012,
+            excess_return=0.007,
+            exit_at=base + timedelta(days=7),
+        ),
+        _outcome(
+            snapshot_id=3,
+            captured_at=split,
+            score=53.0,
+            total_return=0.013,
+            excess_return=0.008,
+            exit_at=split + timedelta(days=2),
+        ),
+        _outcome(
+            snapshot_id=4,
+            captured_at=split,
+            score=54.0,
+            total_return=0.014,
+            excess_return=0.009,
+            exit_at=split + timedelta(days=2),
+        ),
+        _outcome(
+            snapshot_id=5,
+            captured_at=split,
+            score=55.0,
+            total_return=0.015,
+            excess_return=0.010,
+            exit_at=split + timedelta(days=2),
+        ),
+    ]
+    report = calibration_report([], _outcome_report(outcomes), oos_min_sample=2)
+    bucket = report.buckets[0]
+    # Candidate OOS is the last two of the tie group, so split_at == the tie instant.
+    assert bucket.oos_split_at == split
+    assert bucket.oos_sample_count == 2
+    # Both fully-closed windows remain in-sample; the tie-group leftover crosses.
+    assert bucket.is_sample_count == 2
+    assert bucket.purged_count == 1
+    assert bucket.exit_at_unknown_count == 0
+    assert (
+        bucket.is_sample_count
+        + bucket.oos_sample_count
+        + bucket.purged_count
+        + bucket.exit_at_unknown_count
         == bucket.sample_available
     )
 

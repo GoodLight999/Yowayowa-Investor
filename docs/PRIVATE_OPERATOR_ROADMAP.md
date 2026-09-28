@@ -405,9 +405,12 @@ Implemented in `services/strategy_calibration.py` + AI tool
 - AI access to calibration evidence via the agent tool catalog;
 - purged walk-forward / out-of-sample evaluation: deterministic split on
   `captured_at` (never on sample values), last `oos_min_sample` outcomes by
-  decision time as OOS, windows crossing the split purged from both segments
-  (`purged_count`), per-segment `is_*` / `oos_*` statistics and rank ICs with
-  independent `*_ic_insufficient` states, `oos_split_at`, `exit_at_unknown_count`,
+  decision time as OOS, windows with `exit_at > split_at` purged from both
+  segments (`purged_count`; a window captured exactly at `split_at` is purged
+  too), in-sample restricted to windows fully closed at or before the split
+  (`exit_at <= split_at`), per-segment `is_*` / `oos_*` statistics and rank
+  ICs with independent `*_ic_insufficient` states, `oos_split_at`,
+  `exit_at_unknown_count`,
   and `oos_notes` stating that `is_*` are front-half time-series statistics,
   not a fitted-model in-sample fit;
 - fixed-seed (20260928) percentile bootstrap confidence intervals for the OOS

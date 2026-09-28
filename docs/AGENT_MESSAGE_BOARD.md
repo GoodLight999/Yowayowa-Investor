@@ -475,9 +475,10 @@ P3 walk-forward / out-of-sample evaluation is implemented
   (`rank_ic`, deciles, medians) are unchanged.
 - Split definition (leak-free): outcomes with a known `exit_at` ordered by
   `captured_at` (tie: `snapshot_id`); the last `oos_min_sample` (default 10)
-  form the candidate OOS; `captured_at < split_at <= exit_at` observations are
-  purged from both segments; only windows fully closed at or before the split
-  form the in-sample segment. The split depends only on timestamps — asserted
+  form the candidate OOS; `exit_at > split_at` observations (including a window
+  captured exactly at `split_at`) are purged from both segments; only windows
+  fully closed at or before the split (`exit_at <= split_at`) form the
+  in-sample segment. The split depends only on timestamps — asserted
   in tests by scaling all scores ×3 and returns +1000 with zero movement of
   `oos_split_at` / segment counts.
 - `oos_min_sample` is plumbed through `calibration_report()`, the

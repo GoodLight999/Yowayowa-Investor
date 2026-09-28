@@ -41,7 +41,8 @@ ScoreRow = tuple[float, float | None, float | None]
 # (factor_key, score/max_score fraction, total_return, excess_return)
 FactorRow = tuple[str, float, float | None, float | None]
 # A purged walk-forward split of the ordered available outcomes: the OOS tail,
-# the surviving in-sample head, the split instant, and the purged count.
+# the surviving in-sample head (windows fully closed at or before the split
+# instant), the split instant, and the purged count.
 PurgedSplit = tuple[list[StrategyForwardOutcome], list[StrategyForwardOutcome], datetime, int]
 
 
@@ -179,9 +180,11 @@ def _purged_split(
     - Otherwise the candidate OOS tail is the last ``oos_min_sample`` ordered
       observations, ``split_at = ordered[n - m].captured_at``.
     - Assignment order matters and is fixed: candidate OOS first, then purge
-      (an observation decided before the split whose window crosses it,
-      ``captured_at < split_at <= exit_at``, is purged from both sides), and
-      only then in-sample (windows fully closed at or before the split).
+      (an observation whose window crosses the split instant, ``exit_at >
+      split_at``, is purged from both sides; a window captured exactly at
+      ``split_at`` that closes after it also crosses and is purged), and only
+      then in-sample (windows fully closed at or before the split instant,
+      ``exit_at <= split_at``).
     """
     ordered = sorted(
         (outcome for outcome in available if outcome.exit_at is not None),
@@ -197,9 +200,11 @@ def _purged_split(
     purged: list[StrategyForwardOutcome] = []
     for outcome in ordered[: len(ordered) - oos_min_sample]:
         exit_at = outcome.exit_at
-        if exit_at is not None and outcome.captured_at < split_at <= exit_at:
-            # Strict priority: purge before in-sample so no pre-split window
-            # that crosses the split can leak post-split information.
+        if exit_at is not None and exit_at > split_at:
+            # Strict priority: purge before in-sample so no window that
+            # crosses the split can leak post-split information. A window
+            # captured exactly at the split instant but closing after it is a
+            # crossing window too, so it is purged here as well.
             purged.append(outcome)
         else:
             in_sample.append(outcome)

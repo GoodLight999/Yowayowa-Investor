@@ -118,9 +118,11 @@ research-priority scoring actually helped, without ever rewriting history:
   purged walk-forward split: the last `oos_min_sample` outcomes by decision
   time (default 10, query `oos_min_sample=1..1000`) form the out-of-sample
   segment (`oos_rank_ic`, `oos_median/mean_*`, `oos_positive_excess_hit_rate`),
-  outcomes whose window crosses the split (`captured_at < split_at <= exit_at`)
-  are purged from both segments (`purged_count`), and only windows fully closed
-  at or before the split form the in-sample segment (`is_*` fields). The split
+  outcomes whose window crosses the split (`exit_at > split_at`) are purged
+  from both segments (`purged_count`), and only windows fully closed at or
+  before the split (`exit_at <= split_at`) form the in-sample segment (`is_*`
+  fields); a window captured exactly at `split_at` that closes after it also
+  crosses and is purged. The split
   instant (`oos_split_at`) depends only on timestamps — never on returns or
   scores — so in-sample and out-of-sample windows cannot overlap. Outcomes with
   an unknown `exit_at` are counted (`exit_at_unknown_count`) and never guessed.
