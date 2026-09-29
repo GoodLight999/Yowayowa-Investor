@@ -435,3 +435,216 @@ def test_order_inquiry_delegates_to_broker_read_executions_resource() -> None:
 
     assert outcome is expected
     assert read.calls == [("executions", "us", True)]
+
+
+# --- D2 supplementary coverage (CTO integration) ---
+def test_changed_broker_row_after_application_blocks_and_keeps_holdings(tmp_path: Path) -> None:
+    """D2: a previously applied execution whose broker row changed must block.
+
+    The ledger stores the fingerprint of the applied row; when the broker later
+    reports a different price for the same execution id the preview must refuse
+    to apply (``changed_after_application``) and must not touch holdings.
+    """
+    engine, session, portfolio_id = _database(tmp_path)
+    try:
+        bulk_upsert_positions(
+            session,
+            portfolio_id,
+            __import__("yowayowa.domain", fromlist=["PositionBulkUpsert"]).PositionBulkUpsert(
+                positions=[
+                    PositionUpsert(
+                        symbol="AAPL",
+                        quantity=Decimal("10"),
+                        average_cost=Decimal("20"),
+                        currency="USD",
+                    )
+                ]
+            ),
+        )
+        applied = _execution(execution_id="fill-1", price=Decimal("30"))
+        service = ExecutionsReconciliationService(
+            order_inquiry=_FakeOrderInquiry(_outcome([applied]))  # type: ignore[arg-type]
+        )
+        preview = service.preview(session, portfolio_id, "jp")
+        assert preview.can_apply is True
+        result = service.apply(
+            session, portfolio_id, "jp", preview.preview_id, operator_approved=True
+        )
+        assert result.applied_execution_ids == ["fill-1"]
+        assert get_portfolio(session, portfolio_id).positions[0].quantity == Decimal("12")
+
+        # Same execution id, different price -> the broker row changed.
+        changed = _execution(execution_id="fill-1", price=Decimal("31"))
+        changed_service = ExecutionsReconciliationService(
+            order_inquiry=_FakeOrderInquiry(_outcome([changed]))  # type: ignore[arg-type]
+        )
+        changed_preview = changed_service.preview(session, portfolio_id, "jp")
+
+        assert changed_preview.can_apply is False
+        assert changed_preview.executions[0].state == "changed_after_application"
+        assert any(
+            "previously applied execution changed" in item for item in changed_preview.blockers
+        )
+        assert any(
+            "differs from the previously applied" in item
+            for item in changed_preview.executions[0].issues
+        )
+        # Holdings and the ledger are untouched by a rejected preview.
+        assert get_portfolio(session, portfolio_id).positions[0].quantity == Decimal("12")
+        assert (
+            applied_execution_fingerprints(session, portfolio_id, "jp")["fill-1"]
+            != changed_preview.executions[0].fingerprint
+        )
+        # The change is also detected at apply time: the preview id moved and the
+        # changed row is not appliable.
+        with pytest.raises(ValueError, match="not applicable"):
+            changed_service.apply(
+                session,
+                portfolio_id,
+                "jp",
+                changed_preview.preview_id,
+                operator_approved=True,
+            )
+        assert get_portfolio(session, portfolio_id).positions[0].quantity == Decimal("12")
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_stale_broker_fetch_is_preview_only_and_never_appliable(tmp_path: Path) -> None:
+    """D2: AcquisitionFetchState.STALE must stay preview-only.
+
+    A stale read may be projected for operator awareness but can never be
+    applied, even with explicit approval, and the note/blocker must say so.
+    """
+    engine, session, portfolio_id = _database(tmp_path)
+    try:
+        stale = ExecutionsReconciliationService(
+            order_inquiry=_FakeOrderInquiry(
+                _outcome([_execution()], fetch_state=AcquisitionFetchState.STALE)
+            )  # type: ignore[arg-type]
+        )
+        preview = stale.preview(session, portfolio_id, "jp")
+
+        assert preview.fetch_state == AcquisitionFetchState.STALE
+        assert preview.can_apply is False
+        assert any("stale broker data is preview-only" in note for note in preview.notes)
+        assert any("only a fresh OK read can apply" in item for item in preview.blockers)
+        assert preview.changes and preview.changes[0].current_quantity == Decimal("0")
+        assert preview.changes[0].target_quantity == Decimal("2")
+
+        with pytest.raises(ValueError, match="not applicable"):
+            stale.apply(session, portfolio_id, "jp", preview.preview_id, operator_approved=True)
+        assert get_portfolio(session, portfolio_id).positions == []
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_sell_and_short_fills_project_the_weighted_average_cost(tmp_path: Path) -> None:
+    """D2: SELL-side fills across long, short-covering and short-extending paths.
+
+    AAPL long 10 @ 20    + SELL 2 @ 25  ->  8 @ 20   (basis retained on a sale)
+    MSFT short -4 @ 50   + BUY  1 @ 44  -> -3 @ 50   (cover retains the basis)
+    TSLA short -4 @ 50   + SELL 2 @ 40  -> -6 @ 46.66... (short extended -> weighted)
+    """
+    engine, session, portfolio_id = _database(tmp_path)
+    try:
+        bulk_upsert_positions(
+            session,
+            portfolio_id,
+            __import__("yowayowa.domain", fromlist=["PositionBulkUpsert"]).PositionBulkUpsert(
+                positions=[
+                    PositionUpsert(
+                        symbol="AAPL",
+                        quantity=Decimal("10"),
+                        average_cost=Decimal("20"),
+                        currency="USD",
+                    ),
+                    PositionUpsert(
+                        symbol="MSFT",
+                        quantity=Decimal("-4"),
+                        average_cost=Decimal("50"),
+                        currency="USD",
+                    ),
+                    PositionUpsert(
+                        symbol="TSLA",
+                        quantity=Decimal("-4"),
+                        average_cost=Decimal("50"),
+                        currency="USD",
+                    ),
+                ]
+            ),
+        )
+        sell = _execution(
+            execution_id="sell-1",
+            symbol="AAPL",
+            side=BrokerOrderSide.SELL,
+            quantity=Decimal("2"),
+            price=Decimal("25"),
+        )
+        cover = _execution(
+            execution_id="cover-1",
+            symbol="MSFT",
+            side=BrokerOrderSide.BUY,
+            quantity=Decimal("1"),
+            price=Decimal("44"),
+        )
+        extend_short = _execution(
+            execution_id="short-1",
+            symbol="TSLA",
+            side=BrokerOrderSide.SELL,
+            quantity=Decimal("2"),
+            price=Decimal("40"),
+        )
+        service = ExecutionsReconciliationService(
+            order_inquiry=_FakeOrderInquiry(
+                _outcome([sell, cover, extend_short])  # type: ignore[arg-type]
+            )
+        )
+        preview = service.preview(session, portfolio_id, "jp")
+        assert preview.can_apply is True
+        by_symbol = {change.symbol: change for change in preview.changes}
+
+        assert by_symbol["AAPL"].current_quantity == Decimal("10")
+        assert by_symbol["AAPL"].target_quantity == Decimal("8")
+        assert by_symbol["AAPL"].target_average_cost == Decimal("20")
+        # Covering part of a short keeps the original basis.
+        assert by_symbol["MSFT"].current_quantity == Decimal("-4")
+        assert by_symbol["MSFT"].target_quantity == Decimal("-3")
+        assert by_symbol["MSFT"].target_average_cost == Decimal("50")
+        # Extending a short re-averages: (4*50 + 2*40) / 6.
+        assert by_symbol["TSLA"].current_quantity == Decimal("-4")
+        assert by_symbol["TSLA"].target_quantity == Decimal("-6")
+        # The projection keeps full Decimal precision in the preview; persistence
+        # stores average_cost as Numeric(28, 10) (see PositionRecord), so the
+        # applied row is the same value rounded to the column scale.
+        assert by_symbol["TSLA"].target_average_cost == Decimal("46.66666666666666666666666667")
+
+        result = service.apply(
+            session, portfolio_id, "jp", preview.preview_id, operator_approved=True
+        )
+        positions = {position.symbol: position for position in result.portfolio.positions}
+        assert (positions["AAPL"].quantity, positions["AAPL"].average_cost) == (
+            Decimal("8"),
+            Decimal("20"),
+        )
+        assert (positions["MSFT"].quantity, positions["MSFT"].average_cost) == (
+            Decimal("-3"),
+            Decimal("50"),
+        )
+        assert (positions["TSLA"].quantity, positions["TSLA"].average_cost) == (
+            Decimal("-6"),
+            Decimal("46.6666666667"),
+        )
+        assert positions["TSLA"].average_cost == by_symbol["TSLA"].target_average_cost.quantize(
+            Decimal("0.0000000001")
+        )
+        assert set(applied_execution_fingerprints(session, portfolio_id, "jp")) == {
+            "sell-1",
+            "cover-1",
+            "short-1",
+        }
+    finally:
+        session.close()
+        engine.dispose()
