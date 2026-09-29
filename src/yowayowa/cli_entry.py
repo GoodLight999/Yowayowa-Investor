@@ -8,12 +8,14 @@ from rich.table import Table
 
 from yowayowa.broker_execution_cli import app as broker_execution_app
 from yowayowa.broker_read_cli import app as broker_read_app
+from yowayowa.calibration_cli import strategy_calibration
 from yowayowa.chart_cli import app as chart_app
 from yowayowa.cli import _client, _percent, app, portfolio_app
 from yowayowa.credit_margin_cli import credit_margin, credit_margin_fetch
 from yowayowa.crypto_cli import crypto_fetch, crypto_ohlcv
 from yowayowa.edinet_cli import app as edinet_app
 from yowayowa.event_cli import app as events_app
+from yowayowa.hypothesis_cli import app as hypothesis_app
 from yowayowa.institutional_cli import app as institutional_app
 from yowayowa.ir_cli import app as ir_app
 from yowayowa.jpx_margin_cli import jpx_margin, jpx_margin_ingest
@@ -41,6 +43,8 @@ app.command(name="screening-candidates")(screening_candidates)
 app.command(name="research-brief")(research_brief)
 app.command(name="research-ask")(research_ask)
 app.command(name="research-brief-latest")(latest_research_brief)
+app.command(name="strategy-calibration")(strategy_calibration)
+app.add_typer(hypothesis_app, name="hypothesis")
 app.add_typer(chart_app, name="chart")
 app.add_typer(rate_app, name="rates")
 app.add_typer(institutional_app, name="13f")
@@ -255,6 +259,80 @@ def portfolio_risk(
     print(positions)
     if payload["unavailable_symbols"]:
         print(f"Unavailable: {', '.join(payload['unavailable_symbols'])}")
+
+
+@portfolio_app.command("sizing-proposals")
+def portfolio_sizing_proposals(
+    portfolio_id: int = typer.Argument(..., min=1),
+    idea: list[str] = typer.Option(
+        [], "--idea", help="PortfolioSizingIdea のJSON文字列（繰り返し指定・1件以上必須）"
+    ),
+    risk_budget_pct: float = typer.Option(..., help="(0,1]"),
+    max_position_pct: float = typer.Option(..., help="(0,1]"),
+    base_url: str = typer.Option("http://127.0.0.1:8000"),
+    token: str | None = typer.Option(None, envvar="YOWAYOWA_API_TOKEN"),
+) -> None:
+    import json
+
+    from yowayowa.hypothesis_cli import _request
+
+    if not idea:
+        raise typer.BadParameter("at least one --idea is required")
+    try:
+        ideas = [json.loads(raw) for raw in idea]
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"invalid --idea JSON: {exc}") from exc
+    with _client(base_url, token) as client:
+        payload = _request(
+            client,
+            "post",
+            f"/v1/portfolios/{portfolio_id}/sizing-proposals",
+            json={
+                "ideas": ideas,
+                "risk_budget_pct": risk_budget_pct,
+                "max_position_pct": max_position_pct,
+            },
+        )
+    for key in (
+        "portfolio_id",
+        "base_currency",
+        "gross_market_value_base",
+        "risk_budget_pct",
+        "total_risk_budget_base",
+        "per_idea_risk_budget_base",
+        "max_position_pct",
+        "max_position_value_base",
+    ):
+        print(f"{key}: {payload.get(key, '—')}")
+    table = Table(
+        "Symbol",
+        "Quantity",
+        "Notional",
+        "Stop loss",
+        "Projected value",
+        "Constraints",
+        "Risk/share",
+        "Risk qty",
+        "Position qty",
+    )
+    for item in payload["ideas"]:
+        table.add_row(
+            item["symbol"],
+            str(item["quantity"]),
+            str(item["proposed_notional_base"]),
+            str(item["estimated_stop_loss_base"]),
+            str(item["projected_position_value_base"]),
+            ", ".join(item["limiting_constraints"]),
+            str(item["risk_per_share_base"]),
+            str(item["risk_limited_quantity"]),
+            str(item["position_limited_quantity"]),
+        )
+    print(table)
+    print(f"executable: {payload['executable']} — proposal only — not executable")
+    for note in payload["notes"]:
+        print(f"Note: {note}")
+    for provenance in payload["provenance"]:
+        print(f"Provenance: {provenance}")
 
 
 __all__ = ["app"]
