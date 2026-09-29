@@ -13,6 +13,7 @@
   </div>
   <div class="toolbar">
     <button id="toggle-watchlist" class="ghost" type="button">{{ t('common.add') }} · {{ t('dashboard.watchlist') }}</button>
+    <a class="ghost button-link" href="/research/{{ symbol|urlencode }}">{{ x('research.deep') }}</a>
     <select id="period-select" aria-label="{{ t('instrument.chart_period') }}"><option value="3mo">3M</option><option value="6mo">6M</option><option value="1y" selected>1Y</option><option value="2y">2Y</option><option value="5y">5Y</option><option value="max">MAX</option></select>
     <div class="indicator-controls">
       <details class="indicator-menu">

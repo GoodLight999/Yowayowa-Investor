@@ -443,3 +443,22 @@ def test_instrument_valuation_renders_without_external_chart_dependency(page: Pa
     ).to_be_visible()
     expect(page.locator("#valuation-metrics").get_by_text("20\u00d7", exact=True)).to_be_visible()
     expect(page.locator("#valuation-basis")).to_have_text("Latest annual financials · 2025-12-31")
+
+
+def test_instrument_opens_deep_research_with_symbol_context(page: Page) -> None:
+    page.route("https://**", lambda route: route.abort())
+    page.route(
+        "**/v1/**",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"mode":"personal"}' if route.request.url.endswith("/v1/health") else "{}",
+        ),
+    )
+    page.goto(f"{BASE_URL}/instrument/7203.T?lang=en", wait_until="domcontentloaded")
+
+    page.get_by_role("link", name="Deep company research", exact=True).click()
+
+    expect(page).to_have_url(f"{BASE_URL}/research/7203.T")
+    expect(page.get_by_role("heading", name="7203.T", exact=True)).to_be_visible()
+    expect(page.locator("#research-workspace")).to_have_attribute("data-symbol", "7203.T")
