@@ -148,6 +148,18 @@ research-priority scoring actually helped, without ever rewriting history:
   and a segment whose `*_ic_insufficient` is true prints
   `insufficient (n=...)` instead of a coefficient — the CLI never fabricates a
   statistic the API reported as insufficient.
+- **Daily snapshot scheduling (systemd)** — install the repository unit files
+  from `deploy/systemd/` into `/etc/systemd/system/`, then run
+  `systemctl daemon-reload`, `systemctl enable --now yowayowa-api`, and
+  `systemctl enable --now yowayowa-snapshot.timer`. The API unit binds only to
+  `127.0.0.1:8001` and uses the persistent `data/yowayowa.db`; the daily
+  oneshot timer invokes `python -m yowayowa.cli_shim preset snapshot-builtins`
+  from the checkout (the project need not be installed in the venv). Verify
+  with `systemctl is-active yowayowa-api yowayowa-snapshot.timer`,
+  `systemctl list-timers yowayowa-snapshot.timer`, and
+  `systemctl start yowayowa-snapshot.service`; inspect its output with
+  `journalctl -u yowayowa-snapshot --no-pager` and confirm
+  `select count(*) from strategy_research_snapshots` in the persistent DB.
 
 ### Hypothesis & falsification records (P3)
 

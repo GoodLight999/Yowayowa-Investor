@@ -440,9 +440,13 @@ Implemented in `services/strategy_calibration.py` + AI tool
   scoring version, region, symbol, and UTC capture date; unavailable candidates
   are not fabricated or backfilled.
 
-Remaining (NOT STARTED):
+Remaining:
 - bootstrap/confidence intervals where useful (prototype on `agent/p5-audit`, not landed);
-- scheduler registration for snapshot generation (WD-K ships `yowayowa preset snapshot-builtins`; no cron/systemd unit is installed by design).
+- install/enable the committed systemd units on the operator host (see
+  `deploy/systemd/yowayowa-api.service`, `yowayowa-snapshot.service`, and
+  `yowayowa-snapshot.timer`; procedure and verification commands are in
+  `docs/OPERATOR_MODE.md`). The timer runs the snapshot CLI daily against the
+  persistent operator database.
 
 #### CLI parity for the P3 learning loop (2026-09-29)
 
