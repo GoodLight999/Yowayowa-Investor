@@ -433,6 +433,12 @@ Implemented in `services/strategy_calibration.py` + AI tool
   private decision history and do not execute or mutate broker/order state.
 - additive `create_all` migration for the new hypothesis table; existing rows
   are covered by a dedicated preservation test (`tests/test_hypotheses.py`).
+- Repeatable snapshot-generation entrypoint: `yowayowa preset snapshot-builtins`
+  runs each implemented built-in preset through discovery + evaluation with
+  `record=true`; operator-managed scheduling may invoke it, but this command
+  does not install a cron/systemd job. Daily idempotency is per strategy,
+  scoring version, region, symbol, and UTC capture date; unavailable candidates
+  are not fabricated or backfilled.
 
 Remaining (NOT STARTED):
 - bootstrap/confidence intervals where useful (prototype on `agent/p5-audit`, not landed);

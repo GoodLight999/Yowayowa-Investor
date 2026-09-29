@@ -213,3 +213,33 @@ def run_builtin(
         print(f"Unavailable: {', '.join(evaluation['errors'])}")
     if evaluation.get("supplement_errors"):
         print(f"EDINET supplement unavailable: {', '.join(evaluation['supplement_errors'])}")
+
+
+@app.command("snapshot-builtins")
+def snapshot_builtins(
+    region: str | None = typer.Option(None, help="Override each preset's default region"),
+    size: int = typer.Option(25, min=1, max=50),
+    edinet_key: str | None = typer.Option(None, envvar="YOWAYOWA_EDINET_API_KEY", hidden=True),
+    base_url: str = typer.Option("http://127.0.0.1:8000"),
+    token: str | None = typer.Option(None, envvar="YOWAYOWA_API_TOKEN"),
+) -> None:
+    """Evaluate all supported built-in strategies and record today's snapshots.
+
+    Intended as the repeatable entrypoint for an operator-managed scheduler;
+    this command does not install or configure a scheduler.
+    """
+    with _client(base_url, token) as client:
+        strategies = client.get("/v1/strategy-presets").raise_for_status().json()
+    supported = [item for item in strategies if item["id"] == "kiyohara_global_value_growth"]
+    if not supported:
+        raise typer.BadParameter("No implemented built-in strategy is available for snapshotting")
+    print(f"Recording strategy snapshots for {len(supported)} implemented preset(s).")
+    for strategy in supported:
+        run_builtin(
+            strategy_id=strategy["id"],
+            region=region,
+            size=size,
+            edinet_key=edinet_key,
+            base_url=base_url,
+            token=token,
+        )
