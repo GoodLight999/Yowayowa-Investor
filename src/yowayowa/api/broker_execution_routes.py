@@ -14,13 +14,16 @@ implemented and has no endpoint at all (not even a 405).
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy.orm import Session
 
 from yowayowa.api.deps import (
+    db_session,
     get_broker_execution_service,
+    get_executions_reconciliation_service,
     get_order_inquiry_service,
     require_api_token,
     require_private_connectors,
@@ -31,6 +34,12 @@ from yowayowa.broker.execution.service import (
     BrokerExecutionDomainService,
     DuplicateProposalError,
     OrderExecutionPreview,
+)
+from yowayowa.services.executions_reconciliation import (
+    ExecutionPreviewChangedError,
+    ExecutionReconciliationApplyResult,
+    ExecutionReconciliationPreview,
+    ExecutionsReconciliationService,
 )
 from yowayowa.services.order_inquiry_service import OrderInquiryReport, OrderInquiryService
 
@@ -57,6 +66,13 @@ class ProposalCreateRequest(BaseModel):
 
 class EvaluateRequest(BaseModel):
     armed: bool
+
+
+class ExecutionReconciliationApplyRequest(BaseModel):
+    portfolio_id: int = Field(gt=0)
+    market: Literal["jp", "us"] = "jp"
+    preview_id: str = Field(min_length=64, max_length=64)
+    operator_approved: bool = False
 
 
 class AuditEntryPayload(BaseModel):
@@ -232,3 +248,47 @@ def order_status(
             detail=f"unknown client_order_id: {client_order_id}",
         )
     return report
+
+
+@router.get(
+    "/reconciliation/preview",
+    response_model=ExecutionReconciliationPreview,
+    operation_id="broker_execution_reconciliation_preview",
+)
+def preview_execution_reconciliation(
+    portfolio_id: Annotated[int, Query(gt=0)],
+    market: Annotated[str, Query(pattern="^(jp|us)$")] = "jp",
+    force_refresh: bool = False,
+    service: ExecutionsReconciliationService = Depends(get_executions_reconciliation_service),
+    session: Session = Depends(db_session),
+) -> ExecutionReconciliationPreview:
+    try:
+        return service.preview(session, portfolio_id, market, force_refresh=force_refresh)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/reconciliation/apply",
+    response_model=ExecutionReconciliationApplyResult,
+    operation_id="broker_execution_reconciliation_apply",
+)
+def apply_execution_reconciliation(
+    body: ExecutionReconciliationApplyRequest,
+    service: ExecutionsReconciliationService = Depends(get_executions_reconciliation_service),
+    session: Session = Depends(db_session),
+) -> ExecutionReconciliationApplyResult:
+    try:
+        return service.apply(
+            session,
+            body.portfolio_id,
+            body.market,
+            body.preview_id,
+            operator_approved=body.operator_approved,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ExecutionPreviewChangedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

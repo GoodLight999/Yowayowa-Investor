@@ -116,6 +116,21 @@ class BrokerOrder(BaseModel):
     status: BrokerOrderStatus
 
 
+class BrokerExecution(BaseModel):
+    """One normalized broker fill; absent fields remain absent, never zero-filled."""
+
+    broker: str
+    execution_id: str | None = None
+    broker_order_id: str | None = None
+    symbol: str | None = None
+    side: BrokerOrderSide | None = None
+    quantity: Decimal | None = None
+    price: Decimal | None = None
+    currency: str | None = None
+    executed_at: datetime | None = None
+    executed_at_raw: str | None = None
+
+
 class BrokerPosition(BaseModel):
     broker: str
     symbol: str

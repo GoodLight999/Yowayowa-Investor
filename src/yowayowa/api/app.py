@@ -29,6 +29,7 @@ from yowayowa.api.edinet_routes import router as edinet_router
 from yowayowa.api.edinet_ux_routes import router as edinet_ux_router
 from yowayowa.api.fundamentals_routes import router as fundamentals_router
 from yowayowa.api.fx_routes import router as fx_router
+from yowayowa.api.import_routes import router as import_router
 from yowayowa.api.institutional_routes import router as institutional_router
 from yowayowa.api.ir_routes import router as ir_router
 from yowayowa.api.jpx_routes import router as jpx_router
@@ -208,6 +209,7 @@ app.include_router(sector_router)
 app.include_router(rate_router)
 app.include_router(fx_router)
 app.include_router(institutional_router)
+app.include_router(import_router)
 app.include_router(edinet_router)
 app.include_router(edinet_ux_router)
 app.include_router(ai_router)

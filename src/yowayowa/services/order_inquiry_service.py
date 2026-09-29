@@ -28,7 +28,7 @@ from yowayowa.broker_models import (
     BrokerOrderSide,
     BrokerOrderStatus,
 )
-from yowayowa.services.broker_read_service import BrokerReadService
+from yowayowa.services.broker_read_service import BrokerReadOutcome, BrokerReadService
 
 MARKET_PATTERN = Literal["jp", "us"]
 
@@ -82,6 +82,14 @@ class OrderInquiryService:
         self._execution = execution
 
     # ---------------------------------------------------------------- queries
+
+    def list_executions(
+        self,
+        market: str = "jp",
+        force_refresh: bool = False,
+    ) -> BrokerReadOutcome:
+        """Fetch normalized executions with acquisition provenance attached."""
+        return self._broker_read.fetch("executions", market, force_refresh=force_refresh)
 
     def list_orders(
         self,

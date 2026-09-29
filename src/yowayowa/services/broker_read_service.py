@@ -22,6 +22,7 @@ from yowayowa.broker.session_notify import SessionExpiryNotifier
 from yowayowa.broker_models import (
     RAKUTEN_LOGIN_URL_MARKERS,
     BrokerAccountSnapshot,
+    BrokerExecution,
     BrokerOrder,
     BrokerPosition,
 )
@@ -37,6 +38,7 @@ from yowayowa.operator_bridge.rakuten_web import (
     extract_symbol_names,
     lookup_rakuten_resource,
     normalize_account_with_notes,
+    normalize_execution_records,
     normalize_executions,
     normalize_open_orders,
     normalize_order_history,
@@ -70,6 +72,7 @@ class BrokerReadOutcome(BaseModel):
     account: BrokerAccountSnapshot | None = None
     positions: list[BrokerPosition] = Field(default_factory=list)
     orders: list[BrokerOrder] = Field(default_factory=list)
+    executions: list[BrokerExecution] = Field(default_factory=list)
     detail: dict[str, object] | None = None
     source_url: str | None = None
     retrieved_at: str | None = None
@@ -268,6 +271,8 @@ class BrokerReadService:
         elif resource == "executions":
             result.orders, extra = normalize_executions(payload, market=market)
             notes.extend(extra)
+            result.executions, execution_notes = normalize_execution_records(payload, market=market)
+            notes.extend(execution_notes)
         fees, fee_notes = extract_fees_with_notes(payload)
         notes.extend(fee_notes)
         if fees is not None:

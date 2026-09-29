@@ -7,7 +7,13 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from yowayowa.db import PortfolioRecord, PortfolioSnapshotRecord, PositionRecord, utcnow
+from yowayowa.db import (
+    BrokerExecutionApplicationRecord,
+    PortfolioRecord,
+    PortfolioSnapshotRecord,
+    PositionRecord,
+    utcnow,
+)
 from yowayowa.domain import (
     CurrencyExposure,
     Portfolio,
@@ -139,6 +145,83 @@ def bulk_upsert_positions(
             existing.average_cost = item.average_cost
             existing.currency = currency
     row.updated_at = utcnow()
+    session.commit()
+    session.refresh(row)
+    return _to_model(row)
+
+
+def applied_execution_fingerprints(
+    session: Session,
+    portfolio_id: int,
+    market: str,
+) -> dict[str, str]:
+    rows = session.scalars(
+        select(BrokerExecutionApplicationRecord).where(
+            BrokerExecutionApplicationRecord.portfolio_id == portfolio_id,
+            BrokerExecutionApplicationRecord.market == market,
+        )
+    ).all()
+    return {row.execution_id: row.execution_fingerprint for row in rows}
+
+
+def apply_execution_reconciliation(
+    session: Session,
+    portfolio_id: int,
+    positions: list[PositionUpsert],
+    *,
+    market: str,
+    execution_fingerprints: dict[str, str],
+    preview_id: str,
+) -> Portfolio:
+    """Atomically upsert approved holdings and record applied fill identities."""
+    row = session.get(PortfolioRecord, portfolio_id)
+    if row is None:
+        raise LookupError(f"Portfolio {portfolio_id} not found")
+    if not execution_fingerprints:
+        raise ValueError("No unapplied broker executions to apply")
+
+    existing = applied_execution_fingerprints(session, portfolio_id, market)
+    if set(existing).intersection(execution_fingerprints):
+        raise ValueError("One or more executions were already applied; refresh the preview")
+
+    normalized: dict[str, tuple[PositionUpsert, str]] = {}
+    for item in positions:
+        symbol = normalize_symbol(item.symbol)
+        currency = normalize_currency(item.currency)
+        normalized[symbol] = (item, currency)
+
+    existing_by_symbol = {position.symbol: position for position in row.positions}
+    for symbol, (item, currency) in normalized.items():
+        position = existing_by_symbol.get(symbol)
+        if position is None:
+            row.positions.append(
+                PositionRecord(
+                    symbol=symbol,
+                    quantity=item.quantity,
+                    average_cost=item.average_cost,
+                    currency=currency,
+                )
+            )
+        else:
+            position.quantity = item.quantity
+            position.average_cost = item.average_cost
+            position.currency = currency
+
+    applied_at = utcnow()
+    session.add_all(
+        [
+            BrokerExecutionApplicationRecord(
+                portfolio_id=portfolio_id,
+                market=market,
+                execution_id=execution_id,
+                execution_fingerprint=fingerprint,
+                preview_id=preview_id,
+                applied_at=applied_at,
+            )
+            for execution_id, fingerprint in execution_fingerprints.items()
+        ]
+    )
+    row.updated_at = applied_at
     session.commit()
     session.refresh(row)
     return _to_model(row)

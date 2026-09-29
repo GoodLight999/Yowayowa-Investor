@@ -15,6 +15,7 @@ from yowayowa.acquisition.transport import (
 from yowayowa.broker_models import (
     RAKUTEN_SECURITIES_BROKER,
     BrokerAccountSnapshot,
+    BrokerExecution,
     BrokerOrder,
     BrokerOrderSide,
     BrokerOrderStatus,
@@ -368,6 +369,29 @@ _TIMESTAMP_KEYS = (
     "\u57fa\u6e96\u65e5\u6642",
     "\u57fa\u6e96\u65e5",
 )
+_EXECUTION_ID_KEYS = (
+    "execution_id",
+    "executionId",
+    "deal_id",
+    "dealId",
+    "fill_id",
+    "fillId",
+    "execution_no",
+    "execution_number",
+    "\u7d04\u5b9a\u756a\u53f7",
+    "\u53d6\u5f15\u756a\u53f7",
+)
+_EXECUTION_DATETIME_KEYS = (
+    "executed_at",
+    "execution_datetime",
+    "execution_time",
+    "executedAt",
+    "trade_datetime",
+    "trade_date_time",
+    "\u7d04\u5b9a\u65e5\u6642",
+    "\u7d04\u5b9a\u65e5",
+    "\u7d04\u5b9a\u6642\u9593",
+)
 _VALUE_KEYS = ("\u91d1\u984d", "\u5024", "\u6570\u5024", "value", "amount", "Value")
 
 _POSITION_LIST_KEYS = ("positions", "rows", "list")
@@ -469,6 +493,12 @@ _ORDER_FILL_PRICE_KEYS = (
     "\u7d04\u5b9a\u5358\u4fa1",
     "\u5e73\u5747\u6210\u4ea4\u5358\u4fa1",
     "exec_price",
+)
+_EXECUTION_PRICE_KEYS = (
+    "price",
+    "execution_price",
+    "executionPrice",
+    *_ORDER_FILL_PRICE_KEYS,
 )
 _FEE_KEYS = ("fee", "fees", "commission", "\u624b\u6570\u6599", "\u8af8\u8cbb\u7528")
 _MARGIN_KEYS = (
@@ -911,6 +941,118 @@ def normalize_executions(
     if source_note is not None:
         notes.append(source_note)
     return orders, notes
+
+
+# ---------------------------------------------------------------------------
+# Execution reconciliation records
+# ---------------------------------------------------------------------------
+
+
+def normalize_execution_records(
+    payload: Mapping[str, object],
+    *,
+    market: str,
+) -> tuple[list[BrokerExecution], list[str]]:
+    """Normalize execution rows without inventing currency, quantity, or time."""
+    executions: list[BrokerExecution] = []
+    notes: list[str] = []
+    for index, row in enumerate(_payload_rows(payload, _EXECUTION_LIST_KEYS)):
+        label = f"executions[{index}]"
+        raw_id = _get(row, _EXECUTION_ID_KEYS)
+        execution_id = str(raw_id).strip() if raw_id is not None else None
+        execution_id = execution_id or None
+        raw_order_id = _get(row, _ORDER_ID_KEYS)
+        broker_order_id = str(raw_order_id).strip() if raw_order_id is not None else None
+        broker_order_id = broker_order_id or None
+
+        symbol = _symbol_of(row)
+        if symbol is None:
+            notes.append(f"{label}: missing symbol; retained as incomplete execution")
+
+        raw_side = _get(row, _SIDE_KEYS)
+        side_value = None
+        if isinstance(raw_side, str):
+            side_value = _SIDE_MAP.get(raw_side.strip().lower()) or _SIDE_MAP.get(raw_side.strip())
+        side = BrokerOrderSide(side_value) if side_value is not None else None
+        if side is None:
+            notes.append(f"{label}: missing or unrecognized side; retained as incomplete execution")
+
+        quantity = _coerce_decimal(_get(row, _ORDER_QUANTITY_KEYS), parse_quantity)
+        if quantity is None:
+            notes.append(f"{label}: missing or unparseable quantity; not treated as zero")
+
+        raw_currency = _get(row, _CURRENCY_KEYS)
+        currency: str | None = None
+        if isinstance(raw_currency, str) and raw_currency.strip():
+            currency_text = raw_currency.strip()
+            currency = _CURRENCY_MAP.get(currency_text)
+            if currency is None and len(currency_text) == 3 and currency_text.isalpha():
+                currency = currency_text.upper()
+            if currency is None:
+                notes.append(f"{label}: unrecognized currency {currency_text!r}")
+        else:
+            notes.append(f"{label}: currency missing; not inferred from market")
+
+        # Use an explicit row currency for display-string parsing when present.
+        # The market fallback only selects a numeric parser; it does not fill
+        # the execution's missing currency field.
+        amount_parser = _parser_for_currency(currency or _currency_for_market(market))
+        price = _coerce_decimal(_get(row, _EXECUTION_PRICE_KEYS), amount_parser)
+        if price is None:
+            notes.append(f"{label}: missing or unparseable execution price")
+
+        executed_at, executed_at_raw = _parse_execution_datetime(
+            _get(row, _EXECUTION_DATETIME_KEYS)
+        )
+        if executed_at is None:
+            notes.append(f"{label}: execution datetime missing or unparseable")
+
+        executions.append(
+            BrokerExecution(
+                broker=RAKUTEN_SECURITIES_BROKER,
+                execution_id=execution_id,
+                broker_order_id=broker_order_id,
+                symbol=symbol,
+                side=side,
+                quantity=quantity,
+                price=price,
+                currency=currency,
+                executed_at=executed_at,
+                executed_at_raw=executed_at_raw,
+            )
+        )
+    source_note = _row_source_note(payload, _EXECUTION_LIST_KEYS, resource_label="executions")
+    if source_note is not None:
+        notes.append(source_note)
+    return executions, notes
+
+
+def _parse_execution_datetime(value: object | None) -> tuple[datetime | None, str | None]:
+    if isinstance(value, datetime):
+        return value, value.isoformat()
+    if not isinstance(value, str) or not value.strip():
+        return None, None
+    raw = value.strip()
+    if "T" not in raw.upper() and " " not in raw:
+        return None, raw
+    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        parsed = datetime.fromisoformat(normalized)
+        return parsed, raw
+    except ValueError:
+        pass
+    formats = (
+        "%Y/%m/%d %H:%M:%S",
+        "%Y/%m/%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+    )
+    for date_format in formats:
+        try:
+            return datetime.strptime(raw, date_format), raw
+        except ValueError:
+            continue
+    return None, raw
 
 
 # ---------------------------------------------------------------------------

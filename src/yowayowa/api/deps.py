@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from yowayowa.broker.execution.service import BrokerExecutionDomainService
     from yowayowa.operator_bridge.web_session import PersistentBrokerWebSession
     from yowayowa.services.broker_read_service import BrokerReadService
+    from yowayowa.services.executions_reconciliation import ExecutionsReconciliationService
     from yowayowa.services.ir_monitor_service import IrMonitorService
     from yowayowa.services.order_inquiry_service import OrderInquiryService
     from yowayowa.services.private_source_service import PrivateSourceService
@@ -339,3 +340,10 @@ def get_order_inquiry_service() -> OrderInquiryService:
         broker_read=get_broker_read_service(),
         execution=get_broker_execution_service(),
     )
+
+
+def get_executions_reconciliation_service() -> ExecutionsReconciliationService:
+    """Read-only preview plus explicitly approved portfolio reconciliation."""
+    from yowayowa.services.executions_reconciliation import ExecutionsReconciliationService
+
+    return ExecutionsReconciliationService(order_inquiry=get_order_inquiry_service())

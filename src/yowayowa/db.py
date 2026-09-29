@@ -110,6 +110,27 @@ class PortfolioSnapshotRecord(Base):
     portfolio: Mapped[PortfolioRecord] = relationship(back_populates="snapshots")
 
 
+class BrokerExecutionApplicationRecord(Base):
+    """Additive idempotency ledger; ``create_all`` preserves existing portfolio data."""
+
+    __tablename__ = "broker_execution_applications"
+    __table_args__ = (
+        UniqueConstraint(
+            "portfolio_id", "market", "execution_id", name="uq_applied_execution_per_portfolio"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    portfolio_id: Mapped[int] = mapped_column(
+        ForeignKey("portfolios.id", ondelete="CASCADE"), index=True
+    )
+    market: Mapped[str] = mapped_column(String(2))
+    execution_id: Mapped[str] = mapped_column(String(128))
+    execution_fingerprint: Mapped[str] = mapped_column(String(64))
+    preview_id: Mapped[str] = mapped_column(String(64))
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class PriceAlertRecord(Base):
     __tablename__ = "price_alerts"
 
