@@ -35,6 +35,7 @@ from yowayowa.broker.execution.service import (
     DuplicateProposalError,
     OrderExecutionPreview,
 )
+from yowayowa.services.broker_read_service import BrokerReadOutcome
 from yowayowa.services.executions_reconciliation import (
     ExecutionPreviewChangedError,
     ExecutionReconciliationApplyResult,
@@ -87,6 +88,7 @@ class AuditEntryPayload(BaseModel):
 
 class AuditResponse(BaseModel):
     entries: list[AuditEntryPayload]
+    total_entries: int
     verify_problems: list[str]
     intact: bool
 
@@ -175,9 +177,13 @@ def read_audit(
     service: BrokerExecutionDomainService = Depends(get_broker_execution_service),
 ) -> AuditResponse:
     problems = service.verify_audit()
-    entries = service.audit_entries(limit=limit)
+    all_entries = service.audit_entries()
     return AuditResponse(
-        entries=[AuditEntryPayload.model_validate(_entry_to_payload(e)) for e in entries],
+        entries=[
+            AuditEntryPayload.model_validate(_entry_to_payload(entry))
+            for entry in all_entries[-limit:]
+        ],
+        total_entries=len(all_entries),
         verify_problems=problems,
         intact=not problems,
     )
@@ -248,6 +254,21 @@ def order_status(
             detail=f"unknown client_order_id: {client_order_id}",
         )
     return report
+
+
+@router.get(
+    "/executions",
+    response_model=BrokerReadOutcome,
+    operation_id="broker_execution_list_executions",
+)
+def list_executions(
+    market: Annotated[str, Query(pattern="^(jp|us)$")] = "jp",
+    force_refresh: bool = False,
+    service: OrderInquiryService = Depends(get_order_inquiry_service),
+) -> BrokerReadOutcome:
+    """Read normalized broker fills with acquisition provenance; never applies them."""
+
+    return service.list_executions(market=market, force_refresh=force_refresh)
 
 
 @router.get(

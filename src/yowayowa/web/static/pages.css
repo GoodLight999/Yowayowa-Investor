@@ -132,3 +132,33 @@
   .composer-row button { width:100%; }
 }
 @media (max-width:460px) { .sector-heatmap { grid-template-columns:1fr; } }
+
+.broker-execution-head { align-items:end; }
+.broker-execution-controls { display:flex; align-items:end; gap:8px; flex-wrap:wrap; }
+.broker-execution-controls .field { min-width:110px; }
+.broker-execution-controls select { min-width:90px; }
+.broker-readonly-note { margin:0 0 9px; padding:8px 11px; border-left:2px solid var(--line-strong); background:var(--sheet); color:var(--muted); font-size:12px; }
+.broker-updated { margin:0 0 14px; font-family:var(--mono); font-size:11px; }
+.broker-section { margin-top:14px; }
+.broker-section-state { max-width:60%; overflow-wrap:anywhere; text-align:right; font-family:var(--mono); font-size:11px; }
+.broker-section-state.is-warning { color:var(--negative); }
+.broker-table-state { min-height:64px; }
+.broker-table { min-width:820px; }
+.broker-table th { white-space:normal; }
+.broker-table td { vertical-align:top; }
+.broker-table td small { display:block; margin-top:3px; color:var(--muted); font-family:var(--sans); font-size:12px; font-weight:400; white-space:normal; }
+.broker-empty,
+.broker-error { margin:0; padding:14px; color:var(--muted); font-size:13px; }
+.broker-error { color:var(--negative); }
+.broker-warning { margin:10px 12px 0; padding:9px 11px; border-left:2px solid var(--negative); background:#f7f1ed; color:var(--ink); font-size:12px; overflow-wrap:anywhere; }
+.broker-warning[hidden] { display:none; }
+.broker-warning ul { margin:6px 0 0; padding-left:20px; }
+.broker-provenance { display:flex; flex-wrap:wrap; gap:4px 18px; padding:9px 12px 11px; border-top:1px solid var(--line); font-family:var(--mono); font-size:11px; overflow-wrap:anywhere; }
+.broker-provenance span { min-width:0; overflow-wrap:anywhere; }
+.broker-provenance strong { color:var(--ink); font-family:var(--sans); font-weight:600; }
+
+@media (max-width:760px) {
+  .broker-execution-head { align-items:stretch; flex-direction:column; }
+  .broker-execution-controls { justify-content:flex-start; }
+  .broker-execution-controls button { min-height:40px; }
+}

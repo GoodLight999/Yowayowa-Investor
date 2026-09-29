@@ -419,6 +419,11 @@ def portfolio_page(request: Request) -> Response:
     return _personal_page(request, "portfolio.html")
 
 
+@app.get("/broker-execution", response_class=HTMLResponse, include_in_schema=False)
+def broker_execution_page(request: Request) -> Response:
+    return _personal_page(request, "broker_execution.html")
+
+
 @app.get("/instrument/{symbol}", response_class=HTMLResponse, include_in_schema=False)
 def instrument_page(request: Request, symbol: str) -> Response:
     return _personal_page(request, "instrument.html", {"symbol": symbol.upper()})

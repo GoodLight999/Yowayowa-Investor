@@ -58,6 +58,12 @@ class OrderInquiryReport(BaseModel):
     notes: list[str]
     intact_audit: bool
     source_urls: list[str]
+    retrieved_at_open: str | None = None
+    as_of_open: str | None = None
+    retrieved_at_history: str | None = None
+    as_of_history: str | None = None
+    catalog_verified_open: bool | None = None
+    catalog_verified_history: bool | None = None
 
 
 class _AuditOrderMeta(BaseModel):
@@ -135,6 +141,12 @@ class OrderInquiryService:
             notes=notes,
             intact_audit=intact,
             source_urls=source_urls,
+            retrieved_at_open=open_outcome.retrieved_at,
+            as_of_open=open_outcome.as_of,
+            retrieved_at_history=history_outcome.retrieved_at,
+            as_of_history=history_outcome.as_of,
+            catalog_verified_open=_catalog_verified(open_outcome),
+            catalog_verified_history=_catalog_verified(history_outcome),
         )
 
     def order_status(self, client_order_id: str, market: str = "jp") -> OrderInquiryReport:
@@ -329,6 +341,14 @@ def _worst_auth_state(*states: AuthState) -> AuthState:
     if all(state == AuthState.AUTHENTICATED for state in states):
         return AuthState.AUTHENTICATED
     return AuthState.UNKNOWN
+
+
+def _catalog_verified(outcome: BrokerReadOutcome) -> bool | None:
+    detail = outcome.detail
+    if detail is None:
+        return None
+    verified = detail.get("verified")
+    return verified if isinstance(verified, bool) else None
 
 
 def _report_with(

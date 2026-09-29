@@ -238,6 +238,7 @@ function installCommandPalette() {
     { label: t('nav.markets'), detail: '/markets', href: '/markets', keywords: 'markets quotes', primary: true },
     { label: t('nav.macro'), detail: '/macro', href: '/macro', keywords: 'macro fred economics', primary: true },
     { label: t('nav.portfolio'), detail: '/portfolio', href: '/portfolio', keywords: 'portfolio holdings risk', primary: true },
+    { label: locale === 'ja' ? '発注・約定' : 'Orders & fills', detail: '/broker-execution', href: '/broker-execution', keywords: 'broker execution orders fills proposals 発注 約定 注文' },
     { label: t('nav.ai'), detail: '/ai', href: '/ai', keywords: 'ai research agent', primary: true },
     { label: t('nav.settings', {}, t('settings.title')), detail: '/settings', href: '/settings', keywords: 'settings provider model api key edinet', primary: true },
     { label: t('chart.nav'), detail: '/charts', href: '/charts', keywords: 'composer chart cross source ratio spread correlation' },
