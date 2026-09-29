@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -265,13 +266,20 @@ def test_run_builtin_fails_closed_outside_personal_mode(monkeypatch: Any) -> Non
     assert "personal" in result.output
 
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    return _ANSI_RE.sub("", text)
+
+
 def test_run_builtin_help_is_available() -> None:
     result = CliRunner().invoke(app, ["preset", "run-builtin", "--help"])
     assert result.exit_code == 0, result.output
-    assert "--via-api" in result.output
+    assert "--via-api" in _plain(result.output)
 
 
 def test_snapshot_builtins_help_is_available() -> None:
     result = CliRunner().invoke(app, ["preset", "snapshot-builtins", "--help"])
     assert result.exit_code == 0, result.output
-    assert "--via-api" in result.output
+    assert "--via-api" in _plain(result.output)
