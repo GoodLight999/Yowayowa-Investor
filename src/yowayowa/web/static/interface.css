@@ -676,6 +676,27 @@ td,
   margin-top: 4px;
 }
 
+.ai-evidence-group {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.ai-evidence-group:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.ai-evidence-group h3,
+.ai-evidence-group h4 {
+  margin: 0;
+}
+
+.ai-evidence-group h4 {
+  font-size: 13px;
+}
+
 .ai-research-evidence ul {
   display: grid;
   gap: 5px;

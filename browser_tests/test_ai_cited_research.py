@@ -99,7 +99,14 @@ def test_ai_cited_research_renders_evidence_and_avoids_general_chat(page: Page) 
                             "as_of": "2026-09-28",
                         }
                     ],
-                    "inferences": [],
+                    "calculations": ["Test calculation (FY2025, USD)"],
+                    "inferences": [
+                        {
+                            "statement": "The cited filing supports this interpretation.",
+                            "supporting_fact_ids": ["F1"],
+                        }
+                    ],
+                    "invalidation_conditions": ["A corrected filing changes the source period."],
                     "missing_inputs": ["financials: 未取得"],
                 }
             ),
@@ -118,12 +125,22 @@ def test_ai_cited_research_renders_evidence_and_avoids_general_chat(page: Page) 
     page.locator("#ai-send").click()
 
     evidence = page.locator(".ai-research-evidence")
+    expect(evidence.locator("[data-evidence-section]")).to_have_count(5)
     expect(evidence).to_contain_text("Test evidence <script>not-run</script>")
     expect(evidence).to_contain_text("Fixture filing")
     expect(evidence).to_contain_text("financials: 未取得")
+    expect(evidence.locator('[data-evidence-subsection="calculations"]')).to_contain_text(
+        "Test calculation (FY2025, USD)"
+    )
+    expect(evidence.locator('[data-evidence-section="inferences"]')).to_contain_text(
+        "The cited filing supports this interpretation."
+    )
+    expect(evidence.locator('[data-evidence-section="inferences"]')).to_contain_text("F1")
+    expect(evidence).to_contain_text("A corrected filing changes the source period.")
+    evidence.locator('[data-evidence-section="tool-trace"] summary').click()
     expect(evidence).to_contain_text("edinet_daily_lookup")
     expect(evidence).to_contain_text("matched: 1")
-    expect(evidence.locator('a[href="https://example.invalid/filing"]')).to_have_count(1)
+    expect(evidence.locator('a[href="https://example.invalid/filing"]')).to_have_count(2)
     expect(evidence.locator('a[href^="javascript:"]')).to_have_count(0)
     expect(evidence.locator("script")).to_have_count(0)
     assert len(requests) == 1

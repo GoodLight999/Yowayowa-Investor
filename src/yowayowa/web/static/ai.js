@@ -102,10 +102,22 @@
       ? result.missing_inputs
       : (Array.isArray(result.coverage?.missing_inputs) ? result.coverage.missing_inputs : []);
     const inferences = Array.isArray(result.inferences) ? result.inferences : [];
+    const calculations = Array.isArray(result.calculations) ? result.calculations : [];
+    const invalidationConditions = Array.isArray(result.invalidation_conditions)
+      ? result.invalidation_conditions
+      : [];
     const japanese = window.YOWAYOWA_LOCALE === 'ja';
     const factList = facts.length
-      ? `<ul>${facts.map(fact => `<li><strong>${escapeHtml(fact.id || '')}</strong> ${escapeHtml(fact.statement || '')}
-          <small>${escapeHtml([fact.kind, fact.provider, fact.as_of].filter(Boolean).join(' · '))}</small></li>`).join('')}</ul>`
+      ? `<ul>${facts.map(fact => {
+        const sourceUrl = safeExternalUrl(fact.source_url);
+        const details = [fact.kind, fact.provider, fact.code_or_series,
+          fact.as_of && `${japanese ? '基準日' : 'As of'} ${fact.as_of}`,
+          fact.retrieved_at && `${japanese ? '取得' : 'Retrieved'} ${fact.retrieved_at}`]
+          .filter(Boolean).join(' · ');
+        return `<li><strong>${escapeHtml(fact.id || '')}</strong> ${escapeHtml(fact.statement || '')}
+          <small>${escapeHtml(details)}</small>
+          ${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(fact.source_url)}</a>` : ''}</li>`;
+      }).join('')}</ul>`
       : `<p class="muted">${japanese ? '構造化された事実はありません。' : 'No structured facts were returned.'}</p>`;
     const citationList = citations.length
       ? `<ul>${citations.map(citation => {
@@ -123,18 +135,37 @@
     const missingList = missingInputs.length
       ? `<ul>${missingInputs.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
       : `<p class="muted">${japanese ? '未取得項目は報告されていません。' : 'No missing inputs were reported.'}</p>`;
+    const calculationList = calculations.length
+      ? `<ul>${calculations.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+      : `<p class="muted">${japanese ? '決定論的な計算は返されていません。' : 'No deterministic calculations were returned.'}</p>`;
     const inferenceList = inferences.length
       ? `<ul>${inferences.map(item => `<li>${escapeHtml(item.statement || '')}
           <small>${escapeHtml((item.supporting_fact_ids || []).join(', '))}</small></li>`).join('')}</ul>`
-      : '';
-    const traceLabel = japanese ? '調査ツールの実行記録' : 'Research tool trace';
+      : `<p class="muted">${japanese ? 'モデル推論は返されていません。' : 'No model inferences were returned.'}</p>`;
+    const invalidationList = invalidationConditions.length
+      ? `<ul>${invalidationConditions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+      : `<p class="muted">${japanese ? '反証条件は返されていません。' : 'No invalidation conditions were returned.'}</p>`;
+    const traceLabel = japanese ? '調査ツールの実行記録を表示' : 'Show research tool records';
 
     return `<section class="ai-research-evidence" aria-label="${japanese ? '引用付きリサーチの根拠' : 'Cited research evidence'}">
-      <h3>${japanese ? '構造化された事実' : 'Structured facts'}</h3>${factList}
-      ${inferenceList ? `<h3>${japanese ? 'モデルの解釈' : 'Model inferences'}</h3>${inferenceList}` : ''}
-      <h3>${japanese ? '出典' : 'Citations'}</h3>${citationList}
-      <h3>${japanese ? '未取得の入力' : 'Missing inputs'}</h3>${missingList}
-      <details><summary>${traceLabel}</summary><div class="ai-trace-list">${renderTraceMarkup(result.tool_trace || [])}</div></details>
+      <section class="ai-evidence-group" data-evidence-section="facts">
+        <h3>${japanese ? '構造化された事実' : 'Structured facts'}</h3>${factList}
+        <div data-evidence-subsection="calculations"><h4>${japanese ? '決定論的な計算' : 'Deterministic calculations'}</h4>${calculationList}</div>
+      </section>
+      <section class="ai-evidence-group" data-evidence-section="citations">
+        <h3>${japanese ? '出典・引用' : 'Sources and citations'}</h3>${citationList}
+      </section>
+      <section class="ai-evidence-group" data-evidence-section="missing-inputs">
+        <h3>${japanese ? '未取得の入力' : 'Missing inputs'}</h3>${missingList}
+      </section>
+      <section class="ai-evidence-group" data-evidence-section="inferences">
+        <h3>${japanese ? 'モデルの推論' : 'Model inferences'}</h3>${inferenceList}
+        <div><h4>${japanese ? '反証条件' : 'Invalidation conditions'}</h4>${invalidationList}</div>
+      </section>
+      <section class="ai-evidence-group" data-evidence-section="tool-trace">
+        <h3>${japanese ? '調査ツールの記録' : 'Research tool records'}</h3>
+        <details><summary>${traceLabel}</summary><div class="ai-trace-list">${renderTraceMarkup(result.tool_trace || [])}</div></details>
+      </section>
     </section>`;
   }
 
@@ -332,12 +363,12 @@
     if (!note || !send) return;
     if (window.YOWAYOWA_LOCALE === 'ja') {
       note.textContent = citedResearch
-        ? '根拠データ・引用・未取得項目・調査ツール記録を含むリサーチQ&Aを生成します（質問は2,000文字以内）。'
+        ? '事実・引用・未取得項目・モデル推論・調査ツール記録を分けて表示します（質問は2,000文字以内）。'
         : '通常のAIエージェントがツールを使って回答します。';
       send.textContent = citedResearch ? '引用付きで調査' : '調査する';
     } else {
       note.textContent = citedResearch
-        ? 'Uses the cited research Q&A path and shows source-backed facts, citations, missing inputs, and lookup trace (2,000-character question limit).'
+        ? 'Separates source-backed facts, citations, missing inputs, model inferences, and tool records (2,000-character question limit).'
         : 'The general AI agent answers with its available tools.';
       send.textContent = citedResearch ? 'Ask with citations' : 'Research';
     }
