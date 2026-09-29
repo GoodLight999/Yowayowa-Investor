@@ -33,6 +33,7 @@ from yowayowa.domain import (
     PositionUpsert,
     PriceAlert,
     PriceAlertCreate,
+    PriceAlertNotification,
     ScreenRequest,
     ScreenResponse,
     ScreenRow,
@@ -50,7 +51,14 @@ from yowayowa.providers.registry import (
 from yowayowa.providers.sec import SecClient
 from yowayowa.providers.yahoo_research import EventType, YahooResearchProvider
 from yowayowa.providers.yahoo_search import YahooSearchProvider
-from yowayowa.services.alerts import create_alert, delete_alert, evaluate_alerts, list_alerts
+from yowayowa.services.alerts import (
+    acknowledge_price_alert_notification,
+    create_alert,
+    delete_alert,
+    evaluate_alerts,
+    list_alerts,
+    list_price_alert_notifications,
+)
 from yowayowa.services.comparison import available_metrics, compare
 from yowayowa.services.operations import plan_operation
 from yowayowa.services.portfolios import (
@@ -428,6 +436,25 @@ def export_portfolio_csv(
 @router.get("/alerts", response_model=list[PriceAlert])
 def get_alerts(session: Session = Depends(db_session)) -> list[PriceAlert]:
     return list_alerts(session)
+
+
+@router.get("/alert-inbox", response_model=list[PriceAlertNotification])
+def get_price_alert_inbox(
+    include_acknowledged: bool = False,
+    session: Session = Depends(db_session),
+) -> list[PriceAlertNotification]:
+    return list_price_alert_notifications(session, include_acknowledged=include_acknowledged)
+
+
+@router.post("/alert-inbox/{notification_id}/ack", response_model=PriceAlertNotification)
+def acknowledge_price_alert(
+    notification_id: int,
+    session: Session = Depends(db_session),
+) -> PriceAlertNotification:
+    try:
+        return acknowledge_price_alert_notification(session, notification_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/alerts", response_model=PriceAlert, status_code=201)

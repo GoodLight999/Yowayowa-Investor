@@ -1,8 +1,9 @@
 import json
+import os
 
 from playwright.sync_api import Page, expect
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.environ.get("YOWAYOWA_BROWSER_BASE_URL", "http://127.0.0.1:8000")
 
 
 def provenance(source: str = "Fixture") -> dict[str, object]:
@@ -85,6 +86,7 @@ def test_calendar_filters_and_renders_event(page: Page) -> None:
 
 def test_alert_create_evaluate_and_delete_flow(page: Page) -> None:
     alerts: list[dict[str, object]] = []
+    notifications: list[dict[str, object]] = []
 
     def alert_handler(route) -> None:
         request = route.request
@@ -119,6 +121,19 @@ def test_alert_create_evaluate_and_delete_flow(page: Page) -> None:
                     "last_checked_at": "2026-08-13T00:01:00Z",
                 }
             )
+            notifications[:] = [
+                {
+                    "id": 1,
+                    "alert_id": 1,
+                    "symbol": "RKLB",
+                    "operator": "above",
+                    "target": "100",
+                    "triggered_price": "101",
+                    "triggered_at": "2026-08-13T00:01:00Z",
+                    "created_at": "2026-08-13T00:01:00Z",
+                    "acknowledged_at": None,
+                }
+            ]
         route.fulfill(
             status=200,
             content_type="application/json",
@@ -131,8 +146,40 @@ def test_alert_create_evaluate_and_delete_flow(page: Page) -> None:
             ),
         )
 
+    page.route("https://**", lambda route: route.abort())
     page.route("**/v1/alerts/evaluate", evaluate_handler)
     page.route("**/v1/alerts", alert_handler)
+    page.route(
+        "**/v1/alert-inbox",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(notifications),
+        ),
+    )
+    page.route(
+        "**/v1/alert-inbox/1/ack",
+        lambda route: (
+            notifications.clear(),
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps(
+                    {
+                        "id": 1,
+                        "alert_id": 1,
+                        "symbol": "RKLB",
+                        "operator": "above",
+                        "target": "100",
+                        "triggered_price": "101",
+                        "triggered_at": "2026-08-13T00:01:00Z",
+                        "created_at": "2026-08-13T00:01:00Z",
+                        "acknowledged_at": "2026-08-13T00:02:00Z",
+                    }
+                ),
+            ),
+        ),
+    )
     page.route(
         "**/v1/alerts/1",
         lambda route: (
@@ -152,6 +199,16 @@ def test_alert_create_evaluate_and_delete_flow(page: Page) -> None:
     expect(page.locator("#alerts-list").get_by_text("RKLB", exact=True)).to_be_visible()
     page.get_by_role("button", name="Check now", exact=True).click()
     expect(page.locator("#alerts-list").get_by_text("Triggered", exact=True)).to_be_visible()
+    expect(page.locator("#price-alert-inbox-list")).to_contain_text("RKLB")
+    expect(page.locator("#price-alert-surface")).to_be_visible()
+    expect(page.locator("#price-alert-surface-message")).to_contain_text(
+        "1 price alert notification"
+    )
+    page.locator(".price-alert-notification-ack").click()
+    expect(page.locator("#price-alert-inbox-list")).to_contain_text(
+        "No unacknowledged price alert notifications"
+    )
+    expect(page.locator("#price-alert-surface")).to_be_hidden()
     page.locator("#alerts-list .alert-delete").click()
     expect(page.locator("#alerts-list").get_by_text("No price alerts.", exact=True)).to_be_visible()
 

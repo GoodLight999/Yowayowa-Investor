@@ -68,6 +68,12 @@
           </div>
         </div>
       </header>
+      {% if app_mode == 'personal' %}
+      <aside id="price-alert-surface" class="price-alert-surface" role="status" aria-live="polite" hidden>
+        <strong id="price-alert-surface-message"></strong>
+        <a href="/alerts#price-alert-inbox">{{ t('alerts.inbox_link') }}</a>
+      </aside>
+      {% endif %}
       <main class="content">{% block content %}{% endblock %}</main>
       <footer class="footer"><span>Yowayowa-Investor {{ version }} · <a href="/licenses">{{ l('licenses.footer') }}</a></span><span>{{ t('footer.charts') }}: <a href="https://www.tradingview.com/" rel="noreferrer">TradingView Lightweight Charts™</a></span></footer>
     </div>

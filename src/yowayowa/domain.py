@@ -294,6 +294,19 @@ class AlertEvaluation(BaseModel):
     evaluated_at: datetime
 
 
+class PriceAlertNotification(BaseModel):
+    id: int
+    alert_id: int
+    symbol: str
+    operator: AlertOperator
+    target: Decimal
+    triggered_price: Decimal
+    triggered_at: datetime
+    provenance: Provenance
+    created_at: datetime
+    acknowledged_at: datetime | None = None
+
+
 class FilterOperator(StrEnum):
     GT = "gt"
     GTE = "gte"

@@ -1,5 +1,5 @@
 (() => {
-  const { api, escapeHtml, localeTag, t } = window.Yowayowa;
+  const { api, escapeHtml, localeTag, refreshPriceAlertSurface, t } = window.Yowayowa;
 
   const number = value => new Intl.NumberFormat(localeTag, { maximumFractionDigits: 6 }).format(Number(value));
   const scopeLabels = new Map([['all', t('calendar.scope.saved')]]);
@@ -51,6 +51,40 @@
 
   async function loadAlerts() {
     render(await api('/v1/alerts'));
+  }
+
+  function renderAlertInbox(items) {
+    const target = document.querySelector('#price-alert-inbox-list');
+    document.querySelector('#price-alert-inbox-count').textContent = String(items.length);
+    if (!items.length) {
+      target.innerHTML = `<span class="muted">${escapeHtml(t('alerts.inbox_none'))}</span>`;
+      return;
+    }
+    target.innerHTML = `<table><thead><tr><th>${escapeHtml(t('alerts.inbox_triggered_at'))}</th><th>${escapeHtml(t('common.symbol'))}</th><th>${escapeHtml(t('alerts.condition'))}</th><th>${escapeHtml(t('alerts.inbox_price'))}</th><th></th></tr></thead><tbody>${items.map(item => `
+      <tr>
+        <td>${escapeHtml(new Date(item.triggered_at).toLocaleString(localeTag))}</td>
+        <td><a href="/instrument/${encodeURIComponent(item.symbol)}"><strong>${escapeHtml(item.symbol)}</strong></a></td>
+        <td>${escapeHtml(condition(item))}</td>
+        <td>${escapeHtml(number(item.triggered_price))}</td>
+        <td><button class="ghost price-alert-notification-ack" type="button" data-id="${item.id}">${escapeHtml(t('alerts.inbox_ack'))}</button></td>
+      </tr>`).join('')}</tbody></table>`;
+    target.querySelectorAll('.price-alert-notification-ack').forEach(button => {
+      button.addEventListener('click', async () => {
+        const message = document.querySelector('#price-alert-notification-message');
+        try {
+          await api(`/v1/alert-inbox/${encodeURIComponent(button.dataset.id)}/ack`, { method: 'POST' });
+          message.textContent = '';
+          await loadAlertInbox();
+          await refreshPriceAlertSurface();
+        } catch (error) {
+          message.textContent = error.message;
+        }
+      });
+    });
+  }
+
+  async function loadAlertInbox() {
+    renderAlertInbox(await api('/v1/alert-inbox'));
   }
 
   function renderProvenance(data) {
@@ -168,6 +202,12 @@
       render(priceResult.value.alerts);
       renderProvenance(priceResult.value);
       priceMessage.textContent = '';
+      try {
+        await loadAlertInbox();
+        await refreshPriceAlertSurface();
+      } catch (error) {
+        document.querySelector('#price-alert-notification-message').textContent = error.message;
+      }
     } else {
       priceMessage.textContent = priceResult.reason.message;
     }
@@ -238,6 +278,9 @@
     });
   loadAlerts().catch(error => {
     document.querySelector('#alert-message').textContent = error.message;
+  });
+  loadAlertInbox().catch(error => {
+    document.querySelector('#price-alert-notification-message').textContent = error.message;
   });
   loadInbox().catch(error => {
     document.querySelector('#event-message').textContent = error.message;

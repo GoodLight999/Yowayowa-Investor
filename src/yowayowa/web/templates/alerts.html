@@ -9,6 +9,18 @@
   <button id="evaluate-alerts" class="primary" type="button">{{ t('alerts.evaluate') }}</button>
 </section>
 
+<section id="price-alert-inbox" class="panel price-alert-inbox-panel">
+  <div class="section-heading">
+    <div>
+      <h2>{{ t('alerts.inbox_title') }}</h2>
+      <small class="term-note">{{ t('alerts.inbox_policy') }}</small>
+    </div>
+    <span id="price-alert-inbox-count" class="pill">—</span>
+  </div>
+  <div id="price-alert-inbox-list" class="table-wrap muted" style="padding:12px">{{ t('common.loading_ellipsis') }}</div>
+  <p id="price-alert-notification-message" class="form-message muted"></p>
+</section>
+
 <section class="panel alerts-inbox-panel">
   <div class="section-heading">
     <div>

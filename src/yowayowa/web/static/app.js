@@ -85,6 +85,23 @@ async function updateHealth() {
   }
 }
 
+async function refreshPriceAlertSurface() {
+  const surface = document.querySelector('#price-alert-surface');
+  const message = document.querySelector('#price-alert-surface-message');
+  if (!surface || !message || window.YOWAYOWA_MODE !== 'personal') return;
+  try {
+    const notifications = await api('/v1/alert-inbox');
+    if (!notifications.length) {
+      surface.hidden = true;
+      return;
+    }
+    message.textContent = t('alerts.inbox_count', { count: notifications.length });
+    surface.hidden = false;
+  } catch (_) {
+    // The global surface is best-effort; page content and navigation remain usable.
+  }
+}
+
 function renderSearch(rows) {
   const target = document.querySelector('#search-results');
   if (!target) return;
@@ -426,6 +443,8 @@ document.addEventListener('DOMContentLoaded', () => {
   installGlobalCommandShortcut();
   installCommandPalette();
   updateHealth();
+  refreshPriceAlertSurface();
   installDashboard();
 });
-window.Yowayowa = { api, fmt, escapeHtml, locale, localeTag, t };
+document.addEventListener('turbo:load', refreshPriceAlertSurface);
+window.Yowayowa = { api, fmt, escapeHtml, locale, localeTag, refreshPriceAlertSurface, t };

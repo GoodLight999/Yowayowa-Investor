@@ -14,13 +14,20 @@ from yowayowa.calendar_models import (
     TrackedEventType,
     TrackedScope,
 )
-from yowayowa.db import EventInboxRecord, EventSubscriptionRecord, PriceAlertRecord, utcnow
+from yowayowa.db import (
+    EventInboxRecord,
+    EventSubscriptionRecord,
+    PriceAlertNotificationRecord,
+    PriceAlertRecord,
+    utcnow,
+)
 from yowayowa.domain import (
     AlertEvaluation,
     AlertOperator,
     LicenseClass,
     PriceAlert,
     PriceAlertCreate,
+    PriceAlertNotification,
     Provenance,
 )
 from yowayowa.news_models import (
@@ -66,6 +73,52 @@ def list_alerts(session: Session) -> list[PriceAlert]:
         )
     ).all()
     return [_to_model(row) for row in rows]
+
+
+def _alert_notification_model(row: PriceAlertNotificationRecord) -> PriceAlertNotification:
+    return PriceAlertNotification(
+        id=row.id,
+        alert_id=row.alert_id,
+        symbol=row.symbol,
+        operator=AlertOperator(row.operator),
+        target=row.target,
+        triggered_price=row.triggered_price,
+        triggered_at=row.triggered_at,
+        provenance=Provenance.model_validate(row.provenance),
+        created_at=row.created_at,
+        acknowledged_at=row.acknowledged_at,
+    )
+
+
+def list_price_alert_notifications(
+    session: Session,
+    *,
+    include_acknowledged: bool = False,
+) -> list[PriceAlertNotification]:
+    statement = select(PriceAlertNotificationRecord)
+    if not include_acknowledged:
+        statement = statement.where(PriceAlertNotificationRecord.acknowledged_at.is_(None))
+    rows = session.scalars(
+        statement.order_by(
+            PriceAlertNotificationRecord.created_at.desc(),
+            PriceAlertNotificationRecord.id.desc(),
+        )
+    ).all()
+    return [_alert_notification_model(row) for row in rows]
+
+
+def acknowledge_price_alert_notification(
+    session: Session,
+    notification_id: int,
+) -> PriceAlertNotification:
+    row = session.get(PriceAlertNotificationRecord, notification_id)
+    if row is None:
+        raise LookupError(f"Price alert notification {notification_id} not found")
+    if row.acknowledged_at is None:
+        row.acknowledged_at = utcnow()
+        session.commit()
+        session.refresh(row)
+    return _alert_notification_model(row)
 
 
 def create_alert(session: Session, payload: PriceAlertCreate) -> PriceAlert:
@@ -127,7 +180,21 @@ def evaluate_alerts(session: Session, provider: MarketDataProvider) -> AlertEval
         row.last_price = price
         row.last_checked_at = checked_at
         if _triggered(AlertOperator(row.operator), price, row.target):
-            row.triggered_at = checked_at
+            if row.triggered_at is None:
+                row.triggered_at = checked_at
+                session.add(
+                    PriceAlertNotificationRecord(
+                        alert_id=row.id,
+                        alert_created_at=row.created_at,
+                        symbol=row.symbol,
+                        operator=row.operator,
+                        target=row.target,
+                        triggered_price=price,
+                        triggered_at=checked_at,
+                        provenance=batch.provenance.model_dump(mode="json"),
+                        created_at=checked_at,
+                    )
+                )
             row.enabled = False
     session.commit()
     return AlertEvaluation(

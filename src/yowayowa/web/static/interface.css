@@ -1084,3 +1084,39 @@ td,
     font-size: 10px;
   }
 }
+
+.price-alert-surface {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: min(1320px, calc(100% - 56px));
+  margin: 0 auto;
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--accent);
+  background: var(--sheet);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.price-alert-surface[hidden] {
+  display: none;
+}
+
+.price-alert-surface a {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 620px) {
+  .price-alert-surface {
+    align-items: flex-start;
+    flex-direction: column;
+    width: calc(100% - 20px);
+  }
+}

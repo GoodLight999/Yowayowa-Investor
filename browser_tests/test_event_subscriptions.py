@@ -28,6 +28,8 @@ def test_event_subscription_inbox_workflow(page: Page) -> None:
         status = 200
         if path == "/v1/alerts" and method == "GET":
             body: object = []
+        elif path == "/v1/alert-inbox" and method == "GET":
+            body = []
         elif path == "/v1/watchlists":
             body = [
                 {

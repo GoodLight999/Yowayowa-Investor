@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import (
     JSON,
@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Numeric,
     String,
+    Table,
     UniqueConstraint,
     create_engine,
     inspect,
@@ -143,6 +144,35 @@ class PriceAlertRecord(Base):
     last_price: Mapped[Decimal | None] = mapped_column(Numeric(28, 10), nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PriceAlertNotificationRecord(Base):
+    """Durable in-app notice for one price-alert trigger.
+
+    Deliberately has no foreign key to ``price_alerts``: deleting a monitoring
+    rule must not erase its unacknowledged trigger notice.
+    """
+
+    __tablename__ = "price_alert_notifications"
+    __table_args__ = (
+        UniqueConstraint(
+            "alert_id",
+            "alert_created_at",
+            name="uq_price_alert_notification_trigger",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    alert_id: Mapped[int] = mapped_column(index=True)
+    alert_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    operator: Mapped[str] = mapped_column(String(16))
+    target: Mapped[Decimal] = mapped_column(Numeric(28, 10))
+    triggered_price: Mapped[Decimal] = mapped_column(Numeric(28, 10))
+    triggered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    provenance: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class EventSubscriptionRecord(Base):
@@ -390,8 +420,21 @@ def init_database(settings: Settings | None = None) -> None:
         _engine.dispose()
     _engine = make_engine(settings)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
+    # WD-C5's new inbox is an additive migration kept explicit so existing
+    # installations gain the table without rebuilding or altering old rows.
+    _ensure_price_alert_notifications_table(_engine)
     Base.metadata.create_all(_engine)
     _ensure_screening_candidates_document_id(_engine)
+
+
+def _ensure_price_alert_notifications_table(engine: Engine) -> None:
+    """WD-C5 additive, idempotent migration; existing alert data is untouched."""
+
+    Base.metadata.create_all(
+        engine,
+        tables=[cast(Table, PriceAlertNotificationRecord.__table__)],
+        checkfirst=True,
+    )
 
 
 def _ensure_screening_candidates_document_id(engine: Engine) -> None:
