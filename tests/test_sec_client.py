@@ -89,6 +89,17 @@ def test_get_json_propagates_http_errors(httpx_mock) -> None:  # type: ignore[no
         _client()._get_json("https://data.sec.gov/any.json")
 
 
+def test_get_json_retries_network_errors_then_returns_response(httpx_mock) -> None:
+    httpx_mock.add_exception(httpx.ConnectError("temporary network error"))
+    httpx_mock.add_exception(httpx.ConnectTimeout("temporary timeout"))
+    httpx_mock.add_response(json={"ok": True})
+
+    payload = _client()._get_json("https://data.sec.gov/any.json")
+
+    assert payload == {"ok": True}
+    assert len(httpx_mock.get_requests()) == 3
+
+
 def test_ticker_map_builds_instruments_and_caches_for_24h(
     httpx_mock,  # type: ignore[no-untyped-def]
 ) -> None:
@@ -320,4 +331,21 @@ def test_extract_metric_returns_empty_series_without_fact() -> None:
     series = SecClient._extract_metric({}, "assets", "Total assets", ("Assets",))
 
     assert series.key == "assets"
+    assert series.points == []
+
+
+def test_extract_metric_skips_facts_with_missing_end_or_value() -> None:
+    us_gaap = {
+        "Assets": {
+            "units": {
+                "USD": [
+                    {"val": 100, "form": "10-K"},
+                    {"end": "2025-12-31", "form": "10-K"},
+                ]
+            }
+        }
+    }
+
+    series = SecClient._extract_metric(us_gaap, "assets", "Total assets", ("Assets",))
+
     assert series.points == []

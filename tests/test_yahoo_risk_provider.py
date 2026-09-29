@@ -143,6 +143,36 @@ def test_portfolio_returns_combines_fx_return_for_foreign_currency(
     assert history.unavailable_symbols == []
 
 
+def test_portfolio_returns_marks_foreign_position_unavailable_without_fx_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = _price_frame(["7203.T", "^GSPC"], [[2500.0, 4000.0], [2575.0, 4040.0]])
+    monkeypatch.setattr(yahoo_risk.yf, "download", lambda **kwargs: frame)
+    portfolio = _portfolio(Position(symbol="7203.T", quantity=Decimal(100), currency="JPY"))
+
+    history = _provider().portfolio_returns(portfolio)
+
+    assert history.unavailable_symbols == ["7203.T"]
+    assert history.returns.empty
+    assert "7203.T" not in history.returns.columns
+
+
+def test_portfolio_returns_keeps_missing_benchmark_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = pd.date_range("2026-08-03", periods=2, tz="UTC")
+    frame = pd.DataFrame({"Close": [100.0, 110.0]}, index=index)
+    monkeypatch.setattr(yahoo_risk.yf, "download", lambda **kwargs: frame)
+    portfolio = _portfolio(Position(symbol="AAA", quantity=Decimal(1), currency="USD"))
+
+    history = _provider().portfolio_returns(portfolio, benchmark="^MISSING")
+
+    assert history.benchmark_returns.name == "^MISSING"
+    assert history.benchmark_returns.empty
+    assert history.unavailable_symbols == ["AAA"]
+    assert history.returns.empty
+
+
 def test_close_frame_returns_empty_frame_for_empty_download() -> None:
     empty = pd.DataFrame()
     close = YahooRiskProvider._close_frame(empty, ["AAA", "BBB"])
@@ -166,6 +196,17 @@ def test_close_frame_without_close_columns_yields_nan_frame() -> None:
     assert close["AAA"].isna().all()
 
 
+def test_close_frame_selects_multiindex_with_close_at_level_one() -> None:
+    index = pd.date_range("2026-08-01", periods=2)
+    columns = pd.MultiIndex.from_product([["AAA", "BBB"], ["Close"]])
+    frame = pd.DataFrame([[10.0, 20.0], [11.0, 22.0]], index=index, columns=columns)
+
+    close = YahooRiskProvider._close_frame(frame, ["AAA", "BBB"])
+
+    assert close["AAA"].tolist() == [10.0, 11.0]
+    assert close["BBB"].tolist() == [20.0, 22.0]
+
+
 def test_close_frame_single_level_frame_uses_close_series() -> None:
     index = pd.date_range("2026-08-01", periods=2)
     frame = pd.DataFrame({"Close": [10.0, 11.0], "Open": [9.0, 10.5]}, index=index)
@@ -174,6 +215,16 @@ def test_close_frame_single_level_frame_uses_close_series() -> None:
 
     assert list(close.columns) == ["AAA"]
     assert close["AAA"].tolist() == [10.0, 11.0]
+
+
+def test_close_frame_single_level_missing_close_keeps_requested_column_missing() -> None:
+    index = pd.date_range("2026-08-01", periods=2)
+    frame = pd.DataFrame({"Open": [9.0, 10.5]}, index=index)
+
+    close = YahooRiskProvider._close_frame(frame, ["AAA"])
+
+    assert list(close.columns) == ["AAA"]
+    assert close["AAA"].isna().all()
 
 
 def test_as_of_returns_fallback_for_empty_or_all_nan_frame() -> None:

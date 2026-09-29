@@ -87,6 +87,27 @@ def test_13f_parser_ignores_incomplete_rows() -> None:
     assert Sec13FProvider.parse_information_table(xml) == []
 
 
+def test_13f_parser_skips_empty_or_invalid_cells_and_scales_thousands() -> None:
+    xml = """<informationTable>
+    <infoTable><nameOfIssuer>EMPTY</nameOfIssuer><cusip>000000001</cusip>
+      <value> </value><shrsOrPrnAmt><sshPrnamt>10</sshPrnamt></shrsOrPrnAmt>
+    </infoTable>
+    <infoTable><nameOfIssuer>INVALID</nameOfIssuer><cusip>000000002</cusip>
+      <value>not-a-number</value><shrsOrPrnAmt><sshPrnamt>10</sshPrnamt></shrsOrPrnAmt>
+    </infoTable>
+    <infoTable><nameOfIssuer>VALID</nameOfIssuer><cusip>000000003</cusip>
+      <value>1234567890</value><shrsOrPrnAmt><sshPrnamt>12</sshPrnamt></shrsOrPrnAmt>
+    </infoTable>
+    </informationTable>"""
+
+    holdings = Sec13FProvider.parse_information_table(xml)
+
+    assert [item.issuer for item in holdings] == ["VALID"]
+    assert holdings[0].reported_value_thousands == 1_234_567_890
+    assert holdings[0].value_usd == 1_234_567_890_000
+    assert holdings[0].shares_or_principal == 12
+
+
 def test_13f_comparison_classifies_position_changes() -> None:
     previous = [
         holding("A", "Alpha", 100, 100_000),
@@ -194,6 +215,23 @@ def test_13f_recent_references_returns_empty_for_malformed_payload() -> None:
         assert Sec13FProvider._recent_references(payload) == []
 
 
+@pytest.mark.parametrize(
+    "field",
+    ["form", "accessionNumber", "filingDate", "reportDate", "primaryDocument"],
+)
+def test_13f_recent_references_rejects_non_list_fields(field: str) -> None:
+    recent: dict[str, object] = {
+        "form": ["13F-HR"],
+        "accessionNumber": ["0001-26-000001"],
+        "filingDate": ["2026-05-10"],
+        "reportDate": ["2026-03-31"],
+        "primaryDocument": ["primary.xml"],
+    }
+    recent[field] = "not-a-list"
+
+    assert Sec13FProvider._recent_references({"filings": {"recent": recent}}) == []
+
+
 def test_13f_recent_references_skips_bad_dates_and_dedupes_report_date() -> None:
     payload = {
         "filings": {
@@ -294,6 +332,13 @@ def test_13f_recent_references_name_falls_back_to_cik(httpx_mock) -> None:  # ty
     assert len(refs) == 1
 
 
+def test_13f_recent_references_raises_when_submission_has_no_filings(httpx_mock) -> None:
+    httpx_mock.add_response(json={"name": "No Holdings", "filings": {"recent": {}}})
+
+    with pytest.raises(LookupError, match="No recent 13F-HR filings found for No Holdings"):
+        Sec13FProvider(_settings()).recent_references("1234567")
+
+
 def test_13f_optional_float_handles_none_and_garbage() -> None:
     assert Sec13FProvider._optional_float(None) is None
     assert Sec13FProvider._optional_float("12.5") == 12.5
@@ -366,6 +411,36 @@ def test_13f_information_table_xml_falls_back_to_primary_document(httpx_mock) ->
 
     assert text == xml
     assert source_url.endswith("/000123456726000001/primary_doc.xml")
+
+
+def test_13f_information_table_xml_skips_malformed_xml_candidate(httpx_mock) -> None:
+    xml = (
+        "<informationTable><infoTable>"
+        "<nameOfIssuer>ALPHA</nameOfIssuer><titleOfClass>COM</titleOfClass>"
+        "<cusip>000000001</cusip><value>100</value>"
+        "<shrsOrPrnAmt><sshPrnamt>10</sshPrnamt>"
+        "<sshPrnamtType>SH</sshPrnamtType></shrsOrPrnAmt>"
+        "</infoTable></informationTable>"
+    )
+    httpx_mock.add_response(
+        json={"directory": {"item": [{"name": "infotable.xml"}, {"name": "other.xml"}]}},
+    )
+    httpx_mock.add_response(text="<informationTable>")
+    httpx_mock.add_response(text=xml)
+    provider = Sec13FProvider(_settings())
+    ref = FilingReference(
+        accession_number="0001234567-26-000001",
+        form="13F-HR",
+        filing_date=date(2026, 5, 10),
+        report_date=date(2026, 3, 31),
+        primary_document="cover.htm",
+    )
+
+    text, source_url = provider._information_table_xml("1234567", ref)
+
+    assert text == xml
+    assert source_url.endswith("/other.xml")
+    assert len(httpx_mock.get_requests()) == 3
 
 
 def test_13f_information_table_xml_raises_when_no_candidate_parses(httpx_mock) -> None:  # type: ignore[no-untyped-def]
