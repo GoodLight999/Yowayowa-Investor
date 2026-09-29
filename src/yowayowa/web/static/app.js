@@ -44,7 +44,9 @@ const api = async (path, options = {}) => {
     try { detail = (await response.json()).detail || null; } catch (_) {}
     const generic = apiErrorMessages[response.status] || (locale === 'ja' ? '処理に失敗しました。' : 'The operation failed.');
     const message = locale === 'en' && typeof detail === 'string' ? detail : generic;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   return response.json();
 };
@@ -448,4 +450,6 @@ document.addEventListener('DOMContentLoaded', () => {
   installDashboard();
 });
 document.addEventListener('turbo:load', refreshPriceAlertSurface);
-window.Yowayowa = { api, fmt, escapeHtml, locale, localeTag, refreshPriceAlertSurface, t };
+const apiStatusMessage = status => apiErrorMessages[status]
+  || (locale === 'ja' ? '処理に失敗しました。' : 'The operation failed.');
+window.Yowayowa = { api, apiStatusMessage, fmt, escapeHtml, locale, localeTag, refreshPriceAlertSurface, t };

@@ -216,7 +216,7 @@ def test_order_proposal_and_fill_rows_render_in_real_browser(page: Page, app_ser
     page.goto(f"{app_server}/broker-execution?lang=en", wait_until="domcontentloaded")
 
     page.get_by_role("heading", name="Orders & fills").wait_for()
-    page.get_by_text("AAPL", exact=True).wait_for()
+    page.locator("#fills-table").get_by_text("AAPL", exact=True).wait_for()
     page.get_by_text("190.25", exact=True).wait_for()
     page.get_by_text("Gate evaluation: blocked").wait_for()
     page.get_by_text("Audit matched").wait_for()

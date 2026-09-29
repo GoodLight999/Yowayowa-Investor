@@ -1,5 +1,5 @@
 (() => {
-  const { api, escapeHtml, localeTag } = window.Yowayowa;
+  const { api, apiStatusMessage, escapeHtml, localeTag } = window.Yowayowa;
   const ja = window.YOWAYOWA_LOCALE === 'ja';
   const text = ja ? {
     loading: '読込中',
@@ -337,8 +337,11 @@
         if (index === 1) renderOrders(result.value);
         if (index === 2) renderFills(result.value);
       } else {
-        setMessage(document.querySelector(targets[index]), text.loadFailed, 'broker-error');
-        document.querySelector(stateTargets[index]).textContent = result.reason?.message || text.loadFailed;
+        const statusMessage = result.reason?.status
+          ? apiStatusMessage(result.reason.status)
+          : null;
+        setMessage(document.querySelector(targets[index]), statusMessage || text.loadFailed, 'broker-error');
+        document.querySelector(stateTargets[index]).textContent = statusMessage || result.reason?.message || text.loadFailed;
         document.querySelector(stateTargets[index]).classList.add('is-warning');
       }
     });
