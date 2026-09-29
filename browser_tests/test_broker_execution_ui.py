@@ -262,7 +262,9 @@ def test_broker_api_errors_are_visible_without_fake_empty_state(
     errors = page.locator(".broker-error")
     errors.first.wait_for()
     assert errors.count() == 3
-    assert page.get_by_text("The service is temporarily unavailable.").count() == 3
+    # Each of the three sections shows the 503 message in both its fetch-state
+    # row and its .broker-error block, so the expected total is 3 sections x 2.
+    assert page.get_by_text("The service is temporarily unavailable.").count() == 6
     assert page.get_by_text("No order rows were returned in this read.").count() == 0
     assert (
         page.get_by_text(
