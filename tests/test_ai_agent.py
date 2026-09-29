@@ -837,3 +837,233 @@ def test_edinet_tool_reads_index_with_coverage_and_provenance(monkeypatch) -> No
 
     invalid = agent._tool_edinet_filing_history({"symbol": "AAPL"})
     assert "error" in invalid
+
+
+def test_ai_propose_broker_order_creates_audited_proposal_only(tmp_path: Path) -> None:
+    from yowayowa.acquisition.models import AcquisitionFetchState, AuthState
+    from yowayowa.broker.execution.service import BrokerExecutionDomainService
+    from yowayowa.broker_models import BrokerPosition
+    from yowayowa.services.broker_read_service import BrokerReadOutcome
+
+    class FakeBrokerRead:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str, bool]] = []
+
+        def fetch(self, resource: str, market: str, *, force_refresh: bool = False):  # type: ignore[no-untyped-def]
+            self.calls.append((resource, market, force_refresh))
+            return BrokerReadOutcome(
+                connector_id="rakuten-web",
+                resource=resource,
+                market=market,
+                fetch_state=AcquisitionFetchState.OK,
+                auth_state=AuthState.AUTHENTICATED,
+                positions=[
+                    BrokerPosition(
+                        broker="rakuten-securities",
+                        symbol="7203.T",
+                        quantity=Decimal("12"),
+                        currency="JPY",
+                    )
+                ],
+                detail={"verified": True},
+                source_url="https://broker.example.test/positions",
+                retrieved_at="2026-09-28T10:00:00+09:00",
+                as_of="2026-09-28T09:59:00+09:00",
+            )
+
+    read_service = FakeBrokerRead()
+    settings = Settings(
+        database_url="sqlite:///:memory:",
+        mode="personal",
+        private_connectors_enabled=True,
+    )
+    execution_service = BrokerExecutionDomainService(
+        settings=settings,
+        audit_dir=tmp_path / "broker-audit",
+    )
+    agent = InvestmentResearchAgent(
+        settings,
+        Mock(),
+        broker_read_service=read_service,
+        broker_execution_service=execution_service,
+    )
+
+    result = agent._execute_tool(
+        "propose_broker_order",
+        {
+            "client_order_id": "ai-proposal-1",
+            "symbol": "7203.T",
+            "market": "jp",
+            "side": "sell",
+            "quantity": 5,
+            "order_type": "limit",
+            "limit_price": "100",
+            "reference_price": "101.5",
+            "currency": "JPY",
+            "motivation": "Source-backed thesis review",
+            "source_research_link": "/research/7203.T",
+            "research_retrieved_at": "2026-09-28T10:01:00+09:00",
+        },
+    )
+
+    assert result["status"] == "proposed"
+    assert result["proposal"]["quantity"] == 5
+    assert result["proposal"]["source_research_link"] == "/research/7203.T"
+    assert result["proposal"]["provenance"]["research_retrieved_at"] == (
+        "2026-09-28T01:01:00+00:00"
+    )
+    assert result["preview"]["estimated_notional"] == "500"
+    assert result["proposal"]["provenance"]["quantity_unit"] == "shares"
+    assert result["provenance"]["broker_positions_retrieved_at"] == ("2026-09-28T01:00:00+00:00")
+    assert result["submitted"] is False
+    assert result["cancelled"] is False
+    assert "position_context" not in result
+    assert "held_quantity" not in result
+    assert read_service.calls == [("positions", "jp", True)]
+    assert [entry.kind for entry in execution_service.audit_entries()] == ["intent"]
+    assert agent.trace[-1].tool == "propose_broker_order"
+    assert agent.trace[-1].mutating is True
+    assert not {"submit_broker_order", "cancel_broker_order"} & set(agent.tools)
+
+
+def test_ai_propose_broker_order_fails_closed_on_stale_positions(tmp_path: Path) -> None:
+    from yowayowa.acquisition.models import AcquisitionFetchState, AuthState
+    from yowayowa.broker.execution.service import BrokerExecutionDomainService
+    from yowayowa.services.broker_read_service import BrokerReadOutcome
+
+    read_service = Mock()
+    read_service.fetch.return_value = BrokerReadOutcome(
+        connector_id="rakuten-web",
+        resource="positions",
+        market="jp",
+        fetch_state=AcquisitionFetchState.STALE,
+        auth_state=AuthState.AUTHENTICATED,
+        source_url="https://broker.example.test/positions",
+        retrieved_at="2026-09-28T10:00:00+09:00",
+        detail={"verified": True},
+    )
+    settings = Settings(
+        database_url="sqlite:///:memory:",
+        mode="personal",
+        private_connectors_enabled=True,
+    )
+    execution_service = BrokerExecutionDomainService(
+        settings=settings,
+        audit_dir=tmp_path / "broker-audit",
+    )
+    agent = InvestmentResearchAgent(
+        settings,
+        Mock(),
+        broker_read_service=read_service,
+        broker_execution_service=execution_service,
+    )
+    result = agent._tool_propose_broker_order(
+        {
+            "client_order_id": "stale-proposal",
+            "symbol": "7203.T",
+            "market": "jp",
+            "side": "buy",
+            "quantity": 1,
+            "order_type": "market",
+            "reference_price": "100",
+            "currency": "JPY",
+            "motivation": "Stale data must block",
+            "source_research_link": "/research/7203.T",
+            "research_retrieved_at": "2026-09-28T10:01:00+09:00",
+        }
+    )
+
+    assert "error" in result
+    assert "no proposal was created" in result["error"]
+    assert execution_service.audit_entries() == []
+
+
+def test_ai_propose_broker_order_waits_for_verified_broker_catalog(tmp_path: Path) -> None:
+    from yowayowa.acquisition.models import AcquisitionFetchState, AuthState
+    from yowayowa.broker.execution.service import BrokerExecutionDomainService
+    from yowayowa.services.broker_read_service import BrokerReadOutcome
+
+    read_service = Mock()
+    read_service.fetch.return_value = BrokerReadOutcome(
+        connector_id="rakuten-web",
+        resource="positions",
+        market="jp",
+        fetch_state=AcquisitionFetchState.OK,
+        auth_state=AuthState.AUTHENTICATED,
+        detail={"verified": False},
+        source_url="https://broker.example.test/positions",
+        retrieved_at="2026-09-28T10:00:00+09:00",
+    )
+    settings = Settings(
+        database_url="sqlite:///:memory:",
+        mode="personal",
+        private_connectors_enabled=True,
+    )
+    execution_service = BrokerExecutionDomainService(
+        settings=settings,
+        audit_dir=tmp_path / "broker-audit",
+    )
+    agent = InvestmentResearchAgent(
+        settings,
+        Mock(),
+        broker_read_service=read_service,
+        broker_execution_service=execution_service,
+    )
+    result = agent._tool_propose_broker_order(
+        {
+            "client_order_id": "unverified-catalog",
+            "symbol": "7203.T",
+            "market": "jp",
+            "side": "buy",
+            "quantity": 1,
+            "order_type": "market",
+            "reference_price": "100",
+            "currency": "JPY",
+            "motivation": "Unverified positions must block",
+            "source_research_link": "/research/7203.T",
+            "research_retrieved_at": "2026-09-28T10:01:00+09:00",
+        }
+    )
+
+    assert "verified" in result["error"]
+    assert execution_service.audit_entries() == []
+
+
+def test_ai_propose_broker_order_does_not_default_missing_quantity_to_zero(tmp_path: Path) -> None:
+    from yowayowa.broker.execution.service import BrokerExecutionDomainService
+
+    read_service = Mock()
+    settings = Settings(
+        database_url="sqlite:///:memory:",
+        mode="personal",
+        private_connectors_enabled=True,
+    )
+    execution_service = BrokerExecutionDomainService(
+        settings=settings,
+        audit_dir=tmp_path / "broker-audit",
+    )
+    agent = InvestmentResearchAgent(
+        settings,
+        Mock(),
+        broker_read_service=read_service,
+        broker_execution_service=execution_service,
+    )
+    result = agent._tool_propose_broker_order(
+        {
+            "client_order_id": "missing-quantity",
+            "symbol": "7203.T",
+            "market": "jp",
+            "side": "buy",
+            "order_type": "limit",
+            "limit_price": "100",
+            "currency": "JPY",
+            "motivation": "A missing quantity must not be imputed",
+            "source_research_link": "/research/7203.T",
+            "research_retrieved_at": "2026-09-28T10:01:00+09:00",
+        }
+    )
+
+    assert "error" in result
+    assert "positive integer" in result["error"]
+    read_service.fetch.assert_not_called()
+    assert execution_service.audit_entries() == []

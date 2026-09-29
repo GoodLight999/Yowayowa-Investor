@@ -5,11 +5,15 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from decimal import Decimal, InvalidOperation
+from typing import Any, Protocol
 
 import httpx
 from sqlalchemy.orm import Session
 
+from yowayowa.acquisition.models import AcquisitionFetchState, AuthState
+from yowayowa.broker.execution.models import OrderProposal
+from yowayowa.broker.execution.service import OrderExecutionPreview
 from yowayowa.config import Settings
 from yowayowa.domain import Operation, OperationKind
 from yowayowa.providers.registry import (
@@ -33,6 +37,7 @@ from yowayowa.research_models import (
     ResearchSection,
 )
 from yowayowa.services.alerts import list_alerts
+from yowayowa.services.broker_read_service import BrokerReadOutcome
 from yowayowa.services.codex_cli import codex_cli_status, run_codex_structured
 from yowayowa.services.comparison import compare
 from yowayowa.services.portfolio_sizing import portfolio_sizing_proposals
@@ -62,6 +67,22 @@ from yowayowa.symbols import normalize_symbol
 ToolHandler = Callable[[dict[str, Any]], Any]
 
 
+class _BrokerReadProvider(Protocol):
+    def fetch(
+        self,
+        resource: str,
+        market: str,
+        *,
+        force_refresh: bool = False,
+    ) -> BrokerReadOutcome: ...
+
+
+class _BrokerExecutionProvider(Protocol):
+    def propose(self, **fields: object) -> OrderProposal: ...
+
+    def preview(self, proposal: OrderProposal) -> OrderExecutionPreview: ...
+
+
 @dataclass(frozen=True)
 class ToolSpec:
     name: str
@@ -89,10 +110,14 @@ class InvestmentResearchAgent:
         session: Session,
         *,
         codex_session_id: str | None = None,
+        broker_read_service: _BrokerReadProvider | None = None,
+        broker_execution_service: _BrokerExecutionProvider | None = None,
     ) -> None:
         self.settings = settings
         self.session = session
         self.codex_session_id = codex_session_id
+        self._broker_read_service = broker_read_service
+        self._broker_execution_service = broker_execution_service
         self.provider_credential: str | None = None
         self.trace: list[AIToolTrace] = []
         self.proposals: list[Operation] = []
@@ -211,6 +236,9 @@ class InvestmentResearchAgent:
             "deterministic proposal; never calculate the share count yourself. Its result "
             "is not an order and must never be represented as one. "
             "For workspace changes, use propose_* tools; never silently mutate state. "
+            "For broker orders, propose_broker_order is proposal-only: never submit or cancel. "
+            "Do not invent order quantities, prices, research sources, or retrieval timestamps; "
+            "if explicit sourced inputs are unavailable, do not create a proposal. "
             "State uncertainty and data basis. Answer in the user's language. "
             f"Server date: {date.today().isoformat()}. UI context: {context}"
         )
@@ -904,6 +932,57 @@ class InvestmentResearchAgent:
                 "Read configured price alerts.",
                 self._object_schema({}),
                 self._tool_alerts,
+            ),
+            ToolSpec(
+                "propose_broker_order",
+                "Create an audited broker order proposal only. This tool never submits or "
+                "cancels an order. Quantity is explicit and is not calculated here. It requires "
+                "a fresh, authenticated, verified broker positions snapshot for provenance, "
+                "but does not expose or use holdings to calculate quantity. The operator must "
+                "supply and review quantity. Include the research source and its retrieval time.",
+                self._object_schema(
+                    {
+                        "client_order_id": {"type": "string", "minLength": 1, "maxLength": 128},
+                        "symbol": {"type": "string", "minLength": 1, "maxLength": 32},
+                        "market": {"type": "string", "enum": ["jp", "us"]},
+                        "side": {"type": "string", "enum": ["buy", "sell"]},
+                        "quantity": {"type": "integer", "minimum": 1},
+                        "order_type": {"type": "string", "enum": ["market", "limit"]},
+                        "limit_price": {
+                            "type": "string",
+                            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+                        },
+                        "reference_price": {
+                            "type": "string",
+                            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+                        },
+                        "currency": {"type": "string", "enum": ["JPY", "USD"]},
+                        "motivation": {"type": "string", "minLength": 1, "maxLength": 2000},
+                        "source_research_link": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                        },
+                        "research_retrieved_at": {
+                            "type": "string",
+                            "format": "date-time",
+                        },
+                    },
+                    [
+                        "client_order_id",
+                        "symbol",
+                        "market",
+                        "side",
+                        "quantity",
+                        "order_type",
+                        "currency",
+                        "motivation",
+                        "source_research_link",
+                        "research_retrieved_at",
+                    ],
+                ),
+                self._tool_propose_broker_order,
+                mutating=True,
             ),
             ToolSpec(
                 "propose_watchlist_change",
@@ -1646,6 +1725,184 @@ class InvestmentResearchAgent:
             arguments={"symbols": symbols, "filters": filters},
         )
         return self._proposal(operation)
+
+    def _tool_propose_broker_order(self, args: dict[str, Any]) -> Any:
+        """Persist a proposal after fail-closed read-only provenance checks."""
+
+        if self.settings.mode != "personal" or not self.settings.private_connectors_enabled:
+            return {
+                "error": ("Broker proposals are unavailable while private connectors are disabled.")
+            }
+
+        market = str(args.get("market") or "").strip().lower()
+        if market not in {"jp", "us"}:
+            return {"error": "market must be 'jp' or 'us'."}
+        currency = str(args.get("currency") or "").strip().upper()
+        expected_currency = "JPY" if market == "jp" else "USD"
+        if currency != expected_currency:
+            return {"error": f"currency must be {expected_currency} for the {market} market."}
+
+        symbol_raw = str(args.get("symbol") or "").strip()
+        try:
+            symbol = normalize_symbol(symbol_raw)
+        except ValueError as exc:
+            return {"error": str(exc)}
+
+        client_order_id = str(args.get("client_order_id") or "").strip()
+        motivation = str(args.get("motivation") or "").strip()
+        source_research_link = str(args.get("source_research_link") or "").strip()
+        if not client_order_id or not motivation or not source_research_link:
+            return {"error": "client_order_id, motivation, and source_research_link are required."}
+        if len(client_order_id) > 128 or len(motivation) > 2000 or len(source_research_link) > 2048:
+            return {"error": "A proposal field exceeds its supported maximum length."}
+        if any(ord(character) < 32 for character in source_research_link):
+            return {"error": "source_research_link contains control characters."}
+
+        research_retrieved_at = self._aware_timestamp(args.get("research_retrieved_at"))
+        if research_retrieved_at is None:
+            return {"error": "research_retrieved_at must be an ISO timestamp with a timezone."}
+
+        raw_quantity = args.get("quantity")
+        if isinstance(raw_quantity, bool) or not isinstance(raw_quantity, int) or raw_quantity <= 0:
+            return {"error": "quantity must be a positive integer; missing quantity is not zero."}
+
+        side = str(args.get("side") or "").strip().lower()
+        order_type = str(args.get("order_type") or "").strip().lower()
+        if side not in {"buy", "sell"} or order_type not in {"market", "limit"}:
+            return {"error": "side must be buy/sell and order_type must be market/limit."}
+
+        prices: dict[str, Decimal | None] = {}
+        for field in ("limit_price", "reference_price"):
+            raw_price = args.get(field)
+            if raw_price is None:
+                prices[field] = None
+                continue
+            if not isinstance(raw_price, str) or not raw_price.strip():
+                return {"error": f"{field} must be an exact positive decimal string."}
+            try:
+                price = Decimal(raw_price)
+            except InvalidOperation:
+                return {"error": f"{field} must be an exact positive decimal string."}
+            if not price.is_finite() or price <= 0:
+                return {"error": f"{field} must be a finite positive amount."}
+            prices[field] = price
+        limit_price = prices["limit_price"]
+        reference_price = prices["reference_price"]
+        if order_type == "limit" and limit_price is None:
+            return {"error": "limit_price is required for limit orders."}
+        if order_type == "market" and reference_price is None:
+            return {"error": "reference_price is required for market-order notional preview."}
+
+        outcome = self._get_broker_read_service().fetch("positions", market, force_refresh=True)
+        if outcome.resource != "positions" or outcome.market != market:
+            return {
+                "error": (
+                    "Broker positions response does not match the requested market; "
+                    "no proposal was created."
+                )
+            }
+        if outcome.fetch_state != AcquisitionFetchState.OK:
+            return {
+                "error": (
+                    "Broker positions could not be freshly verified; no proposal was created."
+                )
+            }
+        if outcome.auth_state != AuthState.AUTHENTICATED:
+            return {
+                "error": "Broker positions could not be freshly verified; no proposal was created."
+            }
+        if outcome.detail is None or outcome.detail.get("verified") is not True:
+            return {"error": "Broker positions catalog is not verified; no proposal was created."}
+        if outcome.notes:
+            return {
+                "error": (
+                    "Broker positions contain parser or coverage notes; no proposal was created."
+                )
+            }
+        broker_retrieved_at = self._aware_timestamp(outcome.retrieved_at)
+        if not outcome.source_url or broker_retrieved_at is None:
+            return {"error": "Broker positions provenance is incomplete; no proposal was created."}
+        broker_as_of = self._aware_timestamp(outcome.as_of, optional=True)
+        if outcome.as_of is not None and broker_as_of is None:
+            return {
+                "error": ("Broker positions as_of timestamp is invalid; no proposal was created.")
+            }
+
+        provenance = {
+            "quantity_unit": "shares",
+            "research_retrieved_at": research_retrieved_at.isoformat(),
+            "broker_positions_source_url": outcome.source_url,
+            "broker_positions_retrieved_at": broker_retrieved_at.isoformat(),
+            "broker_positions_market": market,
+        }
+        if broker_as_of is not None:
+            provenance["broker_positions_as_of"] = broker_as_of.isoformat()
+        execution_service = self._get_broker_execution_service()
+        proposal = execution_service.propose(
+            client_order_id=client_order_id,
+            symbol=symbol,
+            market=market,
+            side=side,
+            quantity=raw_quantity,
+            order_type=order_type,
+            limit_price=limit_price,
+            reference_price=reference_price,
+            currency=currency,
+            motivation=motivation,
+            source_research_link=source_research_link,
+            provenance=provenance,
+        )
+        return {
+            "status": "proposed",
+            "proposal": proposal.model_dump(mode="json"),
+            "proposal_hash": proposal.proposal_hash(),
+            "preview": execution_service.preview(proposal).model_dump(mode="json"),
+            "provenance": {
+                "quantity_unit": "shares",
+                "source_research_link": source_research_link,
+                "research_retrieved_at": research_retrieved_at.isoformat(),
+                "broker_positions_source_url": outcome.source_url,
+                "broker_positions_retrieved_at": broker_retrieved_at.isoformat(),
+                "broker_positions_as_of": broker_as_of.isoformat() if broker_as_of else None,
+            },
+            "submitted": False,
+            "cancelled": False,
+            "notes": [
+                "Quantity is operator-supplied and not sized or checked against holdings.",
+                "Review the full broker state before any later evaluation or execution.",
+            ],
+        }
+
+    def _get_broker_read_service(self) -> _BrokerReadProvider:
+        if self._broker_read_service is None:
+            from yowayowa.api.deps import get_broker_read_service
+
+            self._broker_read_service = get_broker_read_service()
+        return self._broker_read_service
+
+    def _get_broker_execution_service(self) -> _BrokerExecutionProvider:
+        if self._broker_execution_service is None:
+            from yowayowa.api.deps import get_broker_execution_service
+
+            self._broker_execution_service = get_broker_execution_service()
+        return self._broker_execution_service
+
+    @staticmethod
+    def _aware_timestamp(value: Any, *, optional: bool = False) -> datetime | None:
+        if value is None and optional:
+            return None
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str):
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+        else:
+            return None
+        if parsed.tzinfo is None:
+            return None
+        return parsed.astimezone(UTC)
 
     def _proposal(self, operation: Operation) -> dict[str, Any]:
         self.proposals.append(operation)

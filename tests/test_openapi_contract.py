@@ -112,6 +112,7 @@ REQUIRED_AGENT_TOOLS = frozenset(
         "get_portfolios",
         "propose_portfolio_sizing",
         "get_alerts",
+        "propose_broker_order",
         "propose_watchlist_change",
         "propose_compare",
         "propose_screen_filters",
@@ -141,3 +142,31 @@ def test_agent_tool_catalog_pins_core_read_tools() -> None:
 
     agent = InvestmentResearchAgent(Settings(database_url="sqlite:///:memory:"), Mock())
     assert set(agent.tools) >= REQUIRED_AGENT_TOOLS
+
+
+def test_broker_order_tool_contract_is_proposal_only_and_provenance_required() -> None:
+    from unittest.mock import Mock
+
+    from yowayowa.config import Settings
+    from yowayowa.services.ai_agent import InvestmentResearchAgent
+
+    agent = InvestmentResearchAgent(Settings(database_url="sqlite:///:memory:"), Mock())
+    tool = agent.tools["propose_broker_order"]
+
+    assert tool.mutating is True  # audited proposal creation, not broker execution
+    assert {
+        "client_order_id",
+        "symbol",
+        "market",
+        "side",
+        "quantity",
+        "order_type",
+        "currency",
+        "motivation",
+        "source_research_link",
+        "research_retrieved_at",
+    } <= set(tool.parameters["required"])
+    assert "submit" in tool.description.lower()
+    assert "cancel" in tool.description.lower()
+    assert "submit_broker_order" not in agent.tools
+    assert "cancel_broker_order" not in agent.tools

@@ -101,6 +101,15 @@ Make AI access boring and reliable, then stop spending disproportionate time on 
 - OpenAPI contract protecting core machine-facing endpoints: DONE,
   pinned by CI (CG-20260925-003).
 
+#### WD-E checkpoint (2026-09-29)
+
+The AI catalog now includes `propose_broker_order`: it records an audited
+proposal with research-link/retrieval-time provenance and a broker positions
+snapshot. It does not submit or cancel orders. Quantity remains explicit
+(the tool does not calculate sizing). The tool fails closed until the broker
+positions catalog is verified in a real operator session; this remains
+NEED-HUMAN under `docs/BROKER_ACCEPTANCE_MATRIX.md` R1-R4.
+
 ### Remaining work (all NEED-HUMAN, see CG-20260925-007)
 
 - Complete one real production ChatGPT device-code authorization.
