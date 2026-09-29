@@ -136,6 +136,49 @@ research-priority scoring actually helped, without ever rewriting history:
   `get_strategy_outcomes`) returns the same evidence, and the agent system
   prompt directs the model to inspect calibration evidence before claiming a
   scoring rule works.
+- **CLI** — `yowayowa strategy-calibration` exposes the same
+  `GET /v1/strategy-research/calibration` surface with the same filters
+  (`--strategy-id --region --symbol --horizons --benchmark --limit
+  --oos-min-sample`). It prints per-bucket sample counts and minimum-sample
+  warnings, score/factor deciles, median/mean total and benchmark-excess
+  returns, positive-excess hit rate, the Spearman rank IC, and the purged
+  walk-forward segments grouped under `Out-of-sample:` / `In-sample:` /
+  `Split:` headings (with the bootstrap CI bounds). Rates are rendered as
+  percentages while coefficients, counts and timestamps keep their raw value,
+  and a segment whose `*_ic_insufficient` is true prints
+  `insufficient (n=...)` instead of a coefficient — the CLI never fabricates a
+  statistic the API reported as insufficient.
+
+### Hypothesis & falsification records (P3)
+
+- **API surface** — `POST /v1/hypotheses`, `GET /v1/hypotheses?symbol=&limit=&offset=`,
+  `GET /v1/hypotheses/{id}`. Records are private operator data: the routes fail
+  closed with 403 outside personal mode. They are append-only — there is no
+  update or delete path (405), and the endpoints never execute or mutate order
+  state.
+- **CLI** — `yowayowa hypothesis add` (`--hypothesis`, repeated `--criteria` for
+  falsification criteria, repeated `--evidence-url` for evidence links, optional
+  `--symbol` and `--provider/--source/--retrieved-at/--as-of` applied to every
+  link), `yowayowa hypothesis list` (`--symbol --limit --offset`), and
+  `yowayowa hypothesis show HYPOTHESIS_ID`. `add` fails closed without a
+  non-blank thesis, at least one criterion and at least one evidence URL —
+  nothing is sent to the API in that case. A 403 outside personal mode is
+  reported as `HTTP 403: ...` and is the correct behaviour, not an error to
+  retry.
+
+### Portfolio-aware sizing proposals (P3)
+
+- **API surface** — `POST /v1/portfolios/{portfolio_id}/sizing-proposals`
+  (same service as the `propose_portfolio_sizing` agent tool). Caller supplies
+  candidate entry/stop prices, currency, lot size and quote provenance/as-of;
+  output is explicitly non-executable.
+- **CLI** — `yowayowa portfolio sizing-proposals PORTFOLIO_ID` takes one or
+  more `--idea '<PortfolioSizingIdea JSON>'` values plus `--risk-budget-pct`
+  and `--max-position-pct`, and prints the portfolio-level budgets, the
+  per-idea quantity and notional, the limiting constraints, and the
+  `proposal only — not executable` marker. Missing or unparseable `--idea`
+  input fails closed before any request is sent. There is no submission or
+  order-mutation path on this command.
 
 ### Session expiry notification & persistent profile (P2C)
 

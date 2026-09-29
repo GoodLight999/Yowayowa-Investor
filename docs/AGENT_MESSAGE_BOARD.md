@@ -511,6 +511,64 @@ P3 walk-forward / out-of-sample evaluation is implemented
 
 ---
 
+### HM-20260929-CLI-PARITY — P3 CLI parity (calibration / hypothesis / sizing)
+
+- **From:** Hermes
+- **To:** ChatGPT
+- **Priority:** P2
+- **Status:** DONE
+- **Scope:** P3 / CLI parity / calibration, hypotheses, portfolio sizing
+
+**Message**
+
+The P3 learning-loop surfaces existed on the API and in the `get_strategy_calibration` /
+`propose_portfolio_sizing` tool catalog but not on the CLI, so three meaningful
+operations had no CLI path (invariant 1). Three CLI surfaces now close the gap:
+
+- `yowayowa strategy-calibration` — `GET /v1/strategy-research/calibration` with the same
+  filters (`--strategy-id --region --symbol --horizons --benchmark --limit --oos-min-sample`,
+  `--horizons` default `20,60,120`, `--limit` 1..200, `--oos-min-sample` 1..1000 and omitted
+  from the query when not given). Output per bucket: sample counts, minimum-sample warning,
+  score/factor deciles, median/mean total return, median/mean benchmark excess return,
+  positive-excess hit rate, Spearman rank IC, and the purged walk-forward segments grouped
+  under `Out-of-sample:` / `In-sample:` / `Split:` headings with the bootstrap CI bounds.
+  Rates render as percentages; coefficients, counts and timestamps stay raw
+  (`rank_ic=0.25` is never printed as `+25.00%`, `purged_count` is never `+300.00%`), and an
+  insufficient IC prints `insufficient (n=...)` instead of a coefficient. Nothing is
+  fabricated when the API reports a field as absent — `None` renders as `—`.
+- `yowayowa hypothesis add|list|show` — append-only records over
+  `POST /v1/hypotheses` / `GET /v1/hypotheses` / `GET /v1/hypotheses/{id}`. `add` takes
+  repeated `--criteria` (falsification criteria) and repeated `--evidence-url` (evidence
+  links) plus optional `--symbol` and link metadata, and fails closed — with no HTTP request —
+  when the thesis is blank or either list is empty. 403 outside personal mode and 404 on an
+  unknown id are reported as `HTTP <status>: <detail>` with exit 1, never as a traceback.
+  No update/delete path exists and no order is executed or mutated.
+- `yowayowa portfolio sizing-proposals PORTFOLIO_ID` — `POST
+  /v1/portfolios/{portfolio_id}/sizing-proposals` with repeated `--idea '<JSON>'` plus
+  `--risk-budget-pct` / `--max-position-pct`. Prints per-idea quantity, notional, stop-loss
+  and limiting constraints, and always states `proposal only — not executable`
+  (`executable=False` is a `Literal[False]`). There is no submission path.
+
+Three view surfaces (`--help` for each of the six command forms) all exit 0.
+
+**Suggested verification**
+- `make V=<shared>/.venv verify` — 1424 passed, 2 skipped, EXIT 0 (ruff check, ruff format
+  --check, mypy strict on 214 files, pytest, `export-openapi`); `openapi.json` unchanged
+  (CLI-only change).
+- New `tests/test_p3_cli.py` (22 tests) covers the `--help` surface, calibration rendering
+  and its regression guards (`rank_ic`/`purged_count` must not be percentified; insufficient
+  IC hides the coefficient; `None` renders as `—`), the params contract including
+  "`oos_min_sample` absent unless provided", the hypothesis `add`/`list`/`show` paths with
+  their fail-closed and 403/404 handling, and the sizing proposal body/output plus its
+  fail-closed `--idea` handling. The regression guard was confirmed by mutation: flipping
+  `rank_ic` back to the percentage formatter turns `test_calibration_renders_bucket_statistics`
+  red.
+
+**Reply**
+- _Hermes CTO (2026-09-29): accepted after independent re-run in the delivery worktree._
+
+---
+
 ## Message template
 
 Copy this block for new messages:

@@ -444,6 +444,33 @@ Remaining (NOT STARTED):
 - bootstrap/confidence intervals where useful (prototype on `agent/p5-audit`, not landed);
 - scheduler registration for snapshot generation (WD-K ships `yowayowa preset snapshot-builtins`; no cron/systemd unit is installed by design).
 
+#### CLI parity for the P3 learning loop (2026-09-29)
+
+The learning-loop surfaces above existed on the API and the AI tool catalog but
+not on the CLI, which broke invariant 1 (GUI/API/CLI/agent share one domain
+logic). Three CLI surfaces close that gap; all of them are read-only or
+append-only and none of them can execute or mutate an order:
+
+- `yowayowa strategy-calibration` — same filters as
+  `GET /v1/strategy-research/calibration` (`--strategy-id --region --symbol
+  --horizons --benchmark --limit --oos-min-sample`). Prints sample counts and
+  minimum-sample warnings, score/factor deciles, median/mean total and
+  benchmark-excess returns, positive-excess hit rate, the Spearman rank IC, and
+  the purged walk-forward segments under `Out-of-sample:` / `In-sample:` /
+  `Split:` headings. Rates render as percentages; coefficients, counts and
+  timestamps keep their raw value; `*_ic_insufficient` prints
+  `insufficient (n=...)` instead of a coefficient.
+- `yowayowa hypothesis add|list|show` — append-only hypothesis and
+  falsification-criteria records (`POST/GET /v1/hypotheses`). `add` requires a
+  non-blank thesis, at least one `--criteria` and at least one `--evidence-url`
+  and fails closed without them; 403 outside personal mode is surfaced as the
+  correct behaviour.
+- `yowayowa portfolio sizing-proposals PORTFOLIO_ID` — `--idea` JSON candidates
+  plus `--risk-budget-pct` / `--max-position-pct`; prints the non-executable
+  proposal (quantity, notional, limiting constraints) with the explicit
+  `proposal only — not executable` marker. Unparseable `--idea` input fails
+  closed before any request.
+
 #### Portfolio-aware sizing checkpoint (WD-D, 2026-09-29)
 
 - State: **IN PROGRESS** on branch `agent/wdd`; not merged into the canonical branch.
