@@ -265,7 +265,7 @@ def portfolio_risk(
 def portfolio_sizing_proposals(
     portfolio_id: int = typer.Argument(..., min=1),
     idea: list[str] = typer.Option(
-        [], "--idea", help="PortfolioSizingIdea のJSON文字列（繰り返し指定・1件以上必須）"
+        [], "--idea", help="PortfolioSizingIdea のJSON文字列(繰り返し指定・1件以上必須)"
     ),
     risk_budget_pct: float = typer.Option(..., help="(0,1]"),
     max_position_pct: float = typer.Option(..., help="(0,1]"),

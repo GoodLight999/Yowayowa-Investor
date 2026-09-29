@@ -28,10 +28,10 @@ def _request(client: httpx.Client, method: str, path: str, **kwargs: Any) -> Any
 def add_hypothesis(
     hypothesis: str = typer.Option(..., help="Investment hypothesis to record"),
     criteria: list[str] = typer.Option(
-        [], "--criteria", help="反証条件（繰り返し指定・1件以上必須）"
+        [], "--criteria", help="反証条件(繰り返し指定・1件以上必須)"
     ),
     evidence_url: list[str] = typer.Option(
-        [], "--evidence-url", help="根拠URL（繰り返し指定・1件以上必須）"
+        [], "--evidence-url", help="根拠URL(繰り返し指定・1件以上必須)"
     ),
     symbol: str | None = typer.Option(None),
     provider: str | None = typer.Option(None, help="全 evidence link に適用"),
