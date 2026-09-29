@@ -706,3 +706,134 @@ def test_get_ohlcv_tool_honors_limit_and_finds_symbol_beyond_ambient_cap(
     assert len(result["rows"]) == 10
     assert result["rows"][0]["as_of"] == "2026-09-10T04:00:00Z"
     assert result["rows"][-1]["as_of"] == "2026-09-01T04:00:00Z"
+
+
+def test_ir_timeline_and_kpi_tools_read_local_data_with_provenance(tmp_path: Path) -> None:
+    from yowayowa.services.ir_monitor_service import IrMonitorService
+
+    def unused_transport(_source):  # type: ignore[no-untyped-def]
+        raise AssertionError("read-only IR tools must never fetch source URLs")
+
+    service = IrMonitorService(data_dir=tmp_path, transport_factory=unused_transport)
+    source_url = "https://ir.example.test/release.pdf"
+    provenance = {
+        "provider": "ir.example.test",
+        "source_url": source_url,
+        "license_class": "official_public",
+        "retrieved_at": "2026-09-28T08:00:00+00:00",
+        "as_of": None,
+    }
+    service._timeline.append(
+        "7203.T",
+        {
+            "kind": "document",
+            "symbol": "7203.T",
+            "recorded_at": "2026-09-28T08:00:00+00:00",
+            "provenance": provenance,
+            "payload": {
+                "label": "Quarterly results",
+                "kpis": [{"kpi": "revenue", "value": 120.0}],
+            },
+            "notes": [],
+        },
+    )
+    service._kpi_history.append(
+        source_url,
+        [{"kpi": "revenue", "value": 100.0}],
+        provenance=provenance,
+    )
+    service._kpi_history.append(
+        source_url,
+        [{"kpi": "revenue", "value": 120.0}],
+        provenance=provenance,
+    )
+
+    agent = InvestmentResearchAgent(
+        Settings(
+            database_url="sqlite:///:memory:",
+            private_acquisition_data_dir=str(tmp_path),
+            mode="personal",
+            private_connectors_enabled=True,
+        ),
+        Mock(),
+    )
+    timeline = agent._tool_ir_timeline({"symbol": "7203.T", "limit": 20})
+    assert timeline["entry_count"] == 1
+    assert timeline["entries"][0]["provenance"]["source_url"] == source_url
+    assert timeline["entries"][0]["provenance"]["license_class"] == "official_public"
+
+    history = agent._tool_ir_kpi_history({"url": source_url, "kpi": "revenue", "limit": 1})
+    assert history["entry_count"] == 1
+    assert history["entries"][0]["kpis"] == [{"kpi": "revenue", "value": 120.0}]
+    assert history["entries"][0]["provenance"]["provider"] == "ir.example.test"
+
+
+def test_ir_tools_fail_closed_when_private_connectors_are_disabled(tmp_path: Path) -> None:
+    agent = InvestmentResearchAgent(
+        Settings(
+            database_url="sqlite:///:memory:",
+            api_token="test-token",
+            private_acquisition_data_dir=str(tmp_path),
+            mode="public",
+            private_connectors_enabled=False,
+        ),
+        Mock(),
+    )
+
+    assert "error" in agent._tool_ir_timeline({"symbol": "7203.T"})
+    assert "error" in agent._tool_ir_kpi_history({"url": "https://example.test/doc.pdf"})
+
+
+def test_edinet_tool_reads_index_with_coverage_and_provenance(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from yowayowa.services import edinet_index
+
+    seen: dict[str, object] = {}
+    response = {
+        "security_code": "72030",
+        "coverage_complete": False,
+        "matched_count": 1,
+        "provenance": {
+            "provider": "edinet-v2-index",
+            "source_url": "https://disclosure2.edinet-fsa.go.jp/",
+        },
+        "documents": [{"doc_id": "S100TEST"}],
+    }
+
+    class _History:
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return response
+
+    def fake_history(session, start, end, *, security_code, limit):  # type: ignore[no-untyped-def]
+        seen.update(
+            session=session,
+            start=start,
+            end=end,
+            security_code=security_code,
+            limit=limit,
+        )
+        return _History()
+
+    monkeypatch.setattr(edinet_index, "filing_history", fake_history)
+    session = Mock()
+    agent = InvestmentResearchAgent(Settings(database_url="sqlite:///:memory:"), session)
+    result = agent._tool_edinet_filing_history(
+        {
+            "symbol": "7203.T",
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-20",
+            "limit": 5,
+        }
+    )
+
+    assert result == response
+    assert seen == {
+        "session": session,
+        "start": date(2026, 9, 1),
+        "end": date(2026, 9, 20),
+        "security_code": "72030",
+        "limit": 5,
+    }
+
+    invalid = agent._tool_edinet_filing_history({"symbol": "AAPL"})
+    assert "error" in invalid

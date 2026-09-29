@@ -993,6 +993,67 @@ class InvestmentResearchAgent:
                 ),
                 self._tool_ohlcv,
             ),
+            ToolSpec(
+                "get_ir_timeline",
+                "Read locally monitored IR documents for one instrument. Entries include "
+                "source URL, provider, license class, retrieval time, and extracted KPI changes. "
+                "This is read-only and never triggers an IR fetch.",
+                self._object_schema(
+                    {
+                        "symbol": {"type": "string"},
+                        "kind": {"type": "string"},
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200,
+                            "default": 50,
+                        },
+                    },
+                    ["symbol"],
+                ),
+                self._tool_ir_timeline,
+            ),
+            ToolSpec(
+                "get_ir_kpi_history",
+                "Read locally recorded KPI revisions for an IR document URL. Each observation "
+                "preserves source URL and, when recorded, provider/license/retrieval provenance. "
+                "This is read-only and never fetches the URL.",
+                self._object_schema(
+                    {
+                        "url": {"type": "string", "minLength": 1, "maxLength": 2048},
+                        "kpi": {"type": "string", "maxLength": 64},
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200,
+                            "default": 10,
+                        },
+                    },
+                    ["url"],
+                ),
+                self._tool_ir_kpi_history,
+            ),
+            ToolSpec(
+                "get_edinet_filing_history",
+                "Read the locally indexed official EDINET filing history for a Japanese "
+                "security code or .T symbol. Returns explicit index coverage and EDINET "
+                "provenance; it does not call EDINET or synchronize data.",
+                self._object_schema(
+                    {
+                        "symbol": {"type": "string"},
+                        "start_date": {"type": "string", "format": "date"},
+                        "end_date": {"type": "string", "format": "date"},
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20,
+                        },
+                    },
+                    ["symbol"],
+                ),
+                self._tool_edinet_filing_history,
+            ),
         ]
         return {item.name: item for item in specs}
 
@@ -1374,6 +1435,95 @@ class InvestmentResearchAgent:
             "row_count": symbol_evidence["row_count"],
             "rows": symbol_evidence["latest_rows"][:limit],
         }
+
+    def _tool_ir_timeline(self, args: dict[str, Any]) -> Any:
+        symbol = normalize_symbol(str(args.get("symbol") or ""))
+        if self.settings.mode != "personal" or not self.settings.private_connectors_enabled:
+            return {
+                "error": "IR monitoring data is unavailable while private connectors are disabled."
+            }
+        from pathlib import Path
+
+        from yowayowa.services.ir_monitor_service import (
+            IrMonitorService,
+            _default_http_transport,
+        )
+
+        service = IrMonitorService(
+            data_dir=Path(self.settings.private_acquisition_data_dir),
+            transport_factory=_default_http_transport,
+        )
+        kind = str(args.get("kind") or "").strip() or None
+        raw_limit = args.get("limit")
+        try:
+            limit = min(max(int(raw_limit), 1), 200) if raw_limit is not None else 50
+        except (TypeError, ValueError):
+            return {"error": f"Invalid limit: {raw_limit!r}"}
+        entries = service.timeline(symbol, kind=kind, limit=limit)
+        return {"symbol": symbol, "entry_count": len(entries), "entries": entries}
+
+    def _tool_ir_kpi_history(self, args: dict[str, Any]) -> Any:
+        if self.settings.mode != "personal" or not self.settings.private_connectors_enabled:
+            return {
+                "error": "IR monitoring data is unavailable while private connectors are disabled."
+            }
+        url = str(args.get("url") or "").strip()
+        if not url:
+            return {"error": "A document URL is required."}
+        from pathlib import Path
+
+        from yowayowa.services.ir_monitor_service import (
+            IrMonitorService,
+            _default_http_transport,
+        )
+
+        service = IrMonitorService(
+            data_dir=Path(self.settings.private_acquisition_data_dir),
+            transport_factory=_default_http_transport,
+        )
+        kpi = str(args.get("kpi") or "").strip() or None
+        raw_limit = args.get("limit")
+        try:
+            limit = min(max(int(raw_limit), 1), 200) if raw_limit is not None else 10
+        except (TypeError, ValueError):
+            return {"error": f"Invalid limit: {raw_limit!r}"}
+        entries = service.document_kpi_history(url, kpi=kpi, limit=limit)
+        return {"url": url, "entry_count": len(entries), "entries": entries}
+
+    def _tool_edinet_filing_history(self, args: dict[str, Any]) -> Any:
+        from yowayowa.services.edinet import normalize_security_code
+        from yowayowa.services.edinet_index import filing_history
+
+        raw_symbol = str(args.get("symbol") or "").strip().upper()
+        security_code = raw_symbol[:-2] if raw_symbol.endswith(".T") else raw_symbol
+        try:
+            security_code = normalize_security_code(security_code)
+        except ValueError as exc:
+            return {"error": str(exc)}
+
+        raw_start = args.get("start_date")
+        raw_end = args.get("end_date")
+        parsed_start = self._date_arg(raw_start)
+        parsed_end = self._date_arg(raw_end)
+        if raw_start and parsed_start is None:
+            return {"error": "start_date must be an ISO date."}
+        if raw_end and parsed_end is None:
+            return {"error": "end_date must be an ISO date."}
+        end = parsed_end or datetime.now(UTC).date()
+        start = parsed_start or (end - timedelta(days=730))
+        raw_limit = args.get("limit")
+        try:
+            limit = min(max(int(raw_limit), 1), 100) if raw_limit is not None else 20
+        except (TypeError, ValueError):
+            return {"error": f"Invalid limit: {raw_limit!r}"}
+        result = filing_history(
+            self.session,
+            start,
+            end,
+            security_code=security_code,
+            limit=limit,
+        )
+        return result.model_dump(mode="json")
 
     def _tool_portfolios(self, args: dict[str, Any]) -> Any:
         portfolio_id = args.get("portfolio_id")

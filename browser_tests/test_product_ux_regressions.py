@@ -1,9 +1,10 @@
 import json
+import os
 from urllib.parse import urlparse
 
 from playwright.sync_api import Page, expect
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.environ.get("YOWAYOWA_TEST_BASE_URL", "http://127.0.0.1:8000")
 
 
 def _json(route, payload: object, status: int = 200) -> None:
@@ -224,6 +225,74 @@ def test_japanese_instrument_is_company_hub_with_news_events_and_edinet_filings(
     page: Page,
 ) -> None:
     seen_edinet: list[str] = []
+    seen_ir_kpi: list[str] = []
+    # Browser E2E must remain deterministic and must not trigger provider HTTP
+    # calls from the local application server. More specific fixtures below
+    # take precedence for the routes this test exercises.
+    page.route("**/v1/**", lambda route: _json(route, {}, status=404))
+    page.route("https://**/*", lambda route: route.abort())
+
+    def ir_timeline_handler(route) -> None:
+        _json(
+            route,
+            {
+                "symbol": "7203.T",
+                "entries": [
+                    {
+                        "kind": "document",
+                        "symbol": "7203.T",
+                        "recorded_at": "2026-09-28T08:00:00Z",
+                        "provenance": {
+                            "provider": "Toyota IR",
+                            "source_url": "https://global.toyota/en/ir/results.pdf",
+                            "license_class": "official_public",
+                            "retrieved_at": "2026-09-28T08:00:00Z",
+                            "as_of": None,
+                        },
+                        "payload": {
+                            "label": "決算説明資料",
+                            "kpis": [
+                                {
+                                    "kpi": "revenue",
+                                    "label": "売上高",
+                                    "value": 1000,
+                                    "unit": "億円",
+                                }
+                            ],
+                            "kpi_diff": [{"kpi": "revenue", "change": "increase"}],
+                        },
+                    }
+                ],
+            },
+        )
+
+    def ir_kpi_handler(route) -> None:
+        seen_ir_kpi.append(urlparse(route.request.url).query)
+        _json(
+            route,
+            {
+                "url": "https://global.toyota/en/ir/results.pdf",
+                "entries": [
+                    {
+                        "recorded_at": "2026-09-28T08:00:00Z",
+                        "url": "https://global.toyota/en/ir/results.pdf",
+                        "provenance": {
+                            "provider": "Toyota IR",
+                            "source_url": "https://global.toyota/en/ir/results.pdf",
+                            "license_class": "official_public",
+                        },
+                        "kpis": [
+                            {
+                                "kpi": "revenue",
+                                "label": "売上高",
+                                "value": 1000,
+                                "unit": "億円",
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
 
     def edinet_handler(route) -> None:
         seen_edinet.append(urlparse(route.request.url).query)
@@ -282,6 +351,8 @@ def test_japanese_instrument_is_company_hub_with_news_events_and_edinet_filings(
         ),
     )
     page.route("**/v1/filings/edinet/index/history**", edinet_handler)
+    page.route("**/v1/ir/instruments/7203.T/timeline**", ir_timeline_handler)
+    page.route("**/v1/ir/documents/kpi-history**", ir_kpi_handler)
 
     page.goto(
         f"{BASE_URL}/instrument/7203.T?lang=ja",
@@ -291,10 +362,18 @@ def test_japanese_instrument_is_company_hub_with_news_events_and_edinet_filings(
     expect(page.locator(".instrument-section-nav")).to_contain_text("ニュース")
     expect(page.locator(".instrument-section-nav")).to_contain_text("イベント")
     expect(page.locator(".instrument-section-nav")).to_contain_text("開示書類")
+    expect(page.locator(".instrument-section-nav")).to_contain_text("IR・KPI履歴")
     expect(page.get_by_role("heading", name="この会社のニュース")).to_be_visible()
     expect(page.get_by_role("heading", name="この会社の今後のイベント")).to_be_visible()
     expect(page.get_by_role("heading", name="決算・開示書類")).to_be_visible()
+    expect(page.get_by_role("heading", name="IR・KPI履歴")).to_be_visible()
     expect(page.locator("#company-news-list")).to_contain_text("Toyota update")
     expect(page.locator("#company-events-list")).to_contain_text("決算予定")
     expect(page.locator("#company-filings-list")).to_contain_text("有価証券報告書")
+    expect(page.locator("#company-ir-list")).to_contain_text("決算説明資料")
+    expect(page.locator("#company-ir-list")).to_contain_text("売上高: 1000 億円")
+    expect(page.locator("#company-ir-list a")).to_have_attribute(
+        "href", "https://global.toyota/en/ir/results.pdf"
+    )
     assert seen_edinet and "security_code=7203" in seen_edinet[0]
+    assert seen_ir_kpi and "limit=5" in seen_ir_kpi[0]

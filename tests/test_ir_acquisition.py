@@ -669,6 +669,9 @@ def test_timeline_entry_payload_keeps_kpis_and_diff(tmp_path: Path) -> None:
     assert "kpis" in payload
     assert "kpi_diff" in payload
     assert payload["sha256"]
+    kpi_history = service.document_kpi_history(entries[0]["provenance"]["source_url"])
+    assert kpi_history
+    assert kpi_history[0]["provenance"] == entries[0]["provenance"]
     # raw payload json round-trips (timeline is JSONL on disk; the symbol is
     # sanitized to a filename-safe component, dots become dashes)
     line = (

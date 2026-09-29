@@ -279,8 +279,10 @@ class IrMonitorService:
     ) -> list[dict[str, Any]]:
         return self._timeline.entries(symbol, kind=kind, limit=limit)
 
-    def document_kpi_history(self, url: str, kpi: str | None = None) -> list[dict[str, Any]]:
-        return self._kpi_history.entries(url, kpi=kpi)
+    def document_kpi_history(
+        self, url: str, kpi: str | None = None, *, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        return self._kpi_history.entries(url, kpi=kpi, limit=limit)
 
     # ----------------------------------------------------------- monitoring
 
@@ -554,7 +556,17 @@ class IrMonitorService:
             record.kpi_diff = kpi_diff
 
         if active:
-            self._kpi_history.append(url, kpis)
+            self._kpi_history.append(
+                url,
+                kpis,
+                provenance={
+                    "provider": source.provider,
+                    "source_url": url,
+                    "license_class": source.license_class,
+                    "retrieved_at": now.isoformat(),
+                    "as_of": None,
+                },
+            )
             entry = timeline_entry(
                 kind="document" if item["kind"] == "document" else "page",
                 symbol=source.symbol,
@@ -643,15 +655,28 @@ class IrKpiHistoryStore:
     def __init__(self, root: Path) -> None:
         self._root = root
 
-    def _path(self, url: str) -> Path:
+    def _path(self, url: str, *, create: bool = False) -> Path:
         digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:24]
         directory = self._root / digest[:2]
-        directory.mkdir(parents=True, exist_ok=True)
+        if create:
+            directory.mkdir(parents=True, exist_ok=True)
         return directory / f"{digest}.jsonl"
 
-    def append(self, url: str, kpis: list[dict[str, Any]]) -> None:
-        entry = {"recorded_at": _utcnow().isoformat(), "url": url, "kpis": kpis}
-        with self._path(url).open("a", encoding="utf-8") as handle:
+    def append(
+        self,
+        url: str,
+        kpis: list[dict[str, Any]],
+        *,
+        provenance: dict[str, Any] | None = None,
+    ) -> None:
+        entry: dict[str, Any] = {
+            "recorded_at": _utcnow().isoformat(),
+            "url": url,
+            "kpis": kpis,
+        }
+        if provenance is not None:
+            entry["provenance"] = provenance
+        with self._path(url, create=True).open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
 
     def entries(self, url: str, *, kpi: str | None = None, limit: int = 10) -> list[dict[str, Any]]:

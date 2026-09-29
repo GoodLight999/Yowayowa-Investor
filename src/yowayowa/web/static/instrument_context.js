@@ -43,12 +43,12 @@
   if (financials) financials.id = 'company-financials';
   const nav = document.createElement('nav');
   nav.className = 'instrument-section-nav';
-  nav.innerHTML = `<a href="#company-chart">${ja ? '株価' : 'Price'}</a><a href="#company-financials">${ja ? '決算・財務' : 'Financials'}</a><a href="#company-news">${ja ? 'ニュース' : 'News'}</a><a href="#company-events">${ja ? 'イベント' : 'Events'}</a>${jp ? `<a href="#company-filings">${ja ? '開示書類' : 'Filings'}</a>` : ''}`;
+  nav.innerHTML = `<a href="#company-chart">${ja ? '株価' : 'Price'}</a><a href="#company-financials">${ja ? '決算・財務' : 'Financials'}</a><a href="#company-news">${ja ? 'ニュース' : 'News'}</a><a href="#company-events">${ja ? 'イベント' : 'Events'}</a><a href="#company-ir">${ja ? 'IR・KPI履歴' : 'IR / KPI history'}</a>${jp ? `<a href="#company-filings">${ja ? '開示書類' : 'Filings'}</a>` : ''}`;
   header.insertAdjacentElement('afterend', nav);
 
   const context = document.createElement('div');
   context.className = 'company-context-grid';
-  context.innerHTML = `<section id="company-news" class="panel"><div class="section-heading"><h2>${ja ? 'この会社のニュース' : 'Company news'}</h2></div><div id="company-news-list" class="company-context-list"><div class="list-state muted">${t('common.loading_ellipsis')}</div></div></section><section id="company-events" class="panel"><div class="section-heading"><h2>${ja ? 'この会社の今後のイベント' : 'Upcoming company events'}</h2></div><div id="company-events-list" class="company-context-list"><div class="list-state muted">${t('common.loading_ellipsis')}</div></div></section>`;
+  context.innerHTML = `<section id="company-news" class="panel"><div class="section-heading"><h2>${ja ? 'この会社のニュース' : 'Company news'}</h2></div><div id="company-news-list" class="company-context-list"><div class="list-state muted">${t('common.loading_ellipsis')}</div></div></section><section id="company-events" class="panel"><div class="section-heading"><h2>${ja ? 'この会社の今後のイベント' : 'Upcoming company events'}</h2></div><div id="company-events-list" class="company-context-list"><div class="list-state muted">${t('common.loading_ellipsis')}</div></div></section><section id="company-ir" class="panel"><div class="section-heading"><div><h2>${ja ? 'IR・KPI履歴' : 'IR / KPI history'}</h2><small class="term-note">${ja ? '登録済みIR監視から取得した履歴。原典と取得元を表示します。' : 'Locally monitored IR history with source and retrieval provenance.'}</small></div></div><div id="company-ir-list" class="company-context-list"><div class="list-state muted">${t('common.loading_ellipsis')}</div></div></section>`;
   const analyst = document.querySelector('#analyst-consensus')?.closest('.panel');
   if (analyst) analyst.insertAdjacentElement('beforebegin', context); else document.querySelector('main.content')?.append(context);
 
@@ -71,6 +71,62 @@
     const target = document.querySelector('#company-events-list'); if (!target) return;
     target.innerHTML = (data.events || []).slice(0,10).map(row => item(`<span class="event-badge">${escapeHtml(row.event_type || '')}</span> ${escapeHtml(row.title || '')}`, row.starts_at ? new Date(row.starts_at).toLocaleString(localeTag) : '', eventClass(row.event_type))).join('') || `<div class="list-state muted">${ja ? '90日以内の主要イベントはありません。' : 'No major events in the next 90 days.'}</div>`;
   }).catch(error => { const target = document.querySelector('#company-events-list'); if (target) target.textContent = error.message; });
+
+  function sourceLink(url, label) {
+    if (!url) return escapeHtml(label);
+    try {
+      const parsed = new URL(url, window.location.origin);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return escapeHtml(label);
+      return `<a href="${escapeHtml(parsed.href)}" rel="noreferrer">${escapeHtml(label)}</a>`;
+    } catch (_) { return escapeHtml(label); }
+  }
+
+  function kpiSummary(kpis) {
+    return (Array.isArray(kpis) ? kpis : []).slice(0, 8).map(row => {
+      const value = row.value === null || row.value === undefined ? '—' : String(row.value);
+      return `${escapeHtml(row.label || row.kpi || '')}: ${escapeHtml(value)}${row.unit ? ` ${escapeHtml(row.unit)}` : ''}`;
+    }).join(' · ');
+  }
+
+  api(`/v1/ir/instruments/${encodeURIComponent(symbol)}/timeline?limit=50`).then(async data => {
+    const target = document.querySelector('#company-ir-list'); if (!target) return;
+    const entries = (data.entries || []).slice(0, 8);
+    if (!entries.length) {
+      target.innerHTML = `<div class="list-state muted">${ja ? '登録済みのIR監視履歴はありません。' : 'No locally monitored IR history is available.'}</div>`;
+      return;
+    }
+    const rendered = await Promise.all(entries.map(async entry => {
+      const provenance = entry.provenance || {};
+      const payload = entry.payload || {};
+      const sourceUrl = provenance.source_url;
+      let history = [];
+      if (sourceUrl) {
+        try {
+          const params = new URLSearchParams({ url: sourceUrl, limit: '5' });
+          const result = await api(`/v1/ir/documents/kpi-history?${params.toString()}`);
+          history = result.entries || [];
+        } catch (_) {}
+      }
+      const versions = history.length ? history : [{ recorded_at: entry.recorded_at, kpis: payload.kpis || [] }];
+      const versionMarkup = versions.slice(0, 5).map(version => {
+        const summary = kpiSummary(version.kpis);
+        return `<small>${escapeHtml(version.recorded_at || '')}${summary ? ` · ${summary}` : ''}</small>`;
+      }).join('');
+      const diffs = (payload.kpi_diff || []).slice(0, 4).map(diff => `${escapeHtml(diff.kpi || '')}: ${escapeHtml(diff.change || '')}`).join(' · ');
+      const title = payload.label || entry.kind || (ja ? 'IR書類' : 'IR document');
+      const meta = [
+        provenance.provider,
+        provenance.license_class,
+        provenance.retrieved_at || entry.recorded_at,
+        provenance.as_of ? `${ja ? '基準日' : 'as of'} ${provenance.as_of}` : '',
+      ].filter(Boolean).join(' · ');
+      return `<div class="company-context-item"><i></i><div><strong>${sourceLink(sourceUrl, title)}</strong><small>${escapeHtml(meta)}</small>${versionMarkup}${diffs ? `<small>${ja ? '差分' : 'Changes'}: ${diffs}</small>` : ''}</div></div>`;
+    }));
+    target.innerHTML = rendered.join('');
+  }).catch(() => {
+    const target = document.querySelector('#company-ir-list');
+    if (target) target.innerHTML = `<div class="list-state muted">${ja ? 'IR履歴を利用できません。個人モードとプライベートコネクター設定を確認してください。' : 'IR history is unavailable. Check personal mode and private connector settings.'}</div>`;
+  });
 
   if (jp) {
     const since = new Date(start); since.setFullYear(since.getFullYear()-2);

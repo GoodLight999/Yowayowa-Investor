@@ -163,3 +163,44 @@ def test_ir_surface_fails_closed_in_public_mode(monkeypatch: Any, tmp_path: Any)
         response = client.get("/v1/ir/sources", headers={"Authorization": "Bearer token"})
         assert response.status_code == 403
         assert response.json()["detail"] == "Private acquisition is disabled"
+
+
+def test_kpi_history_limit_and_provenance_are_returned(monkeypatch: Any, tmp_path: Any) -> None:
+    _personal_env(monkeypatch, tmp_path)
+    from yowayowa.api.app import app
+
+    service = _StubService(tmp_path)
+    url = "https://ir.example.co.jp/results.pdf"
+    provenance = {
+        "provider": "ir.example.co.jp",
+        "source_url": url,
+        "license_class": "official_public",
+        "retrieved_at": "2026-09-28T08:00:00+00:00",
+        "as_of": None,
+    }
+    service._kpi_history.append(url, [{"kpi": "revenue", "value": 1}], provenance=provenance)
+    service._kpi_history.append(url, [{"kpi": "revenue", "value": 2}], provenance=provenance)
+    app.dependency_overrides[get_ir_monitor_service] = lambda: service
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/v1/ir/documents/kpi-history",
+                params={"url": url, "limit": 1},
+            )
+            assert response.status_code == 200, response.text
+            entries = response.json()["entries"]
+            assert len(entries) == 1
+            assert entries[0]["kpis"] == [{"kpi": "revenue", "value": 2}]
+            assert entries[0]["provenance"]["source_url"] == url
+            assert entries[0]["provenance"]["provider"] == "ir.example.co.jp"
+    finally:
+        app.dependency_overrides.pop(get_ir_monitor_service, None)
+
+
+def test_kpi_history_empty_read_does_not_create_storage_directories(tmp_path: Any) -> None:
+    from yowayowa.services.ir_monitor_service import IrKpiHistoryStore
+
+    root = tmp_path / "history"
+    store = IrKpiHistoryStore(root)
+    assert store.entries("https://ir.example.test/not-recorded.pdf") == []
+    assert not root.exists()

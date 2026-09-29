@@ -123,4 +123,7 @@ def document_kpi_history(
     limit: int = Query(default=10, ge=1, le=200),
     service: IrMonitorService = Depends(get_ir_monitor_service),
 ) -> KpiHistoryResponse:
-    return KpiHistoryResponse(url=url, entries=service.document_kpi_history(url, kpi=kpi))
+    return KpiHistoryResponse(
+        url=url,
+        entries=service.document_kpi_history(url, kpi=kpi, limit=limit),
+    )

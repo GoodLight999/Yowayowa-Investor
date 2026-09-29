@@ -71,6 +71,9 @@ REQUIRED_CORE_PATHS = {
     "/v1/broker-read/connectors/{connector_id}/auth-check",
     "/v1/broker-execution/proposals",
     "/v1/broker-execution/orders",
+    # read-only IR / filing research (WD-C3)
+    "/v1/ir/instruments/{symbol}/timeline",
+    "/v1/ir/documents/kpi-history",
 }
 
 
@@ -84,7 +87,7 @@ def test_core_machine_paths_remain_discoverable() -> None:
     assert set(schema["paths"]) >= REQUIRED_CORE_PATHS
 
 
-# The 25 tool names of InvestmentResearchAgent._build_tools (CG-003). Loss of any
+# Core tool names of InvestmentResearchAgent._build_tools (CG-003). Loss of any
 # one must fail CI; additions are free, removals are intentional changes only.
 REQUIRED_AGENT_TOOLS = frozenset(
     {
@@ -113,6 +116,9 @@ REQUIRED_AGENT_TOOLS = frozenset(
         "get_screening_candidates",
         "get_macro_series",
         "get_ohlcv",
+        "get_ir_timeline",
+        "get_ir_kpi_history",
+        "get_edinet_filing_history",
     }
 )
 
