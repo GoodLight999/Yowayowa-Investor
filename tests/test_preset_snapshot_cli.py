@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
 from yowayowa import preset_cli
 from yowayowa.cli_entry import app
 from yowayowa.services.strategy_presets import KIYOHARA_GLOBAL_ID
+
+
+@pytest.fixture
+def frozen_time() -> datetime:
+    return datetime.now(UTC)
 
 
 class _Response:
@@ -42,30 +49,33 @@ _STRATEGIES = [
 ]
 
 
+def _evaluation_item(symbol: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        symbol=symbol,
+        research_priority=SimpleNamespace(score=80.0),
+        market_cap=100.0,
+        pe_ratio=10.0,
+        yowayowa_conservative_net_cash_ratio=0.8,
+        net_cash_ratio=0.9,
+        net_cash_ratio_is_lower_bound=False,
+        cash_neutral_pe=5.0,
+        cash_neutral_pe_is_upper_bound=False,
+        revenue_growth_yoy=0.1,
+        free_cash_flow=10.0,
+    )
+
+
 def _outcome(
     *,
     evaluations: int = 0,
     snapshots: int = 0,
 ) -> SimpleNamespace:
-    evaluation_items = [
-        SimpleNamespace(
-            symbol=f"SYM{index}",
-            research_priority=SimpleNamespace(score=80.0),
-            market_cap=100.0,
-            pe_ratio=10.0,
-            yowayowa_conservative_net_cash_ratio=0.8,
-            net_cash_ratio=0.9,
-            net_cash_ratio_is_lower_bound=False,
-            cash_neutral_pe=5.0,
-            cash_neutral_pe_is_upper_bound=False,
-            revenue_growth_yoy=0.1,
-            free_cash_flow=10.0,
-        )
-        for index in range(1, evaluations + 1)
-    ]
+    evaluation_items = [_evaluation_item(f"SYM{index}") for index in range(1, evaluations + 1)]
     return SimpleNamespace(
         evaluations=evaluation_items,
-        snapshots=[SimpleNamespace(id=index) for index in range(1, snapshots + 1)],
+        snapshots=[
+            SimpleNamespace(id=index, symbol=f"SYM{index}") for index in range(1, snapshots + 1)
+        ],
         errors={},
         supplement_errors={},
     )
@@ -164,6 +174,7 @@ def test_run_builtin_defaults_to_local_service_without_http(monkeypatch: Any) ->
 
     monkeypatch.setattr(preset_cli, "get_session", fake_session_factory)
     monkeypatch.setattr(preset_cli, "evaluate_and_record_builtin", fake_evaluate_and_record_builtin)
+    monkeypatch.setattr(preset_cli, "list_strategy_snapshots", lambda *_args, **_kwargs: [])
 
     result = CliRunner().invoke(
         app,
@@ -178,8 +189,38 @@ def test_run_builtin_defaults_to_local_service_without_http(monkeypatch: Any) ->
             "kwargs": {"edinet_key": None},
         }
     ]
-    assert "Recorded 3 snapshot row(s)" in result.output
+    assert "Recorded 3 new snapshot row(s)" in result.output
     assert "duplicates skipped: 0" in result.output
+
+
+def test_run_builtin_counts_same_day_duplicates(
+    monkeypatch: Any,
+    frozen_time: datetime,
+) -> None:
+    existing = [
+        SimpleNamespace(symbol="GOOD", captured_at=frozen_time),
+        SimpleNamespace(symbol="OLD", captured_at=datetime(2025, 9, 1, tzinfo=UTC)),
+    ]
+    outcome = SimpleNamespace(
+        evaluations=[_evaluation_item(symbol="GOOD")],
+        snapshots=[SimpleNamespace(id=1, symbol="GOOD")],
+        errors={},
+        supplement_errors={},
+    )
+    monkeypatch.setattr(preset_cli, "get_session", lambda: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(
+        preset_cli, "evaluate_and_record_builtin", lambda *_args, **_kwargs: outcome
+    )
+    monkeypatch.setattr(preset_cli, "list_strategy_snapshots", lambda *_args, **_kwargs: existing)
+
+    result = CliRunner().invoke(
+        app,
+        ["preset", "run-builtin", KIYOHARA_GLOBAL_ID, "--region", "jp"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Recorded 0 new snapshot row(s)" in result.output
+    assert "duplicates skipped: 1" in result.output
 
 
 def test_run_builtin_reports_errors_and_duplicate_skips(monkeypatch: Any) -> None:
@@ -193,6 +234,7 @@ def test_run_builtin_reports_errors_and_duplicate_skips(monkeypatch: Any) -> Non
     monkeypatch.setattr(
         preset_cli, "evaluate_and_record_builtin", lambda *_args, **_kwargs: outcome
     )
+    monkeypatch.setattr(preset_cli, "list_strategy_snapshots", lambda *_args, **_kwargs: [])
 
     result = CliRunner().invoke(
         app,
@@ -203,7 +245,7 @@ def test_run_builtin_reports_errors_and_duplicate_skips(monkeypatch: Any) -> Non
     assert "No candidates with market-cap data were returned." in result.output
     assert "Unavailable: 7203.T" in result.output
     assert "LookupError: fixture unavailable" in result.output
-    assert "Recorded 0 snapshot row(s)" in result.output
+    assert "Recorded 0 new snapshot row(s)" in result.output
 
 
 def test_run_builtin_fails_closed_outside_personal_mode(monkeypatch: Any) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from yowayowa.services.strategy_presets import (
     list_builtin_strategies,
 )
 from yowayowa.services.strategy_snapshot_service import evaluate_and_record_builtin
+from yowayowa.services.strategy_tracking import list_strategy_snapshots
 from yowayowa.strategy_models import StrategyCandidateEvaluation
 
 app = typer.Typer(no_args_is_help=True, help="Manage saved and built-in research presets.")
@@ -204,6 +206,14 @@ def _run_builtin_local(
     resolved_region = (region or strategy.default_region).strip().lower()
     session = get_session()
     try:
+        today_utc = datetime.now(UTC).date()
+        recorded_today = {
+            row.symbol
+            for row in list_strategy_snapshots(
+                session, strategy_id=strategy_id, region=resolved_region
+            )
+            if row.captured_at.date() == today_utc
+        }
         outcome = evaluate_and_record_builtin(
             session,
             strategy_id,
@@ -217,11 +227,14 @@ def _run_builtin_local(
         print("No candidates with market-cap data were returned.")
     _print_evaluation_table(outcome.evaluations)
     expected_rows = sum(1 for item in outcome.evaluations if item.research_priority is not None)
-    duplicate_skips = expected_rows - len(outcome.snapshots)
-    print(
-        f"Recorded {len(outcome.snapshots)} snapshot row(s) "
-        f"(duplicates skipped: {duplicate_skips}) for {strategy_id} in {resolved_region}."
-    )
+    new_rows = sum(1 for item in outcome.snapshots if item.symbol not in recorded_today)
+    duplicate_skips = len(outcome.snapshots) - new_rows
+    not_recorded = expected_rows - len(outcome.snapshots)
+    summary = f"Recorded {new_rows} new snapshot row(s) (duplicates skipped: {duplicate_skips}"
+    if not_recorded:
+        summary += f", not recorded (no research priority): {not_recorded}"
+    summary += f") for {strategy_id} in {resolved_region}."
+    print(summary)
     _print_error_details(outcome.errors, outcome.supplement_errors)
 
 
