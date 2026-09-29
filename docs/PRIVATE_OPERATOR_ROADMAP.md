@@ -428,9 +428,15 @@ Implemented in `services/strategy_calibration.py` + AI tool
 - `oos_min_sample` override on `calibration_report()`, the
   `GET /v1/strategy-research/calibration` query (1..1000), and the
   `get_strategy_calibration` tool schema.
+- append-only hypothesis and falsification-criteria records with creation-time
+  and evidence-link provenance (`POST/GET /v1/hypotheses`); records are
+  private decision history and do not execute or mutate broker/order state.
+- additive `create_all` migration for the new hypothesis table; existing rows
+  are covered by a dedicated preservation test (`tests/test_hypotheses.py`).
 
 Remaining (NOT STARTED):
-- hypothesis/invalidation records that can later be evaluated.
+- bootstrap/confidence intervals where useful (prototype on `agent/p5-audit`, not landed);
+- scheduler registration for snapshot generation (WD-K ships `yowayowa preset snapshot-builtins`; no cron/systemd unit is installed by design).
 
 #### Portfolio-aware sizing checkpoint (WD-D, 2026-09-29)
 

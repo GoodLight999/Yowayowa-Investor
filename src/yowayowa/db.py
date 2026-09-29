@@ -386,6 +386,19 @@ class ResearchBriefRecord(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class HypothesisRecord(Base):
+    """Append-only decision record; evidence links are frozen at creation time."""
+
+    __tablename__ = "investment_hypotheses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    hypothesis: Mapped[str] = mapped_column(String(4000))
+    falsification_criteria: Mapped[list[str]] = mapped_column(JSON)
+    symbol: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    evidence_links: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 def _normalize_database_url(url: str) -> str:
     if url.startswith("postgres://"):
         return "postgresql+psycopg://" + url.removeprefix("postgres://")
@@ -420,11 +433,22 @@ def init_database(settings: Settings | None = None) -> None:
         _engine.dispose()
     _engine = make_engine(settings)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
+    _ensure_hypothesis_records_table(_engine)
     # WD-C5's new inbox is an additive migration kept explicit so existing
     # installations gain the table without rebuilding or altering old rows.
     _ensure_price_alert_notifications_table(_engine)
     Base.metadata.create_all(_engine)
     _ensure_screening_candidates_document_id(_engine)
+
+
+def _ensure_hypothesis_records_table(engine: Engine) -> None:
+    """WD-J additive migration: add the new table without rewriting existing rows."""
+
+    Base.metadata.create_all(
+        engine,
+        tables=[cast(Table, HypothesisRecord.__table__)],
+        checkfirst=True,
+    )
 
 
 def _ensure_price_alert_notifications_table(engine: Engine) -> None:

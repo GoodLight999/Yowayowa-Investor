@@ -29,6 +29,7 @@ from yowayowa.api.edinet_routes import router as edinet_router
 from yowayowa.api.edinet_ux_routes import router as edinet_ux_router
 from yowayowa.api.fundamentals_routes import router as fundamentals_router
 from yowayowa.api.fx_routes import router as fx_router
+from yowayowa.api.hypothesis_routes import router as hypotheses_router
 from yowayowa.api.import_routes import router as import_router
 from yowayowa.api.institutional_routes import router as institutional_router
 from yowayowa.api.ir_routes import router as ir_router
@@ -201,6 +202,7 @@ app = FastAPI(
 )
 app.include_router(research_llm_router)
 app.include_router(research_router)
+app.include_router(hypotheses_router)
 app.include_router(macro_router)
 app.include_router(license_router)
 app.include_router(risk_router)
