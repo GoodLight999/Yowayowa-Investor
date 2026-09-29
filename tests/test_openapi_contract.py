@@ -37,6 +37,7 @@ def test_agent_facing_openapi_contract_remains_machine_discoverable() -> None:
         "/v1/strategy-research/calibration",
         "/v1/strategy-presets/{strategy_id}/evaluate",
         "/v1/operations/plan",
+        "/v1/portfolios/{portfolio_id}/sizing-proposals",
     }
     assert required_paths <= set(paths)
     assert paths["/v1/ai/chat"]["post"]["operationId"] == "ai_chat"
@@ -109,6 +110,7 @@ REQUIRED_AGENT_TOOLS = frozenset(
         "fred_series",
         "get_watchlists",
         "get_portfolios",
+        "propose_portfolio_sizing",
         "get_alerts",
         "propose_watchlist_change",
         "propose_compare",

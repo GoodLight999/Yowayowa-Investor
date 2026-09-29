@@ -37,7 +37,7 @@ stacked paragraphs.
 | Area | Weight | Status | Completion meaning |
 |---|---:|---|---|
 | Core research workstation | 25% | DONE-equivalent (90%) | Search, instruments, charts, fundamentals, valuation, screeners, comparison, markets, portfolio, news/calendar/macro, provenance all implemented and tested |
-| AI-led / interpretable operation | 20% | DONE-equivalent (80%) | Structured tools (25-tool agent catalog, CI-pinned), operation plans, strategy triage/history/outcomes/calibration, BYOK, Codex bridge (real-device-auth step: NEED-HUMAN), tool traces, cited research Q&A + morning brief (P5-A) |
+| AI-led / interpretable operation | 20% | DONE-equivalent (80%) | Structured agent tools, operation plans, strategy triage/history/outcomes/calibration, BYOK, Codex bridge (real-device-auth step: NEED-HUMAN), tool traces, cited research Q&A + morning brief (P5-A); WD-D adds a sizing tool on `agent/wdd`, pending merge |
 | Broker / execution plane | 20% | CODE-COMPLETE / REAL-SESSION BLOCKED (20%) | Order domain, interlocks, audited submission transport, order-status inquiry, cancel design all code-complete; every write-side and selector step awaits the first real authenticated Rakuten session (see docs/BROKER_ACCEPTANCE_MATRIX.md) |
 | Private data advantage / Japan edge | 15% | DONE-equivalent for code paths (65%) | P1A acquisition toolkit, P1B Rakuten read connector (selectors unverified), P1C IR pipeline, P1D mailbox, JPX margin, credit-margin weekly, machine screening, crypto/US OHLCV, MS2 RSS bridge; Rakuten read URLs remain real-session blocked |
 | Reliability / API / agent parity | 15% | DONE-equivalent (80%) | FastAPI/OpenAPI with CI-pinned core machine paths + agent tool catalog (CG-003), CLI parity, contract tests, real-Chrome E2E in CI |
@@ -95,8 +95,9 @@ Make AI access boring and reliable, then stop spending disproportionate time on 
 - Hosted Codex bridge in Vercel Services: DONE (production reports enabled).
 - Browser-only ChatGPT device-code flow: DONE.
 - External-AI research-packet generation: DONE.
-- Agent tool catalog (research/strategies/portfolio/alerts/outcome history,
-  25 tools): DONE, pinned by CI.
+- Agent tool catalog (research/strategies/portfolio/alerts/outcome history):
+  DONE at the CI-pinned baseline; WD-D adds one sizing tool on `agent/wdd`,
+  pending merge.
 - OpenAPI contract protecting core machine-facing endpoints: DONE,
   pinned by CI (CG-20260925-003).
 
@@ -388,7 +389,7 @@ Existing foundation:
 - benchmark-relative outcomes;
 - AI history/outcome tools.
 
-### Status (2026-09-28): **aggregate calibration + purged walk-forward / out-of-sample DONE in code — portfolio-aware sizing NOT STARTED.**
+### Status (2026-09-29): **IN PROGRESS — aggregate calibration + purged walk-forward / out-of-sample DONE in code; portfolio-aware sizing proposals implemented and tested on `agent/wdd`, pending merge.**
 
 Implemented in `services/strategy_calibration.py` + AI tool
 `get_strategy_calibration` (verified by `tests/test_strategy_calibration.py`):
@@ -420,8 +421,23 @@ Implemented in `services/strategy_calibration.py` + AI tool
   `get_strategy_calibration` tool schema.
 
 Remaining (NOT STARTED):
-- portfolio-aware sizing proposals;
 - hypothesis/invalidation records that can later be evaluated.
+
+#### Portfolio-aware sizing checkpoint (WD-D, 2026-09-29)
+
+- State: **IN PROGRESS** on branch `agent/wdd`; not merged into the canonical branch.
+- `POST /v1/portfolios/{portfolio_id}/sizing-proposals` and AI tool
+  `propose_portfolio_sizing` call the same deterministic service.
+- Quantity is the lower of the whole-lot risk-budget quantity and the remaining
+  per-position concentration quantity. The total stop-loss budget is based on
+  gross marked holdings and split equally across the submitted ideas.
+- Candidate entry/stop prices, currency, lot size, and quote provenance/as-of
+  are required caller inputs. Holdings require complete valuation and provenance;
+  cross-currency candidates fail closed. Cash, liabilities, costs, slippage, and
+  gap risk are not included. Output is explicitly non-executable.
+- NEED-HUMAN remains for validating caller-supplied quote/stop/lot assumptions
+  against the operator's intended market and for any real broker-session or
+  order acceptance. No broker connection or order submission is part of WD-D.
 
 Never silently overwrite historical scoring semantics. New calibrated rules become new scoring versions.
 

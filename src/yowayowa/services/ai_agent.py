@@ -35,6 +35,7 @@ from yowayowa.research_models import (
 from yowayowa.services.alerts import list_alerts
 from yowayowa.services.codex_cli import codex_cli_status, run_codex_structured
 from yowayowa.services.comparison import compare
+from yowayowa.services.portfolio_sizing import portfolio_sizing_proposals
 from yowayowa.services.portfolios import get_portfolio, list_portfolios, portfolio_analytics
 from yowayowa.services.screening import derived_metrics
 from yowayowa.services.screening_pipeline import read_screening_candidates
@@ -54,6 +55,7 @@ from yowayowa.services.strategy_yahoo import balance_sheet_supplement as yahoo_s
 from yowayowa.services.technical_context import read_technical_context
 from yowayowa.services.valuation import valuation_snapshot
 from yowayowa.services.watchlists import list_watchlists
+from yowayowa.sizing_models import PortfolioSizingRequest
 from yowayowa.strategy_models import StrategyCandidateInput
 from yowayowa.symbols import normalize_symbol
 
@@ -205,6 +207,9 @@ class InvestmentResearchAgent:
             "from a tool result or the supplied evidence; do not perform free-form "
             "calculations (sums, ratios, comparisons) that the tools did not "
             "already compute — quote the tool value and cite its source instead. "
+            "For any requested share quantity, use propose_portfolio_sizing and quote its "
+            "deterministic proposal; never calculate the share count yourself. Its result "
+            "is not an order and must never be represented as one. "
             "For workspace changes, use propose_* tools; never silently mutate state. "
             "State uncertainty and data basis. Answer in the user's language. "
             f"Server date: {date.today().isoformat()}. UI context: {context}"
@@ -610,6 +615,10 @@ class InvestmentResearchAgent:
 
     def _build_tools(self) -> dict[str, ToolSpec]:
         symbol = self._object_schema({"symbol": {"type": "string"}}, ["symbol"])
+        sizing_schema = PortfolioSizingRequest.model_json_schema()
+        sizing_schema["properties"]["portfolio_id"] = {"type": "integer", "minimum": 1}
+        sizing_schema["required"] = ["portfolio_id", *sizing_schema.get("required", [])]
+        sizing_schema["additionalProperties"] = False
         specs = [
             ToolSpec(
                 "search_instruments",
@@ -879,6 +888,16 @@ class InvestmentResearchAgent:
                 "Read portfolios and optionally calculate live analytics.",
                 self._object_schema({"portfolio_id": {"type": "integer"}}),
                 self._tool_portfolios,
+            ),
+            ToolSpec(
+                "propose_portfolio_sizing",
+                "Deterministically calculate non-executable share-quantity candidates for a "
+                "portfolio. Requires explicit entry/stop prices, lot sizes, currencies, and "
+                "price provenance; cross-currency ideas fail closed. The supplied portfolio "
+                "risk budget is split equally across ideas. This tool never creates or sends "
+                "orders; do not calculate quantities outside this tool.",
+                sizing_schema,
+                self._tool_propose_portfolio_sizing,
             ),
             ToolSpec(
                 "get_alerts",
@@ -1584,6 +1603,20 @@ class InvestmentResearchAgent:
             return [item.model_dump(mode="json") for item in list_portfolios(self.session)]
         portfolio = get_portfolio(self.session, int(portfolio_id))
         result = portfolio_analytics(portfolio, yahoo_market_provider())
+        return result.model_dump(mode="json")
+
+    def _tool_propose_portfolio_sizing(self, args: dict[str, Any]) -> Any:
+        portfolio_id = int(args["portfolio_id"])
+        request = PortfolioSizingRequest.model_validate(
+            {
+                "ideas": args.get("ideas"),
+                "risk_budget_pct": args.get("risk_budget_pct"),
+                "max_position_pct": args.get("max_position_pct"),
+            }
+        )
+        portfolio = get_portfolio(self.session, portfolio_id)
+        valuation = portfolio_analytics(portfolio, yahoo_market_provider())
+        result = portfolio_sizing_proposals(portfolio, valuation, request)
         return result.model_dump(mode="json")
 
     def _tool_alerts(self, _: dict[str, Any]) -> Any:
