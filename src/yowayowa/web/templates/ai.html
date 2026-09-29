@@ -30,6 +30,15 @@
     <button class="ghost ai-quick-prompt" type="button">{{ x('ai.quick3') }}</button>
   </div>
 
+  <div class="ai-mode-controls">
+    <label for="ai-mode">{% if locale == 'ja' %}回答方法{% else %}Answer mode{% endif %}</label>
+    <select id="ai-mode">
+      <option value="agent">{% if locale == 'ja' %}AIエージェント{% else %}General AI agent{% endif %}</option>
+      <option value="cited">{% if locale == 'ja' %}引用付きリサーチ{% else %}Cited research{% endif %}</option>
+    </select>
+    <p id="ai-mode-note">{% if locale == 'ja' %}通常のAIエージェントがツールを使って回答します。{% else %}The general AI agent answers with its available tools.{% endif %}</p>
+  </div>
+
   <div class="ai-messages" id="ai-messages"></div>
   <form class="ai-compose" id="ai-form">
     <label class="sr-only" for="ai-prompt">{{ x('ai.prompt') }}</label>

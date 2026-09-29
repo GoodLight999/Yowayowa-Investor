@@ -72,8 +72,74 @@
     return result;
   }
 
-  function addMessage(role, content) {
-    messages.push({ role, content });
+  function safeExternalUrl(value) {
+    if (typeof value !== 'string' || !value) return null;
+    try {
+      const url = new URL(value, location.origin);
+      return ['http:', 'https:'].includes(url.protocol) ? url.href : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function renderTraceMarkup(trace) {
+    if (!trace?.length) {
+      return `<span class="muted">${escapeHtml(t('ai.no_tools'))}</span>`;
+    }
+    return trace.map(item => {
+      const preview = item.result_preview || (item.matched !== undefined ? `matched: ${item.matched}` : '');
+      return `<div class="ai-trace">
+      <strong>${escapeHtml(item.tool)}</strong>${item.mutating ? ' · proposal' : ''}
+      <pre>${escapeHtml(JSON.stringify(item.arguments, null, 2))}\n→ ${escapeHtml(preview)}</pre>
+    </div>`;
+    }).join('');
+  }
+
+  function renderResearchEvidence(result) {
+    const facts = Array.isArray(result.facts) ? result.facts : [];
+    const citations = Array.isArray(result.citations) ? result.citations : [];
+    const missingInputs = Array.isArray(result.missing_inputs)
+      ? result.missing_inputs
+      : (Array.isArray(result.coverage?.missing_inputs) ? result.coverage.missing_inputs : []);
+    const inferences = Array.isArray(result.inferences) ? result.inferences : [];
+    const japanese = window.YOWAYOWA_LOCALE === 'ja';
+    const factList = facts.length
+      ? `<ul>${facts.map(fact => `<li><strong>${escapeHtml(fact.id || '')}</strong> ${escapeHtml(fact.statement || '')}
+          <small>${escapeHtml([fact.kind, fact.provider, fact.as_of].filter(Boolean).join(' · '))}</small></li>`).join('')}</ul>`
+      : `<p class="muted">${japanese ? '構造化された事実はありません。' : 'No structured facts were returned.'}</p>`;
+    const citationList = citations.length
+      ? `<ul>${citations.map(citation => {
+        const url = safeExternalUrl(citation.source_url);
+        const label = citation.source || citation.source_url || citation.code_or_series || citation.kind || citation.provider;
+        const details = [citation.provider, citation.kind, citation.code_or_series,
+          citation.as_of && `${japanese ? '基準日' : 'As of'} ${citation.as_of}`,
+          citation.retrieved_at && `${japanese ? '取得' : 'Retrieved'} ${citation.retrieved_at}`]
+          .filter(Boolean).join(' · ');
+        return `<li><strong>${escapeHtml(citation.code_or_series || citation.kind || citation.provider || (japanese ? '出典' : 'Source'))}</strong>
+          <span>${escapeHtml(details)}</span>
+          ${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>` : `<span>${escapeHtml(label || '')}</span>`}</li>`;
+      }).join('')}</ul>`
+      : `<p class="muted">${japanese ? '引用は返されませんでした。' : 'No citations were returned.'}</p>`;
+    const missingList = missingInputs.length
+      ? `<ul>${missingInputs.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+      : `<p class="muted">${japanese ? '未取得項目は報告されていません。' : 'No missing inputs were reported.'}</p>`;
+    const inferenceList = inferences.length
+      ? `<ul>${inferences.map(item => `<li>${escapeHtml(item.statement || '')}
+          <small>${escapeHtml((item.supporting_fact_ids || []).join(', '))}</small></li>`).join('')}</ul>`
+      : '';
+    const traceLabel = japanese ? '調査ツールの実行記録' : 'Research tool trace';
+
+    return `<section class="ai-research-evidence" aria-label="${japanese ? '引用付きリサーチの根拠' : 'Cited research evidence'}">
+      <h3>${japanese ? '構造化された事実' : 'Structured facts'}</h3>${factList}
+      ${inferenceList ? `<h3>${japanese ? 'モデルの解釈' : 'Model inferences'}</h3>${inferenceList}` : ''}
+      <h3>${japanese ? '出典' : 'Citations'}</h3>${citationList}
+      <h3>${japanese ? '未取得の入力' : 'Missing inputs'}</h3>${missingList}
+      <details><summary>${traceLabel}</summary><div class="ai-trace-list">${renderTraceMarkup(result.tool_trace || [])}</div></details>
+    </section>`;
+  }
+
+  function addMessage(role, content, research = null) {
+    messages.push({ role, content, research });
     if (messages.length > 24) messages.splice(0, messages.length - 24);
     renderMessages();
   }
@@ -82,20 +148,14 @@
     const target = document.querySelector('#ai-messages');
     target.innerHTML = messages.map(message => `<article class="ai-message ${escapeHtml(message.role)}">
       <span class="role">${escapeHtml(message.role)}</span><pre>${escapeHtml(message.content)}</pre>
+      ${message.research ? renderResearchEvidence(message.research) : ''}
     </article>`).join('');
     target.scrollTop = target.scrollHeight;
   }
 
   function renderTrace(trace) {
     const target = document.querySelector('#ai-trace');
-    if (!trace?.length) {
-      target.innerHTML = `<span class="muted">${escapeHtml(t('ai.no_tools'))}</span>`;
-      return;
-    }
-    target.innerHTML = trace.map(item => `<div class="ai-trace">
-      <strong>${escapeHtml(item.tool)}</strong>${item.mutating ? ' · proposal' : ''}
-      <pre>${escapeHtml(JSON.stringify(item.arguments, null, 2))}\n→ ${escapeHtml(item.result_preview || '')}</pre>
-    </div>`).join('');
+    target.innerHTML = renderTraceMarkup(trace);
   }
 
   function proposalLabel(operation) {
@@ -201,7 +261,7 @@
       const data = await api('/v1/ai/prompt-packet', {
         method: 'POST',
         body: JSON.stringify({
-          messages,
+          messages: messages.map(({ role, content }) => ({ role, content })),
           context: context(),
           user_prompt: draft || null,
         }),
@@ -265,11 +325,36 @@
     send.disabled = !serverReady;
   }
 
+  function updateModeDescription() {
+    const citedResearch = document.querySelector('#ai-mode')?.value === 'cited';
+    const note = document.querySelector('#ai-mode-note');
+    const send = document.querySelector('#ai-send');
+    if (!note || !send) return;
+    if (window.YOWAYOWA_LOCALE === 'ja') {
+      note.textContent = citedResearch
+        ? '根拠データ・引用・未取得項目・調査ツール記録を含むリサーチQ&Aを生成します（質問は2,000文字以内）。'
+        : '通常のAIエージェントがツールを使って回答します。';
+      send.textContent = citedResearch ? '引用付きで調査' : '調査する';
+    } else {
+      note.textContent = citedResearch
+        ? 'Uses the cited research Q&A path and shows source-backed facts, citations, missing inputs, and lookup trace (2,000-character question limit).'
+        : 'The general AI agent answers with its available tools.';
+      send.textContent = citedResearch ? 'Ask with citations' : 'Research';
+    }
+  }
+
   async function submit(event) {
     event.preventDefault();
     const prompt = document.querySelector('#ai-prompt');
     const text = prompt.value.trim();
     if (!text) return;
+    const citedResearch = document.querySelector('#ai-mode')?.value === 'cited';
+    if (citedResearch && text.length > 2000) {
+      document.querySelector('#ai-status').textContent = window.YOWAYOWA_LOCALE === 'ja'
+        ? '引用付きリサーチの質問は2,000文字以内にしてください。'
+        : 'Cited research questions must be 2,000 characters or fewer.';
+      return;
+    }
     let provider;
     try { provider = providerPayload(); } catch (error) {
       document.querySelector('#ai-status').innerHTML = `<a href="/settings">${escapeHtml(error.message)} · ${escapeHtml(window.YOWAYOWA_LOCALE === 'ja' ? '設定を開く →' : 'Open Settings →')}</a>`;
@@ -292,21 +377,30 @@
     send.disabled = true;
     document.querySelector('#ai-status').textContent = t('ai.working');
     try {
-      const data = await api('/v1/ai/chat', {
-        method: 'POST',
-        body: JSON.stringify({
-          messages,
-          provider,
-          context: context(),
-          max_tool_rounds: 7,
-          allow_mutations: false,
-        }),
-      });
+      const data = citedResearch
+        ? await api('/v1/research/ask', {
+          method: 'POST',
+          body: JSON.stringify({ question: text, provider }),
+        })
+        : await api('/v1/ai/chat', {
+          method: 'POST',
+          body: JSON.stringify({
+            messages: messages.map(({ role, content }) => ({ role, content })),
+            provider,
+            context: context(),
+            max_tool_rounds: 7,
+            allow_mutations: false,
+          }),
+        });
       if (data.provider_credential) saveCodexCredential(data.provider_credential);
-      addMessage('assistant', data.answer || '—');
-      renderTrace(data.tool_trace || []);
-      renderProposals(data.proposed_operations || []);
-      document.querySelector('#ai-status').textContent = `${data.provider} · ${data.model} · ${data.tool_trace?.length || 0} tools`;
+      addMessage('assistant', data.answer || '—', citedResearch ? data : null);
+      renderTrace(citedResearch ? [] : (data.tool_trace || []));
+      renderProposals(citedResearch ? [] : (data.proposed_operations || []));
+      const toolCount = data.tool_trace?.length || 0;
+      const citationCount = data.citations?.length || 0;
+      document.querySelector('#ai-status').textContent = citedResearch
+        ? `${data.provider} · ${data.model} · ${citationCount} ${window.YOWAYOWA_LOCALE === 'ja' ? '引用' : 'citations'} · ${toolCount} tools`
+        : `${data.provider} · ${data.model} · ${toolCount} tools`;
     } catch (error) {
       addMessage('assistant', error.message);
       document.querySelector('#ai-status').textContent = error.message;
@@ -342,6 +436,7 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('#ai-form')?.addEventListener('submit', submit);
+    document.querySelector('#ai-mode')?.addEventListener('change', updateModeDescription);
     document.querySelector('#ai-prompt')?.addEventListener('keydown', event => {
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) document.querySelector('#ai-form').requestSubmit();
     });
@@ -379,6 +474,7 @@
     } else if (symbols) document.querySelector('#ai-prompt').value = `${symbols} を比較して、成長性・割安さ・需給・アナリスト予想・主要リスクを調べて。`;
     else if (symbol) document.querySelector('#ai-prompt').value = `${symbol} を財務・バリュエーション・アナリスト予想・保有状況・インサイダー・ニュース・今後のイベントまで横断分析して。`;
     document.querySelector('#ai-send').disabled = true;
+    updateModeDescription();
     loadStatus();
   });
 })();
