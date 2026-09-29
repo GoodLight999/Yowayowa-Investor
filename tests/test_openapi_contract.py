@@ -119,6 +119,7 @@ REQUIRED_AGENT_TOOLS = frozenset(
         "get_ir_timeline",
         "get_ir_kpi_history",
         "get_edinet_filing_history",
+        "get_technical_context",
     }
 )
 

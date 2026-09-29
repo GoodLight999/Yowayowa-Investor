@@ -51,6 +51,7 @@ from yowayowa.services.strategy_tracking import (
     record_strategy_snapshots,
 )
 from yowayowa.services.strategy_yahoo import balance_sheet_supplement as yahoo_strategy_supplement
+from yowayowa.services.technical_context import read_technical_context
 from yowayowa.services.valuation import valuation_snapshot
 from yowayowa.services.watchlists import list_watchlists
 from yowayowa.strategy_models import StrategyCandidateInput
@@ -969,6 +970,39 @@ class InvestmentResearchAgent:
                 self._tool_macro_series,
             ),
             ToolSpec(
+                "get_technical_context",
+                "Read calculated indicator series from the supported market-history "
+                "provider (technical.py), with provider/as-of provenance. Returns indicator "
+                "values only; do not recompute indicators from raw OHLCV. Missing values "
+                "remain null and unavailable history is marked missing.",
+                self._object_schema(
+                    {
+                        "symbol": {"type": "string"},
+                        "period": {
+                            "type": "string",
+                            "pattern": "^(?:[0-9]+(?:d|mo|y)|max)$",
+                            "default": "1y",
+                        },
+                        "interval": {"type": "string", "maxLength": 10, "default": "1d"},
+                        "indicators": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "maxItems": 12,
+                            "description": "technical.py tokens; default: sma20,rsi14.",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 60,
+                            "default": 10,
+                            "description": "Newest indicator points to return per series.",
+                        },
+                    },
+                    ["symbol"],
+                ),
+                self._tool_technical_context,
+            ),
+            ToolSpec(
                 "get_ohlcv",
                 "Read the locally persisted daily OHLCV JSONL stores "
                 "(US stocks under data/stock-ohlcv, crypto under "
@@ -1524,6 +1558,25 @@ class InvestmentResearchAgent:
             limit=limit,
         )
         return result.model_dump(mode="json")
+
+    def _tool_technical_context(self, args: dict[str, Any]) -> Any:
+        raw_indicators = args.get("indicators")
+        indicators = (
+            [str(token) for token in raw_indicators] if isinstance(raw_indicators, list) else None
+        )
+        raw_limit = args.get("limit", 10)
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid technical-context limit: {raw_limit!r}") from exc
+        return read_technical_context(
+            yahoo_market_provider(),
+            symbol=str(args.get("symbol") or ""),
+            period=str(args.get("period") or "1y"),
+            interval=str(args.get("interval") or "1d"),
+            indicators=indicators,
+            limit=limit,
+        )
 
     def _tool_portfolios(self, args: dict[str, Any]) -> Any:
         portfolio_id = args.get("portfolio_id")
