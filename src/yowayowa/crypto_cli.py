@@ -38,9 +38,10 @@ def _providers() -> dict[str, Any]:
 
 def crypto_fetch(
     symbols: list[str] = typer.Argument(None),
-    days: int = typer.Option(30, min=1, max=365),
+    days: int = typer.Option(30, min=1, max=3650),
+    provider: str = typer.Option("all", help="Source selection: all, coingecko, or binance"),
 ) -> None:
-    """Fetch daily OHLCV (default BTC,ETH) from both providers and persist to the JSONL store."""
+    """Fetch daily OHLCV (default BTC,ETH) and persist per-source JSONL rows."""
 
     normalized: list[str] = []
     for raw in symbols or list(DEFAULT_SYMBOLS):
@@ -48,7 +49,12 @@ def crypto_fetch(
             normalized.append(normalize_crypto_symbol(raw))
         except Exception as exc:
             raise typer.BadParameter(str(exc)) from exc
-    summary = fetch_crypto_ohlcv(_providers(), default_store(), normalized, days=days)
+    providers = _providers()
+    if provider != "all":
+        if provider not in providers:
+            raise typer.BadParameter("provider must be all, coingecko, or binance")
+        providers = {provider: providers[provider]}
+    summary = fetch_crypto_ohlcv(providers, default_store(), normalized, days=days)
     for symbol, per_provider in summary.items():
         for provider_name, outcome in per_provider.items():
             error = outcome.get("error")

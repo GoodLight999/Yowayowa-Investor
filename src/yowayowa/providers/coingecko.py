@@ -73,9 +73,19 @@ class CoinGeckoOhlcProvider:
         )
 
     def ohlcv(self, symbol: str, *, days: int = 30) -> list[CryptoOhlcvRecord]:
-        """Daily USD OHLC for one supported symbol, oldest first."""
+        """USD OHLC for one supported symbol, oldest first.
+
+        CoinGecko's public OHLC endpoint changes to multi-day candle bodies
+        beyond 30 days. Since this record model is explicitly 1d, reject a
+        wider request rather than silently mislabel coarse bars as daily.
+        """
 
         normalized = normalize_crypto_symbol(symbol)
+        if days > 30:
+            raise ValueError(
+                "CoinGecko public OHLC is not daily above 30 days; "
+                "use Binance for long daily history"
+            )
         coin_id = COINGECKO_COIN_IDS[normalized]
         path = f"/coins/{coin_id}/ohlc"
         bars = self._fetch(normalized, path=path, days=days)

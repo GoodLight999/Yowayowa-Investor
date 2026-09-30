@@ -14,7 +14,7 @@ treated as missing bars and skipped.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from cachetools import TTLCache
@@ -36,6 +36,8 @@ _SOURCES_NOTE = (
     "Binance public API daily klines (1d interval, USDT quote); commercial "
     "exchange data - NOT an official reference rate, personal-use classification."
 )
+_DAY_MS = 86_400_000
+_MAX_KLINES_PER_REQUEST = 1000
 
 
 class BinanceTransportError(RuntimeError):
@@ -75,9 +77,9 @@ class BinanceKlinesProvider:
     def ohlcv(self, symbol: str, *, days: int = 30) -> list[CryptoOhlcvRecord]:
         """Daily USDT klines for one supported symbol, oldest first.
 
-        Binance caps a single ``klines`` call at 1000 bars; the request limit
-        is ``days + 1`` so the most recent (still-forming UTC day) can be
-        identified and dropped.
+        Binance caps a single ``klines`` call at 1000 bars. Older history is
+        paginated by open time, and the requested window ends at yesterday's
+        UTC close so a still-forming UTC day is never persisted.
         """
 
         normalized = normalize_crypto_symbol(symbol)
@@ -89,38 +91,79 @@ class BinanceKlinesProvider:
     # ----------------------------------------------------------------- internal
 
     def _fetch(self, normalized: str, market_symbol: str, *, days: int) -> list[CryptoOhlcvPoint]:
+        days = min(3650, max(1, int(days)))
         cache_key = (normalized, days)
         cached = self._history_cache.get(cache_key)
         if cached is not None:
             return cached
-        try:
-            response = self.client.get(
-                "/api/v3/klines",
-                params={
-                    "symbol": market_symbol,
-                    "interval": "1d",
-                    "limit": str(min(1000, max(2, days + 1))),
-                },
+        end = datetime.now(UTC).date() - timedelta(days=1)
+        start = end - timedelta(days=days - 1)
+        cursor_ms = int(datetime.combine(start, datetime.min.time(), tzinfo=UTC).timestamp() * 1000)
+        end_ms = (
+            int(
+                datetime.combine(
+                    end + timedelta(days=1), datetime.min.time(), tzinfo=UTC
+                ).timestamp()
+                * 1000
             )
-        except httpx.HTTPError as exc:
-            raise BinanceTransportError(f"Binance is unreachable: {type(exc).__name__}") from exc
-        if response.status_code == 404 or response.status_code == 400:
-            # Binance signals unknown symbol / bad params as 4xx: treated as
-            # missing data (HTTP 404 upstream), not a transport failure.
-            raise LookupError(f"Binance has no klines data for {normalized!r} ({market_symbol})")
-        if response.is_error:
-            raise BinanceTransportError(
-                f"Binance returned HTTP {response.status_code} for {normalized!r}"
-            )
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise BinanceTransportError("Binance returned invalid JSON") from exc
-        bars = self._parse_payload(normalized, payload)
+            - 1
+        )
+        points: dict[datetime, CryptoOhlcvPoint] = {}
+        while cursor_ms <= end_ms:
+            try:
+                response = self.client.get(
+                    "/api/v3/klines",
+                    params={
+                        "symbol": market_symbol,
+                        "interval": "1d",
+                        "startTime": str(cursor_ms),
+                        "endTime": str(end_ms),
+                        "limit": str(_MAX_KLINES_PER_REQUEST),
+                    },
+                )
+            except httpx.HTTPError as exc:
+                raise BinanceTransportError(
+                    f"Binance is unreachable: {type(exc).__name__}"
+                ) from exc
+            if response.status_code == 404 or response.status_code == 400:
+                # Binance signals unknown symbol / bad params as 4xx: treated as
+                # missing data (HTTP 404 upstream), not a transport failure.
+                raise LookupError(
+                    f"Binance has no klines data for {normalized!r} ({market_symbol})"
+                )
+            if response.is_error:
+                raise BinanceTransportError(
+                    f"Binance returned HTTP {response.status_code} for {normalized!r}"
+                )
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                raise BinanceTransportError("Binance returned invalid JSON") from exc
+            if not isinstance(payload, list) or not payload:
+                if not points:
+                    raise LookupError(f"Binance returned no klines payload for {normalized!r}")
+                break
+            page = self._parse_payload(normalized, payload, drop_last=False)
+            if not page:
+                raise LookupError(f"Binance returned no usable klines for {normalized!r}")
+            for point in page:
+                point_ms = int(point.as_of.timestamp() * 1000)
+                if cursor_ms <= point_ms < end_ms and start <= point.as_of.date() <= end:
+                    points[point.as_of] = point
+            last_open_ms = int(page[-1].as_of.timestamp() * 1000)
+            next_cursor_ms = last_open_ms + _DAY_MS
+            if next_cursor_ms <= cursor_ms or len(payload) < _MAX_KLINES_PER_REQUEST:
+                break
+            cursor_ms = next_cursor_ms
+        bars = [points[key] for key in sorted(points)]
+        if not bars:
+            raise LookupError(f"Binance returned no usable klines for {normalized!r}")
         self._history_cache[cache_key] = bars
         return bars
 
-    def _parse_payload(self, normalized: str, payload: object) -> list[CryptoOhlcvPoint]:
+    def _parse_payload(
+        self, normalized: str, payload: object, *, drop_last: bool = True
+    ) -> list[CryptoOhlcvPoint]:
         """Parse klines ``[open_ts, o, h, l, c, volume, close_ts, quote_vol, ...]``.
 
         The last row is the currently-forming bar; it is dropped. Rows with
@@ -130,7 +173,7 @@ class BinanceKlinesProvider:
         if not isinstance(payload, list) or not payload:
             raise LookupError(f"Binance returned no klines payload for {normalized!r}")
         points: dict[datetime, CryptoOhlcvPoint] = {}
-        rows = payload[:-1] if len(payload) > 1 else payload
+        rows = payload[:-1] if drop_last and len(payload) > 1 else payload
         for row in rows:
             if not isinstance(row, list) or len(row) < 5:
                 continue

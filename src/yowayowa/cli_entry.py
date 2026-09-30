@@ -21,6 +21,7 @@ from yowayowa.ir_cli import app as ir_app
 from yowayowa.jpx_margin_cli import jpx_margin, jpx_margin_ingest
 from yowayowa.license_cli import app as license_app
 from yowayowa.macro_cli import app as macro_app
+from yowayowa.ohlcv_coverage_cli import ohlcv_audit
 from yowayowa.preset_cli import app as preset_app
 from yowayowa.private_cli import app as private_app
 from yowayowa.private_source_cli import app as private_source_app
@@ -38,6 +39,7 @@ app.command(name="crypto-fetch")(crypto_fetch)
 app.command(name="crypto-ohlcv")(crypto_ohlcv)
 app.command(name="stock-fetch")(stock_fetch)
 app.command(name="stock-ohlcv")(stock_ohlcv)
+app.command(name="ohlcv-audit")(ohlcv_audit)
 app.command(name="screening-run")(screening_run)
 app.command(name="screening-candidates")(screening_candidates)
 app.command(name="research-brief")(research_brief)

@@ -88,18 +88,20 @@ class AlpacaMarketDataProvider:
     def ohlcv(self, symbol: str, *, days: int = 30) -> list[StockOhlcvRecord]:
         """Daily SIP bars for one ticker, oldest first, finalized bars only.
 
-        The request window ends **yesterday** (UTC): the free plan forbids
+        The request window ends **two days ago** (UTC): the free plan forbids
         querying SIP data newer than ~15 minutes, and a request whose window
         includes the current calendar day is rejected outright with 403
         ("subscription does not permit querying recent SIP data" — live
-        probe 2026-09-24). Ending at yesterday keeps the fetch allowed while
+        probe 2026-09-24). Ending two days ago keeps the fetch allowed while
         guaranteeing every returned bar is a finalized session.
         """
 
         normalized = normalize_stock_symbol(symbol)
         days = max(1, int(days))
-        start = (datetime.now(UTC) - timedelta(days=days + 1)).date().isoformat()
-        end = (datetime.now(UTC) - timedelta(days=1)).date().isoformat()
+        end_date = datetime.now(UTC).date() - timedelta(days=2)
+        start_date = end_date - timedelta(days=days - 1)
+        start = start_date.isoformat()
+        end = end_date.isoformat()
         bars = self._fetch(normalized, start=start, end=end)
         source_url = (
             f"{ALPACA_STOCKS_BASE_URL}/v2/stocks/bars?symbols={normalized}&timeframe=1Day&feed=sip"
@@ -126,6 +128,7 @@ class AlpacaMarketDataProvider:
             "symbols": symbol,
             "timeframe": "1Day",
             "feed": "sip",
+            "adjustment": "raw",
             "start": start,
             "end": end,
             "limit": "10000",

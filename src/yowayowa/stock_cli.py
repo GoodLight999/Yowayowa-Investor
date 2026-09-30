@@ -22,7 +22,22 @@ from yowayowa.config import get_settings
 from yowayowa.stock_acquisition import StockOhlcvStore, default_store, fetch_stock_ohlcv
 from yowayowa.stock_models import normalize_stock_symbol
 
-DEFAULT_SYMBOLS = ("AAPL", "MSFT", "NVDA")
+DEFAULT_SYMBOLS = (
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "TSLA",
+    "JNJ",
+    "JPM",
+    "PG",
+    "XOM",
+    "SPY",
+    "QQQ",
+    "IWM",
+)
 
 
 def _providers() -> dict[str, Any]:
@@ -38,7 +53,7 @@ def stock_fetch(
     symbols: list[str] = typer.Argument(None),
     days: int = typer.Option(30, min=5, max=3650),
 ) -> None:
-    """Fetch daily OHLCV (default AAPL,MSFT,NVDA) from Alpaca and persist to the JSONL store."""
+    """Fetch daily OHLCV for the requested or backtest-baseline symbols."""
 
     normalized: list[str] = []
     for raw in symbols or list(DEFAULT_SYMBOLS):

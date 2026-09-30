@@ -160,6 +160,21 @@ def test_alpaca_ohlcv_returns_records_with_provenance() -> None:
     assert first.trade_count == 600_000
 
 
+def test_alpaca_days_are_inclusive_and_end_two_days_ago() -> None:
+    provider = _stub_provider(AlpacaMarketDataProvider, _canned(b'{"bars":{"AAPL":[]}}'))
+    request_dates: dict[str, str] = {}
+
+    def capture(symbol: str, *, start: str, end: str) -> list:
+        request_dates.update(start=start, end=end)
+        return []
+
+    provider._fetch = capture  # type: ignore[method-assign]
+    assert provider.ohlcv("AAPL", days=3650) == []
+    end_date = datetime.now(UTC).date() - timedelta(days=2)
+    assert request_dates["end"] == end_date.isoformat()
+    assert request_dates["start"] == (end_date - timedelta(days=3649)).isoformat()
+
+
 def test_alpaca_skips_malformed_and_zero_bars() -> None:
     payload = _alpaca_payload()
     payload["bars"]["AAPL"][2] = {"t": _days(6)[2].isoformat()}  # malformed: no OHLC
@@ -244,7 +259,7 @@ def test_alpaca_empty_bars_payload_is_lookup_error() -> None:
 
 
 def test_alpaca_sends_request_window_and_feed_contract() -> None:
-    """The request pins timeframe/feed/window: SIP, 1Day, end = yesterday."""
+    """The request pins timeframe/feed/window: SIP, 1Day, end = two days ago."""
 
     captured: list[str] = []
 
@@ -260,14 +275,15 @@ def test_alpaca_sends_request_window_and_feed_contract() -> None:
     url = captured[0]
     assert "feed=sip" in url
     assert "timeframe=1Day" in url
+    assert "adjustment=raw" in url
     assert "symbols=AAPL" in url
     assert "start=" in url and "end=" in url
     # The window must end before today: Alpaca's free plan rejects SIP
     # requests whose window includes the current calendar day with 403
     # (live-verified 2026-09-24), and ending at yesterday guarantees every
-    # bar is a finalized session.
+    # bar is a finalized session, with an extra day of buffer for Basic-plan SIP.
     end_date = url.split("end=")[1].split("&")[0]
-    assert end_date == (datetime.now(UTC) - timedelta(days=1)).date().isoformat()
+    assert end_date == (datetime.now(UTC) - timedelta(days=2)).date().isoformat()
 
 
 # ------------------------------------------------------------- public mode

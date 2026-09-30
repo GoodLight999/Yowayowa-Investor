@@ -7,6 +7,7 @@ provenance付きでJSONLに永続化するacquisition surface。
 
 ```bash
 uv run yowayowa crypto-fetch            # BTC,ETH × coingecko,binance を取得・永続化
+uv run yowayowa crypto-fetch BTC ETH --provider binance --days 1368 # Binanceで2023-01-01以降を取得
 uv run yowayowa crypto-ohlcv BTC        # 永続化済み行を表示（source別・未統合）
 uv run yowayowa crypto-fetch SOL        # → エラー（SUPPORTED_CRYPTO_ASSETS は BTC/ETH のみ）
 ```
@@ -40,3 +41,13 @@ uv run yowayowa crypto-fetch SOL        # → エラー（SUPPORTED_CRYPTO_ASSET
    UTC 00:00に確定するため、00:30実行で前日分が確定値として取れる）:
    `0  0  * * *` 相当のローカルcronに
    `cd <repo> && YOWAYOWA_*設定環境付き ./venv/bin/yowayowa crypto-fetch` を登録。
+
+## Historical coverage and survivorship
+
+Binance [daily klines](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints)
+support `startTime`/`endTime` and up to 1000 bars per response;
+the provider paginates older history by open time and stores only completed UTC days.
+`crypto-fetch --days` accepts up to 3650 days. CoinGecko's public OHLC auto-granularity for requests over 30 days is not daily; the provider
+rejects those ranges rather than labelling coarse candles `1d`. For this baseline use Binance's
+native 1d klines. BTC/ETH are point-in-time selected assets,
+not a historical constituent universe: delisted assets and past exchange listings are not included.

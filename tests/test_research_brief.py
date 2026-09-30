@@ -839,6 +839,28 @@ def _api_research_ask_factory(*args: Any, **kwargs: Any) -> Any:
 
 def test_api_ask_and_brief_roundtrip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _api_db_engine(monkeypatch, tmp_path)
+    from yowayowa.services import research_ask as research_ask_module
+
+    monkeypatch.setattr(
+        research_ask_module,
+        "collect_stock_evidence",
+        lambda *args, **kwargs: {
+            "available_symbols": [],
+            "mentioned": [],
+            "symbols": {},
+            "coverage": {"symbol_count": 0, "row_count_total": 0},
+        },
+    )
+    monkeypatch.setattr(
+        research_ask_module,
+        "collect_crypto_evidence",
+        lambda *args, **kwargs: {
+            "available_symbols": [],
+            "mentioned": [],
+            "symbols": {},
+            "coverage": {"symbol_count": 0, "row_count_total": 0},
+        },
+    )
     _write_macro_files(tmp_path / "api-data")
     _patch_fake_agent(monkeypatch)
     # Point the default EDINET path and macro store at fixture/tmp data.
@@ -922,9 +944,30 @@ def test_cli_research_ask_prints_answer_and_trace(
     from yowayowa import db as db_module
     from yowayowa.services import ai_agent as ai_agent_module
     from yowayowa.services import macro_store as macro_store_module
+    from yowayowa.services import research_ask as research_ask_module
 
     monkeypatch.setenv("YOWAYOWA_DATABASE_URL", f"sqlite:///{tmp_path / 'cli-research.db'}")
     db_module.dispose_database()
+    monkeypatch.setattr(
+        research_ask_module,
+        "collect_stock_evidence",
+        lambda *args, **kwargs: {
+            "available_symbols": [],
+            "mentioned": [],
+            "symbols": {},
+            "coverage": {"symbol_count": 0, "row_count_total": 0},
+        },
+    )
+    monkeypatch.setattr(
+        research_ask_module,
+        "collect_crypto_evidence",
+        lambda *args, **kwargs: {
+            "available_symbols": [],
+            "mentioned": [],
+            "symbols": {},
+            "coverage": {"symbol_count": 0, "row_count_total": 0},
+        },
+    )
     monkeypatch.setattr("yowayowa.services.research_brief._DEFAULT_EDINET_PATH", EDINET_SAMPLE)
     monkeypatch.setattr(
         macro_store_module,

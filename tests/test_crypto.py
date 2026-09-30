@@ -172,6 +172,12 @@ def test_coingecko_ohlcv_returns_records_with_provenance() -> None:
     assert first.volume is None  # CoinGecko public OHLC has no volume: stays None
 
 
+def test_coingecko_public_ohlc_rejects_coarse_long_history() -> None:
+    provider = _stub_provider(CoinGeckoOhlcProvider, _coingecko_payload())
+    with pytest.raises(ValueError, match="not daily above 30 days"):
+        provider.ohlcv("BTC", days=31)
+
+
 def test_coingecko_ohlcv_skips_missing_and_zero_bars() -> None:
     payload = _coingecko_payload()
     payload[2] = [payload[2][0], 0, 0, 0, 0]  # one day's bar is all zeros
@@ -211,10 +217,10 @@ def test_coingecko_empty_payload_is_lookup_error() -> None:
 # ------------------------------------------------------------- binance
 
 
-def test_binance_klines_returns_records_drops_forming_bar() -> None:
+def test_binance_klines_returns_records_with_daily_provenance() -> None:
     provider = _stub_provider(BinanceKlinesProvider, _binance_payload())
     records = provider.ohlcv("BTC", days=30)
-    assert len(records) == 6
+    assert len(records) == 7  # all fixture dates are before the live query window
     first = records[0]
     assert first.provider == "binance"
     assert first.currency == "USDT"
@@ -224,12 +230,52 @@ def test_binance_klines_returns_records_drops_forming_bar() -> None:
     assert BINANCE_SYMBOLS["BTC"] == "BTCUSDT"
 
 
+def test_binance_long_history_paginates_and_excludes_unfinished_day() -> None:
+    settings = get_settings()
+    provider = BinanceKlinesProvider(settings)
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        params = dict(request.url.params)
+        first_ms = int(params["startTime"])
+        page_index = len(requests)
+        count = 1000 if page_index == 1 else 368
+        rows = [
+            [
+                first_ms + index * 86_400_000,
+                "100",
+                "102",
+                "99",
+                "101",
+                "12.5",
+                first_ms + (index + 1) * 86_400_000 - 1,
+                "1262.5",
+                10,
+                "1",
+                "100",
+                "0",
+            ]
+            for index in range(count)
+        ]
+        return _canned(json.dumps(rows).encode())
+
+    provider.client._transport = httpx.MockTransport(handler)  # type: ignore[attr-defined]
+    records = provider.ohlcv("BTC", days=1368)
+    assert len(requests) == 2
+    assert requests[0].url.params["limit"] == "1000"
+    assert requests[0].url.params["startTime"]
+    assert int(requests[1].url.params["startTime"]) > int(requests[0].url.params["startTime"])
+    assert len(records) == 1368
+    assert all(record.as_of.date() < datetime.now(UTC).date() for record in records)
+
+
 def test_binance_zero_bar_is_skipped() -> None:
     payload = _binance_payload()
     payload[2] = [payload[2][0], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     provider = _stub_provider(BinanceKlinesProvider, payload)
     records = provider.ohlcv("BTC", days=30)
-    assert len(records) == 5
+    assert len(records) == 6
     assert all(record.close > 0 for record in records)
 
 
