@@ -1,0 +1,760 @@
+{
+  "coverage": {
+    "AAPL": {
+      "row_count": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "providers": [
+        "alpaca"
+      ],
+      "currencies": [
+        "USD"
+      ]
+    },
+    "AMZN": {
+      "row_count": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "providers": [
+        "alpaca"
+      ],
+      "currencies": [
+        "USD"
+      ]
+    },
+    "GOOGL": {
+      "row_count": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "providers": [
+        "alpaca"
+      ],
+      "currencies": [
+        "USD"
+      ]
+    },
+    "JPM": {
+      "row_count": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "providers": [
+        "alpaca"
+      ],
+      "currencies": [
+        "USD"
+      ]
+    },
+    "META": {
+      "row_count": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "providers": [
+        "alpaca"
+      ],
+      "currencies": [
+        "USD"
+      ]
+    },
+    "MSFT": {
+      "row_count": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "providers": [
+        "alpaca"
+      ],
+      "currencies": [
+        "USD"
+      ]
+    },
+    "NVDA": {
+      "row_count": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "providers": [
+        "alpaca"
+      ],
+      "currencies": [
+        "USD"
+      ]
+    },
+    "SPY": {
+      "row_count": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "providers": [
+        "alpaca"
+      ],
+      "currencies": [
+        "USD"
+      ]
+    },
+    "TSLA": {
+      "row_count": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "providers": [
+        "alpaca"
+      ],
+      "currencies": [
+        "USD"
+      ]
+    },
+    "XOM": {
+      "row_count": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "providers": [
+        "alpaca"
+      ],
+      "currencies": [
+        "USD"
+      ]
+    }
+  },
+  "results": [
+    {
+      "strategy_id": "momentum_12_1",
+      "name": "12-1 month momentum",
+      "requested_window": [
+        "2021-01-04",
+        "2026-09-28"
+      ],
+      "status": "complete",
+      "sessions": 1440,
+      "trades": 397,
+      "provenance": [
+        {
+          "symbol": "AAPL",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=AAPL&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:02.115356Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "MSFT",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=MSFT&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:02.709466Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "NVDA",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=NVDA&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:03.311398Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "GOOGL",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=GOOGL&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:03.703811Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "AMZN",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=AMZN&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:04.101991Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "META",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=META&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:04.481830Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "TSLA",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=TSLA&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:04.847834Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "JPM",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=JPM&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:05.781865Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "XOM",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=XOM&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:06.525464Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "SPY",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=SPY&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:06.888044Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        }
+      ],
+      "purged_sessions": 253,
+      "oos_start": "2026-01-09",
+      "metrics": {
+        "cagr": 0.13869171171890482,
+        "sharpe_ratio": 0.621793426051278,
+        "sortino_ratio": 0.8449410697227366,
+        "max_drawdown": -0.3429077341094169,
+        "calmar_ratio": 0.4044578116008614,
+        "hit_rate": 0.5361111111111111,
+        "annual_turnover": 4.211792427636373
+      },
+      "metric_status": {
+        "cagr": "available",
+        "sharpe_ratio": "available",
+        "sortino_ratio": "available",
+        "max_drawdown": "available",
+        "calmar_ratio": "available",
+        "hit_rate": "available",
+        "annual_turnover": "available"
+      },
+      "metric_sample_counts": {
+        "cagr": 1440,
+        "sharpe_ratio": 1440,
+        "sortino_ratio": 1440,
+        "max_drawdown": 1440,
+        "calmar_ratio": 1440,
+        "hit_rate": 1440,
+        "annual_turnover": 1440
+      },
+      "bootstrap_status": "available",
+      "bootstrap_ci_95": [
+        -0.08131202405124016,
+        0.4116115632328612
+      ],
+      "is_cagr": 0.16514908203040557,
+      "is_sharpe": 0.7036294789081406,
+      "is_sessions": 1007,
+      "oos_sessions": 180,
+      "oos_metrics": {
+        "cagr": -0.06545983004868194,
+        "sharpe_ratio": -0.3064132390068945,
+        "sortino_ratio": -0.41468312712099187,
+        "max_drawdown": -0.1413354176995295,
+        "calmar_ratio": -0.4631523443603185,
+        "hit_rate": 0.5222222222222223,
+        "annual_turnover": 7.968342681602131
+      },
+      "warnings": [],
+      "assumptions": [
+        "Signals use only data dated before execution; orders execute at next session open.",
+        "Pre-start OHLCV is only for lookback; returns use the requested interval.",
+        "Overnight returns use previous weights; intraday returns use post-rebalance weights.",
+        "Weights drift between rebalances; turnover and costs use gross buys plus sells.",
+        "Costs: 10 bps commission + 5 bps slippage, charged on one-way traded notional.",
+        "Raw OHLCV is used; dividends, split adjustments, taxes, market impact, borrow costs, and delisting returns are not modeled.",
+        "The configured universe is fixed, not point-in-time; survivorship bias may remain.",
+        "Bootstrap: IID daily-return resampling, 95% percentile interval, seed 20260930; not a forecast interval."
+      ]
+    },
+    {
+      "strategy_id": "low_volatility",
+      "name": "Inverse-volatility portfolio",
+      "requested_window": [
+        "2021-01-04",
+        "2026-09-28"
+      ],
+      "status": "complete",
+      "sessions": 1440,
+      "trades": 377,
+      "provenance": [
+        {
+          "symbol": "AAPL",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=AAPL&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:02.115356Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "MSFT",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=MSFT&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:02.709466Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "NVDA",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=NVDA&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:03.311398Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "GOOGL",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=GOOGL&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:03.703811Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "AMZN",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=AMZN&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:04.101991Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "META",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=META&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:04.481830Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "TSLA",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=TSLA&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:04.847834Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "JPM",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=JPM&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:05.781865Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "XOM",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=XOM&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:06.525464Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "SPY",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=SPY&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:06.888044Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        }
+      ],
+      "purged_sessions": 61,
+      "oos_start": "2025-04-04",
+      "metrics": {
+        "cagr": 0.1354397372371654,
+        "sharpe_ratio": 0.7701008090023804,
+        "sortino_ratio": 1.0389777968378888,
+        "max_drawdown": -0.3546602237823421,
+        "calmar_ratio": 0.3818858957250472,
+        "hit_rate": 0.5576388888888889,
+        "annual_turnover": 2.798050816190431
+      },
+      "metric_status": {
+        "cagr": "available",
+        "sharpe_ratio": "available",
+        "sortino_ratio": "available",
+        "max_drawdown": "available",
+        "calmar_ratio": "available",
+        "hit_rate": "available",
+        "annual_turnover": "available"
+      },
+      "metric_sample_counts": {
+        "cagr": 1440,
+        "sharpe_ratio": 1440,
+        "sortino_ratio": 1440,
+        "max_drawdown": 1440,
+        "calmar_ratio": 1440,
+        "hit_rate": 1440,
+        "annual_turnover": 1440
+      },
+      "bootstrap_status": "available",
+      "bootstrap_ci_95": [
+        -0.04143431737594383,
+        0.31023867418333984
+      ],
+      "is_cagr": 0.10479278877557574,
+      "is_sharpe": 0.6059221970718014,
+      "is_sessions": 1007,
+      "oos_sessions": 372,
+      "oos_metrics": {
+        "cagr": 0.35212544663318845,
+        "sharpe_ratio": 2.07446233056678,
+        "sortino_ratio": 3.4517046584722793,
+        "max_drawdown": -0.07404291906148641,
+        "calmar_ratio": 4.755693739475316,
+        "hit_rate": 0.5887096774193549,
+        "annual_turnover": 3.39006513966274
+      },
+      "warnings": [],
+      "assumptions": [
+        "Signals use only data dated before execution; orders execute at next session open.",
+        "Pre-start OHLCV is only for lookback; returns use the requested interval.",
+        "Overnight returns use previous weights; intraday returns use post-rebalance weights.",
+        "Weights drift between rebalances; turnover and costs use gross buys plus sells.",
+        "Costs: 10 bps commission + 5 bps slippage, charged on one-way traded notional.",
+        "Raw OHLCV is used; dividends, split adjustments, taxes, market impact, borrow costs, and delisting returns are not modeled.",
+        "The configured universe is fixed, not point-in-time; survivorship bias may remain.",
+        "Bootstrap: IID daily-return resampling, 95% percentile interval, seed 20260930; not a forecast interval."
+      ]
+    },
+    {
+      "strategy_id": "mean_reversion_20",
+      "name": "20-session mean reversion",
+      "requested_window": [
+        "2021-01-04",
+        "2026-09-28"
+      ],
+      "status": "complete",
+      "sessions": 1440,
+      "trades": 517,
+      "provenance": [
+        {
+          "symbol": "AAPL",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=AAPL&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:02.115356Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "MSFT",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=MSFT&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:02.709466Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "NVDA",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=NVDA&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:03.311398Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "GOOGL",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=GOOGL&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:03.703811Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "AMZN",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=AMZN&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:04.101991Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "META",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=META&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:04.481830Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "TSLA",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=TSLA&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:04.847834Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "JPM",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=JPM&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:05.781865Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "XOM",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=XOM&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:06.525464Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "SPY",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=SPY&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:06.888044Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        }
+      ],
+      "purged_sessions": 21,
+      "oos_start": "2025-02-06",
+      "metrics": {
+        "cagr": 0.16854853750614418,
+        "sharpe_ratio": 0.721331175025742,
+        "sortino_ratio": 1.0431092606893992,
+        "max_drawdown": -0.4653416250476735,
+        "calmar_ratio": 0.3622038700898005,
+        "hit_rate": 0.5368055555555555,
+        "annual_turnover": 12.621638950845439
+      },
+      "metric_status": {
+        "cagr": "available",
+        "sharpe_ratio": "available",
+        "sortino_ratio": "available",
+        "max_drawdown": "available",
+        "calmar_ratio": "available",
+        "hit_rate": "available",
+        "annual_turnover": "available"
+      },
+      "metric_sample_counts": {
+        "cagr": 1440,
+        "sharpe_ratio": 1440,
+        "sortino_ratio": 1440,
+        "max_drawdown": 1440,
+        "calmar_ratio": 1440,
+        "hit_rate": 1440,
+        "annual_turnover": 1440
+      },
+      "bootstrap_status": "available",
+      "bootstrap_ci_95": [
+        -0.05447914900759754,
+        0.4286237254649119
+      ],
+      "is_cagr": 0.16797688680231015,
+      "is_sharpe": 0.7152540987918579,
+      "is_sessions": 1007,
+      "oos_sessions": 412,
+      "oos_metrics": {
+        "cagr": 0.17017420400190142,
+        "sharpe_ratio": 0.7319068236327023,
+        "sortino_ratio": 1.106561837848677,
+        "max_drawdown": -0.28698668992589216,
+        "calmar_ratio": 0.5929689772227592,
+        "hit_rate": 0.5364077669902912,
+        "annual_turnover": 11.00342482674937
+      },
+      "warnings": [],
+      "assumptions": [
+        "Signals use only data dated before execution; orders execute at next session open.",
+        "Pre-start OHLCV is only for lookback; returns use the requested interval.",
+        "Overnight returns use previous weights; intraday returns use post-rebalance weights.",
+        "Weights drift between rebalances; turnover and costs use gross buys plus sells.",
+        "Costs: 10 bps commission + 5 bps slippage, charged on one-way traded notional.",
+        "Raw OHLCV is used; dividends, split adjustments, taxes, market impact, borrow costs, and delisting returns are not modeled.",
+        "The configured universe is fixed, not point-in-time; survivorship bias may remain.",
+        "Bootstrap: IID daily-return resampling, 95% percentile interval, seed 20260930; not a forecast interval."
+      ]
+    },
+    {
+      "strategy_id": "equal_weight",
+      "name": "Equal-weight baseline",
+      "requested_window": [
+        "2021-01-04",
+        "2026-09-28"
+      ],
+      "status": "complete",
+      "sessions": 1440,
+      "trades": 690,
+      "provenance": [
+        {
+          "symbol": "AAPL",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=AAPL&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:02.115356Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "MSFT",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=MSFT&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:02.709466Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "NVDA",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=NVDA&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:03.311398Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "GOOGL",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=GOOGL&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:03.703811Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "AMZN",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=AMZN&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:04.101991Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "META",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=META&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:04.481830Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "TSLA",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=TSLA&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:04.847834Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "JPM",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=JPM&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:05.781865Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "XOM",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=XOM&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:06.525464Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        },
+        {
+          "symbol": "SPY",
+          "provider": "alpaca",
+          "source_url": "https://data.alpaca.markets/v2/stocks/bars?symbols=SPY&timeframe=1Day&feed=sip",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:51:06.888044Z",
+          "as_of_start": "2019-12-30",
+          "as_of_end": "2026-09-28"
+        }
+      ],
+      "purged_sessions": 0,
+      "oos_start": "2025-01-06",
+      "metrics": {
+        "cagr": 0.1616191527811235,
+        "sharpe_ratio": 0.731172001130218,
+        "sortino_ratio": 1.025365879454471,
+        "max_drawdown": -0.5083389041843425,
+        "calmar_ratio": 0.31793583267141484,
+        "hit_rate": 0.5395833333333333,
+        "annual_turnover": 0.6801814123129798
+      },
+      "metric_status": {
+        "cagr": "available",
+        "sharpe_ratio": "available",
+        "sortino_ratio": "available",
+        "max_drawdown": "available",
+        "calmar_ratio": "available",
+        "hit_rate": "available",
+        "annual_turnover": "available"
+      },
+      "metric_sample_counts": {
+        "cagr": 1440,
+        "sharpe_ratio": 1440,
+        "sortino_ratio": 1440,
+        "max_drawdown": 1440,
+        "calmar_ratio": 1440,
+        "hit_rate": 1440,
+        "annual_turnover": 1440
+      },
+      "bootstrap_status": "available",
+      "bootstrap_ci_95": [
+        -0.05500433338876576,
+        0.4068369501313265
+      ],
+      "is_cagr": 0.14094150034470987,
+      "is_sharpe": 0.643236072977369,
+      "is_sessions": 1007,
+      "oos_sessions": 433,
+      "oos_metrics": {
+        "cagr": 0.2022519996819836,
+        "sharpe_ratio": 0.9394793307503727,
+        "sortino_ratio": 1.4249464531299891,
+        "max_drawdown": -0.24217998573891864,
+        "calmar_ratio": 0.8351309422407049,
+        "hit_rate": 0.535796766743649,
+        "annual_turnover": 1.0929157087716965
+      },
+      "warnings": [],
+      "assumptions": [
+        "Signals use only data dated before execution; orders execute at next session open.",
+        "Pre-start OHLCV is only for lookback; returns use the requested interval.",
+        "Overnight returns use previous weights; intraday returns use post-rebalance weights.",
+        "Weights drift between rebalances; turnover and costs use gross buys plus sells.",
+        "Costs: 10 bps commission + 5 bps slippage, charged on one-way traded notional.",
+        "Raw OHLCV is used; dividends, split adjustments, taxes, market impact, borrow costs, and delisting returns are not modeled.",
+        "The configured universe is fixed, not point-in-time; survivorship bias may remain.",
+        "Bootstrap: IID daily-return resampling, 95% percentile interval, seed 20260930; not a forecast interval."
+      ]
+    }
+  ]
+}
