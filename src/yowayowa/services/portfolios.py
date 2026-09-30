@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from yowayowa.db import (
@@ -28,6 +28,10 @@ from yowayowa.providers.base import MarketDataProvider
 from yowayowa.symbols import normalize_currency, normalize_symbol
 
 
+class PositionVersionConflictError(ValueError):
+    """A position changed since the caller last observed its version."""
+
+
 def _to_model(row: PortfolioRecord) -> Portfolio:
     return Portfolio(
         id=row.id,
@@ -39,6 +43,7 @@ def _to_model(row: PortfolioRecord) -> Portfolio:
                 quantity=item.quantity,
                 average_cost=item.average_cost,
                 currency=item.currency,
+                version=getattr(item, "version", 1) or 1,
             )
             for item in row.positions
         ],
@@ -85,26 +90,42 @@ def create_portfolio(session: Session, name: str, base_currency: str) -> Portfol
     return _to_model(row)
 
 
-def upsert_position(session: Session, portfolio_id: int, payload: PositionUpsert) -> Portfolio:
+def upsert_position(
+    session: Session,
+    portfolio_id: int,
+    payload: PositionUpsert,
+    expected_version: int | None = None,
+) -> Portfolio:
     row = session.get(PortfolioRecord, portfolio_id)
     if row is None:
         raise LookupError(f"Portfolio {portfolio_id} not found")
     symbol = normalize_symbol(payload.symbol)
     currency = normalize_currency(payload.currency)
     existing = next((position for position in row.positions if position.symbol == symbol), None)
+    target_expected_version = (
+        expected_version if expected_version is not None else payload.expected_version
+    )
     if existing is None:
+        if target_expected_version is not None and target_expected_version != 0:
+            session.rollback()
+            raise PositionVersionConflictError(f"position {symbol} was removed or changed")
         row.positions.append(
             PositionRecord(
                 symbol=symbol,
                 quantity=payload.quantity,
                 average_cost=payload.average_cost,
                 currency=currency,
+                version=1,
             )
         )
     else:
+        if target_expected_version is not None and existing.version != target_expected_version:
+            session.rollback()
+            raise PositionVersionConflictError(f"position {symbol} was changed")
         existing.quantity = payload.quantity
         existing.average_cost = payload.average_cost
         existing.currency = currency
+        existing.version = (existing.version or 1) + 1
     row.updated_at = utcnow()
     session.commit()
     session.refresh(row)
@@ -132,18 +153,27 @@ def bulk_upsert_positions(
     for symbol, (item, currency) in normalized.items():
         existing = existing_by_symbol.get(symbol)
         if existing is None:
+            if item.expected_version is not None and item.expected_version != 0:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was removed or changed")
+        elif item.expected_version is not None and existing.version != item.expected_version:
+            session.rollback()
+            raise PositionVersionConflictError(f"position {symbol} was changed")
+        if existing is None:
             row.positions.append(
                 PositionRecord(
                     symbol=symbol,
                     quantity=item.quantity,
                     average_cost=item.average_cost,
                     currency=currency,
+                    version=1,
                 )
             )
         else:
             existing.quantity = item.quantity
             existing.average_cost = item.average_cost
             existing.currency = currency
+            existing.version = (existing.version or 1) + 1
     row.updated_at = utcnow()
     session.commit()
     session.refresh(row)
@@ -172,8 +202,10 @@ def apply_execution_reconciliation(
     market: str,
     execution_fingerprints: dict[str, str],
     preview_id: str,
+    expected_versions: dict[str, int | None] | None = None,
 ) -> Portfolio:
     """Atomically upsert approved holdings and record applied fill identities."""
+    session.expire_all()
     row = session.get(PortfolioRecord, portfolio_id)
     if row is None:
         raise LookupError(f"Portfolio {portfolio_id} not found")
@@ -191,8 +223,20 @@ def apply_execution_reconciliation(
         normalized[symbol] = (item, currency)
 
     existing_by_symbol = {position.symbol: position for position in row.positions}
+    expected_versions = expected_versions or {}
+    if set(expected_versions) != set(normalized):
+        session.rollback()
+        raise PositionVersionConflictError("expected position versions do not match changes")
     for symbol, (item, currency) in normalized.items():
         position = existing_by_symbol.get(symbol)
+        expected_version = expected_versions[symbol]
+        if position is None:
+            if expected_version is not None:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was removed or changed")
+        elif expected_version is None or position.version != expected_version:
+            session.rollback()
+            raise PositionVersionConflictError(f"position {symbol} was changed")
         if position is None:
             row.positions.append(
                 PositionRecord(
@@ -200,12 +244,28 @@ def apply_execution_reconciliation(
                     quantity=item.quantity,
                     average_cost=item.average_cost,
                     currency=currency,
+                    version=1,
                 )
             )
         else:
-            position.quantity = item.quantity
-            position.average_cost = item.average_cost
-            position.currency = currency
+            result = session.execute(
+                update(PositionRecord)
+                .where(
+                    PositionRecord.id == position.id,
+                    PositionRecord.version == expected_version,
+                )
+                .values(
+                    quantity=item.quantity,
+                    average_cost=item.average_cost,
+                    currency=currency,
+                    version=(position.version or 1) + 1,
+                )
+            )
+            result_rowcount: int | None = result.rowcount  # type: ignore[attr-defined]
+            if result_rowcount != 1:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was changed")
+            session.expire(position)
 
     applied_at = utcnow()
     session.add_all(
@@ -227,12 +287,20 @@ def apply_execution_reconciliation(
     return _to_model(row)
 
 
-def remove_position(session: Session, portfolio_id: int, symbol: str) -> Portfolio:
+def remove_position(
+    session: Session,
+    portfolio_id: int,
+    symbol: str,
+    expected_version: int | None = None,
+) -> Portfolio:
     row = session.get(PortfolioRecord, portfolio_id)
     if row is None:
         raise LookupError(f"Portfolio {portfolio_id} not found")
     normalized = normalize_symbol(symbol)
     existing = next((position for position in row.positions if position.symbol == normalized), None)
+    if expected_version is not None and (existing is None or existing.version != expected_version):
+        session.rollback()
+        raise PositionVersionConflictError(f"position {normalized} was changed or removed")
     if existing is not None:
         row.positions.remove(existing)
         row.updated_at = utcnow()

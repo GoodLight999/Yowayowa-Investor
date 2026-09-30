@@ -15,6 +15,7 @@ from yowayowa.broker_models import BrokerExecution, BrokerOrderSide
 from yowayowa.domain import Portfolio, PositionUpsert
 from yowayowa.services.order_inquiry_service import OrderInquiryService
 from yowayowa.services.portfolios import (
+    PositionVersionConflictError,
     applied_execution_fingerprints,
     apply_execution_reconciliation,
     get_portfolio,
@@ -36,6 +37,7 @@ class PositionReconciliationChange(BaseModel):
     target_quantity: Decimal
     current_average_cost: Decimal | None = None
     target_average_cost: Decimal | None = None
+    expected_version: int | None = None
 
 
 class ExecutionReconciliationPreview(BaseModel):
@@ -166,7 +168,7 @@ class ExecutionsReconciliationService:
         if not pending:
             blockers.append("no unapplied complete executions are available")
 
-        local_positions: dict[str, tuple[Decimal, Decimal | None, str]] = {}
+        local_positions: dict[str, tuple[Decimal, Decimal | None, str, int]] = {}
         for position in portfolio.positions:
             try:
                 symbol = normalize_symbol(position.symbol)
@@ -177,7 +179,12 @@ class ExecutionsReconciliationService:
             if symbol in local_positions:
                 blockers.append(f"portfolio contains duplicate position rows for {symbol}")
                 continue
-            local_positions[symbol] = (position.quantity, position.average_cost, currency)
+            local_positions[symbol] = (
+                position.quantity,
+                position.average_cost,
+                currency,
+                position.version,
+            )
 
         by_symbol: dict[str, list[tuple[int, BrokerExecution]]] = {}
         for index, execution, _ in pending:
@@ -192,8 +199,8 @@ class ExecutionsReconciliationService:
 
         changes: list[PositionReconciliationChange] = []
         for symbol, symbol_executions in sorted(by_symbol.items()):
-            local_quantity, local_average_cost, local_currency = local_positions.get(
-                symbol, (Decimal(0), None, "")
+            local_quantity, local_average_cost, local_currency, local_version = local_positions.get(
+                symbol, (Decimal(0), None, "", 0)
             )
             currencies = {execution.currency for _, execution in symbol_executions}
             if len(currencies) != 1:
@@ -242,6 +249,7 @@ class ExecutionsReconciliationService:
                     target_quantity=quantity,
                     current_average_cost=local_average_cost,
                     target_average_cost=average_cost,
+                    expected_version=local_version if local_currency else None,
                 )
             )
 
@@ -269,6 +277,7 @@ class ExecutionsReconciliationService:
                     str(position.quantity),
                     str(position.average_cost),
                     position.currency,
+                    getattr(position, "version", 1),
                 ]
                 for position in sorted(portfolio.positions, key=lambda item: item.symbol)
             ],
@@ -347,17 +356,26 @@ class ExecutionsReconciliationService:
                 quantity=change.target_quantity,
                 average_cost=change.target_average_cost,
                 currency=change.currency,
+                expected_version=change.expected_version,
             )
             for change in current.changes
         ]
-        portfolio = apply_execution_reconciliation(
-            session,
-            portfolio_id,
-            positions,
-            market=market,
-            execution_fingerprints=fingerprints,
-            preview_id=current.preview_id,
-        )
+        expected_versions = {change.symbol: change.expected_version for change in current.changes}
+        try:
+            portfolio = apply_execution_reconciliation(
+                session,
+                portfolio_id,
+                positions,
+                market=market,
+                execution_fingerprints=fingerprints,
+                preview_id=current.preview_id,
+                expected_versions=expected_versions,
+            )
+        except PositionVersionConflictError as exc:
+            session.rollback()
+            raise ExecutionPreviewChangedError(
+                "local position changed after preview; generate a new preview"
+            ) from exc
         return ExecutionReconciliationApplyResult(
             preview_id=current.preview_id,
             portfolio=portfolio,

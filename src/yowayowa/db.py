@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Integer,
     Numeric,
     String,
     Table,
@@ -93,6 +94,9 @@ class PositionRecord(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(28, 10))
     average_cost: Mapped[Decimal | None] = mapped_column(Numeric(28, 10), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
+    version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1"), nullable=False
+    )
     portfolio: Mapped[PortfolioRecord] = relationship(back_populates="positions")
 
 
@@ -438,6 +442,7 @@ def init_database(settings: Settings | None = None) -> None:
     # installations gain the table without rebuilding or altering old rows.
     _ensure_price_alert_notifications_table(_engine)
     Base.metadata.create_all(_engine)
+    _ensure_positions_version(_engine)
     _ensure_screening_candidates_document_id(_engine)
 
 
@@ -459,6 +464,16 @@ def _ensure_price_alert_notifications_table(engine: Engine) -> None:
         tables=[cast(Table, PriceAlertNotificationRecord.__table__)],
         checkfirst=True,
     )
+
+
+def _ensure_positions_version(engine: Engine) -> None:
+    """Add the position optimistic-lock version without rebuilding old data."""
+    columns = {column["name"] for column in inspect(engine).get_columns("positions")}
+    if "version" not in columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE positions ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+            )
 
 
 def _ensure_screening_candidates_document_id(engine: Engine) -> None:

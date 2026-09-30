@@ -186,6 +186,7 @@ class PositionUpsert(BaseModel):
     quantity: Decimal
     average_cost: Decimal | None = None
     currency: str = "USD"
+    expected_version: int | None = None
 
 
 class PositionBulkUpsert(BaseModel):
@@ -198,6 +199,7 @@ class Position(BaseModel):
     quantity: Decimal
     average_cost: Decimal | None = None
     currency: str
+    version: int = 1
 
 
 class Portfolio(BaseModel):

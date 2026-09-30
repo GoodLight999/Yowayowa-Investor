@@ -294,6 +294,124 @@ def test_apply_rejects_a_stale_preview_when_local_positions_change(tmp_path: Pat
         engine.dispose()
 
 
+def test_apply_rejects_lost_update_when_concurrent_update_interleaves_between_preview_and_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Astra finding: concurrent holding update between reconfirmation and save.
+
+    If another session commits a position change after `self.preview()` reconfirms
+    in `apply()` but before `apply_execution_reconciliation()` commits, the optimistic
+    lock (version mismatch) must reject the save, roll back, and raise
+    ExecutionPreviewChangedError. The prior update must be preserved, and the execution
+    ledger must NOT record the rejected execution.
+    """
+    engine, session, portfolio_id = _database(tmp_path)
+    try:
+        bulk_upsert_positions(
+            session,
+            portfolio_id,
+            __import__("yowayowa.domain", fromlist=["PositionBulkUpsert"]).PositionBulkUpsert(
+                positions=[
+                    PositionUpsert(
+                        symbol="AAPL",
+                        quantity=Decimal("10"),
+                        average_cost=Decimal("20"),
+                        currency="USD",
+                    )
+                ]
+            ),
+        )
+        inquiry = _FakeOrderInquiry(
+            _outcome([_execution(quantity=Decimal("2"), price=Decimal("30"))])
+        )
+        service = ExecutionsReconciliationService(order_inquiry=inquiry)  # type: ignore[arg-type]
+        preview = service.preview(session, portfolio_id, "jp")
+        assert preview.can_apply is True
+        assert preview.changes[0].expected_version == 1
+
+        import yowayowa.services.executions_reconciliation as exec_mod
+
+        real_apply_func = exec_mod.apply_execution_reconciliation
+
+        def interleaved_apply(*args: Any, **kwargs: Any) -> Any:
+            with Session(engine, expire_on_commit=False) as concurrent_session:
+                from yowayowa.domain import PositionBulkUpsert
+
+                bulk_upsert_positions(
+                    concurrent_session,
+                    portfolio_id,
+                    PositionBulkUpsert(
+                        positions=[
+                            PositionUpsert(
+                                symbol="AAPL",
+                                quantity=Decimal("50"),
+                                average_cost=Decimal("25"),
+                                currency="USD",
+                                expected_version=1,
+                            )
+                        ]
+                    ),
+                )
+            return real_apply_func(*args, **kwargs)
+
+        monkeypatch.setattr(exec_mod, "apply_execution_reconciliation", interleaved_apply)
+
+        with pytest.raises(
+            ExecutionPreviewChangedError, match="local position changed after preview"
+        ):
+            service.apply(
+                session,
+                portfolio_id,
+                "jp",
+                preview.preview_id,
+                operator_approved=True,
+            )
+
+        # Preceding concurrent update remains intact
+        current_portfolio = get_portfolio(session, portfolio_id)
+        assert len(current_portfolio.positions) == 1
+        assert current_portfolio.positions[0].quantity == Decimal("50")
+        assert current_portfolio.positions[0].version == 2
+
+        # Rejected execution is NOT in the applied ledger
+        applied_ledger = applied_execution_fingerprints(session, portfolio_id, "jp")
+        assert "fill-1" not in applied_ledger
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_concurrent_apply_prevents_duplicate_application(tmp_path: Path) -> None:
+    """Applying an execution twice or retrying stale preview prevents double application."""
+    engine, session, portfolio_id = _database(tmp_path)
+    try:
+        bulk_upsert_positions(
+            session,
+            portfolio_id,
+            __import__("yowayowa.domain", fromlist=["PositionBulkUpsert"]).PositionBulkUpsert(
+                positions=[PositionUpsert(symbol="AAPL", quantity=Decimal("10"), currency="USD")]
+            ),
+        )
+        inquiry = _FakeOrderInquiry(_outcome([_execution()]))
+        service = ExecutionsReconciliationService(order_inquiry=inquiry)  # type: ignore[arg-type]
+        preview = service.preview(session, portfolio_id, "jp")
+        assert preview.can_apply is True
+
+        res = service.apply(session, portfolio_id, "jp", preview.preview_id, operator_approved=True)
+        assert res.applied_execution_ids == ["fill-1"]
+        assert get_portfolio(session, portfolio_id).positions[0].quantity == Decimal("12")
+        assert get_portfolio(session, portfolio_id).positions[0].version == 2
+
+        with pytest.raises((ExecutionPreviewChangedError, ValueError)):
+            service.apply(session, portfolio_id, "jp", preview.preview_id, operator_approved=True)
+
+        assert get_portfolio(session, portfolio_id).positions[0].quantity == Decimal("12")
+        assert get_portfolio(session, portfolio_id).positions[0].version == 2
+    finally:
+        session.close()
+        engine.dispose()
+
+
 def test_missing_execution_fields_and_currency_mismatch_block_application(tmp_path: Path) -> None:
     payload = {
         "executions": [

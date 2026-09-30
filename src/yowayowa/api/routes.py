@@ -62,6 +62,7 @@ from yowayowa.services.alerts import (
 from yowayowa.services.comparison import available_metrics, compare
 from yowayowa.services.operations import plan_operation
 from yowayowa.services.portfolios import (
+    PositionVersionConflictError,
     bulk_upsert_positions,
     create_portfolio,
     get_portfolio,
@@ -352,6 +353,8 @@ def put_position(
         return upsert_position(session, portfolio_id, payload)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PositionVersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.put("/portfolios/{portfolio_id}/positions/bulk", response_model=Portfolio)
@@ -362,16 +365,23 @@ def put_positions_bulk(
         return bulk_upsert_positions(session, portfolio_id, payload)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PositionVersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.delete("/portfolios/{portfolio_id}/positions/{symbol}", response_model=Portfolio)
 def delete_position(
-    portfolio_id: int, symbol: str, session: Session = Depends(db_session)
+    portfolio_id: int,
+    symbol: str,
+    expected_version: int | None = None,
+    session: Session = Depends(db_session),
 ) -> Portfolio:
     try:
-        return remove_position(session, portfolio_id, symbol)
+        return remove_position(session, portfolio_id, symbol, expected_version=expected_version)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PositionVersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/portfolios/{portfolio_id}/analytics", response_model=PortfolioAnalytics)

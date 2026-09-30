@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from yowayowa.api.deps import db_session, require_api_token
 from yowayowa.domain import Portfolio, PositionBulkUpsert, PositionUpsert
-from yowayowa.services.portfolios import bulk_upsert_positions
+from yowayowa.services.portfolios import PositionVersionConflictError, bulk_upsert_positions
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_token)])
 
@@ -79,3 +79,5 @@ async def import_portfolio_csv(
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PositionVersionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
