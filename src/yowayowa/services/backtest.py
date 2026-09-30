@@ -357,6 +357,9 @@ def run_backtest(
                     symbol: weights[symbol] * (1 + asset_overnight[symbol]) / (1 + overnight)
                     for symbol in strategy.universe
                 }
+        # Carry overnight price drift into the pre-trade portfolio weights.
+        # On non-rebalance sessions this is the portfolio used for intraday P&L.
+        weights = dict(open_weights)
         transaction_cost = 0.0
         turnover = 0.0
         if day in rebalance_dates:

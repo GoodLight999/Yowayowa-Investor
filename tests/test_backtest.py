@@ -97,6 +97,37 @@ def test_backtest_uses_prior_data_and_charges_explicit_costs() -> None:
     assert result.provenance[0].retrieved_at == datetime(2025, 6, 1, tzinfo=UTC)
 
 
+@pytest.mark.parametrize("frequency", ["weekly", "monthly"])
+def test_non_rebalance_weights_track_fixed_share_overnight_and_intraday_returns(
+    frequency: str,
+) -> None:
+    start = date(2025, 1, 6)
+    strategy = _small_strategy().model_copy(update={"rebalance": frequency})
+    histories = {symbol: _rows(start, 45, growth=0.0) for symbol in strategy.universe}
+    # Establish equal holdings, then create an overnight gap and intraday reversal
+    # on a session which is not a scheduled rebalance.
+    histories["AAA"][2]["open"] = 120.0
+    histories["AAA"][2]["close"] = 110.0
+    histories["BBB"][2]["open"] = 90.0
+    histories["BBB"][2]["close"] = 100.0
+    request = BacktestRunRequest(
+        strategy_id=strategy.id,
+        start=start,
+        end=date(2025, 2, 28),
+        commission_bps=0,
+        slippage_bps=0,
+        bootstrap_samples=0,
+    )
+    result = run_backtest(request, strategy, histories)
+    point = next(item for item in result.equity_curve if item.date == date(2025, 1, 8))
+    # Equal-weight initial holdings are 0.005 shares of each asset. Value at
+    # this close is fixed quantity times close: 0.005 * (110 + 100) = 1.05.
+    # The gap and intraday reversal make stale close weights yield a different
+    # result when the overnight open weights are discarded.
+    expected = 0.005 * (110.0 + 100.0)
+    assert point.equity == pytest.approx(expected)
+
+
 def test_insufficient_sample_is_null_and_zero_variance_is_undefined() -> None:
     start = date(2025, 1, 6)
     strategy = _small_strategy()
