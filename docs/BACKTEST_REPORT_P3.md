@@ -13,21 +13,21 @@ CAGR、Sharpe、Sortino、Calmar、hit rate、turnover は年率化を含む P2 
 
 | 戦略 | CAGR | Sharpe | Sortino | MaxDD | Calmar | Hit rate | 年間 turnover | OOS CAGR | OOS Sharpe | OOS MaxDD | OOS 観測数 | purge |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 12–1 momentum | 13.87% | 0.622 | 0.845 | -34.29% | 0.404 | 53.61% | 4.21x | -6.55% | -0.306 | -14.13% | 180 | 253 |
-| inverse-volatility / low-volatility | 13.54% | 0.770 | 1.039 | -35.47% | 0.382 | 55.76% | 2.80x | 35.21% | 2.074 | -7.40% | 372 | 61 |
-| 20-session mean reversion | 16.85% | 0.721 | 1.043 | -46.53% | 0.362 | 53.68% | 12.62x | 17.02% | 0.732 | -28.70% | 412 | 21 |
-| equal-weight 1/N baseline | 16.16% | 0.731 | 1.025 | -50.83% | 0.318 | 53.96% | 0.68x | 20.23% | 0.939 | -24.22% | 433 | 0 |
+| 12–1 momentum | 13.72% | 0.616 | 0.835 | -34.64% | 0.396 | 53.47% | 4.45x | -6.60% | -0.310 | -14.38% | 180 | 253 |
+| inverse-volatility / low-volatility | 13.54% | 0.773 | 1.042 | -35.41% | 0.382 | 55.76% | 2.79x | 35.37% | 2.087 | -7.25% | 372 | 61 |
+| 20-session mean reversion | 16.84% | 0.722 | 1.043 | -45.89% | 0.367 | 53.75% | 12.76x | 16.73% | 0.724 | -28.74% | 412 | 21 |
+| equal-weight 1/N baseline | 16.27% | 0.735 | 1.030 | -50.21% | 0.324 | 53.96% | 0.96x | 20.00% | 0.933 | -24.27% | 433 | 0 |
 
-同じ 1,007 観測の in-sample CAGR / Sharpe は momentum 16.51% / 0.704、low-volatility 10.48% / 0.606、mean reversion 16.80% / 0.715、equal-weight 14.09% / 0.643 でした。
+同じ 1,007 観測の in-sample CAGR / Sharpe は momentum 16.32% / 0.696、low-volatility 10.41% / 0.605、mean reversion 16.93% / 0.720、equal-weight 14.35% / 0.652 でした。
 
 P2 の分割実装は、全期間の先頭 70% を IS とし、その境界後に最大シグナル lookback 分を purge して残りを OOS とする単一の時系列 holdout です。これは複数窓を繰り返す rolling walk-forward 検証ではありません。OOS 開始日は最大 lookback/purge によって異なります: momentum 2026-01-09、low-volatility 2025-04-04、mean reversion 2025-02-06、equal-weight 2025-01-06。
 
 | 戦略 | full-period CAGR の IID-bootstrap 95% 区間 | OOS Sortino | OOS 年間 turnover |
 |---|---:|---:|---:|
-| 12–1 momentum | -8.13%〜41.16% | -0.415 | 7.97x |
-| inverse-volatility / low-volatility | -4.14%〜31.02% | 3.452 | 3.39x |
-| 20-session mean reversion | -5.45%〜42.86% | 1.107 | 11.00x |
-| equal-weight 1/N baseline | -5.50%〜40.68% | 1.425 | 1.09x |
+| 12–1 momentum | -8.23%〜40.73% | -0.421 | 8.06x |
+| inverse-volatility / low-volatility | -4.15%〜31.07% | 3.483 | 3.41x |
+| 20-session mean reversion | -5.32%〜42.88% | 1.093 | 11.10x |
+| equal-weight 1/N baseline | -5.20%〜41.00% | 1.414 | 1.23x |
 
 4 戦略すべての bootstrap 区間はゼロをまたぎます。これは IID 再標本化による幅の大きい記述的区間であり、将来予測区間でも、将来収益が正である証拠でもありません。特に momentum は full-period CAGR が正でも OOS CAGR は負でした。Low-volatility の高い OOS 数値も、この固定ユニバースにおける一度の過去期間に限られ、独立した将来検証を意味しません。
 
