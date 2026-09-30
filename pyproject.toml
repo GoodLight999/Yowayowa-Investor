@@ -124,6 +124,7 @@ ignore_missing_imports = true
 [tool.hatch.build]
 include = [
   "src/yowayowa/**/*.py",
+  "src/yowayowa/*.json",
   "src/yowayowa/web/templates/*.html",
   "src/yowayowa/web/static/*",
 ]

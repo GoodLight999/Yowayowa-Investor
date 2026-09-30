@@ -26,6 +26,8 @@ def test_agent_facing_openapi_contract_remains_machine_discoverable() -> None:
     paths = schema["paths"]
 
     required_paths = {
+        "/v1/backtest/run",
+        "/v1/backtest/strategies",
         "/v1/ai/chat",
         "/v1/ai/status",
         "/v1/ai/prompt-packet",
@@ -44,6 +46,8 @@ def test_agent_facing_openapi_contract_remains_machine_discoverable() -> None:
 
 
 REQUIRED_CORE_PATHS = {
+    "/v1/backtest/run",
+    "/v1/backtest/strategies",
     # AI surfaces (existing pins)
     "/v1/ai/chat",
     "/v1/ai/status",

@@ -6,6 +6,7 @@ import typer
 from rich import print
 from rich.table import Table
 
+from yowayowa.backtest_cli import app as backtest_app
 from yowayowa.broker_execution_cli import app as broker_execution_app
 from yowayowa.broker_read_cli import app as broker_read_app
 from yowayowa.calibration_cli import strategy_calibration
@@ -31,6 +32,7 @@ from yowayowa.screening_cli import screening_candidates, screening_run
 from yowayowa.stock_cli import stock_fetch, stock_ohlcv
 
 app.add_typer(events_app, name="events")
+app.add_typer(backtest_app, name="backtest")
 app.command(name="jpx-margin-ingest")(jpx_margin_ingest)
 app.command(name="jpx-margin")(jpx_margin)
 app.command(name="credit-margin-fetch")(credit_margin_fetch)
