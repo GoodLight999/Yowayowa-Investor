@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     private_acquisition_data_dir: str = "./data/private-acquisition"
     broker_rakuten_web_profile_dir: str = "./data/broker-profiles/rakuten"
     broker_session_notify_state_path: str = "./data/broker-session/notify-state.json"
+    strategy_signal_notify_state_path: str = "./data/strategy-signals/notify-state.json"
     broker_rakuten_web_user_agent: str | None = None
     sec_user_agent: str = "Yowayowa-Investor/0.1 admin@example.invalid"
     sec_requests_per_second: float = Field(default=8.0, gt=0, le=10)

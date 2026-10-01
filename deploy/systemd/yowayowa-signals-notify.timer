@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Yowayowa strategy-signal Telegram delivery (after US close)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 09:00:00
+Persistent=true
+Unit=yowayowa-signals-notify.service
+
+[Install]
+WantedBy=timers.target

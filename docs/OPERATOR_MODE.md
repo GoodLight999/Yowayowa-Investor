@@ -160,6 +160,29 @@ research-priority scoring actually helped, without ever rewriting history:
   `systemctl start yowayowa-snapshot.service`; inspect its output with
   `journalctl -u yowayowa-snapshot --no-pager` and confirm
   `select count(*) from strategy_research_snapshots` in the persistent DB.
+- **Daily strategy-signal Telegram digest (t_8e24821d)** —
+  `yowayowa signals-send` is the ONLY send path for the daily screener:
+  it evaluates the persisted `data/stock-ohlcv` store (read-only) and
+  delivers one digest per trading date through `hermes send --to telegram`
+  (low-vol top 5, full 20-day-return ranking, negative-return candidate
+  count, provider/source-host/retrieved-at provenance, explicit
+  売買推奨ではない marker). The read-only surfaces
+  (`yowayowa signals`, `GET /v1/screening/strategy`) never send.
+  Deduplication state lives at
+  `YOWAYOWA_STRATEGY_SIGNAL_NOTIFY_STATE_PATH` (default
+  `./data/strategy-signals/notify-state.json`): one message per
+  (signal date, alert fingerprint); a changed candidate set for the same
+  date sends again, a failed send leaves state unwritten and retries on the
+  next run. `YOWAYOWA_SIGNAL_NOTIFY_DISABLED=1` blocks the transport
+  entirely (tests/CI/maintenance). Scheduling: install
+  `deploy/systemd/yowayowa-signals-notify.service` +
+  `.timer` (Mon–Fri 09:00 JST, after the 08:30 Alpaca fetch so the digest
+  reflects the newest persisted session) and
+  `systemctl enable --now yowayowa-signals-notify.timer`; verify with
+  `systemctl list-timers yowayowa-signals-notify.timer` and
+  `journalctl -u yowayowa-signals-notify --no-pager`. Manual run:
+  `YOWAYOWA_MODE=personal python -m yowayowa.cli_shim signals-send`
+  from the checkout with `PYTHONPATH=src`.
 
 ### Hypothesis & falsification records (P3)
 

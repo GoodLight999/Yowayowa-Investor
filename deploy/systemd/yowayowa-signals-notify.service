@@ -1,0 +1,10 @@
+[Unit]
+Description=Send Yowayowa daily strategy-signal Telegram digest
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/current-work/yowayowa-investor
+Environment=PYTHONPATH=src
+Environment=YOWAYOWA_MODE=personal
+Environment=YOWAYOWA_DATABASE_URL=sqlite:////root/current-work/yowayowa-investor/data/yowayowa.db
+ExecStart=/root/current-work/yowayowa-investor/.venv/bin/python -m yowayowa.cli_shim signals-send

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -39,6 +39,7 @@ from yowayowa.news_models import (
 from yowayowa.providers.base import MarketDataProvider
 from yowayowa.services.calendar import resolve_tracked_symbols
 from yowayowa.services.strategy_signals import compute_daily_strategy_signals
+from yowayowa.stock_acquisition import StockOhlcvStore
 from yowayowa.symbols import normalize_symbol
 
 
@@ -50,6 +51,26 @@ class TrackedEventProvider(Protocol):
         end: date,
         event_types: list[TrackedEventType] | None = None,
     ) -> tuple[list[TrackedCalendarEvent], list[str], Provenance]: ...
+
+
+def load_persisted_signal_histories(
+    store: StockOhlcvStore,
+    *,
+    provider: str = "alpaca",
+    limit: int = 10_000,
+) -> dict[str, list[dict[str, Any]]]:
+    """Read every persisted symbol's newest-first rows for signal computation.
+
+    Read-only: missing store roots yield an empty mapping, never a fetch.
+    Symbols with no rows for the requested provider are omitted entirely so
+    downstream fail-closed logic sees only real, provenance-bearing rows.
+    """
+
+    return {
+        symbol: rows
+        for symbol in store.list_symbols()
+        if (rows := store.read(symbol, provider=provider, limit=limit))
+    }
 
 
 def evaluate_strategy_signal_alerts(

@@ -29,6 +29,7 @@ from yowayowa.private_source_cli import app as private_source_app
 from yowayowa.rate_cli import app as rate_app
 from yowayowa.research_cli import latest_research_brief, research_ask, research_brief
 from yowayowa.screening_cli import screening_candidates, screening_run
+from yowayowa.signal_cli import signals_send
 from yowayowa.stock_cli import stock_fetch, stock_ohlcv
 
 app.add_typer(events_app, name="events")
@@ -44,6 +45,7 @@ app.command(name="stock-ohlcv")(stock_ohlcv)
 app.command(name="ohlcv-audit")(ohlcv_audit)
 app.command(name="screening-run")(screening_run)
 app.command(name="screening-candidates")(screening_candidates)
+app.command(name="signals-send")(signals_send)
 app.command(name="research-brief")(research_brief)
 app.command(name="research-ask")(research_ask)
 app.command(name="research-brief-latest")(latest_research_brief)
