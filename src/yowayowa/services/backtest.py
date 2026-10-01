@@ -320,13 +320,18 @@ def run_backtest(
         raise ValueError(
             "Universe symbols do not have identical OHLCV sessions in the requested window"
         )
+    currencies: set[str] = set()
     for symbol, rows in rows_by_symbol.items():
-        if any(
-            str(row.get("currency", "")).upper() != "USD"
+        symbol_currencies = {
+            str(row.get("currency", "")).upper()
             for row in rows.values()
             if request.start <= _date(row["as_of"]) <= request.end
-        ):
-            raise ValueError(f"Non-USD OHLCV is not comparable in this portfolio: {symbol}")
+        }
+        if not symbol_currencies.issubset({"USD", "USDT"}):
+            raise ValueError(f"Non-USD/USDT OHLCV is not comparable in this portfolio: {symbol}")
+        currencies.update(symbol_currencies)
+    if len(currencies) > 1:
+        raise ValueError("Universe symbols have mixed currencies; refusing to combine them")
     window_dates = sorted(requested_sessions[0])
     if len(window_dates) < 2:
         return _insufficient_response(
