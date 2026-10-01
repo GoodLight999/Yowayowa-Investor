@@ -20,6 +20,7 @@ from yowayowa import __version__
 from yowayowa.api.ai_integration_routes import router as ai_integration_router
 from yowayowa.api.ai_routes import router as ai_router
 from yowayowa.api.backtest_routes import router as backtest_router
+from yowayowa.api.backtest_routes import strategy_router as strategy_screening_router
 from yowayowa.api.broker_execution_routes import router as broker_execution_router
 from yowayowa.api.broker_read_routes import router as broker_read_router
 from yowayowa.api.calendar_routes import router as calendar_router
@@ -203,6 +204,7 @@ app = FastAPI(
 )
 app.include_router(research_llm_router)
 app.include_router(backtest_router)
+app.include_router(strategy_screening_router)
 app.include_router(research_router)
 app.include_router(hypotheses_router)
 app.include_router(macro_router)

@@ -38,6 +38,7 @@ from yowayowa.news_models import (
 )
 from yowayowa.providers.base import MarketDataProvider
 from yowayowa.services.calendar import resolve_tracked_symbols
+from yowayowa.services.strategy_signals import compute_daily_strategy_signals
 from yowayowa.symbols import normalize_symbol
 
 
@@ -49,6 +50,14 @@ class TrackedEventProvider(Protocol):
         end: date,
         event_types: list[TrackedEventType] | None = None,
     ) -> tuple[list[TrackedCalendarEvent], list[str], Provenance]: ...
+
+
+def evaluate_strategy_signal_alerts(
+    histories: dict[str, list[dict[str, object]]],
+) -> list[dict[str, object]]:
+    """Return source-backed daily strategy candidate alerts without transmitting them."""
+    result = compute_daily_strategy_signals(histories)
+    return cast(list[dict[str, object]], result["alerts"])
 
 
 def _to_model(row: PriceAlertRecord) -> PriceAlert:
