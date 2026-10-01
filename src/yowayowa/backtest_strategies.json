@@ -42,5 +42,27 @@
     "max_positions": 10,
     "weighting": "equal",
     "execution": "next_open"
+  },
+  {
+    "id": "value_fundamental",
+    "name": "Fundamental value proxy",
+    "description": "Ranks point-in-time pbr, per, and conservative net-cash ratio fields; requires disclosure_date strictly before execution.",
+    "signal": "value_fundamental",
+    "universe": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "JPM", "XOM", "SPY"],
+    "rebalance": "monthly",
+    "max_positions": 5,
+    "weighting": "equal",
+    "execution": "next_open"
+  },
+  {
+    "id": "kiyohara_value",
+    "name": "Kiyohara value proxy",
+    "description": "Ranks point-in-time pbr, per, and Kiyohara net-cash ratio fields; requires disclosure_date strictly before execution.",
+    "signal": "kiyohara_value",
+    "universe": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "JPM", "XOM", "SPY"],
+    "rebalance": "monthly",
+    "max_positions": 5,
+    "weighting": "equal",
+    "execution": "next_open"
   }
 ]

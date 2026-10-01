@@ -10,6 +10,8 @@ BacktestSignal = Literal[
     "low_volatility",
     "mean_reversion_20",
     "equal_weight",
+    "value_fundamental",
+    "kiyohara_value",
 ]
 RebalanceFrequency = Literal["daily", "weekly", "monthly"]
 ExecutionPrice = Literal["next_open"]

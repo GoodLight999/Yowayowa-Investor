@@ -5,8 +5,14 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from yowayowa.backtest_models import BacktestRunRequest, BacktestStrategyDefinition
-from yowayowa.services.backtest import _metrics, get_strategy, list_strategies, run_backtest
+from yowayowa.backtest_models import BacktestRunRequest, BacktestSignal, BacktestStrategyDefinition
+from yowayowa.services.backtest import (
+    _metrics,
+    _target_weights,
+    get_strategy,
+    list_strategies,
+    run_backtest,
+)
 
 
 def _small_strategy() -> BacktestStrategyDefinition:
@@ -58,6 +64,47 @@ def test_strategy_catalog_is_data_driven_and_ids_are_unique() -> None:
     assert len(strategies) >= 3
     assert len({item.id for item in strategies}) == len(strategies)
     assert get_strategy("equal_weight").signal == "equal_weight"
+    assert get_strategy("value_fundamental").signal == "value_fundamental"
+    assert get_strategy("kiyohara_value").signal == "kiyohara_value"
+
+
+@pytest.mark.parametrize(
+    ("signal", "cash_key"),
+    [("value_fundamental", "net_cash_ratio"), ("kiyohara_value", "kiyohara_net_cash_ratio")],
+)
+def test_fundamental_selection_is_point_in_time_and_ranks_best_assets(
+    signal: BacktestSignal, cash_key: str
+) -> None:
+    decision = date(2025, 2, 3)
+    strategy = BacktestStrategyDefinition(
+        id="fundamental_test",
+        name="fundamental test",
+        description="test",
+        signal=signal,
+        universe=["AAA", "BBB", "CCC"],
+        max_positions=1,
+    )
+    rows = {
+        "AAA": {
+            date(2025, 1, 31): {"disclosure_date": "2025-02-03", "pbr": 0.1, "per": 1, cash_key: 10}
+        },
+        "BBB": {
+            date(2025, 1, 31): {"disclosure_date": "2025-01-30", "pbr": 1, "per": 10, cash_key: 0.1}
+        },
+        "CCC": {
+            date(2025, 1, 31): {"disclosure_date": "2025-01-30", "pbr": 2, "per": 20, cash_key: 0}
+        },
+    }
+    assert _target_weights(strategy, rows, decision) == {"BBB": 1.0}
+
+
+def test_fundamental_missing_point_in_time_data_returns_no_selection() -> None:
+    strategy = get_strategy("value_fundamental").model_copy(
+        update={"universe": ["AAA"], "max_positions": 1}
+    )
+    decision = date(2025, 2, 3)
+    rows = {"AAA": {date(2025, 1, 31): {"pbr": 1, "per": 2, "net_cash_ratio": 1}}}
+    assert _target_weights(strategy, rows, decision) == {}
 
 
 def test_strategy_definition_rejects_duplicate_symbols() -> None:
