@@ -92,11 +92,16 @@ def test_api_run_reads_persisted_store_and_returns_metrics(monkeypatch) -> None:
                 "start": "2025-01-01",
                 "end": "2025-05-01",
                 "bootstrap_samples": 100,
+                "annualization_days": 365,
             },
         )
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "complete"
+    assert payload["annualization_days"] == 365
+    assert payload["metrics"]["annualization_days"] == 365
+    assert payload["in_sample_metrics"]["annualization_days"] == 365
+    assert payload["oos_metrics"]["annualization_days"] == 365
     assert payload["metrics"]["cagr"]["status"] == "available"
     assert payload["provenance"][0]["license_class"] == "personal_only"
 
@@ -113,8 +118,11 @@ def test_cli_parses_iso_dates_and_calls_api_client(monkeypatch) -> None:  # type
         commission_bps: float,
         slippage_bps: float,
         provider: str,
+        annualization_days: int,
     ) -> dict[str, object]:
-        captured.update(strategy=strategy, start=start, end=end)
+        captured.update(
+            strategy=strategy, start=start, end=end, annualization_days=annualization_days
+        )
         return {
             "strategy": {"name": "Fixture"},
             "status": "insufficient",
@@ -127,13 +135,23 @@ def test_cli_parses_iso_dates_and_calls_api_client(monkeypatch) -> None:  # type
     monkeypatch.setattr("yowayowa.backtest_cli._run_request", fake_run)
     result = CliRunner().invoke(
         backtest_cli_app,
-        ["--strategy", "equal_weight", "--start", "2025-01-01", "--end", "2025-03-01"],
+        [
+            "--strategy",
+            "equal_weight",
+            "--start",
+            "2025-01-01",
+            "--end",
+            "2025-03-01",
+            "--annualization-days",
+            "365",
+        ],
     )
     assert result.exit_code == 0, result.output
     assert captured == {
         "strategy": "equal_weight",
         "start": date(2025, 1, 1),
         "end": date(2025, 3, 1),
+        "annualization_days": 365,
     }
 
 
@@ -152,8 +170,10 @@ def test_strategy_screening_api_uses_stored_universe(monkeypatch) -> None:  # ty
         def list_symbols(self) -> list[str]:
             return ["AAA", "BBB"]
 
-        def read(self, symbol: str, *, provider: str, limit: int) -> list[dict[str, Any]]:
-            assert provider == "alpaca"
+        def read(
+            self, symbol: str, *, provider: str | None = None, limit: int
+        ) -> list[dict[str, Any]]:
+            assert provider is None  # source validation must see all persisted rows
             assert limit == 10_000
             return _ohlcv(date(2025, 1, 1), 70)
 

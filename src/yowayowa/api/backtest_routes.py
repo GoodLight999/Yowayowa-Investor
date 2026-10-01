@@ -47,8 +47,7 @@ def daily_signals() -> dict[str, Any]:
         ) from exc
     store = _store()
     histories = {
-        symbol: list(reversed(store.read(symbol, provider="alpaca", limit=10_000)))
-        for symbol in store.list_symbols()
+        symbol: list(reversed(store.read(symbol, limit=10_000))) for symbol in store.list_symbols()
     }
     return compute_daily_strategy_signals(histories)
 

@@ -21,3 +21,11 @@ FRED access is BYOK. A series may inherit restrictions or attribution requiremen
 ## Yahoo / yfinance
 
 The adapter is useful for the personal-first product but is marked personal-only. It is not the commercial redistribution strategy.
+
+## Daily strategy signals
+
+Daily screening rejects duplicate or gapped sessions, stale members, invalid
+closes/derived returns, missing provenance, and mixed-provider histories per
+symbol. Alerts retain source metadata for every lookback observation. See
+[`STRATEGY_SIGNAL_QUALITY.md`](STRATEGY_SIGNAL_QUALITY.md) for the observed-session
+calendar, relative-freshness limitations, rejection reasons, and regression gates.

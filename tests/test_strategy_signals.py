@@ -41,7 +41,7 @@ def test_daily_signals_rank_volatility_and_20_day_return_with_provenance() -> No
     assert evaluate_strategy_signal_alerts(histories)[0]["symbol"] == "MSFT"
 
 
-def test_missing_common_session_fails_closed_without_signals() -> None:
+def test_disjoint_histories_report_stale_members_without_rewinding() -> None:
     histories = {symbol: _history(index) for index, symbol in enumerate(UNIVERSE)}
     histories["SPY"] = [
         {**row, "as_of": date(2026, 1, 1) + timedelta(days=index)}
@@ -50,9 +50,10 @@ def test_missing_common_session_fails_closed_without_signals() -> None:
 
     result = compute_daily_strategy_signals(histories)
 
-    assert result["as_of"] is None
-    assert result["low_volatility"] == []
-    assert result["mean_reversion"] == []
+    assert result["as_of"] == date(2026, 3, 2)
+    assert [item["symbol"] for item in result["low_volatility"]] == ["SPY"]
+    assert [item["symbol"] for item in result["mean_reversion"]] == ["SPY"]
+    assert result["unavailable"]["AAPL"] == "stale_data"
 
 
 def test_short_history_is_reported_as_unavailable() -> None:

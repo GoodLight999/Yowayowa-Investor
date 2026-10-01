@@ -55,7 +55,7 @@ class TrackedEventProvider(Protocol):
 def evaluate_strategy_signal_alerts(
     histories: dict[str, list[dict[str, object]]],
 ) -> list[dict[str, object]]:
-    """Return source-backed daily strategy candidate alerts without transmitting them."""
+    """Return validated candidate alerts with per-observation provenance, without sending them."""
     result = compute_daily_strategy_signals(histories)
     return cast(list[dict[str, object]], result["alerts"])
 

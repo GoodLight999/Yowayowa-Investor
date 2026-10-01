@@ -79,6 +79,12 @@ class StockOhlcvRecord(BaseModel):
     vwap: float | None = None
     trade_count: int | None = None
     notes: list[str] = Field(default_factory=list)
+    # Optional point-in-time inputs; acquisition must not invent financial data.
+    disclosure_date: str | None = None
+    pbr: float | None = None
+    per: float | None = None
+    net_cash_ratio: float | None = None
+    kiyohara_net_cash_ratio: float | None = None
 
 
 def stock_bar_timestamp(value: object) -> datetime:

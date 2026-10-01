@@ -37,22 +37,26 @@ def _metric(value: float | None, count: int, *, undefined: bool = False) -> Back
 
 
 def _metrics(
-    returns: list[float], turnover: float, ci: tuple[float, float] | None, bootstrap_enabled: bool
+    returns: list[float],
+    turnover: float,
+    ci: tuple[float, float] | None,
+    bootstrap_enabled: bool,
+    annualization_days: int = TRADING_DAYS_PER_YEAR,
 ) -> BacktestMetrics:
     count = len(returns)
-    years = count / TRADING_DAYS_PER_YEAR
+    years = count / annualization_days
     growth = math.prod(1 + value for value in returns)
     cagr = growth ** (1 / years) - 1 if years and growth > 0 else None
     average = fmean(returns) if returns else None
     volatility = stdev(returns) if count > 1 else None
     sharpe = (
-        average / volatility * math.sqrt(TRADING_DAYS_PER_YEAR)
+        average / volatility * math.sqrt(annualization_days)
         if average is not None and volatility and volatility > 0
         else None
     )
     downside = math.sqrt(fmean(min(value, 0.0) ** 2 for value in returns)) if returns else None
     sortino = (
-        average / downside * math.sqrt(TRADING_DAYS_PER_YEAR)
+        average / downside * math.sqrt(annualization_days)
         if average is not None and downside and downside > 0
         else None
     )
@@ -66,6 +70,7 @@ def _metrics(
     hit_rate = sum(value > 0 for value in returns) / count if count else None
     annual_turnover = turnover / years if years else None
     return BacktestMetrics(
+        annualization_days=annualization_days,
         cagr=_metric(cagr, count),
         sharpe_ratio=_metric(sharpe, count, undefined=volatility == 0),
         sortino_ratio=_metric(sortino, count, undefined=downside == 0),
@@ -81,12 +86,15 @@ def _metrics(
 
 
 def _bootstrap_cagr(
-    returns: Sequence[float], samples: int, seed: int
+    returns: Sequence[float],
+    samples: int,
+    seed: int,
+    annualization_days: int = TRADING_DAYS_PER_YEAR,
 ) -> tuple[float, float] | None:
     if samples <= 0 or len(returns) < MIN_RETURN_SAMPLES:
         return None
     rng = random.Random(seed)
-    years = len(returns) / TRADING_DAYS_PER_YEAR
+    years = len(returns) / annualization_days
     values: list[float] = []
     for _ in range(samples):
         growth = math.prod(1 + returns[rng.randrange(len(returns))] for _ in returns)
@@ -126,19 +134,30 @@ def _target_weights(
     strategy: BacktestStrategyDefinition,
     rows_by_symbol: Mapping[str, Mapping[date, Mapping[str, Any]]],
     decision_date: date,
+    *,
+    missing_fundamentals: list[tuple[str, str]] | None = None,
 ) -> dict[str, float]:
     signals: list[tuple[str, float]] = []
     for symbol in strategy.universe:
         rows = rows_by_symbol[symbol]
         if strategy.signal in {"value_fundamental", "kiyohara_value"}:
-            eligible = [
-                (day, row)
-                for day, row in rows.items()
-                if day < decision_date
-                and row.get("disclosure_date")
-                and _date(row["disclosure_date"]) < decision_date
-            ]
+            prior = sorted(day for day in rows if day < decision_date)
+            eligible: list[tuple[date, Mapping[str, Any]]] = []
+            for day in prior:
+                row = rows[day]
+                try:
+                    disclosed = _date(row["disclosure_date"])
+                except (KeyError, TypeError, ValueError):
+                    if day == prior[-1] and missing_fundamentals is not None:
+                        missing_fundamentals.append((symbol, "missing or invalid disclosure_date"))
+                    continue
+                if disclosed < decision_date:
+                    eligible.append((day, row))
             if not eligible:
+                if missing_fundamentals is not None:
+                    missing_fundamentals.append(
+                        (symbol, "no previously disclosed financial inputs")
+                    )
                 continue
             _, fundamental = max(eligible, key=lambda item: item[0])
             try:
@@ -152,9 +171,17 @@ def _target_weights(
                     ]
                 )
             except (KeyError, TypeError, ValueError):
+                if missing_fundamentals is not None:
+                    missing_fundamentals.append(
+                        (symbol, "missing or invalid valuation/net-cash inputs")
+                    )
                 continue
             values = (pbr, per, cash_ratio)
             if not all(math.isfinite(value) for value in values) or pbr <= 0 or per <= 0:
+                if missing_fundamentals is not None:
+                    missing_fundamentals.append(
+                        (symbol, "non-finite inputs or non-positive pbr/per")
+                    )
                 continue
             # Bounded reciprocal valuation terms plus the supplied net-cash ratio.
             signal = 1 / pbr + 1 / per + cash_ratio
@@ -170,7 +197,7 @@ def _target_weights(
             signal = closes[-22] / closes[-253] - 1
         elif strategy.signal == "low_volatility":
             daily = _returns(closes[-61:])
-            if len(daily) < 20:
+            if len(daily) < 60:
                 continue
             signal = stdev(daily)
         else:
@@ -198,7 +225,7 @@ def _target_weights(
             history_dates = sorted(day for day in rows_by_symbol[symbol] if day < decision_date)
             closes = [float(rows_by_symbol[symbol][day]["close"]) for day in history_dates[-61:]]
             daily_returns = _returns(closes)
-            if len(daily_returns) < 20:
+            if len(daily_returns) < 60:
                 continue
             volatility = stdev(daily_returns)
             weighted.append((symbol, 1 / max(volatility, 1e-9)))
@@ -219,7 +246,9 @@ def _insufficient_response(
         start=request.start,
         end=request.end,
         status="insufficient",
+        annualization_days=request.annualization_days,
         metrics=BacktestMetrics(
+            annualization_days=request.annualization_days,
             cagr=metric,
             sharpe_ratio=metric,
             sortino_ratio=metric,
@@ -232,7 +261,10 @@ def _insufficient_response(
         equity_curve=[],
         trades=[],
         provenance=provenance,
-        assumptions=["Missing observations are not filled, forward-filled, or treated as zero."],
+        assumptions=[
+            "Missing observations are not filled, forward-filled, or treated as zero.",
+            f"Annualization: {request.annualization_days} observations per year.",
+        ],
         warnings=warnings,
     )
 
@@ -255,6 +287,8 @@ def run_backtest(
             if str(row.get("provider", request.provider)) != request.provider:
                 continue
             session = _date(row["as_of"])
+            if session > request.end:
+                continue
             close = float(row["close"])
             opening = float(row.get("open", close))
             if not all(math.isfinite(price) and price > 0 for price in (close, opening)):
@@ -325,7 +359,7 @@ def run_backtest(
         symbol_currencies = {
             str(row.get("currency", "")).upper()
             for row in rows.values()
-            if request.start <= _date(row["as_of"]) <= request.end
+            if _date(row["as_of"]) <= request.end
         }
         if not symbol_currencies.issubset({"USD", "USDT"}):
             raise ValueError(f"Non-USD/USDT OHLCV is not comparable in this portfolio: {symbol}")
@@ -351,6 +385,8 @@ def run_backtest(
         "value_fundamental": 0,
         "kiyohara_value": 0,
     }[strategy.signal]
+    if strategy.weighting == "inverse_volatility":
+        warmup = max(warmup, 61)
     for symbol, rows in rows_by_symbol.items():
         if sum(day < window_dates[0] for day in rows) < warmup:
             warnings.append(
@@ -370,6 +406,7 @@ def run_backtest(
     trades: list[BacktestTrade] = []
     daily_returns: list[float] = []
     prior_session: date | None = None
+    financial_gaps: dict[tuple[str, str], list[date]] = {}
     for day in dates:
         if day < window_dates[0]:
             prior_session = day
@@ -400,7 +437,16 @@ def run_backtest(
         transaction_cost = 0.0
         turnover = 0.0
         if day in rebalance_dates:
-            target = _target_weights(strategy, rows_by_symbol, day)
+            missing_fundamentals: list[tuple[str, str]] = []
+            target = _target_weights(
+                strategy, rows_by_symbol, day, missing_fundamentals=missing_fundamentals
+            )
+            for issue in missing_fundamentals:
+                financial_gaps.setdefault(issue, []).append(day)
+            if missing_fundamentals and not target:
+                financial_gaps.setdefault(
+                    ("portfolio", "no eligible financial targets; existing holdings retained"), []
+                ).append(day)
             if target:
                 turnover = sum(
                     abs(target.get(symbol, 0.0) - open_weights[symbol])
@@ -457,8 +503,18 @@ def run_backtest(
         )
         prior_session = day
 
-    ci = _bootstrap_cagr(daily_returns, request.bootstrap_samples, request.bootstrap_seed)
-    metrics = _metrics(daily_returns, turnover_sum, ci, request.bootstrap_samples > 0)
+    for (symbol, reason), affected_dates in sorted(financial_gaps.items()):
+        warnings.append(
+            f"Fundamental data unavailable for {symbol}: {reason}; "
+            f"rebalance dates {affected_dates[0]} through {affected_dates[-1]} "
+            f"({len(affected_dates)} affected decisions). Missing inputs are not imputed."
+        )
+    ci = _bootstrap_cagr(
+        daily_returns, request.bootstrap_samples, request.bootstrap_seed, request.annualization_days
+    )
+    metrics = _metrics(
+        daily_returns, turnover_sum, ci, request.bootstrap_samples > 0, request.annualization_days
+    )
     metric_items = (
         metrics.cagr,
         metrics.sharpe_ratio,
@@ -474,10 +530,14 @@ def run_backtest(
         else "insufficient"
     )
     assumptions = [
+        f"Annualization: {request.annualization_days} observations per year for CAGR, "
+        "Sharpe, Sortino, turnover and bootstrap CAGR; Calmar uses annualized CAGR.",
         "Signals use only data dated before execution; orders execute at next session open.",
         "Fundamental value signals require pbr, per, net_cash_ratio or "
         "kiyohara_net_cash_ratio, and disclosure_date in OHLCV rows; missing or "
         "not-yet-disclosed records are excluded, never imputed.",
+        "When no targets are eligible, existing holdings are retained (cash if not invested); "
+        "financial-input exclusions and affected rebalance date spans are reported in warnings.",
         "Pre-start OHLCV is only for lookback; returns use the requested interval.",
         "Overnight returns use previous weights; intraday returns use post-rebalance weights.",
         "Weights drift between rebalances; turnover and costs use gross buys plus sells.",
@@ -518,6 +578,7 @@ def run_backtest(
         start=request.start,
         end=request.end,
         status=status,
+        annualization_days=request.annualization_days,
         metrics=metrics,
         in_sample_metrics=is_metrics if _include_oos else None,
         oos_metrics=oos_metrics,

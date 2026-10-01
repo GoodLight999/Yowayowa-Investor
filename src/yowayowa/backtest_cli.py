@@ -21,6 +21,7 @@ def _run_request(
     commission_bps: float,
     slippage_bps: float,
     provider: str,
+    annualization_days: int = 252,
 ) -> dict[str, Any]:
     payload = {
         "strategy_id": strategy,
@@ -29,6 +30,7 @@ def _run_request(
         "commission_bps": commission_bps,
         "slippage_bps": slippage_bps,
         "provider": provider,
+        "annualization_days": annualization_days,
     }
     with _client(base_url, token) as client:
         response = client.post("/v1/backtest/run", json=payload)
@@ -44,6 +46,7 @@ def run(
     end: str = typer.Option(..., "--end"),
     commission_bps: float = typer.Option(10.0, min=0, max=1000),
     slippage_bps: float = typer.Option(5.0, min=0, max=1000),
+    annualization_days: int = typer.Option(252, min=1, max=366),
     provider: Literal["alpaca"] = typer.Option("alpaca", hidden=True),
     base_url: str = typer.Option("http://127.0.0.1:8000"),
     token: str | None = typer.Option(None, envvar="YOWAYOWA_API_TOKEN"),
@@ -57,9 +60,20 @@ def run(
     if start_date >= end_date:
         raise typer.BadParameter("--start must be before --end")
     payload = _run_request(
-        strategy, start_date, end_date, base_url, token, commission_bps, slippage_bps, provider
+        strategy,
+        start_date,
+        end_date,
+        base_url,
+        token,
+        commission_bps,
+        slippage_bps,
+        provider,
+        annualization_days,
     )
     print(f"[bold]{payload['strategy']['name']}[/bold] — {payload['status']}")
+    print(
+        f"Annualization: {payload.get('annualization_days', annualization_days)} observations/year"
+    )
     table = Table("Metric", "Value", "Samples", "Status")
     for name, metric in payload["metrics"].items():
         if isinstance(metric, dict) and "status" in metric:

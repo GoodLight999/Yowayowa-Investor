@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -48,6 +49,17 @@ class BacktestRunRequest(BaseModel):
     bootstrap_samples: int = Field(default=1000, ge=0, le=20000)
     bootstrap_seed: int = 20260930
     provider: Literal["alpaca", "binance"] = "alpaca"
+    annualization_days: int = Field(default=252, ge=1, le=366, strict=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_annualization(cls, values: Any) -> Any:
+        if isinstance(values, Mapping) and "annualization_days" not in values:
+            return {
+                **values,
+                "annualization_days": 365 if values.get("provider") == "binance" else 252,
+            }
+        return values
 
     @model_validator(mode="after")
     def validate_dates(self) -> BacktestRunRequest:
@@ -63,6 +75,7 @@ class BacktestMetric(BaseModel):
 
 
 class BacktestMetrics(BaseModel):
+    annualization_days: int = Field(default=252, ge=1, le=366)
     cagr: BacktestMetric
     sharpe_ratio: BacktestMetric
     sortino_ratio: BacktestMetric
@@ -107,6 +120,7 @@ class BacktestRunResponse(BaseModel):
     strategy: BacktestStrategyDefinition
     start: date
     end: date
+    annualization_days: int = Field(default=252, ge=1, le=366)
     status: Literal["complete", "insufficient"]
     metrics: BacktestMetrics
     in_sample_metrics: BacktestMetrics | None = None
