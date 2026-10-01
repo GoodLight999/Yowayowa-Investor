@@ -14,7 +14,41 @@ from yowayowa.services.backtest_definitions import list_strategies
 LOW_VOLATILITY_LOOKBACK = 60
 MEAN_REVERSION_LOOKBACK = 20
 MIN_CLOSE = 1e-12
-PROVENANCE_FIELDS = ("provider", "source_url", "license_class", "retrieved_at", "as_of")
+PROVENANCE_FIELDS = ("provider", "source_url", "license_class", "retrieved_at", "as_of", "currency")
+SOURCE_FIELDS = ("provider", "source_url", "license_class", "retrieved_at")
+
+
+def _quote_error(rows: Sequence[Mapping[str, Any]]) -> str | None:
+    for row in rows:
+        quote = row.get("currency")
+        if quote is None or (isinstance(quote, str) and not quote.strip()):
+            return "missing_currency"
+        # Explicit uppercase ASCII codes (fiat or crypto); never infer/convert units.
+        if not isinstance(quote, str) or not (
+            3 <= len(quote) <= 8 and quote.isascii() and quote.isalpha() and quote.isupper()
+        ):
+            return "invalid_currency"
+    if len({row["currency"] for row in rows}) > 1:
+        return "mixed_currencies"
+    return None
+
+
+def _derived_metrics(closes: Sequence[float]) -> tuple[float | None, float | None]:
+    sigma = None
+    change = None
+    if len(closes) >= LOW_VOLATILITY_LOOKBACK + 1:
+        window = closes[-(LOW_VOLATILITY_LOOKBACK + 1) :]
+        returns = [current / previous - 1 for previous, current in pairwise(window)]
+        if not all(math.isfinite(value) for value in returns):
+            raise ValueError("nonfinite returns")
+        sigma = stdev(returns)
+        if not math.isfinite(sigma):
+            raise ValueError("nonfinite volatility")
+    if len(closes) >= MEAN_REVERSION_LOOKBACK + 1:
+        change = closes[-1] / closes[-(MEAN_REVERSION_LOOKBACK + 1)] - 1
+        if not math.isfinite(change):
+            raise ValueError("nonfinite endpoint return")
+    return sigma, change
 
 
 def _session(value: object) -> date:
@@ -29,7 +63,7 @@ def _provenance_error(rows: Sequence[Mapping[str, Any]]) -> str | None:
     for row in rows:
         if any(
             row.get(field) is None or (isinstance(row[field], str) and not row[field].strip())
-            for field in PROVENANCE_FIELDS[:-1]
+            for field in SOURCE_FIELDS
         ):
             return "missing_provenance"
         try:
@@ -61,7 +95,8 @@ def compute_daily_strategy_signals(
 ) -> dict[str, Any]:
     """Rank the latest observed session; never interpolate or rewind for stale members.
 
-    The union of observed dates is the shared session calendar (not civil days).
+    The union of source/quote/derived-valid dates is the shared session calendar
+    (not civil days). Validate local metrics before constructing that calendar.
     An interior gap in the trailing 61 sessions invalidates the symbol. Without
     an exchange calendar, dates absent from every member cannot be detected.
     """
@@ -72,6 +107,7 @@ def compute_daily_strategy_signals(
     unavailable: dict[str, str] = {}
     sessions_by_symbol: dict[str, list[date]] = {}
     closes_by_symbol: dict[str, list[float]] = {}
+    metrics_by_symbol: dict[str, tuple[float | None, float | None]] = {}
     provenance: dict[str, dict[str, Any]] = {}
     for symbol in universe:
         try:
@@ -106,6 +142,15 @@ def compute_daily_strategy_signals(
         if error:
             unavailable[symbol] = error
             continue
+        error = _quote_error(rows)
+        if error:
+            unavailable[symbol] = error
+            continue
+        try:
+            metrics_by_symbol[symbol] = _derived_metrics(closes)
+        except (ArithmeticError, ValueError):
+            unavailable[symbol] = "invalid_returns"
+            continue
         sessions_by_symbol[symbol] = sessions
         closes_by_symbol[symbol] = closes
         provenance[symbol] = _provenance(rows[-(LOW_VOLATILITY_LOOKBACK + 1) :])
@@ -128,27 +173,7 @@ def compute_daily_strategy_signals(
         ):
             unavailable[symbol] = "interior_gaps"
             continue
-        sigma = None
-        change = None
-        try:
-            if len(closes) >= LOW_VOLATILITY_LOOKBACK + 1:
-                window = closes[-(LOW_VOLATILITY_LOOKBACK + 1) :]
-                returns = [current / previous - 1 for previous, current in pairwise(window)]
-                if not all(math.isfinite(value) for value in returns):
-                    unavailable[symbol] = "invalid_returns"
-                    continue
-                sigma = stdev(returns)
-                if not math.isfinite(sigma):
-                    unavailable[symbol] = "invalid_returns"
-                    continue
-            if len(closes) >= MEAN_REVERSION_LOOKBACK + 1:
-                change = closes[-1] / closes[-(MEAN_REVERSION_LOOKBACK + 1)] - 1
-                if not math.isfinite(change):
-                    unavailable[symbol] = "invalid_returns"
-                    continue
-        except (ArithmeticError, ValueError):
-            unavailable[symbol] = "invalid_returns"
-            continue
+        sigma, change = metrics_by_symbol[symbol]
         if sigma is not None:
             volatility.append(
                 {
