@@ -130,6 +130,36 @@ def _target_weights(
     signals: list[tuple[str, float]] = []
     for symbol in strategy.universe:
         rows = rows_by_symbol[symbol]
+        if strategy.signal in {"value_fundamental", "kiyohara_value"}:
+            eligible = [
+                (day, row)
+                for day, row in rows.items()
+                if day < decision_date
+                and row.get("disclosure_date")
+                and _date(row["disclosure_date"]) < decision_date
+            ]
+            if not eligible:
+                continue
+            _, fundamental = max(eligible, key=lambda item: item[0])
+            try:
+                pbr = float(fundamental["pbr"])
+                per = float(fundamental["per"])
+                cash_ratio = float(
+                    fundamental[
+                        "kiyohara_net_cash_ratio"
+                        if strategy.signal == "kiyohara_value"
+                        else "net_cash_ratio"
+                    ]
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+            values = (pbr, per, cash_ratio)
+            if not all(math.isfinite(value) for value in values) or pbr <= 0 or per <= 0:
+                continue
+            # Bounded reciprocal valuation terms plus the supplied net-cash ratio.
+            signal = 1 / pbr + 1 / per + cash_ratio
+            signals.append((symbol, signal))
+            continue
         history = sorted(day for day in rows if day < decision_date)
         closes = [float(rows[day]["close"]) for day in history]
         if strategy.signal == "equal_weight":
@@ -313,6 +343,8 @@ def run_backtest(
         "low_volatility": 61,
         "mean_reversion_20": 21,
         "equal_weight": 0,
+        "value_fundamental": 0,
+        "kiyohara_value": 0,
     }[strategy.signal]
     for symbol, rows in rows_by_symbol.items():
         if sum(day < window_dates[0] for day in rows) < warmup:
@@ -438,6 +470,9 @@ def run_backtest(
     )
     assumptions = [
         "Signals use only data dated before execution; orders execute at next session open.",
+        "Fundamental value signals require pbr, per, net_cash_ratio or "
+        "kiyohara_net_cash_ratio, and disclosure_date in OHLCV rows; missing or "
+        "not-yet-disclosed records are excluded, never imputed.",
         "Pre-start OHLCV is only for lookback; returns use the requested interval.",
         "Overnight returns use previous weights; intraday returns use post-rebalance weights.",
         "Weights drift between rebalances; turnover and costs use gross buys plus sells.",
