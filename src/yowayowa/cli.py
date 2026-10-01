@@ -526,6 +526,30 @@ def screen(
     print(table)
 
 
+@app.command("signals")
+@app.command("screening-strategy")
+def strategy_signals(
+    base_url: str = typer.Option("http://127.0.0.1:8000"),
+    token: str | None = typer.Option(None, envvar="YOWAYOWA_API_TOKEN"),
+) -> None:
+    """List daily low-volatility and mean-reversion candidate ranks."""
+    with _client(base_url, token) as client:
+        payload = client.get("/v1/screening/strategy").raise_for_status().json()
+    print(f"As of: {payload.get('as_of') or 'unavailable'}")
+    table = Table("Signal", "Rank", "Symbol", "Value", "Observations")
+    for name, field, key in (
+        ("Low volatility", "low_volatility", "daily_volatility"),
+        ("20-day return (ascending)", "mean_reversion", "return_20d"),
+    ):
+        for rank, row in enumerate(payload[field], start=1):
+            table.add_row(
+                name, str(rank), row["symbol"], f"{row[key]:.6g}", str(row["observations"])
+            )
+    print(table)
+    if payload["unavailable"]:
+        print(f"Unavailable: {payload['unavailable']}")
+
+
 @app.command()
 def compare(
     symbols: list[str],

@@ -51,6 +51,14 @@ class StockOhlcvStore:
         directory.mkdir(parents=True, exist_ok=True)
         return directory / "ohlcv.jsonl"
 
+    def list_symbols(self) -> list[str]:
+        """List symbols with persisted OHLCV without creating or modifying files."""
+        if not self.root.exists():
+            return []
+        return sorted(
+            path.parent.name.upper() for path in self.root.glob("*/ohlcv.jsonl") if path.is_file()
+        )
+
     def _existing_keys(self, symbol: str) -> set[tuple[str, str, str]]:
         path = self.root / symbol.upper() / "ohlcv.jsonl"
         if not path.exists():

@@ -143,3 +143,23 @@ def test_cli_rejects_invalid_date() -> None:
         ["--strategy", "equal_weight", "--start", "invalid", "--end", "2025-03-01"],
     )
     assert result.exit_code != 0
+
+
+def test_strategy_screening_api_uses_stored_universe(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(backtest_routes, "get_settings", lambda: Settings(mode="personal"))
+
+    class Store:
+        def list_symbols(self) -> list[str]:
+            return ["AAA", "BBB"]
+
+        def read(self, symbol: str, *, provider: str, limit: int) -> list[dict[str, Any]]:
+            assert provider == "alpaca"
+            assert limit == 10_000
+            return _ohlcv(date(2025, 1, 1), 70)
+
+    monkeypatch.setattr(backtest_routes, "_store", lambda: Store())
+    with TestClient(app) as client:
+        response = client.get("/v1/screening/strategy")
+    assert response.status_code == 200, response.text
+    assert response.json()["universe"] == ["AAA", "BBB"]
+    assert len(response.json()["low_volatility"]) == 2
