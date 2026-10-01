@@ -45,7 +45,7 @@ class BacktestRunRequest(BaseModel):
     slippage_bps: float = Field(default=5.0, ge=0, le=1000)
     bootstrap_samples: int = Field(default=1000, ge=0, le=20000)
     bootstrap_seed: int = 20260930
-    provider: Literal["alpaca"] = "alpaca"
+    provider: Literal["alpaca", "binance"] = "alpaca"
 
     @model_validator(mode="after")
     def validate_dates(self) -> BacktestRunRequest:
