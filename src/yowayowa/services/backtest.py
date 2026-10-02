@@ -9,6 +9,7 @@ from statistics import fmean, stdev
 from typing import Any, Literal
 
 from yowayowa.backtest_models import (
+    VOLATILITY_TARGET_SYMBOL,
     BacktestEquityPoint,
     BacktestMetric,
     BacktestMetrics,
@@ -137,6 +138,28 @@ def _target_weights(
     *,
     missing_fundamentals: list[tuple[str, str]] | None = None,
 ) -> dict[str, float]:
+    if strategy.signal == "vol_target_defensive":
+        lookback = strategy.lookback or 21
+        target_vol = strategy.target_volatility if strategy.target_volatility is not None else 0.15
+        # Frozen US-equity convention: annualization_days=252, not crypto's 365.
+        sigma_star = target_vol / math.sqrt(252)
+        rows = rows_by_symbol.get(VOLATILITY_TARGET_SYMBOL, {})
+        history = sorted(day for day in rows if day < decision_date)
+        closes = [float(rows[day]["close"]) for day in history]
+        weight = 0.0
+        if len(closes) >= lookback + 1:
+            returns = _returns(closes[-(lookback + 1) :])
+            # Invalid prior prices can omit returns in _returns; never impute.
+            # statistics.stdev may raise on inf/nan, so fail closed first.
+            if len(returns) == lookback and all(math.isfinite(value) for value in returns):
+                sigma = stdev(returns)
+                if math.isfinite(sigma):
+                    weight = 1.0 if sigma == 0.0 else min(1.0, sigma_star / sigma)
+        target = {symbol: weight / len(strategy.universe) for symbol in strategy.universe}
+        assert sum(target.values()) <= 1 + 1e-12, "Volatility target must never use leverage"
+        # Explicit zeros liquidate old holdings; an empty dict would retain them.
+        return target
+
     if strategy.signal == "crypto_trend_dual_ma":
         lookback = strategy.lookback or 200
         active: list[str] = []
@@ -399,8 +422,12 @@ def run_backtest(
         "value_fundamental": 0,
         "kiyohara_value": 0,
         "crypto_trend_dual_ma": strategy.lookback or 200,
+        "vol_target_defensive": (strategy.lookback or 21) + 1,
     }[strategy.signal]
-    if strategy.weighting == "inverse_volatility" and strategy.signal != "crypto_trend_dual_ma":
+    if strategy.weighting == "inverse_volatility" and strategy.signal not in {
+        "crypto_trend_dual_ma",
+        "vol_target_defensive",
+    }:
         warmup = max(warmup, 61)
     for symbol, rows in rows_by_symbol.items():
         if sum(day < window_dates[0] for day in rows) < warmup:
@@ -575,6 +602,18 @@ def run_backtest(
             f"Configured rebalance: {strategy.rebalance}; warmup/purge: {warmup} sessions."
         )
     is_metrics = None
+    if strategy.signal == "vol_target_defensive":
+        target_vol = strategy.target_volatility if strategy.target_volatility is not None else 0.15
+        assumptions[3] = (
+            f"Volatility target: sigma21 is the sample standard deviation of SPY's last "
+            f"{strategy.lookback or 21} daily session returns strictly before execution; "
+            f"sigma*={target_vol:g}/sqrt(252), w=min(1, sigma*/sigma21). "
+            f"Equity assets receive equal w/{len(strategy.universe)} weights "
+            "(four-asset S-02: w/4); residual 1-w is interest-free USD cash. "
+            "No leverage (w<=1 hard cap); insufficient history or non-finite sigma "
+            "fails closed to full liquidation; zero sigma receives w=1. "
+            f"Configured rebalance: {strategy.rebalance}; warmup/purge: {warmup} closes/sessions."
+        )
     oos_start = None
     purged_sessions = 0
     if _include_oos:
