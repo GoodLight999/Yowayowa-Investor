@@ -24,6 +24,14 @@ from yowayowa.services.backtest_definitions import get_strategy, list_strategies
 
 MIN_RETURN_SAMPLES = 20
 TRADING_DAYS_PER_YEAR = 252
+MOMENTUM_LONG = 252
+MOMENTUM_SKIP = 21
+RISK_ON_RETURN_WINDOW = 20
+RISK_ON_SMA = 100
+DEFENSIVE_VOL_WINDOW = 60
+DEFENSIVE_SUBSET = ("JNJ", "PG", "XOM", "JPM")
+GROWTH_SELECT = 5
+DEFENSIVE_SELECT = 3
 __all__ = ["get_strategy", "list_strategies", "run_backtest"]
 
 
@@ -131,6 +139,21 @@ def _returns(prices: Sequence[float]) -> list[float]:
     return [current / prior - 1 for prior, current in pairwise(prices) if prior > 0]
 
 
+def _risk_on_regime(
+    rows_by_symbol: Mapping[str, Mapping[date, Mapping[str, Any]]],
+    decision_date: date,
+) -> bool:
+    """Lagged SPY gate; insufficient/invalid inputs fail closed, never imputed."""
+    rows = rows_by_symbol.get(VOLATILITY_TARGET_SYMBOL, {})
+    history = sorted(day for day in rows if day < decision_date)
+    if len(history) < RISK_ON_SMA:
+        return False
+    closes = [float(rows[day]["close"]) for day in history[-RISK_ON_SMA:]]
+    if not all(math.isfinite(value) and value > 0 for value in closes):
+        return False
+    return closes[-1] / closes[-(RISK_ON_RETURN_WINDOW + 1)] - 1 > 0 and closes[-1] > fmean(closes)
+
+
 def _target_weights(
     strategy: BacktestStrategyDefinition,
     rows_by_symbol: Mapping[str, Mapping[date, Mapping[str, Any]]],
@@ -138,6 +161,44 @@ def _target_weights(
     *,
     missing_fundamentals: list[tuple[str, str]] | None = None,
 ) -> dict[str, float]:
+    if strategy.signal == "defensive_rotation":
+        risk_on = _risk_on_regime(rows_by_symbol, decision_date)
+        candidates: list[tuple[str, float]] = []
+        for symbol in strategy.universe:
+            if not risk_on and symbol not in DEFENSIVE_SUBSET:
+                continue
+            rows = rows_by_symbol.get(symbol, {})
+            history = sorted(day for day in rows if day < decision_date)
+            required = MOMENTUM_LONG + 1 if risk_on else DEFENSIVE_VOL_WINDOW + 1
+            if len(history) < required:
+                continue
+            closes = [float(rows[day]["close"]) for day in history[-required:]]
+            if not all(math.isfinite(value) and value > 0 for value in closes):
+                continue
+            if risk_on:
+                value = closes[-(MOMENTUM_SKIP + 1)] / closes[-(MOMENTUM_LONG + 1)] - 1
+            else:
+                returns = _returns(closes)
+                if len(returns) != DEFENSIVE_VOL_WINDOW or not all(
+                    math.isfinite(value) for value in returns
+                ):
+                    continue
+                value = stdev(returns)
+            if math.isfinite(value):
+                candidates.append((symbol, value))
+        ranked = sorted(candidates, key=lambda item: (-item[1] if risk_on else item[1], item[0]))
+        selected_symbols = {
+            symbol for symbol, _ in ranked[: GROWTH_SELECT if risk_on else DEFENSIVE_SELECT]
+        }
+        # Growth slots are fixed at 20%; missing slots stay in cash. Defensive
+        # candidates share 1/N even when fewer than three are eligible.
+        weight = (
+            1 / GROWTH_SELECT if risk_on else 1 / len(selected_symbols) if selected_symbols else 0.0
+        )
+        return {
+            symbol: weight if symbol in selected_symbols else 0.0 for symbol in strategy.universe
+        }
+
     if strategy.signal == "vol_target_defensive":
         lookback = strategy.lookback or 21
         target_vol = strategy.target_volatility if strategy.target_volatility is not None else 0.15
@@ -423,10 +484,12 @@ def run_backtest(
         "kiyohara_value": 0,
         "crypto_trend_dual_ma": strategy.lookback or 200,
         "vol_target_defensive": (strategy.lookback or 21) + 1,
+        "defensive_rotation": MOMENTUM_LONG + 1,
     }[strategy.signal]
     if strategy.weighting == "inverse_volatility" and strategy.signal not in {
         "crypto_trend_dual_ma",
         "vol_target_defensive",
+        "defensive_rotation",
     }:
         warmup = max(warmup, 61)
     for symbol, rows in rows_by_symbol.items():
@@ -612,6 +675,19 @@ def run_backtest(
             "(four-asset S-02: w/4); residual 1-w is interest-free USD cash. "
             "No leverage (w<=1 hard cap); insufficient history or non-finite sigma "
             "fails closed to full liquidation; zero sigma receives w=1. "
+            f"Configured rebalance: {strategy.rebalance}; warmup/purge: {warmup} closes/sessions."
+        )
+    if strategy.signal == "defensive_rotation":
+        assumptions[3] = (
+            "Defensive rotation: R = (SPY last 20-session return > 0) AND "
+            "(SPY close(t-1) > SMA100(t-1)), using only closes strictly before execution. "
+            "Equality, insufficient or invalid history fails closed to risk-off. "
+            "Risk-on: top five 252-21 momentum assets receive 20% each; missing slots "
+            "remain cash. Risk-off: lowest sample-sigma60 of JNJ/PG/XOM/JPM intersected "
+            "with universe, up to three assets at equal 1/N; non-finite sigma excluded. "
+            "Every nonselected asset has explicit zero weight; no candidates means "
+            "full liquidation into interest-free USD cash. Generic weighting and "
+            "max_positions are ignored; no leverage. "
             f"Configured rebalance: {strategy.rebalance}; warmup/purge: {warmup} closes/sessions."
         )
     oos_start = None

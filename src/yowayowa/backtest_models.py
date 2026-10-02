@@ -23,6 +23,7 @@ BacktestSignal = Literal[
     "kiyohara_value",
     "crypto_trend_dual_ma",
     "vol_target_defensive",
+    "defensive_rotation",
 ]
 RebalanceFrequency = Literal["daily", "weekly", "monthly"]
 ExecutionPrice = Literal["next_open"]
@@ -62,6 +63,8 @@ class BacktestStrategyDefinition(BaseModel):
             raise ValueError(
                 f"vol_target_defensive requires {VOLATILITY_TARGET_SYMBOL} in universe"
             )
+        if self.signal == "defensive_rotation" and VOLATILITY_TARGET_SYMBOL not in normalized:
+            raise ValueError(f"defensive_rotation requires {VOLATILITY_TARGET_SYMBOL} in universe")
         return self
 
 
