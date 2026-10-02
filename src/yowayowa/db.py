@@ -446,6 +446,7 @@ def init_database(settings: Settings | None = None) -> None:
     _ensure_price_alert_notifications_table(_engine)
     Base.metadata.create_all(_engine)
     _ensure_positions_version(_engine)
+    _ensure_positions_unique_constraint(_engine)
     _ensure_screening_candidates_document_id(_engine)
 
 
@@ -476,6 +477,104 @@ def _ensure_positions_version(engine: Engine) -> None:
         with engine.begin() as conn:
             conn.execute(
                 text("ALTER TABLE positions ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+            )
+
+
+def _ensure_positions_unique_constraint(engine: Engine) -> None:
+    """Idempotent migration to ensure UniqueConstraint on (portfolio_id, symbol).
+
+    For SQLite: create_all does not alter existing tables. We inspect existing
+    unique constraints on 'positions'. If the unique constraint is missing, we
+    verify there are no duplicate (portfolio_id, symbol) rows (failing closed if
+    any duplicates exist), and rebuild the table safely preserving all rows.
+    """
+    inspector = inspect(engine)
+    if "positions" not in inspector.get_table_names():
+        return
+
+    unique_constraints = inspector.get_unique_constraints("positions")
+    for uc in unique_constraints:
+        if set(uc.get("column_names") or []) == {"portfolio_id", "symbol"}:
+            return
+
+    # Check for duplicate entries before migration
+    with engine.connect() as conn:
+        dup_query = text(
+            "SELECT portfolio_id, symbol, COUNT(*) AS cnt "
+            "FROM positions "
+            "GROUP BY portfolio_id, symbol "
+            "HAVING cnt > 1"
+        )
+        duplicates = conn.execute(dup_query).fetchall()
+        if duplicates:
+            detail = ", ".join(
+                f"(portfolio_id={row[0]}, symbol={row[1]!r}, count={row[2]})" for row in duplicates
+            )
+            raise RuntimeError(
+                "Cannot apply unique constraint to positions: existing duplicates found: "
+                f"{detail}. Manual resolution required."
+            )
+
+    dialect = engine.dialect.name
+    if dialect == "sqlite":
+        columns = {c["name"] for c in inspector.get_columns("positions")}
+        has_version = "version" in columns
+        with engine.begin() as conn:
+            conn.execute(text("PRAGMA foreign_keys = OFF"))
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE positions_new (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        portfolio_id INTEGER NOT NULL,
+                        symbol VARCHAR(32) NOT NULL,
+                        quantity NUMERIC(28, 10) NOT NULL,
+                        average_cost NUMERIC(28, 10),
+                        currency VARCHAR(3) NOT NULL,
+                        version INTEGER NOT NULL DEFAULT 1,
+                        FOREIGN KEY(portfolio_id) REFERENCES portfolios (id) ON DELETE CASCADE,
+                        CONSTRAINT uq_positions_portfolio_symbol UNIQUE (portfolio_id, symbol)
+                    )
+                    """
+                )
+            )
+            if has_version:
+                conn.execute(
+                    text(
+                        "INSERT INTO positions_new "
+                        "(id, portfolio_id, symbol, quantity, average_cost, currency, version)\n"
+                        "SELECT id, portfolio_id, symbol, quantity, average_cost, currency, "
+                        "version FROM positions"
+                    )
+                )
+            else:
+                conn.execute(
+                    text(
+                        "INSERT INTO positions_new "
+                        "(id, portfolio_id, symbol, quantity, average_cost, currency, version)\n"
+                        "SELECT id, portfolio_id, symbol, quantity, average_cost, currency, 1 "
+                        "FROM positions"
+                    )
+                )
+            conn.execute(text("DROP TABLE positions"))
+            conn.execute(text("ALTER TABLE positions_new RENAME TO positions"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_positions_portfolio_id "
+                    "ON positions (portfolio_id)"
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_positions_symbol ON positions (symbol)")
+            )
+            conn.execute(text("PRAGMA foreign_keys = ON"))
+    else:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE positions ADD CONSTRAINT uq_positions_portfolio_symbol "
+                    "UNIQUE (portfolio_id, symbol)"
+                )
             )
 
 

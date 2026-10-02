@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from datetime import UTC, datetime
@@ -60,6 +61,7 @@ class SQLiteOperatorState:
                     ON broker_audit(event_type);
                 """
             )
+            self._migrate_legacy_audit(connection)
 
     def allocate_rss_order_id(self, client_order_id: str) -> int:
         if not client_order_id:
@@ -146,6 +148,103 @@ class SQLiteOperatorState:
         payload = json.loads(row["payload_json"])
         return payload if isinstance(payload, dict) else None
 
+    def _migrate_legacy_audit(self, connection: sqlite3.Connection) -> None:
+        rows = connection.execute(
+            """
+            SELECT client_order_id, created_at, event_type, broker_order_id, payload_json
+            FROM broker_audit
+            WHERE client_order_id IS NOT NULL
+            ORDER BY id ASC
+            """
+        ).fetchall()
+        if not rows:
+            return
+
+        grouped: dict[str, list[sqlite3.Row]] = {}
+        for r in rows:
+            cid = r["client_order_id"]
+            if cid:
+                grouped.setdefault(cid, []).append(r)
+
+        existing_cids = {
+            row["client_order_id"]
+            for row in connection.execute(
+                "SELECT client_order_id FROM order_reservations"
+            ).fetchall()
+        }
+
+        now = datetime.now(UTC).isoformat()
+        for cid, events in grouped.items():
+            if cid in existing_cids:
+                continue
+            attempt = next((e for e in events if e["event_type"] == "order_submit_attempt"), None)
+            result = next(
+                (
+                    e
+                    for e in reversed(events)
+                    if e["event_type"] in ("order_submit_result", "order_cancel_result")
+                ),
+                None,
+            )
+
+            intent_hash = "LEGACY_UNKNOWN_HASH"
+            created_at = events[0]["created_at"] or now
+            updated_at = events[-1]["created_at"] or now
+            receipt_json = None
+
+            if attempt is not None:
+                try:
+                    payload = json.loads(attempt["payload_json"])
+                    if (
+                        isinstance(payload, dict)
+                        and "intent" in payload
+                        and isinstance(payload["intent"], dict)
+                    ):
+                        intent_data = dict(payload["intent"])
+                        intent_data.pop("reason", None)
+                        serialized = json.dumps(
+                            intent_data, sort_keys=True, ensure_ascii=False
+                        ).encode("utf-8")
+                        intent_hash = hashlib.sha256(serialized).hexdigest()
+                except Exception:
+                    pass
+
+            if result is not None:
+                status = "COMPLETED"
+                receipt_json = result["payload_json"]
+            else:
+                status = "UNKNOWN"
+
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO order_reservations(
+                    client_order_id, intent_hash, status, created_at, updated_at, receipt_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (cid, intent_hash, status, created_at, updated_at, receipt_json),
+            )
+
+    @staticmethod
+    def _query_daily_count(connection: sqlite3.Connection, today: str) -> int:
+        count_row = connection.execute(
+            """
+            SELECT COUNT(DISTINCT id) AS count FROM (
+                SELECT client_order_id AS id
+                FROM order_reservations
+                WHERE substr(created_at, 1, 10) = ?
+                  AND status IN ('SUBMITTING', 'COMPLETED', 'UNKNOWN')
+                UNION
+                SELECT COALESCE(client_order_id, CAST(id AS TEXT)) AS id
+                FROM broker_audit
+                WHERE event_type = 'order_submit_attempt'
+                  AND substr(created_at, 1, 10) = ?
+            )
+            """,
+            (today, today),
+        ).fetchone()
+        return int(count_row["count"]) if count_row else 0
+
     def reserve_order_submission(
         self,
         client_order_id: str,
@@ -155,6 +254,7 @@ class SQLiteOperatorState:
         if not client_order_id:
             raise ValueError("client_order_id is required")
         now = datetime.now(UTC).isoformat()
+        today = datetime.now(UTC).date().isoformat()
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -179,20 +279,28 @@ class SQLiteOperatorState:
                 if saved_status in ("RESERVED", "SUBMITTING", "UNKNOWN"):
                     connection.commit()
                     return ("UNCERTAIN_OR_IN_FLIGHT", None)
+                if saved_status == "REJECTED":
+                    current_count = self._query_daily_count(connection, today)
+                    if max_orders_per_day is not None and current_count >= max_orders_per_day:
+                        connection.commit()
+                        return ("DAILY_LIMIT_EXCEEDED", None)
+                    cursor = connection.execute(
+                        """
+                        UPDATE order_reservations
+                        SET status = 'SUBMITTING', updated_at = ?
+                        WHERE client_order_id = ? AND status = 'REJECTED'
+                        """,
+                        (now, client_order_id),
+                    )
+                    if cursor.rowcount != 1:
+                        connection.commit()
+                        return ("UNCERTAIN_OR_IN_FLIGHT", None)
+                    connection.commit()
+                    return ("RESERVED", None)
                 connection.commit()
-                return ("REJECTED", None)
+                return ("UNCERTAIN_OR_IN_FLIGHT", None)
 
-            today = datetime.now(UTC).date().isoformat()
-            count_row = connection.execute(
-                """
-                SELECT COUNT(*) AS count
-                FROM order_reservations
-                WHERE substr(created_at, 1, 10) = ?
-                  AND status IN ('SUBMITTING', 'COMPLETED', 'UNKNOWN')
-                """,
-                (today,),
-            ).fetchone()
-            current_count = int(count_row["count"]) if count_row else 0
+            current_count = self._query_daily_count(connection, today)
             if max_orders_per_day is not None and current_count >= max_orders_per_day:
                 connection.commit()
                 return ("DAILY_LIMIT_EXCEEDED", None)
@@ -242,28 +350,7 @@ class SQLiteOperatorState:
     def count_submission_attempts_today(self) -> int:
         today = datetime.now(UTC).date().isoformat()
         with self._connect() as connection:
-            row = connection.execute(
-                """
-                SELECT COUNT(*) AS count
-                FROM order_reservations
-                WHERE substr(created_at, 1, 10) = ?
-                  AND status IN ('SUBMITTING', 'COMPLETED', 'UNKNOWN')
-                """,
-                (today,),
-            ).fetchone()
-            count = int(row["count"]) if row is not None else 0
-            if count == 0:
-                row_audit = connection.execute(
-                    """
-                    SELECT COUNT(*) AS count
-                    FROM broker_audit
-                    WHERE event_type = 'order_submit_attempt'
-                      AND substr(created_at, 1, 10) = ?
-                    """,
-                    (today,),
-                ).fetchone()
-                return int(row_audit["count"]) if row_audit is not None else 0
-            return count
+            return self._query_daily_count(connection, today)
 
     def audit_events(self) -> list[dict[str, object]]:
         with self._connect() as connection:

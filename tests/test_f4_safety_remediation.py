@@ -157,3 +157,37 @@ def test_audit_integrity_compromised_fails_closed(tmp_path: Path) -> None:
     )
     assert resp.status_code == 503
     assert "integrity compromised" in resp.json()["detail"].lower()
+
+
+@pytest.mark.parametrize(
+    "operation", ["evaluate", "record_request", "record_response", "record_state", "direct_append"]
+)
+def test_audit_corruption_blocks_evaluate_record_and_append(tmp_path: Path, operation: str) -> None:
+    service = BrokerExecutionDomainService(
+        settings=_settings(),
+        audit_dir=tmp_path / "domain",
+        clock=lambda: NOW,
+    )
+    p = service.propose(**_proposal_payload("order-1"))
+    service.record_state(p.client_order_id, {"step": "init"})
+
+    log = service.audit_log()
+    original_lines = log.path.read_text(encoding="utf-8").splitlines()
+    # Truncate second entry
+    log.path.write_text(original_lines[0] + "\n", encoding="utf-8")
+    before_problems = service.verify_audit()
+    assert len(before_problems) > 0, "Truncation must be detected"
+
+    with pytest.raises(AuditIntegrityCompromisedError):
+        if operation == "evaluate":
+            service.evaluate(p, armed=True)
+        elif operation == "direct_append":
+            log.append("state", p.client_order_id, {"replacement": True})
+        else:
+            getattr(service, operation)(p.client_order_id, {"replacement": True})
+
+    # Verification problems must persist and not be laundered
+    after_problems = service.verify_audit()
+    assert len(after_problems) > 0
+    with pytest.raises(AuditIntegrityCompromisedError):
+        service.propose(**_proposal_payload("order-blocked"))

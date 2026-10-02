@@ -22,6 +22,7 @@ from yowayowa.broker.execution.audit import (
 from yowayowa.broker.execution.models import OrderProposal
 from yowayowa.broker.execution.service import (
     JST,
+    AuditIntegrityCompromisedError,
     BrokerExecutionDomainService,
     DuplicateProposalError,
 )
@@ -727,13 +728,16 @@ def test_39_f3_torn_tail_line_skipped_and_reported(tmp_path: Path) -> None:
 def test_40_f3_garbage_midfile_line_reported_with_line_number(tmp_path: Path) -> None:
     log = AppendOnlyAuditLog(tmp_path / "audit")
     log.append("intent", "co-1", {"a": 1})
-    with log.path.open("a", encoding="utf-8") as handle:
-        handle.write("}}} garbage not json {{{\n")
     log.append("intent", "co-2", {"a": 2})
+    lines = log.path.read_text(encoding="utf-8").splitlines()
+    lines.insert(1, "}}} garbage not json {{{")
+    log.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     entries = log.entries()
     assert [e.seq for e in entries] == [1, 2]
     problems = log.verify()
     assert any("line 2" in problem and "unparsable" in problem for problem in problems)
+    with pytest.raises(AuditIntegrityCompromisedError):
+        log.append("intent", "co-3", {"a": 3})
 
 
 def test_41_f3_api_audit_endpoint_200_with_problems(monkeypatch: Any, tmp_path: Path) -> None:

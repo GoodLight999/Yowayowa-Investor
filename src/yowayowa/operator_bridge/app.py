@@ -119,6 +119,11 @@ def create_operator_bridge_app(
                 status_code=409,
                 detail=["Daily order count limit reached"],
             )
+        if status_res != "RESERVED":
+            raise HTTPException(
+                status_code=409,
+                detail=[f"Unexpected order reservation state: {status_res}"],
+            )
 
         preview = connector.preview_order(intent)
         decision = evaluate_broker_execution(

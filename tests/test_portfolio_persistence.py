@@ -385,3 +385,169 @@ def test_concurrent_initial_insert_unique_constraint() -> None:
                 )
     finally:
         engine.dispose()
+
+
+def test_ensure_positions_unique_constraint_upgrade_and_fail_closed(tmp_path) -> None:
+    from sqlalchemy import inspect, text
+
+    from yowayowa.db import _ensure_positions_unique_constraint
+
+    db_path = tmp_path / "legacy_positions.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        # Create legacy table without unique constraint
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE portfolios (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        base_currency VARCHAR(3) NOT NULL,
+                        created_at DATETIME NOT NULL,
+                        updated_at DATETIME NOT NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE positions (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        portfolio_id INTEGER NOT NULL,
+                        symbol VARCHAR(32) NOT NULL,
+                        quantity NUMERIC(28, 10) NOT NULL,
+                        average_cost NUMERIC(28, 10),
+                        currency VARCHAR(3) NOT NULL,
+                        FOREIGN KEY(portfolio_id) REFERENCES portfolios (id) ON DELETE CASCADE
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                text("INSERT INTO portfolios VALUES (1, 'Test', 'USD', '2026-01-01', '2026-01-01')")
+            )
+            conn.execute(text("INSERT INTO positions VALUES (1, 1, 'AAPL', 10, 150, 'USD')"))
+
+        # Migration should add UniqueConstraint and preserve row
+        _ensure_positions_unique_constraint(engine)
+        inspector = inspect(engine)
+        unique = inspector.get_unique_constraints("positions")
+        assert any(set(uc.get("column_names") or []) == {"portfolio_id", "symbol"} for uc in unique)
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT id, symbol, quantity, version FROM positions")
+            ).fetchall()
+            assert len(rows) == 1
+            assert rows[0][1] == "AAPL"
+            assert rows[0][3] == 1  # version populated
+
+        # Idempotent
+        _ensure_positions_unique_constraint(engine)
+
+        # Fail closed if duplicate exists
+        db_dup = tmp_path / "dup_positions.db"
+        engine_dup = create_engine(f"sqlite:///{db_dup}")
+        with engine_dup.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE portfolios ("
+                    "id INTEGER NOT NULL PRIMARY KEY, "
+                    "name VARCHAR(100) NOT NULL, "
+                    "base_currency VARCHAR(3) NOT NULL, "
+                    "created_at DATETIME NOT NULL, "
+                    "updated_at DATETIME NOT NULL)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TABLE positions ("
+                    "id INTEGER NOT NULL PRIMARY KEY, "
+                    "portfolio_id INTEGER NOT NULL, "
+                    "symbol VARCHAR(32) NOT NULL, "
+                    "quantity NUMERIC(28, 10) NOT NULL, "
+                    "average_cost NUMERIC(28, 10), "
+                    "currency VARCHAR(3) NOT NULL, "
+                    "FOREIGN KEY(portfolio_id) REFERENCES portfolios (id))"
+                )
+            )
+            conn.execute(
+                text("INSERT INTO portfolios VALUES (1, 'Test', 'USD', '2026-01-01', '2026-01-01')")
+            )
+            conn.execute(text("INSERT INTO positions VALUES (1, 1, 'AAPL', 10, 150, 'USD')"))
+            conn.execute(text("INSERT INTO positions VALUES (2, 1, 'AAPL', 20, 155, 'USD')"))
+        import pytest
+
+        with pytest.raises(RuntimeError, match="existing duplicates found"):
+            _ensure_positions_unique_constraint(engine_dup)
+        engine_dup.dispose()
+    finally:
+        engine.dispose()
+
+
+def test_bulk_upsert_replace_same_symbol_and_mixed_autoflush() -> None:
+    from decimal import Decimal
+
+    import pytest
+
+    from yowayowa.db import PortfolioRecord
+    from yowayowa.services.portfolios import (
+        PositionVersionConflictError,
+        bulk_upsert_positions,
+        upsert_position,
+    )
+
+    engine = create_engine("sqlite:///:memory:")
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            portfolio = create_portfolio(session, "Mixed", "USD")
+            pid = portfolio.id
+            upsert_position(
+                session, pid, PositionUpsert(symbol="AAPL", quantity=Decimal("1"), currency="USD")
+            )
+
+        # 1. replace=True with same symbol
+        with Session(engine) as session:
+            res = bulk_upsert_positions(
+                session,
+                pid,
+                PositionBulkUpsert(
+                    positions=[
+                        PositionUpsert(symbol="AAPL", quantity=Decimal("2"), currency="USD")
+                    ],
+                    replace=True,
+                ),
+            )
+            assert len(res.positions) == 1
+            assert res.positions[0].symbol == "AAPL"
+            assert res.positions[0].quantity == Decimal("2")
+
+        # 2. stale read + concurrent insert + bulk mixed update -> PositionVersionConflictError
+        with Session(engine) as stale, Session(engine) as concurrent:
+            stale_p = stale.get(PortfolioRecord, pid)
+            assert stale_p is not None
+            list(stale_p.positions)
+
+            # Concurrent inserts MSFT
+            upsert_position(
+                concurrent,
+                pid,
+                PositionUpsert(symbol="MSFT", quantity=Decimal("1"), currency="USD"),
+            )
+
+            # Stale bulk adds MSFT and updates AAPL: autoflush of MSFT conflicts
+            with pytest.raises(PositionVersionConflictError):
+                bulk_upsert_positions(
+                    stale,
+                    pid,
+                    PositionBulkUpsert(
+                        positions=[
+                            PositionUpsert(symbol="MSFT", quantity=Decimal("5"), currency="USD"),
+                            PositionUpsert(symbol="AAPL", quantity=Decimal("3"), currency="USD"),
+                        ]
+                    ),
+                )
+    finally:
+        engine.dispose()

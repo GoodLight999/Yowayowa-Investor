@@ -39,6 +39,10 @@ def canonical_json(payload: object) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+class AuditIntegrityCompromisedError(RuntimeError):
+    """Raised when the audit trail integrity has been compromised."""
+
+
 def entry_hash(line_without_hash: dict[str, Any]) -> str:
     """SHA-256 hex of the canonical JSON of a line without ``entry_hash``."""
 
@@ -86,7 +90,7 @@ class AppendOnlyAuditLog:
         """Atomically persist {count, last_entry_hash} to the sidecar file."""
 
         self._dir.mkdir(parents=True, exist_ok=True)
-        tmp_path = self._dir / (AUDIT_STATE_FILE_NAME + ".tmp")
+        tmp_path = self._dir / f"{AUDIT_STATE_FILE_NAME}.tmp.{os.getpid()}.{threading.get_ident()}"
         payload = {"count": count, "last_entry_hash": last_entry_hash}
         with tmp_path.open("w", encoding="utf-8") as handle:
             handle.write(canonical_json(payload))
@@ -109,6 +113,11 @@ class AppendOnlyAuditLog:
         with self._lock, open(lock_path, "a") as lock_file:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
             try:
+                problems = self.verify()
+                if problems:
+                    raise AuditIntegrityCompromisedError(
+                        f"Audit trail integrity compromised: {'; '.join(problems)}"
+                    )
                 entries, _problems = self._scan()
                 seq = (entries[-1].seq + 1) if entries else 1
                 prev_hash = entries[-1].entry_hash if entries else _GENESIS_PREV_HASH
@@ -235,6 +244,7 @@ __all__ = [
     "AUDIT_STATE_FILE_NAME",
     "AppendOnlyAuditLog",
     "AuditEntry",
+    "AuditIntegrityCompromisedError",
     "canonical_json",
     "entry_hash",
 ]

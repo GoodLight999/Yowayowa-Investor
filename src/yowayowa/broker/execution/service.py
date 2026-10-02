@@ -19,7 +19,11 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
-from yowayowa.broker.execution.audit import AppendOnlyAuditLog, AuditEntry
+from yowayowa.broker.execution.audit import (
+    AppendOnlyAuditLog,
+    AuditEntry,
+    AuditIntegrityCompromisedError,
+)
 from yowayowa.broker.execution.interlocks import (
     DuplicateCheckResult,
     ExecutionInterlockDecision,
@@ -38,10 +42,6 @@ class OrderExecutionPreview(BaseModel):
     estimated_notional: Decimal | None = None
     currency: str
     warnings: list[str] = []
-
-
-class AuditIntegrityCompromisedError(RuntimeError):
-    """Raised when the audit log fails chain verification (fail closed)."""
 
 
 class DuplicateProposalError(RuntimeError):
@@ -254,6 +254,7 @@ class BrokerExecutionDomainService:
         """Evaluate every interlock fail-closed; NEVER submits anything."""
 
         with self._lock:
+            self._ensure_audit_intact()
             preview = self.preview(proposal)
             duplicate = self._duplicate_check(proposal)
             today_jst = _jst_date(self._clock())
@@ -285,6 +286,7 @@ class BrokerExecutionDomainService:
         """Audit wrapper for the future submission connector (no transport)."""
 
         with self._lock:
+            self._ensure_audit_intact()
             entry = self._audit.append("request", client_order_id, payload)
             self._absorb(entry)
             return entry
@@ -293,6 +295,7 @@ class BrokerExecutionDomainService:
         """Audit wrapper for the future submission connector (no transport)."""
 
         with self._lock:
+            self._ensure_audit_intact()
             entry = self._audit.append("response", client_order_id, payload)
             self._absorb(entry)
             return entry
@@ -301,6 +304,7 @@ class BrokerExecutionDomainService:
         """Audit wrapper for arbitrary state transitions (no transport)."""
 
         with self._lock:
+            self._ensure_audit_intact()
             entry = self._audit.append("state", client_order_id, payload)
             self._absorb(entry)
             return entry

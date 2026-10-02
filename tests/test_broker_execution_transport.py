@@ -346,13 +346,20 @@ def test_03b_intent_hash_divergence_blocks(tmp_path: Path) -> None:
     for entry in entries:
         if entry["kind"] == "intent":
             entry["payload"]["proposal_hash"] = "0" * 64
-    # Rewrite the whole file (verify() will flag chain breaks; the transport
-    # must still refuse on hash mismatch before any session access).
+    from yowayowa.broker.execution.audit import entry_hash
+
+    prev = entries[0]["prev_hash"] if entries else "0" * 64
+    for entry in entries:
+        entry["prev_hash"] = prev
+        line_no_hash = {k: v for k, v in entry.items() if k != "entry_hash"}
+        entry["entry_hash"] = entry_hash(line_no_hash)
+        prev = entry["entry_hash"]
     log.path.write_text(
         "\n".join(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) for entry in entries)
         + "\n",
         encoding="utf-8",
     )
+    log._write_state(len(entries), entries[-1]["entry_hash"] if entries else None)
     session = FakeBrokerWebSession()
     transport = _transport(service, session, submissions_enabled=True)
     receipt = transport.submit_order(_intent(), armed=True)
