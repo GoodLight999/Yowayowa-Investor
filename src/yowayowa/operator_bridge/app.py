@@ -22,7 +22,7 @@ from yowayowa.broker_models import (
 from yowayowa.config import Settings
 from yowayowa.operator_bridge.excel import XlwingsMacroRunner
 from yowayowa.operator_bridge.rakuten import RakutenMs2RssLocalConnector
-from yowayowa.operator_bridge.state import SQLiteOperatorState
+from yowayowa.operator_bridge.state import BrokerDispatchBlocked, SQLiteOperatorState
 from yowayowa.services.broker_execution import (
     BrokerExecutionBlocked,
     evaluate_broker_execution,
@@ -176,15 +176,18 @@ def create_operator_bridge_app(
             state.record_submission_failure(intent.client_order_id, status="REJECTED")
             raise HTTPException(status_code=409, detail=list(exc.args)) from exc
 
-        if not state.has_today_reservation(intent.client_order_id):
-            state.record_submission_failure(intent.client_order_id, status="REJECTED")
-            raise HTTPException(
-                status_code=409,
-                detail=["Execution day changed before broker dispatch; submission rejected"],
-            )
-
         try:
-            receipt = connector.submit_order(intent)
+            receipt = connector.submit_order(
+                intent,
+                dispatch=lambda invoke: state.dispatch_submission(
+                    intent.client_order_id,
+                    invoke,
+                    max_orders_per_day=settings.broker_max_orders_per_day,
+                ),
+            )
+        except BrokerDispatchBlocked as exc:
+            state.record_submission_failure(intent.client_order_id, status="REJECTED")
+            raise HTTPException(status_code=409, detail=list(exc.args)) from exc
         except Exception as exc:
             state.record_submission_failure(intent.client_order_id, status="UNKNOWN")
             state.append_audit(

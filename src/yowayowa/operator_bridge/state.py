@@ -3,12 +3,17 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 from yowayowa.services.broker_execution import BrokerExecutionBlocked
 
 _MAX_RSS_ORDER_ID = 2_147_483_647
+
+
+class BrokerDispatchBlocked(BrokerExecutionBlocked):
+    """Pre-transport admission refusal, distinct from unknown broker outcome."""
 
 
 class SQLiteOperatorState:
@@ -60,7 +65,8 @@ class SQLiteOperatorState:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     receipt_json TEXT,
-                    reservation_day TEXT
+                    reservation_day TEXT,
+                    dispatch_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_order_reservations_created_at
                     ON order_reservations(created_at);
@@ -80,6 +86,8 @@ class SQLiteOperatorState:
                     "UPDATE order_reservations SET reservation_day = substr(created_at, 1, 10) "
                     "WHERE reservation_day IS NULL"
                 )
+            if "dispatch_at" not in cols:
+                connection.execute("ALTER TABLE order_reservations ADD COLUMN dispatch_at TEXT")
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_order_reservations_reservation_day "
                 "ON order_reservations(reservation_day)"
@@ -146,56 +154,47 @@ class SQLiteOperatorState:
             attempt_day = created_at[:10]
             if event_type == "order_submit_attempt":
                 if not client_order_id:
-                    if limit is not None:
-                        connection.commit()
-                        raise BrokerExecutionBlocked(
-                            "client_order_id is required for order_submit_attempt"
-                        )
-                else:
-                    row = connection.execute(
+                    raise BrokerExecutionBlocked(
+                        "client_order_id is required for order_submit_attempt"
+                    )
+                row = connection.execute(
+                    """
+                    SELECT status, reservation_day, dispatch_at
+                    FROM order_reservations
+                    WHERE client_order_id = ?
+                    """,
+                    (client_order_id,),
+                ).fetchone()
+                if row is None or row["status"] != "SUBMITTING" or row["dispatch_at"] is not None:
+                    raise BrokerExecutionBlocked(
+                        "Attempt requires an unused SUBMITTING reservation"
+                    )
+                res_day = row["reservation_day"]
+                current_count = self._query_daily_count(connection, attempt_day)
+                if res_day != attempt_day:
+                    if limit is not None and current_count >= limit:
+                        raise BrokerExecutionBlocked("Daily order count limit reached")
+                    cursor = connection.execute(
                         """
-                        SELECT status, reservation_day
-                        FROM order_reservations
-                        WHERE client_order_id = ?
+                        UPDATE order_reservations
+                        SET reservation_day = ?, updated_at = ?
+                        WHERE client_order_id = ? AND status = 'SUBMITTING'
                         """,
-                        (client_order_id,),
-                    ).fetchone()
-                    if row is None:
-                        if limit is not None:
-                            connection.commit()
-                            raise BrokerExecutionBlocked(
-                                f"Order reservation not found: {client_order_id}"
-                            )
-                    else:
-                        if row["status"] != "SUBMITTING":
-                            connection.commit()
-                            raise BrokerExecutionBlocked(
-                                f"Order reservation status is not SUBMITTING: {row['status']}"
-                            )
-                        res_day = row["reservation_day"]
-                        if res_day != attempt_day:
-                            current_count = self._query_daily_count(connection, attempt_day)
-                            if limit is not None and current_count >= limit:
-                                connection.commit()
-                                raise BrokerExecutionBlocked("Daily order count limit reached")
-                            cursor = connection.execute(
-                                """
-                                UPDATE order_reservations
-                                SET reservation_day = ?, updated_at = ?
-                                WHERE client_order_id = ? AND status = 'SUBMITTING'
-                                """,
-                                (attempt_day, created_at, client_order_id),
-                            )
-                            if cursor.rowcount != 1:
-                                connection.commit()
-                                raise BrokerExecutionBlocked(
-                                    "Concurrent update conflict during reservation day migration"
-                                )
-                        else:
-                            current_count = self._query_daily_count(connection, attempt_day)
-                            if limit is not None and current_count > limit:
-                                connection.commit()
-                                raise BrokerExecutionBlocked("Daily order count limit reached")
+                        (attempt_day, created_at, client_order_id),
+                    )
+                    if cursor.rowcount != 1:
+                        raise BrokerExecutionBlocked("Reservation day migration failed")
+                elif limit is not None and current_count > limit:
+                    raise BrokerExecutionBlocked("Daily order count limit reached")
+                prior_attempt = connection.execute(
+                    "SELECT 1 FROM broker_audit WHERE event_type = 'order_submit_attempt' "
+                    "AND client_order_id = ? AND substr(created_at, 1, 10) = ? LIMIT 1",
+                    (client_order_id, attempt_day),
+                ).fetchone()
+                if prior_attempt and limit is not None and current_count >= limit:
+                    raise BrokerExecutionBlocked("Daily order count limit reached")
+                if self.current_day != attempt_day:
+                    raise BrokerExecutionBlocked("Execution day changed during attempt admission")
 
             connection.execute(
                 """
@@ -217,6 +216,89 @@ class SQLiteOperatorState:
                 ),
             )
             connection.commit()
+
+    def import_legacy_submit_attempt(
+        self,
+        *,
+        created_at: datetime,
+        client_order_id: str,
+        payload: dict[str, object] | None = None,
+    ) -> None:
+        """Explicit offline backfill, never live submission authorization.
+
+        Imported attempts are migrated to UNKNOWN reservations, so they cannot
+        be used to dispatch or replay. Existing live reservation IDs are rejected.
+        """
+        if not client_order_id or created_at.tzinfo is None:
+            raise ValueError("Legacy import requires an ID and timezone-aware timestamp")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute(
+                "SELECT 1 FROM order_reservations WHERE client_order_id = ?",
+                (client_order_id,),
+            ).fetchone():
+                raise BrokerExecutionBlocked("Legacy import cannot replace a live reservation")
+            connection.execute(
+                "INSERT INTO broker_audit(created_at, event_type, client_order_id, payload_json) "
+                "VALUES (?, 'order_submit_attempt', ?, ?)",
+                (
+                    created_at.astimezone(UTC).isoformat(),
+                    client_order_id,
+                    json.dumps(payload or {}, ensure_ascii=False, sort_keys=True),
+                ),
+            )
+            self._migrate_legacy_audit(connection)
+
+    def dispatch_submission(
+        self,
+        client_order_id: str,
+        invoke: Callable[[], object],
+        *,
+        max_orders_per_day: int | None = None,
+    ) -> object:
+        """Admit the prepared transport at the last local invocation boundary.
+
+        No day migration is permitted after an attempt is committed. Claim a
+        durable single-use handoff under the writer lock, release it before broker
+        IO, then recheck the clock immediately before invocation. Broker timeout
+        remains UNKNOWN; a committed attempt never rolls back on transport failure.
+        """
+        limit = max_orders_per_day if max_orders_per_day is not None else self.max_orders_per_day
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            today = self.current_day
+            row = connection.execute(
+                "SELECT status, reservation_day, dispatch_at FROM order_reservations "
+                "WHERE client_order_id = ?",
+                (client_order_id,),
+            ).fetchone()
+            if row is None or row["status"] != "SUBMITTING" or row["reservation_day"] != today:
+                raise BrokerDispatchBlocked("No current-day SUBMITTING reservation at dispatch")
+            if row["dispatch_at"] is not None:
+                raise BrokerDispatchBlocked("Transport handoff already claimed")
+            attempt = connection.execute(
+                "SELECT created_at FROM broker_audit "
+                "WHERE event_type = 'order_submit_attempt' AND client_order_id = ? "
+                "ORDER BY id DESC LIMIT 1",
+                (client_order_id,),
+            ).fetchone()
+            if attempt is None or attempt["created_at"][:10] != today:
+                raise BrokerDispatchBlocked("No current-day attempt at dispatch")
+            if limit is not None and self._query_daily_count(connection, today) > limit:
+                raise BrokerDispatchBlocked("Daily order count limit reached at dispatch")
+            if self.current_day != today:
+                raise BrokerDispatchBlocked("Execution day changed during dispatch admission")
+            cursor = connection.execute(
+                "UPDATE order_reservations SET dispatch_at = ? "
+                "WHERE client_order_id = ? AND status = 'SUBMITTING' AND dispatch_at IS NULL",
+                (datetime.now(UTC).isoformat(), client_order_id),
+            )
+            if cursor.rowcount != 1:
+                raise BrokerDispatchBlocked("Transport handoff claim failed")
+            connection.commit()
+        if self.current_day != today:
+            raise BrokerDispatchBlocked("Execution day changed before transport invocation")
+        return invoke()
 
     def latest_order_result(self, client_order_id: str) -> dict[str, object] | None:
         with self._connect() as connection:
@@ -353,7 +435,7 @@ class SQLiteOperatorState:
         try:
             connection.execute("BEGIN IMMEDIATE")
             now = datetime.now(UTC).isoformat()
-            today = datetime.now(UTC).date().isoformat()
+            today = now[:10]
             row = connection.execute(
                 """
                 SELECT intent_hash, status, receipt_json
@@ -383,7 +465,8 @@ class SQLiteOperatorState:
                     cursor = connection.execute(
                         """
                         UPDATE order_reservations
-                        SET status = 'SUBMITTING', updated_at = ?, reservation_day = ?
+                        SET status = 'SUBMITTING', updated_at = ?,
+                            reservation_day = ?, dispatch_at = NULL
                         WHERE client_order_id = ? AND status = 'REJECTED'
                         """,
                         (now, today, client_order_id),

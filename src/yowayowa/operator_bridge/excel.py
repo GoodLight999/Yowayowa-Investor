@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 
 class MacroRunner(Protocol):
     def run_macro(self, name: str, args: Sequence[object]) -> object: ...
+
+
+@runtime_checkable
+class PreparedMacroRunner(Protocol):
+    def prepare_macro(self, name: str, args: Sequence[object]) -> Callable[[], object]: ...
 
 
 class WorksheetRunner(Protocol):
@@ -98,11 +103,23 @@ class XlwingsMacroRunner:
         return formula
 
     def run_macro(self, name: str, args: Sequence[object]) -> object:
+        return self.prepare_macro(name, args)()
+
+    def prepare_macro(self, name: str, args: Sequence[object]) -> Callable[[], object]:
+        """Resolve all potentially blocking Excel preparation before admission."""
         book = self._resolve_book()
         try:
-            return book.app.macro(name)(*args)
+            macro = book.app.macro(name)
         except Exception as exc:
             raise ExcelBridgeUnavailable(f"Excel macro call failed: {name}") from exc
+
+        def invoke() -> object:
+            try:
+                return macro(*args)
+            except Exception as exc:
+                raise ExcelBridgeUnavailable(f"Excel macro call failed: {name}") from exc
+
+        return invoke
 
     def read_scalar_formula(self, formula: str) -> object:
         sheet = self._scratch_sheet()
