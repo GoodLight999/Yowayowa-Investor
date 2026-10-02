@@ -138,47 +138,64 @@ class SQLiteOperatorState:
             if max_orders_per_day is not None
             else getattr(self, "max_orders_per_day", None)
         )
-        now_dt = datetime.now(UTC)
-        created_at = now_dt.isoformat()
-        attempt_day = created_at[:10]
         serialized = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            if event_type == "order_submit_attempt" and client_order_id:
-                row = connection.execute(
-                    """
-                    SELECT status, reservation_day
-                    FROM order_reservations
-                    WHERE client_order_id = ?
-                    """,
-                    (client_order_id,),
-                ).fetchone()
-                if row is not None:
-                    res_day = row["reservation_day"]
-                    if res_day != attempt_day:
-                        current_count = self._query_daily_count(connection, attempt_day)
-                        if limit is not None and current_count >= limit:
-                            connection.commit()
-                            raise BrokerExecutionBlocked("Daily order count limit reached")
-                        connection.execute(
-                            """
-                            UPDATE order_reservations
-                            SET reservation_day = ?, updated_at = ?
-                            WHERE client_order_id = ? AND status = 'SUBMITTING'
-                            """,
-                            (attempt_day, created_at, client_order_id),
-                        )
-                    else:
-                        current_count = self._query_daily_count(connection, attempt_day)
-                        if limit is not None and current_count > limit:
-                            connection.commit()
-                            raise BrokerExecutionBlocked("Daily order count limit reached")
-                else:
+            now_dt = datetime.now(UTC)
+            created_at = now_dt.isoformat()
+            attempt_day = created_at[:10]
+            if event_type == "order_submit_attempt":
+                if not client_order_id:
                     if limit is not None:
-                        current_count = self._query_daily_count(connection, attempt_day)
-                        if current_count >= limit:
+                        connection.commit()
+                        raise BrokerExecutionBlocked(
+                            "client_order_id is required for order_submit_attempt"
+                        )
+                else:
+                    row = connection.execute(
+                        """
+                        SELECT status, reservation_day
+                        FROM order_reservations
+                        WHERE client_order_id = ?
+                        """,
+                        (client_order_id,),
+                    ).fetchone()
+                    if row is None:
+                        if limit is not None:
                             connection.commit()
-                            raise BrokerExecutionBlocked("Daily order count limit reached")
+                            raise BrokerExecutionBlocked(
+                                f"Order reservation not found: {client_order_id}"
+                            )
+                    else:
+                        if row["status"] != "SUBMITTING":
+                            connection.commit()
+                            raise BrokerExecutionBlocked(
+                                f"Order reservation status is not SUBMITTING: {row['status']}"
+                            )
+                        res_day = row["reservation_day"]
+                        if res_day != attempt_day:
+                            current_count = self._query_daily_count(connection, attempt_day)
+                            if limit is not None and current_count >= limit:
+                                connection.commit()
+                                raise BrokerExecutionBlocked("Daily order count limit reached")
+                            cursor = connection.execute(
+                                """
+                                UPDATE order_reservations
+                                SET reservation_day = ?, updated_at = ?
+                                WHERE client_order_id = ? AND status = 'SUBMITTING'
+                                """,
+                                (attempt_day, created_at, client_order_id),
+                            )
+                            if cursor.rowcount != 1:
+                                connection.commit()
+                                raise BrokerExecutionBlocked(
+                                    "Concurrent update conflict during reservation day migration"
+                                )
+                        else:
+                            current_count = self._query_daily_count(connection, attempt_day)
+                            if limit is not None and current_count > limit:
+                                connection.commit()
+                                raise BrokerExecutionBlocked("Daily order count limit reached")
 
             connection.execute(
                 """
@@ -332,11 +349,11 @@ class SQLiteOperatorState:
             raise ValueError("client_order_id is required")
         if max_orders_per_day is not None:
             self.max_orders_per_day = max_orders_per_day
-        now = datetime.now(UTC).isoformat()
-        today = datetime.now(UTC).date().isoformat()
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            now = datetime.now(UTC).isoformat()
+            today = datetime.now(UTC).date().isoformat()
             row = connection.execute(
                 """
                 SELECT intent_hash, status, receipt_json
@@ -461,9 +478,9 @@ class SQLiteOperatorState:
             if max_orders_per_day is not None
             else getattr(self, "max_orders_per_day", None)
         )
-        now = datetime.now(UTC).isoformat()
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            now = datetime.now(UTC).isoformat()
             row = connection.execute(
                 """
                 SELECT status, reservation_day

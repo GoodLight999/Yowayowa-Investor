@@ -175,6 +175,14 @@ def create_operator_bridge_app(
         except BrokerExecutionBlocked as exc:
             state.record_submission_failure(intent.client_order_id, status="REJECTED")
             raise HTTPException(status_code=409, detail=list(exc.args)) from exc
+
+        if not state.has_today_reservation(intent.client_order_id):
+            state.record_submission_failure(intent.client_order_id, status="REJECTED")
+            raise HTTPException(
+                status_code=409,
+                detail=["Execution day changed before broker dispatch; submission rejected"],
+            )
+
         try:
             receipt = connector.submit_order(intent)
         except Exception as exc:
