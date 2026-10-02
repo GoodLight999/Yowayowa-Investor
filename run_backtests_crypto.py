@@ -59,6 +59,17 @@ strategies = [
         max_positions=2,
         weighting="equal",
     ),
+    BacktestStrategyDefinition(
+        id="crypto_trend_dual_ma",
+        name="Crypto dual-MA trend filter",
+        description="Daily absolute trend gate: prior close above prior SMA200; active BTC/ETH equally weighted, otherwise cash.",
+        signal="crypto_trend_dual_ma",
+        universe=symbols,
+        rebalance="daily",
+        max_positions=2,
+        weighting="equal",
+        lookback=200,
+    ),
 ]
 coverage = {}
 for symbol, rows in histories.items():
@@ -102,6 +113,13 @@ output = {
         "universe": symbols,
         "max_positions": 2,
         "low_volatility_prior_closes_required": 61,
+        "crypto_trend_dual_ma": {
+            "effective_lookback": 200,
+            "sma_rule": "close(t-1) > mean(last 200 closes strictly before t); equality and insufficient history are inactive",
+            "rebalance": "daily",
+            "weighting": "equal 1/N of active assets; explicit zero for every inactive asset",
+            "all_inactive": "100% interest-free cash; liquidate existing holdings",
+        },
     },
     "results": results,
 }
@@ -126,7 +144,7 @@ lines += [
     "",
     "## Results",
     "",
-    "All strategies use monthly rebalancing, next-open execution, and 15 bps estimated one-way transaction cost (10 bps commission + 5 bps slippage). Metrics are net of modeled costs. Annualization uses `annualization_days=365` for daily 24/7 crypto: CAGR, Sharpe, Sortino, gross turnover, bootstrap CAGR confidence intervals, and derived Calmar (including IS/OOS).",
+    "The original four strategies use monthly rebalancing; `crypto_trend_dual_ma` uses daily decisions. All use next-open execution and 15 bps estimated one-way transaction cost (10 bps commission + 5 bps slippage). Metrics are net of modeled costs. Annualization uses `annualization_days=365` for daily 24/7 crypto: CAGR, Sharpe, Sortino, gross turnover, bootstrap CAGR confidence intervals, and derived Calmar (including IS/OOS).",
     "",
     "| Strategy | Status | CAGR | Sharpe | Sortino | Max drawdown | Calmar | Hit rate | Annual turnover | OOS CAGR | OOS Sharpe | Bootstrap 95% CI (CAGR) |",
     "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
@@ -193,6 +211,7 @@ lines += [
     "",
     "## Method and caveats",
     "",
+    "- `crypto_trend_dual_ma`: each asset independently passes only when close(t-1) > SMA200(t-1), using strictly prior closes. Fewer than 200 closes and equality fail closed. Daily active 1/N allocation is 50/50 with both active, 100% with one active, and 100% interest-free cash with none; explicit zero targets liquidate old holdings. Warmup and purge both use 200 sessions. See `BACKTEST_REPORT_S01_CRYPTO_TREND.md` for the Japanese evaluation and sensitivity analysis.",
     "- The P2 backtest engine is reused: prior-session signals, next-open execution, explicit transaction costs, portfolio weight drift, and purged chronological holdout/OOS calculation.",
     "- Metrics and provenance are preserved in `crypto_backtest_results.json`; bootstrap uses 1,000 IID daily-return resamples and fixed seed 20260930. Confidence intervals are descriptive, not forecast intervals.",
     "- Binance data is exchange-specific BTC/USDT and ETH/USDT, not USD/reference pricing. USDT is the numeraire, not converted to USD; no FX/depeg adjustment, funding, borrow, taxes, custody, exchange outages, or market impact beyond fixed slippage is modeled.",

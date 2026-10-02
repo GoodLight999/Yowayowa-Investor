@@ -137,6 +137,20 @@ def _target_weights(
     *,
     missing_fundamentals: list[tuple[str, str]] | None = None,
 ) -> dict[str, float]:
+    if strategy.signal == "crypto_trend_dual_ma":
+        lookback = strategy.lookback or 200
+        active: list[str] = []
+        for symbol in strategy.universe:
+            rows = rows_by_symbol[symbol]
+            history = sorted(day for day in rows if day < decision_date)
+            closes = [float(rows[day]["close"]) for day in history]
+            if len(closes) >= lookback and closes[-1] > fmean(closes[-lookback:]):
+                active.append(symbol)
+        # An empty target retains holdings in the execution loop. Explicit
+        # zeros are essential to liquidate every holding when all gates fail.
+        weight = 1 / len(active) if active else 0.0
+        return {symbol: weight if symbol in active else 0.0 for symbol in strategy.universe}
+
     signals: list[tuple[str, float]] = []
     for symbol in strategy.universe:
         rows = rows_by_symbol[symbol]
@@ -384,8 +398,9 @@ def run_backtest(
         "equal_weight": 0,
         "value_fundamental": 0,
         "kiyohara_value": 0,
+        "crypto_trend_dual_ma": strategy.lookback or 200,
     }[strategy.signal]
-    if strategy.weighting == "inverse_volatility":
+    if strategy.weighting == "inverse_volatility" and strategy.signal != "crypto_trend_dual_ma":
         warmup = max(warmup, 61)
     for symbol, rows in rows_by_symbol.items():
         if sum(day < window_dates[0] for day in rows) < warmup:
@@ -551,6 +566,14 @@ def run_backtest(
         f"{request.bootstrap_seed}; not a forecast interval.",
     ]
     oos_metrics = None
+    if strategy.signal == "crypto_trend_dual_ma":
+        assumptions[3] = (
+            f"Crypto trend: close(t-1) > SMA({warmup})(t-1), using only prior-session "
+            "closes; insufficient history and equality fail closed. Active assets "
+            "receive equal 1/N weights; every inactive asset has explicit zero weight, "
+            "and no active assets means full liquidation into interest-free cash. "
+            f"Configured rebalance: {strategy.rebalance}; warmup/purge: {warmup} sessions."
+        )
     is_metrics = None
     oos_start = None
     purged_sessions = 0
