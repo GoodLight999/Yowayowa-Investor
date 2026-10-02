@@ -23,6 +23,7 @@ from yowayowa.jpx_margin_cli import jpx_margin, jpx_margin_ingest
 from yowayowa.license_cli import app as license_app
 from yowayowa.macro_cli import app as macro_app
 from yowayowa.ohlcv_coverage_cli import ohlcv_audit
+from yowayowa.orderbook_cli import app as orderbook_app
 from yowayowa.preset_cli import app as preset_app
 from yowayowa.private_cli import app as private_app
 from yowayowa.private_source_cli import app as private_source_app
@@ -61,6 +62,7 @@ app.add_typer(broker_read_app, name="broker-read")
 app.add_typer(broker_execution_app, name="broker-exec")
 app.add_typer(ir_app, name="ir")
 app.add_typer(private_source_app, name="private-sources")
+app.add_typer(orderbook_app, name="orderbook")
 
 
 @app.command("operator-bridge")

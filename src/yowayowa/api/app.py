@@ -38,6 +38,7 @@ from yowayowa.api.ir_routes import router as ir_router
 from yowayowa.api.jpx_routes import router as jpx_router
 from yowayowa.api.license_routes import router as license_router
 from yowayowa.api.macro_routes import router as macro_router
+from yowayowa.api.orderbook_routes import router as orderbook_router
 from yowayowa.api.portfolio_sizing_routes import router as portfolio_sizing_router
 from yowayowa.api.private_routes import router as private_router
 from yowayowa.api.private_source_routes import router as private_source_router
@@ -233,6 +234,7 @@ app.include_router(stock_router)
 app.include_router(screening_router)
 app.include_router(private_source_router)
 app.include_router(portfolio_sizing_router)
+app.include_router(orderbook_router)
 app.include_router(fundamentals_router)
 app.include_router(web_asset_router)
 app.include_router(router)

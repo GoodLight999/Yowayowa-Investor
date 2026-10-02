@@ -1186,6 +1186,38 @@ class InvestmentResearchAgent:
                 ),
                 self._tool_edinet_filing_history,
             ),
+            ToolSpec(
+                "get_orderbook",
+                "Read the Level-2 orderbook (market depth ladder, top bids/asks, "
+                "spread, order flow imbalance, and HFT activity indicator) for a given symbol.",
+                self._object_schema(
+                    {
+                        "symbol": {"type": "string"},
+                        "depth": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 10,
+                        },
+                    },
+                    ["symbol"],
+                ),
+                self._tool_get_orderbook,
+            ),
+            ToolSpec(
+                "estimate_orderbook_impact",
+                "Simulate a market order walking the Level-2 orderbook to estimate "
+                "fill price, slippage, and market impact bps.",
+                self._object_schema(
+                    {
+                        "symbol": {"type": "string"},
+                        "side": {"type": "string", "enum": ["buy", "sell"]},
+                        "quantity": {"type": "number", "minimum": 0.0001},
+                    },
+                    ["symbol", "side", "quantity"],
+                ),
+                self._tool_estimate_orderbook_impact,
+            ),
         ]
         return {item.name: item for item in specs}
 
@@ -2028,3 +2060,53 @@ class InvestmentResearchAgent:
             return date.fromisoformat(str(value))
         except ValueError:
             return None
+
+    def _tool_get_orderbook(self, args: dict[str, Any]) -> dict[str, Any]:
+        from yowayowa.services.orderbook_service import OrderbookService
+
+        symbol = str(args.get("symbol") or "").strip()
+        if not symbol:
+            return {"error": "symbol is required"}
+        try:
+            depth = max(1, min(int(args.get("depth", 10)), 50))
+        except (ValueError, TypeError):
+            depth = 10
+
+        service = OrderbookService()
+        snapshot = service.get_snapshot(symbol)
+        m = snapshot.metrics
+        return {
+            "symbol": snapshot.symbol,
+            "as_of": snapshot.as_of.isoformat(),
+            "best_bid": m.best_bid,
+            "best_ask": m.best_ask,
+            "mid_price": m.mid_price,
+            "spread": m.spread,
+            "spread_bps": m.spread_bps,
+            "order_flow_imbalance": m.order_flow_imbalance,
+            "micro_price": m.micro_price,
+            "hft_activity_indicator": m.hft_activity_indicator,
+            "bids": [{"price": b.price, "size": b.size} for b in snapshot.bids[:depth]],
+            "asks": [{"price": a.price, "size": a.size} for a in snapshot.asks[:depth]],
+            "provenance": snapshot.provenance.model_dump(mode="json"),
+        }
+
+    def _tool_estimate_orderbook_impact(self, args: dict[str, Any]) -> dict[str, Any]:
+        from yowayowa.services.orderbook_service import OrderbookService
+
+        symbol = str(args.get("symbol") or "").strip()
+        if not symbol:
+            return {"error": "symbol is required"}
+        side = str(args.get("side") or "buy").lower().strip()
+        if side not in {"buy", "sell"}:
+            return {"error": "side must be 'buy' or 'sell'"}
+        try:
+            qty = float(args.get("quantity", 100.0))
+            if qty <= 0:
+                return {"error": "quantity must be positive"}
+        except (ValueError, TypeError):
+            return {"error": "invalid quantity"}
+
+        service = OrderbookService()
+        result = service.estimate_impact(symbol, side=side, quantity=qty)  # type: ignore[arg-type]
+        return result.model_dump(mode="json")
