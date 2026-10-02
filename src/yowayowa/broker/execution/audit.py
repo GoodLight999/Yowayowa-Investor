@@ -15,9 +15,11 @@ skipped by `entries()`.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -70,6 +72,7 @@ class AppendOnlyAuditLog:
         self._path = self._dir / AUDIT_FILE_NAME
         self._state_path = self._dir / AUDIT_STATE_FILE_NAME
         self._clock: Callable[[], datetime] = clock or _now_utc
+        self._lock = threading.RLock()
 
     @property
     def path(self) -> Path:
@@ -101,25 +104,31 @@ class AppendOnlyAuditLog:
             raise ValueError(f"unknown audit kind: {kind!r}")
         if not client_order_id:
             raise ValueError("client_order_id must not be empty")
-        entries, _problems = self._scan()
-        seq = (entries[-1].seq + 1) if entries else 1
-        prev_hash = entries[-1].entry_hash if entries else _GENESIS_PREV_HASH
-        line: dict[str, Any] = {
-            "seq": seq,
-            "ts": self._clock().isoformat(),
-            "kind": kind,
-            "client_order_id": client_order_id,
-            "payload": payload,
-            "prev_hash": prev_hash,
-        }
-        line["entry_hash"] = entry_hash(line)
         self._dir.mkdir(parents=True, exist_ok=True)
-        with self._path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(line, ensure_ascii=False, separators=(",", ":")) + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        self._write_state(seq, line["entry_hash"])
-        return AuditEntry.model_validate(line)
+        lock_path = self._dir / (AUDIT_FILE_NAME + ".lock")
+        with self._lock, open(lock_path, "a") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                entries, _problems = self._scan()
+                seq = (entries[-1].seq + 1) if entries else 1
+                prev_hash = entries[-1].entry_hash if entries else _GENESIS_PREV_HASH
+                line: dict[str, Any] = {
+                    "seq": seq,
+                    "ts": self._clock().isoformat(),
+                    "kind": kind,
+                    "client_order_id": client_order_id,
+                    "payload": payload,
+                    "prev_hash": prev_hash,
+                }
+                line["entry_hash"] = entry_hash(line)
+                with self._path.open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(line, ensure_ascii=False, separators=(",", ":")) + "\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                self._write_state(seq, line["entry_hash"])
+                return AuditEntry.model_validate(line)
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _scan(self) -> tuple[list[AuditEntry], list[str]]:
         """Parse the log file, reporting unparsable lines instead of raising.

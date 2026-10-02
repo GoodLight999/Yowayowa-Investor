@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from yowayowa.db import (
@@ -122,12 +123,32 @@ def upsert_position(
         if target_expected_version is not None and existing.version != target_expected_version:
             session.rollback()
             raise PositionVersionConflictError(f"position {symbol} was changed")
-        existing.quantity = payload.quantity
-        existing.average_cost = payload.average_cost
-        existing.currency = currency
-        existing.version = (existing.version or 1) + 1
-    row.updated_at = utcnow()
-    session.commit()
+        target_version = existing.version or 1
+        result = session.execute(
+            update(PositionRecord)
+            .where(
+                PositionRecord.id == existing.id,
+                PositionRecord.version == target_version,
+            )
+            .values(
+                quantity=payload.quantity,
+                average_cost=payload.average_cost,
+                currency=currency,
+                version=target_version + 1,
+            )
+        )
+        result_rowcount: int | None = result.rowcount  # type: ignore[attr-defined]
+        if result_rowcount != 1:
+            session.rollback()
+            raise PositionVersionConflictError(f"position {symbol} was changed")
+        session.expire(existing)
+    try:
+        row.updated_at = utcnow()
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise PositionVersionConflictError(f"position {symbol} conflict / already exists") from exc
+    session.expire_all()
     session.refresh(row)
     return _to_model(row)
 
@@ -170,12 +191,32 @@ def bulk_upsert_positions(
                 )
             )
         else:
-            existing.quantity = item.quantity
-            existing.average_cost = item.average_cost
-            existing.currency = currency
-            existing.version = (existing.version or 1) + 1
-    row.updated_at = utcnow()
-    session.commit()
+            target_version = existing.version or 1
+            result = session.execute(
+                update(PositionRecord)
+                .where(
+                    PositionRecord.id == existing.id,
+                    PositionRecord.version == target_version,
+                )
+                .values(
+                    quantity=item.quantity,
+                    average_cost=item.average_cost,
+                    currency=currency,
+                    version=target_version + 1,
+                )
+            )
+            result_rowcount: int | None = result.rowcount  # type: ignore[attr-defined]
+            if result_rowcount != 1:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was changed")
+            session.expire(existing)
+    try:
+        row.updated_at = utcnow()
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise PositionVersionConflictError("position conflict / concurrent modification") from exc
+    session.expire_all()
     session.refresh(row)
     return _to_model(row)
 

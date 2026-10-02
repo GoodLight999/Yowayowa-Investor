@@ -44,6 +44,16 @@ class SQLiteOperatorState:
                     broker_order_id TEXT,
                     payload_json TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS order_reservations (
+                    client_order_id TEXT PRIMARY KEY,
+                    intent_hash TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    receipt_json TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_order_reservations_created_at
+                    ON order_reservations(created_at);
                 CREATE INDEX IF NOT EXISTS idx_broker_audit_created_at
                     ON broker_audit(created_at);
                 CREATE INDEX IF NOT EXISTS idx_broker_audit_event_type
@@ -136,19 +146,124 @@ class SQLiteOperatorState:
         payload = json.loads(row["payload_json"])
         return payload if isinstance(payload, dict) else None
 
+    def reserve_order_submission(
+        self,
+        client_order_id: str,
+        intent_hash: str,
+        max_orders_per_day: int | None = None,
+    ) -> tuple[str, dict[str, object] | None]:
+        if not client_order_id:
+            raise ValueError("client_order_id is required")
+        now = datetime.now(UTC).isoformat()
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT intent_hash, status, receipt_json
+                FROM order_reservations
+                WHERE client_order_id = ?
+                """,
+                (client_order_id,),
+            ).fetchone()
+            if row is not None:
+                saved_hash = str(row["intent_hash"])
+                saved_status = str(row["status"])
+                if saved_hash != intent_hash:
+                    connection.commit()
+                    return ("MISMATCH", None)
+                if saved_status == "COMPLETED" and row["receipt_json"]:
+                    connection.commit()
+                    payload = json.loads(row["receipt_json"])
+                    return ("ALREADY_COMPLETED", payload if isinstance(payload, dict) else None)
+                if saved_status in ("RESERVED", "SUBMITTING", "UNKNOWN"):
+                    connection.commit()
+                    return ("UNCERTAIN_OR_IN_FLIGHT", None)
+                connection.commit()
+                return ("REJECTED", None)
+
+            today = datetime.now(UTC).date().isoformat()
+            count_row = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM order_reservations
+                WHERE substr(created_at, 1, 10) = ?
+                  AND status IN ('SUBMITTING', 'COMPLETED', 'UNKNOWN')
+                """,
+                (today,),
+            ).fetchone()
+            current_count = int(count_row["count"]) if count_row else 0
+            if max_orders_per_day is not None and current_count >= max_orders_per_day:
+                connection.commit()
+                return ("DAILY_LIMIT_EXCEEDED", None)
+
+            connection.execute(
+                """
+                INSERT INTO order_reservations(
+                    client_order_id, intent_hash, status, created_at, updated_at
+                )
+                VALUES (?, ?, 'SUBMITTING', ?, ?)
+                """,
+                (client_order_id, intent_hash, now, now),
+            )
+            connection.commit()
+            return ("RESERVED", None)
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def record_submission_success(self, client_order_id: str, receipt: dict[str, object]) -> None:
+        now = datetime.now(UTC).isoformat()
+        serialized = json.dumps(receipt, ensure_ascii=False, sort_keys=True)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE order_reservations
+                SET status = 'COMPLETED', receipt_json = ?, updated_at = ?
+                WHERE client_order_id = ?
+                """,
+                (serialized, now, client_order_id),
+            )
+
+    def record_submission_failure(self, client_order_id: str, status: str = "UNKNOWN") -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE order_reservations
+                SET status = ?, updated_at = ?
+                WHERE client_order_id = ?
+                """,
+                (status, now, client_order_id),
+            )
+
     def count_submission_attempts_today(self) -> int:
         today = datetime.now(UTC).date().isoformat()
         with self._connect() as connection:
             row = connection.execute(
                 """
                 SELECT COUNT(*) AS count
-                FROM broker_audit
-                WHERE event_type = 'order_submit_attempt'
-                  AND substr(created_at, 1, 10) = ?
+                FROM order_reservations
+                WHERE substr(created_at, 1, 10) = ?
+                  AND status IN ('SUBMITTING', 'COMPLETED', 'UNKNOWN')
                 """,
                 (today,),
             ).fetchone()
-        return int(row["count"]) if row is not None else 0
+            count = int(row["count"]) if row is not None else 0
+            if count == 0:
+                row_audit = connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM broker_audit
+                    WHERE event_type = 'order_submit_attempt'
+                      AND substr(created_at, 1, 10) = ?
+                    """,
+                    (today,),
+                ).fetchone()
+                return int(row_audit["count"]) if row_audit is not None else 0
+            return count
 
     def audit_events(self) -> list[dict[str, object]]:
         with self._connect() as connection:

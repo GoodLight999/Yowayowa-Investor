@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import ipaddress
+import json
 import secrets
 from pathlib import Path
 
@@ -31,6 +33,13 @@ def _loopback_host(host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def _intent_hash(intent: BrokerOrderIntent) -> str:
+    data = intent.model_dump(mode="json")
+    data.pop("reason", None)
+    serialized = json.dumps(data, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(serialized).hexdigest()
 
 
 def create_operator_bridge_app(
@@ -85,17 +94,40 @@ def create_operator_bridge_app(
         dependencies=[Depends(authorize)],
     )
     def submit_order(intent: BrokerOrderIntent) -> BrokerOrderReceipt:
-        prior = state.latest_order_result(intent.client_order_id)
-        if prior is not None:
-            return BrokerOrderReceipt.model_validate(prior)
+        intent_hash = _intent_hash(intent)
+        status_res, receipt_data = state.reserve_order_submission(
+            intent.client_order_id,
+            intent_hash,
+            max_orders_per_day=settings.broker_max_orders_per_day,
+        )
+        if status_res == "MISMATCH":
+            raise HTTPException(
+                status_code=409,
+                detail=["Order intent payload mismatch for existing client_order_id"],
+            )
+        if status_res == "ALREADY_COMPLETED" and receipt_data:
+            return BrokerOrderReceipt.model_validate(receipt_data)
+        if status_res == "UNCERTAIN_OR_IN_FLIGHT":
+            raise HTTPException(
+                status_code=409,
+                detail=[
+                    "Order submission in progress or outcome uncertain; reconciliation required"
+                ],
+            )
+        if status_res == "DAILY_LIMIT_EXCEEDED":
+            raise HTTPException(
+                status_code=409,
+                detail=["Daily order count limit reached"],
+            )
 
         preview = connector.preview_order(intent)
         decision = evaluate_broker_execution(
             settings,
             preview,
-            orders_submitted_today=state.count_submission_attempts_today(),
+            orders_submitted_today=max(0, state.count_submission_attempts_today() - 1),
         )
         if not decision.allowed:
+            state.record_submission_failure(intent.client_order_id, status="REJECTED")
             raise HTTPException(status_code=409, detail=list(decision.reasons))
 
         state.append_audit(
@@ -116,6 +148,7 @@ def create_operator_bridge_app(
         try:
             receipt = connector.submit_order(intent)
         except Exception as exc:
+            state.record_submission_failure(intent.client_order_id, status="UNKNOWN")
             state.append_audit(
                 "order_submit_error",
                 client_order_id=intent.client_order_id,
@@ -123,6 +156,7 @@ def create_operator_bridge_app(
             )
             raise HTTPException(status_code=502, detail="Broker submission failed") from exc
 
+        state.record_submission_success(intent.client_order_id, receipt.model_dump(mode="json"))
         state.append_audit(
             "order_submit_result",
             client_order_id=intent.client_order_id,

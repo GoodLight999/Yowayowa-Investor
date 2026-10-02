@@ -31,6 +31,7 @@ from yowayowa.api.deps import (
 from yowayowa.broker.execution.audit import AuditEntry
 from yowayowa.broker.execution.models import OrderProposal
 from yowayowa.broker.execution.service import (
+    AuditIntegrityCompromisedError,
     BrokerExecutionDomainService,
     DuplicateProposalError,
     OrderExecutionPreview,
@@ -139,6 +140,8 @@ def create_proposal(
         fields["provenance"] = body.provenance
     try:
         proposal = service.propose(**fields)
+    except AuditIntegrityCompromisedError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except DuplicateProposalError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (ValidationError, ValueError) as exc:
@@ -161,7 +164,10 @@ def evaluate_proposal(
     service: BrokerExecutionDomainService = Depends(get_broker_execution_service),
 ) -> EvaluateResponse:
     proposal = _find_proposal(service, client_order_id)
-    decision = service.evaluate(proposal, armed=body.armed)
+    try:
+        decision = service.evaluate(proposal, armed=body.armed)
+    except AuditIntegrityCompromisedError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     duplicate = service.duplicate_check(proposal)
     return EvaluateResponse(
         allowed=decision.allowed,

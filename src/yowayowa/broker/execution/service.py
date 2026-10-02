@@ -10,6 +10,7 @@ explicit operator arming state into a real broker submission.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -37,6 +38,10 @@ class OrderExecutionPreview(BaseModel):
     estimated_notional: Decimal | None = None
     currency: str
     warnings: list[str] = []
+
+
+class AuditIntegrityCompromisedError(RuntimeError):
+    """Raised when the audit log fails chain verification (fail closed)."""
 
 
 class DuplicateProposalError(RuntimeError):
@@ -89,6 +94,7 @@ class BrokerExecutionDomainService:
         self._audit = AppendOnlyAuditLog(Path(audit_dir), clock=self._clock)
         self._proposals: dict[str, _ProposalState] = {}
         self._submits_by_jst_day: dict[str, list[_DailyCountEntry]] = {}
+        self._lock = threading.RLock()
         self._replay_audit()
 
     # ------------------------------------------------------------------ state
@@ -96,6 +102,13 @@ class BrokerExecutionDomainService:
     def _replay_audit(self) -> None:
         for entry in self._audit.entries():
             self._absorb(entry)
+
+    def _ensure_audit_intact(self) -> None:
+        problems = self._audit.verify()
+        if problems:
+            raise AuditIntegrityCompromisedError(
+                f"Audit trail integrity compromised: {'; '.join(problems)}"
+            )
 
     def _absorb(self, entry: AuditEntry) -> None:
         payload = entry.payload
@@ -144,23 +157,24 @@ class BrokerExecutionDomainService:
         Raises DuplicateProposalError when the client_order_id was already
         proposed (first-wins; nothing is appended to the audit trail).
         """
-
-        proposal = OrderProposal.model_validate(fields)
-        self._reject_reproposed(proposal)
-        self._audit.append(
-            "intent",
-            proposal.client_order_id,
-            {
-                "proposal_id": proposal.proposal_id,
-                "proposal_hash": proposal.proposal_hash(),
-                "proposal": proposal.model_dump(mode="json"),
-            },
-        )
-        self._proposals[proposal.client_order_id] = _ProposalState(
-            proposal_hash=proposal.proposal_hash(),
-            proposal_id=proposal.proposal_id,
-        )
-        return proposal
+        with self._lock:
+            self._ensure_audit_intact()
+            proposal = OrderProposal.model_validate(fields)
+            self._reject_reproposed(proposal)
+            self._audit.append(
+                "intent",
+                proposal.client_order_id,
+                {
+                    "proposal_id": proposal.proposal_id,
+                    "proposal_hash": proposal.proposal_hash(),
+                    "proposal": proposal.model_dump(mode="json"),
+                },
+            )
+            self._proposals[proposal.client_order_id] = _ProposalState(
+                proposal_hash=proposal.proposal_hash(),
+                proposal_id=proposal.proposal_id,
+            )
+            return proposal
 
     def propose_model(self, proposal: OrderProposal) -> OrderProposal:
         """Register an already-constructed proposal in the audit trail.
@@ -168,22 +182,23 @@ class BrokerExecutionDomainService:
         Raises DuplicateProposalError when the client_order_id was already
         proposed (first-wins; nothing is appended to the audit trail).
         """
-
-        self._reject_reproposed(proposal)
-        self._audit.append(
-            "intent",
-            proposal.client_order_id,
-            {
-                "proposal_id": proposal.proposal_id,
-                "proposal_hash": proposal.proposal_hash(),
-                "proposal": proposal.model_dump(mode="json"),
-            },
-        )
-        self._proposals[proposal.client_order_id] = _ProposalState(
-            proposal_hash=proposal.proposal_hash(),
-            proposal_id=proposal.proposal_id,
-        )
-        return proposal
+        with self._lock:
+            self._ensure_audit_intact()
+            self._reject_reproposed(proposal)
+            self._audit.append(
+                "intent",
+                proposal.client_order_id,
+                {
+                    "proposal_id": proposal.proposal_id,
+                    "proposal_hash": proposal.proposal_hash(),
+                    "proposal": proposal.model_dump(mode="json"),
+                },
+            )
+            self._proposals[proposal.client_order_id] = _ProposalState(
+                proposal_hash=proposal.proposal_hash(),
+                proposal_id=proposal.proposal_id,
+            )
+            return proposal
 
     def _reject_reproposed(self, proposal: OrderProposal) -> None:
         existing = self._proposals.get(proposal.client_order_id)
@@ -238,53 +253,57 @@ class BrokerExecutionDomainService:
     def evaluate(self, proposal: OrderProposal, *, armed: bool) -> ExecutionInterlockDecision:
         """Evaluate every interlock fail-closed; NEVER submits anything."""
 
-        preview = self.preview(proposal)
-        duplicate = self._duplicate_check(proposal)
-        today_jst = _jst_date(self._clock())
-        orders_submitted_today = len(self._submits_by_jst_day.get(today_jst, ()))
-        decision = evaluate_execution_interlocks(
-            proposal,
-            preview.estimated_notional,
-            self._settings,
-            armed=armed,
-            orders_submitted_today=orders_submitted_today,
-            duplicate_check=duplicate,
-        )
-        self._audit.append(
-            "state",
-            proposal.client_order_id,
-            {
-                "stage": "evaluate",
-                "armed": armed,
-                "allowed": decision.allowed,
-                "reasons": list(decision.reasons),
-                "proposal_hash": proposal.proposal_hash(),
-            },
-        )
-        return decision
+        with self._lock:
+            preview = self.preview(proposal)
+            duplicate = self._duplicate_check(proposal)
+            today_jst = _jst_date(self._clock())
+            orders_submitted_today = len(self._submits_by_jst_day.get(today_jst, ()))
+            decision = evaluate_execution_interlocks(
+                proposal,
+                preview.estimated_notional,
+                self._settings,
+                armed=armed,
+                orders_submitted_today=orders_submitted_today,
+                duplicate_check=duplicate,
+            )
+            self._audit.append(
+                "state",
+                proposal.client_order_id,
+                {
+                    "stage": "evaluate",
+                    "armed": armed,
+                    "allowed": decision.allowed,
+                    "reasons": list(decision.reasons),
+                    "proposal_hash": proposal.proposal_hash(),
+                },
+            )
+            return decision
 
     # ------------------------------------------------------------- recording
 
     def record_request(self, client_order_id: str, payload: dict[str, object]) -> AuditEntry:
         """Audit wrapper for the future submission connector (no transport)."""
 
-        entry = self._audit.append("request", client_order_id, payload)
-        self._absorb(entry)
-        return entry
+        with self._lock:
+            entry = self._audit.append("request", client_order_id, payload)
+            self._absorb(entry)
+            return entry
 
     def record_response(self, client_order_id: str, payload: dict[str, object]) -> AuditEntry:
         """Audit wrapper for the future submission connector (no transport)."""
 
-        entry = self._audit.append("response", client_order_id, payload)
-        self._absorb(entry)
-        return entry
+        with self._lock:
+            entry = self._audit.append("response", client_order_id, payload)
+            self._absorb(entry)
+            return entry
 
     def record_state(self, client_order_id: str, payload: dict[str, object]) -> AuditEntry:
         """Audit wrapper for arbitrary state transitions (no transport)."""
 
-        entry = self._audit.append("state", client_order_id, payload)
-        self._absorb(entry)
-        return entry
+        with self._lock:
+            entry = self._audit.append("state", client_order_id, payload)
+            self._absorb(entry)
+            return entry
 
     # ----------------------------------------------------------------- audit
 
@@ -309,6 +328,7 @@ class BrokerExecutionDomainService:
 __all__ = [
     "JST",
     "REQUEST_STAGE_SUBMIT",
+    "AuditIntegrityCompromisedError",
     "BrokerExecutionDomainService",
     "DuplicateProposalError",
     "OrderExecutionPreview",

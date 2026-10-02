@@ -85,6 +85,9 @@ class PortfolioRecord(Base):
 
 class PositionRecord(Base):
     __tablename__ = "positions"
+    __table_args__ = (
+        UniqueConstraint("portfolio_id", "symbol", name="uq_positions_portfolio_symbol"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     portfolio_id: Mapped[int] = mapped_column(

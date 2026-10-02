@@ -346,3 +346,42 @@ def test_positions_version_migration_and_ddl_compatibility() -> None:
         _ensure_positions_version(engine)
     finally:
         engine.dispose()
+
+
+def test_concurrent_initial_insert_unique_constraint() -> None:
+    from decimal import Decimal
+
+    import pytest
+
+    from yowayowa.db import PortfolioRecord
+    from yowayowa.services.portfolios import PositionVersionConflictError, upsert_position
+
+    engine = create_engine("sqlite:///:memory:")
+    try:
+        Base.metadata.create_all(engine)
+        with Session(engine) as seed:
+            portfolio = create_portfolio(seed, "Core", "USD")
+            pid = portfolio.id
+
+        with Session(engine) as s1, Session(engine) as s2:
+            r1 = s1.get(PortfolioRecord, pid)
+            r2 = s2.get(PortfolioRecord, pid)
+            assert r1 is not None and r2 is not None
+            assert list(r1.positions) == list(r2.positions) == []
+            upsert_position(
+                s1,
+                pid,
+                PositionUpsert(
+                    symbol="AAPL", quantity=Decimal("10"), currency="USD", expected_version=0
+                ),
+            )
+            with pytest.raises(PositionVersionConflictError, match="conflict / already exists"):
+                upsert_position(
+                    s2,
+                    pid,
+                    PositionUpsert(
+                        symbol="AAPL", quantity=Decimal("20"), currency="USD", expected_version=0
+                    ),
+                )
+    finally:
+        engine.dispose()
