@@ -178,6 +178,11 @@ class AppendOnlyAuditLog:
         in-place tampering of the last entry are detected. Never raises.
         """
 
+        if not self._path.exists():
+            if self._state_path.exists():
+                return ["audit log file missing while state sidecar exists"]
+            return []
+
         problems: list[str] = []
         entries, scan_problems = self._scan()
         problems.extend(scan_problems)
@@ -201,18 +206,34 @@ class AppendOnlyAuditLog:
                 problems.append(f"{label}: entry_hash does not match recomputed content hash")
             expected_prev = entry.entry_hash
             expected_seq = entry.seq + 1
-        problems.extend(self._verify_state(entries))
+        state_problems = self._verify_state(entries, has_chain_problems=bool(problems))
+        problems.extend(state_problems)
         return problems
 
-    def _verify_state(self, entries: list[AuditEntry]) -> list[str]:
+    def _verify_state(
+        self, entries: list[AuditEntry], *, has_chain_problems: bool = False
+    ) -> list[str]:
         """Cross-check the sidecar state file against the parsed chain."""
 
         if not self._path.exists():
+            if self._state_path.exists():
+                return ["audit log file missing while state sidecar exists"]
             return []
         if not self._state_path.exists():
-            # Upgrade path: an audit directory written before the sidecar
-            # existed self-heals instead of failing verification.
-            self._backfill_state(entries)
+            # If the chain is compromised, NEVER backfill a sidecar!
+            # Preserves read-only non-destructive behavior on damaged logs.
+            if has_chain_problems:
+                return []
+            # Upgrade path: only self-heal when the parsed chain is completely intact.
+            # Perform backfill under lock.
+            lock_path = self._dir / (AUDIT_FILE_NAME + ".lock")
+            with self._lock, open(lock_path, "a") as lock_file:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                try:
+                    if not self._state_path.exists():
+                        self._backfill_state(entries)
+                finally:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
             return []
         try:
             state = json.loads(self._state_path.read_text(encoding="utf-8"))
@@ -232,6 +253,26 @@ class AppendOnlyAuditLog:
         if state.get("last_entry_hash") != expected_last:
             problems.append("audit state last_entry_hash does not match the last entry hash")
         return problems
+
+    def upgrade_state_if_needed(self) -> None:
+        """Explicit upgrade path: backfill sidecar under lock after verifying chain."""
+        self._dir.mkdir(parents=True, exist_ok=True)
+        lock_path = self._dir / (AUDIT_FILE_NAME + ".lock")
+        with self._lock, open(lock_path, "a") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                if not self._path.exists() or self._state_path.exists():
+                    return
+                problems = self.verify()
+                if problems:
+                    detail = "; ".join(problems)
+                    raise AuditIntegrityCompromisedError(
+                        f"Cannot upgrade state: audit trail integrity compromised: {detail}"
+                    )
+                entries, _ = self._scan()
+                self._backfill_state(entries)
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def replay(self) -> list[AuditEntry]:
         """Replay hook for restart-safe state rebuilds (alias of entries())."""

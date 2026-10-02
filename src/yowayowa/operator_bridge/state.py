@@ -51,16 +51,29 @@ class SQLiteOperatorState:
                     status TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    receipt_json TEXT
+                    receipt_json TEXT,
+                    reservation_day TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_order_reservations_created_at
                     ON order_reservations(created_at);
+                CREATE INDEX IF NOT EXISTS idx_order_reservations_reservation_day
+                    ON order_reservations(reservation_day);
                 CREATE INDEX IF NOT EXISTS idx_broker_audit_created_at
                     ON broker_audit(created_at);
                 CREATE INDEX IF NOT EXISTS idx_broker_audit_event_type
                     ON broker_audit(event_type);
                 """
             )
+            cols = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(order_reservations)").fetchall()
+            }
+            if "reservation_day" not in cols:
+                connection.execute("ALTER TABLE order_reservations ADD COLUMN reservation_day TEXT")
+                connection.execute(
+                    "UPDATE order_reservations SET reservation_day = substr(created_at, 1, 10) "
+                    "WHERE reservation_day IS NULL"
+                )
             self._migrate_legacy_audit(connection)
 
     def allocate_rss_order_id(self, client_order_id: str) -> int:
@@ -215,33 +228,39 @@ class SQLiteOperatorState:
             else:
                 status = "UNKNOWN"
 
+            res_day = created_at[:10] if created_at else now[:10]
             connection.execute(
                 """
                 INSERT OR IGNORE INTO order_reservations(
-                    client_order_id, intent_hash, status, created_at, updated_at, receipt_json
+                    client_order_id, intent_hash, status, created_at,
+                    updated_at, receipt_json, reservation_day
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (cid, intent_hash, status, created_at, updated_at, receipt_json),
+                (cid, intent_hash, status, created_at, updated_at, receipt_json, res_day),
             )
 
     @staticmethod
     def _query_daily_count(connection: sqlite3.Connection, today: str) -> int:
         count_row = connection.execute(
             """
-            SELECT COUNT(DISTINCT id) AS count FROM (
-                SELECT client_order_id AS id
-                FROM order_reservations
-                WHERE substr(created_at, 1, 10) = ?
-                  AND status IN ('SUBMITTING', 'COMPLETED', 'UNKNOWN')
-                UNION
-                SELECT COALESCE(client_order_id, CAST(id AS TEXT)) AS id
-                FROM broker_audit
-                WHERE event_type = 'order_submit_attempt'
-                  AND substr(created_at, 1, 10) = ?
-            )
+            SELECT (
+                (SELECT COUNT(*) FROM broker_audit
+                 WHERE event_type = 'order_submit_attempt'
+                   AND substr(created_at, 1, 10) = ?)
+                +
+                (SELECT COUNT(*) FROM order_reservations
+                 WHERE COALESCE(reservation_day, substr(created_at, 1, 10)) = ?
+                   AND status IN ('SUBMITTING', 'COMPLETED', 'UNKNOWN')
+                   AND client_order_id NOT IN (
+                       SELECT client_order_id FROM broker_audit
+                       WHERE event_type = 'order_submit_attempt'
+                         AND substr(created_at, 1, 10) = ?
+                         AND client_order_id IS NOT NULL
+                   ))
+            ) AS count
             """,
-            (today, today),
+            (today, today, today),
         ).fetchone()
         return int(count_row["count"]) if count_row else 0
 
@@ -287,10 +306,10 @@ class SQLiteOperatorState:
                     cursor = connection.execute(
                         """
                         UPDATE order_reservations
-                        SET status = 'SUBMITTING', updated_at = ?
+                        SET status = 'SUBMITTING', updated_at = ?, reservation_day = ?
                         WHERE client_order_id = ? AND status = 'REJECTED'
                         """,
-                        (now, client_order_id),
+                        (now, today, client_order_id),
                     )
                     if cursor.rowcount != 1:
                         connection.commit()
@@ -308,11 +327,11 @@ class SQLiteOperatorState:
             connection.execute(
                 """
                 INSERT INTO order_reservations(
-                    client_order_id, intent_hash, status, created_at, updated_at
+                    client_order_id, intent_hash, status, created_at, updated_at, reservation_day
                 )
-                VALUES (?, ?, 'SUBMITTING', ?, ?)
+                VALUES (?, ?, 'SUBMITTING', ?, ?, ?)
                 """,
-                (client_order_id, intent_hash, now, now),
+                (client_order_id, intent_hash, now, now, today),
             )
             connection.commit()
             return ("RESERVED", None)
