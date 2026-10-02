@@ -1,0 +1,346 @@
+{
+  "start_head": "d1541f642e7322d687e7af7e78aeabcae6d2a21d",
+  "offline_replay_all_financial_files_byte_exact": true,
+  "supplied_runner_replay_byte_exact": true,
+  "no_supply_s03_final_vs_executed_d1541f6_byte_exact": true,
+  "existing_data_files_unchanged": 231,
+  "source_accession_and_formula_rows_checked": 15258,
+  "regression": {
+    "run_backtests_p3.py": {
+      "byte_exact": true,
+      "baseline_sha256": "b88c17ea70d1b574fdb04b2a320132e23cd3ea6d29eca1cb64e9fe648cddea1e",
+      "current_sha256": "b88c17ea70d1b574fdb04b2a320132e23cd3ea6d29eca1cb64e9fe648cddea1e"
+    },
+    "run_backtests_vol_target.py": {
+      "byte_exact": true,
+      "baseline_sha256": "9aa2228bb511580814fb6ab9d39ee8e9c36b77110139b1cd5f6abd3eef28f7dd",
+      "current_sha256": "9aa2228bb511580814fb6ab9d39ee8e9c36b77110139b1cd5f6abd3eef28f7dd"
+    },
+    "run_backtests_defensive_rotation.py": {
+      "byte_exact": true,
+      "baseline_sha256": "21da050b10c6b72b356fe34005bce96fbe2383ab937265afefe2fcd0b5262795",
+      "current_sha256": "21da050b10c6b72b356fe34005bce96fbe2383ab937265afefe2fcd0b5262795"
+    },
+    "run_backtests_crypto.py": {
+      "byte_exact": true,
+      "baseline_sha256": "1cdca730152f697acae252b8bb609ff30f4a1ab13fe393f650849bccf8cc720b",
+      "current_sha256": "1cdca730152f697acae252b8bb609ff30f4a1ab13fe393f650849bccf8cc720b"
+    },
+    "run_backtests_garp_momentum_hybrid.py": {
+      "byte_exact": true,
+      "baseline_sha256": "7da48a967068f188339e7564b732343917616c81c5372572da87a935087daa08",
+      "current_sha256": "7da48a967068f188339e7564b732343917616c81c5372572da87a935087daa08"
+    },
+    "note": "Actual d1541f6 execution compared, not stale committed P3 snapshot (which differs in assumptions/coverage)."
+  },
+  "make_verify": {
+    "exit_code": 0,
+    "test_summary": "1922 passed, 2 skipped, 1 warning in 381.11s (0:06:21)",
+    "log": "/root/.hermes/kanban/boards/yowayowa/workspaces/t_0386fa84/make_verify.log"
+  },
+  "coverage": {
+    "AAPL": {
+      "mapped_cik": "0000320193",
+      "chosen_cik": "0000320193",
+      "cik_filing_counts": {
+        "0000320193": 70
+      },
+      "rows": 1696,
+      "valid_pbr_rows": 1696,
+      "first": "2019-12-30",
+      "last": "2026-09-29",
+      "share_tags": [
+        "dei:EntityCommonStockSharesOutstanding"
+      ],
+      "share_bases": [
+        "instant"
+      ],
+      "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0000320193.json",
+      "raw_sha256": "984d4a0773d72eab0120388595e58fd8c935e1e01f1077cd06302dc6cbe94300",
+      "output_sha256": "e285b261b3112e9078810788f98eaac90fca1850e23d56d62c665819f5756aca"
+    },
+    "MSFT": {
+      "mapped_cik": "0000789019",
+      "chosen_cik": "0000789019",
+      "cik_filing_counts": {
+        "0000789019": 68
+      },
+      "rows": 1696,
+      "valid_pbr_rows": 1696,
+      "first": "2019-12-30",
+      "last": "2026-09-29",
+      "share_tags": [
+        "dei:EntityCommonStockSharesOutstanding"
+      ],
+      "share_bases": [
+        "instant"
+      ],
+      "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0000789019.json",
+      "raw_sha256": "4064f3b2a48c0276a80a73f98af6099a956cae47be9a9c2a2fe19d17c0cd34ce",
+      "output_sha256": "f03ebf6373d7dae6a5b2e7866b3d5dbab38ad489db0ebeabd02ea9f3059086a1"
+    },
+    "NVDA": {
+      "mapped_cik": "0001045810",
+      "chosen_cik": "0001045810",
+      "cik_filing_counts": {
+        "0001045810": 69
+      },
+      "rows": 1696,
+      "valid_pbr_rows": 1696,
+      "first": "2019-12-30",
+      "last": "2026-09-29",
+      "share_tags": [
+        "dei:EntityCommonStockSharesOutstanding"
+      ],
+      "share_bases": [
+        "instant"
+      ],
+      "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0001045810.json",
+      "raw_sha256": "56a17302f9260c54c7472b888ef2771801bc1baaaee9969df5c3b6b86fce461c",
+      "output_sha256": "c606dfe4a4a5b55424db9c22815d24cb7b3af42a0769c5c6ca743fd2016479e0"
+    },
+    "GOOGL": {
+      "mapped_cik": "0001652044",
+      "chosen_cik": "0001652044",
+      "cik_filing_counts": {
+        "0001652044": 44
+      },
+      "rows": 1695,
+      "valid_pbr_rows": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "share_tags": [
+        "us-gaap:CommonStockSharesOutstanding"
+      ],
+      "share_bases": [
+        "instant"
+      ],
+      "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0001652044.json",
+      "raw_sha256": "fae482edecd532c350a97f90e17fe119889a2e1822259a3df644c84ee98d5f63",
+      "output_sha256": "6060d6c5d91b8c893eb1f497abe6fd3c2b9c74b4c37914dd1195b8bfdb4b044c"
+    },
+    "AMZN": {
+      "mapped_cik": "0001018724",
+      "chosen_cik": "0001018724",
+      "cik_filing_counts": {
+        "0001018724": 69
+      },
+      "rows": 1695,
+      "valid_pbr_rows": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "share_tags": [
+        "dei:EntityCommonStockSharesOutstanding"
+      ],
+      "share_bases": [
+        "instant"
+      ],
+      "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0001018724.json",
+      "raw_sha256": "5c8bdbe4740c789ba4be5b80fbf2c98f0be553aa6bca616d6fdd020f0c657054",
+      "output_sha256": "9aa97a84abbc32f60b074f7d266bc4005847a5b91e3c82a3d9f4a325dc1a4c28"
+    },
+    "META": {
+      "mapped_cik": "0001326801",
+      "chosen_cik": "0001326801",
+      "cik_filing_counts": {
+        "0001326801": 57
+      },
+      "rows": 1695,
+      "valid_pbr_rows": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "share_tags": [
+        "us-gaap:WeightedAverageNumberOfSharesOutstandingBasic"
+      ],
+      "share_bases": [
+        "period_average"
+      ],
+      "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0001326801.json",
+      "raw_sha256": "3645a52ccb41fa2deb14de7a9b72a81a27b7695f5dad697512ce76595f6513cc",
+      "output_sha256": "507d07e5457525e96d73c2e3b3b37dbc6c04f5d503514a60d45add12d13fb663"
+    },
+    "TSLA": {
+      "mapped_cik": "0001318605",
+      "chosen_cik": "0001318605",
+      "cik_filing_counts": {
+        "0001318605": 62
+      },
+      "rows": 1695,
+      "valid_pbr_rows": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "share_tags": [
+        "dei:EntityCommonStockSharesOutstanding"
+      ],
+      "share_bases": [
+        "instant"
+      ],
+      "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0001318605.json",
+      "raw_sha256": "8049e9ebcb7e5029cffc942b9d30e9327065593209904ad0a2f89eb5435f8dcb",
+      "output_sha256": "f30ae738775e9db9eef720c1b55d9e9ebfca0b8df9663f2dd430e266b574bc60"
+    },
+    "JPM": {
+      "mapped_cik": "0000019617",
+      "chosen_cik": "0000019617",
+      "cik_filing_counts": {
+        "0000019617": 70
+      },
+      "rows": 1695,
+      "valid_pbr_rows": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "share_tags": [
+        "dei:EntityCommonStockSharesOutstanding"
+      ],
+      "share_bases": [
+        "instant"
+      ],
+      "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0000019617.json",
+      "raw_sha256": "c1b24c1dd8b0b2d316efb7ce985b633ae74d5c9835319a24ee4fc3f85978aa59",
+      "output_sha256": "7869eca11087619c8af4e107aca92d8e019b74056c61c24569ec9e36a0f9f971"
+    },
+    "XOM": {
+      "mapped_cik": "0002115436",
+      "chosen_cik": "0000034088",
+      "cik_filing_counts": {
+        "0002115436": 1,
+        "0000034088": 69
+      },
+      "rows": 1695,
+      "valid_pbr_rows": 1695,
+      "first": "2019-12-30",
+      "last": "2026-09-28",
+      "share_tags": [
+        "dei:EntityCommonStockSharesOutstanding"
+      ],
+      "share_bases": [
+        "instant"
+      ],
+      "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0000034088.json",
+      "raw_sha256": "6762358b8e119b465f87be224a256da96895e4fb0648dc3e9383318bf003cedb",
+      "output_sha256": "39806263bfb13c70a5c7ca01c9ebfcb2f407582c5add4023e18304389817b222"
+    },
+    "SPY": {
+      "rows": 0,
+      "valid_pbr_rows": 0,
+      "reason": "ETF: structural PBR absence; companyfacts 404 confirmed by CTO"
+    }
+  },
+  "split_events": {
+    "AAPL": [
+      {
+        "effective_date": "2020-08-31",
+        "ratio": 4.0,
+        "observed_close_ratio": 3.868800371977682,
+        "previous_close": 499.23,
+        "close": 129.04,
+        "residual_return": 0.03391222482623224,
+        "method": "observed_price_discontinuity_standard_ratio",
+        "sec_first_filed": "2020-10-30",
+        "sec_accession": "0000320193-20-000096",
+        "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
+        "sec_is_retrospective_validation_only": true
+      }
+    ],
+    "MSFT": [],
+    "NVDA": [
+      {
+        "effective_date": "2021-07-20",
+        "ratio": 4.0,
+        "observed_close_ratio": 4.036052009456265,
+        "previous_close": 751.19,
+        "close": 186.12,
+        "residual_return": -0.008932493776541262,
+        "method": "observed_price_discontinuity_standard_ratio",
+        "sec_first_filed": "2021-08-20",
+        "sec_accession": "0001045810-21-000131",
+        "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
+        "sec_is_retrospective_validation_only": true
+      },
+      {
+        "effective_date": "2024-06-10",
+        "ratio": 10.0,
+        "observed_close_ratio": 9.925938090155185,
+        "previous_close": 1208.88,
+        "close": 121.79,
+        "residual_return": 0.007461451922440521,
+        "method": "observed_price_discontinuity_standard_ratio",
+        "sec_first_filed": "2024-08-28",
+        "sec_accession": "0001045810-24-000264",
+        "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
+        "sec_is_retrospective_validation_only": true
+      }
+    ],
+    "GOOGL": [
+      {
+        "effective_date": "2022-07-18",
+        "ratio": 20.0,
+        "observed_close_ratio": 20.50398972759791,
+        "previous_close": 2235.55,
+        "close": 109.03,
+        "residual_return": -0.024580080964415996,
+        "method": "observed_price_discontinuity_standard_ratio",
+        "sec_first_filed": "2022-07-27",
+        "sec_accession": "0001652044-22-000071",
+        "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
+        "sec_is_retrospective_validation_only": true
+      }
+    ],
+    "AMZN": [
+      {
+        "effective_date": "2022-06-06",
+        "ratio": 20.0,
+        "observed_close_ratio": 19.60894302428079,
+        "previous_close": 2447.0,
+        "close": 124.79,
+        "residual_return": 0.019942787086228098,
+        "method": "observed_price_discontinuity_standard_ratio",
+        "sec_first_filed": "2022-07-29",
+        "sec_accession": "0001018724-22-000019",
+        "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
+        "sec_is_retrospective_validation_only": true
+      }
+    ],
+    "META": [],
+    "TSLA": [
+      {
+        "effective_date": "2020-08-31",
+        "ratio": 5.0,
+        "observed_close_ratio": 4.441724193289453,
+        "previous_close": 2213.4,
+        "close": 498.32,
+        "residual_return": 0.12568898527152794,
+        "method": "observed_price_discontinuity_standard_ratio",
+        "sec_first_filed": "2020-10-26",
+        "sec_accession": "0001564590-20-047486",
+        "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
+        "sec_is_retrospective_validation_only": true
+      },
+      {
+        "effective_date": "2022-08-25",
+        "ratio": 3.0,
+        "observed_close_ratio": 3.0104029452494343,
+        "previous_close": 891.29,
+        "close": 296.07,
+        "residual_return": -0.0034556653838817564,
+        "method": "observed_price_discontinuity_standard_ratio",
+        "sec_first_filed": "2022-10-24",
+        "sec_accession": "0000950170-22-019867",
+        "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
+        "sec_is_retrospective_validation_only": true
+      }
+    ],
+    "JPM": [],
+    "XOM": [],
+    "SPY": []
+  },
+  "primary_criteria": {
+    "a_oos_sharpe_improvement": "pass",
+    "b_is_oos_cagr_gap_reduction": "pass",
+    "c_full_max_drawdown_reduction": "not_met",
+    "d_full_bootstrap_lower_ge_minus_0_15": "pass",
+    "reason": "Measured supplied-input GARP vs matched momentum; inspect coverage and OOS length.",
+    "c_oos_max_drawdown_reduction": "pass"
+  },
+  "supplied_sha256": "28cf7e747bb94ff9652564f9c8498c5d61f7ef89756760688f43fca2bf6d0aea"
+}

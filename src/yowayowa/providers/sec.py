@@ -135,6 +135,15 @@ class SecClient:
         response.raise_for_status()
         return response.json()
 
+    def raw_company_facts(self, cik: str) -> dict[str, Any]:
+        """Fetch unabridged facts for an explicit CIK (including historical issuers)."""
+        if len(cik) != 10 or not cik.isascii() or not cik.isdigit():
+            raise ValueError("CIK must contain exactly ten ASCII digits")
+        payload = self._get_json(f"{self.base_url}/api/xbrl/companyfacts/CIK{cik}.json")
+        if not isinstance(payload, dict):
+            raise ValueError("SEC companyfacts response must be an object")
+        return payload
+
     def ticker_map(self) -> dict[str, Instrument]:
         now = datetime.now(UTC)
         if self._ticker_cache and (now - self._ticker_cache[0]).total_seconds() < 86_400:

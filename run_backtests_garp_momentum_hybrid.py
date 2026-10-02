@@ -18,6 +18,7 @@ from yowayowa.backtest_models import (
     BacktestRunResponse,
     BacktestStrategyDefinition,
 )
+from yowayowa.sec_pbr import join_pbr
 from yowayowa.services.backtest import (
     _garp_momentum_candidates,
     _garp_point_in_time_pbr,
@@ -183,11 +184,19 @@ def field_digest(value: Any) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data")
-    parser.add_argument("--output", type=Path, default=ROOT / "backtest_results_s03.json")
+    parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--pbr-dir", type=Path, help="Opt-in exact-date SEC sidecar join (GARP only)"
+    )
     parser.add_argument("--p3-reference", type=Path, default=ROOT / "backtest_results_p3.json")
     args = parser.parse_args()
+    if args.output is None:
+        args.output = ROOT / (
+            "backtest_results_s03_supplied.json" if args.pbr_dir else "backtest_results_s03.json"
+        )
     store = default_store(args.data_dir)
     histories = {s: store.read(s, provider="alpaca", limit=10_000) for s in UNIVERSE}
+    garp_histories = join_pbr(histories, args.pbr_dir) if args.pbr_dir else histories
     member_dates = [
         {date.fromisoformat(str(r["as_of"])[:10]) for r in histories[s]} for s in UNIVERSE
     ]
@@ -204,6 +213,9 @@ def main() -> None:
     runs: dict[str, dict[str, BacktestRunResponse]] = {}
     diagnostics = {}
     for strategy in definitions():
+        strategy_histories = (
+            garp_histories if strategy.signal == "garp_momentum_hybrid" else histories
+        )
         request = BacktestRunRequest(
             strategy_id=strategy.id,
             start=start,
@@ -215,14 +227,14 @@ def main() -> None:
             provider="alpaca",
             annualization_days=252,
         )
-        full = run_backtest(request, strategy, histories)
+        full = run_backtest(request, strategy, strategy_histories)
         assert full.status == "complete" and len(full.equity_curve) == len(sessions)
         segments = {"full": full}
         for label, a, b in [("IS", start, sessions[split - 1]), ("OOS", oos_start, end)]:
             run = run_backtest(
                 request.model_copy(update={"start": a, "end": b}),
                 strategy,
-                histories,
+                strategy_histories,
                 _include_oos=False,
             )
             assert run.status == "complete"
@@ -272,7 +284,8 @@ def main() -> None:
         )
         if strategy.signal == "garp_momentum_hybrid":
             diagnostics = {
-                label: diagnostic_segment(run, histories) for label, run in segments.items()
+                label: diagnostic_segment(run, strategy_histories)
+                for label, run in segments.items()
             }
     indexed = {r["strategy_id"]: r for r in results}
     assert len(indexed) == len(results) == 3
@@ -379,9 +392,9 @@ def main() -> None:
                 "row_count": len(histories[s]),
                 "first": min(days).isoformat(),
                 "last": max(days).isoformat(),
-                "pbr_nonnull_count": sum(r.get("pbr") is not None for r in histories[s]),
+                "pbr_nonnull_count": sum(r.get("pbr") is not None for r in garp_histories[s]),
                 "disclosure_date_nonnull_count": sum(
-                    r.get("disclosure_date") is not None for r in histories[s]
+                    r.get("disclosure_date") is not None for r in garp_histories[s]
                 ),
                 **diagnostics["full"]["coverage"][s],
             }
@@ -438,6 +451,27 @@ def main() -> None:
             ),
         },
     }
+    if args.pbr_dir:
+        manifest = args.pbr_dir / "manifest.json"
+        calendar = args.pbr_dir / "split-calendar.json"
+        supply: dict[str, Any] = (
+            json.loads(manifest.read_text())
+            if manifest.exists()
+            else {"reason": "No supply manifest"}
+        )
+        supply["split_events"] = json.loads(calendar.read_text()) if calendar.exists() else {}
+        output["pbr_supply"] = supply
+        output["assumptions"]["coverage"] = (
+            "Exact bar-date whole-financial-row sidecar join; no cross-date fill; "
+            "engine strict disclosure boundary unchanged"
+        )
+        output["primary_criteria"]["c_oos_max_drawdown_reduction"] = (
+            "not_evaluable"
+            if no_usable_pbr
+            else "pass"
+            if primary["oos_metrics"]["max_drawdown"] > baseline["oos_metrics"]["max_drawdown"]
+            else "not_met"
+        )
     args.output.write_text(
         json.dumps(output, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
