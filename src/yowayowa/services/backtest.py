@@ -32,6 +32,8 @@ DEFENSIVE_VOL_WINDOW = 60
 DEFENSIVE_SUBSET = ("JNJ", "PG", "XOM", "JPM")
 GROWTH_SELECT = 5
 DEFENSIVE_SELECT = 3
+GARP_MOMENTUM_CANDIDATE_SELECT = 8
+GARP_PBR_SELECT = 5
 __all__ = ["get_strategy", "list_strategies", "run_backtest"]
 
 
@@ -154,6 +156,64 @@ def _risk_on_regime(
     return closes[-1] / closes[-(RISK_ON_RETURN_WINDOW + 1)] - 1 > 0 and closes[-1] > fmean(closes)
 
 
+def _garp_momentum_candidates(
+    strategy: BacktestStrategyDefinition,
+    rows_by_symbol: Mapping[str, Mapping[date, Mapping[str, Any]]],
+    decision_date: date,
+    *,
+    limit: int | None = GARP_MOMENTUM_CANDIDATE_SELECT,
+    missing_fundamentals: list[tuple[str, str]] | None = None,
+) -> list[tuple[str, float]]:
+    candidates: list[tuple[str, float]] = []
+    for symbol in strategy.universe:
+        rows = rows_by_symbol.get(symbol, {})
+        history = sorted(day for day in rows if day < decision_date)
+        reason = None
+        if len(history) < MOMENTUM_LONG + 1:
+            reason = "insufficient prior momentum history"
+        else:
+            try:
+                closes = [float(rows[day]["close"]) for day in history[-(MOMENTUM_LONG + 1) :]]
+                if not all(math.isfinite(value) and value > 0 for value in closes):
+                    reason = "invalid prior momentum prices"
+                else:
+                    momentum = closes[-(MOMENTUM_SKIP + 1)] / closes[0] - 1
+                    if math.isfinite(momentum):
+                        candidates.append((symbol, momentum))
+                    else:
+                        reason = "non-finite momentum"
+            except (KeyError, TypeError, ValueError, OverflowError):
+                reason = "invalid prior momentum prices"
+        if reason is not None and missing_fundamentals is not None:
+            missing_fundamentals.append((symbol, reason))
+    ranked = sorted(candidates, key=lambda item: (-item[1], item[0]))
+    return ranked if limit is None else ranked[:limit]
+
+
+def _garp_point_in_time_pbr(
+    rows: Mapping[date, Mapping[str, Any]], decision_date: date
+) -> float | None:
+    # Latest eligible BAR supplies the input; never fill its missing PBR from
+    # another row. An undisclosed newer row is not eligible in the first place.
+    eligible: list[date] = []
+    for day, row in rows.items():
+        if day >= decision_date:
+            continue
+        try:
+            disclosed = _date(row["disclosure_date"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if disclosed < decision_date:
+            eligible.append(day)
+    if not eligible:
+        return None
+    try:
+        pbr = float(rows[max(eligible)]["pbr"])
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None
+    return pbr if math.isfinite(pbr) and pbr > 0 else None
+
+
 def _target_weights(
     strategy: BacktestStrategyDefinition,
     rows_by_symbol: Mapping[str, Mapping[date, Mapping[str, Any]]],
@@ -161,6 +221,51 @@ def _target_weights(
     *,
     missing_fundamentals: list[tuple[str, str]] | None = None,
 ) -> dict[str, float]:
+    if strategy.signal == "garp_momentum_hybrid":
+        ranked = _garp_momentum_candidates(
+            strategy,
+            rows_by_symbol,
+            decision_date,
+            limit=None,
+            missing_fundamentals=missing_fundamentals,
+        )
+        target = dict.fromkeys(strategy.universe, 0.0)
+        if not ranked:
+            if missing_fundamentals is not None:
+                missing_fundamentals.append(
+                    ("portfolio", "no eligible momentum candidates; full liquidation")
+                )
+            return target
+        valued: list[tuple[str, float]] = []
+        for symbol, _ in ranked[:GARP_MOMENTUM_CANDIDATE_SELECT]:
+            pbr = _garp_point_in_time_pbr(rows_by_symbol[symbol], decision_date)
+            if pbr is not None:
+                valued.append((symbol, pbr))
+            elif missing_fundamentals is not None:
+                missing_fundamentals.append((symbol, "missing or invalid point-in-time PBR"))
+        if valued:
+            for symbol, _ in sorted(valued, key=lambda item: (item[1], item[0]))[:GARP_PBR_SELECT]:
+                target[symbol] = 1 / GARP_PBR_SELECT
+            return target
+        if missing_fundamentals is not None:
+            missing_fundamentals.append(
+                ("portfolio", "no valid candidate PBR; momentum-only fallback")
+            )
+        # Reuse the frozen momentum path, including max_positions, with equal
+        # weighting. Invalid momentum histories stay excluded. Explicit zeros
+        # only expand its keys; execution/metrics remain exactly the same.
+        eligible_symbols = {symbol for symbol, _ in ranked}
+        fallback_rows = {
+            symbol: rows_by_symbol.get(symbol, {}) if symbol in eligible_symbols else {}
+            for symbol in strategy.universe
+        }
+        momentum = _target_weights(
+            strategy.model_copy(update={"signal": "momentum_12_1", "weighting": "equal"}),
+            fallback_rows,
+            decision_date,
+        )
+        return {symbol: momentum.get(symbol, 0.0) for symbol in strategy.universe}
+
     if strategy.signal == "defensive_rotation":
         risk_on = _risk_on_regime(rows_by_symbol, decision_date)
         candidates: list[tuple[str, float]] = []
@@ -485,6 +590,7 @@ def run_backtest(
         "crypto_trend_dual_ma": strategy.lookback or 200,
         "vol_target_defensive": (strategy.lookback or 21) + 1,
         "defensive_rotation": MOMENTUM_LONG + 1,
+        "garp_momentum_hybrid": MOMENTUM_LONG + 1,
     }[strategy.signal]
     if strategy.weighting == "inverse_volatility" and strategy.signal not in {
         "crypto_trend_dual_ma",
@@ -688,6 +794,19 @@ def run_backtest(
             "Every nonselected asset has explicit zero weight; no candidates means "
             "full liquidation into interest-free USD cash. Generic weighting and "
             "max_positions are ignored; no leverage. "
+            f"Configured rebalance: {strategy.rebalance}; warmup/purge: {warmup} closes/sessions."
+        )
+    if strategy.signal == "garp_momentum_hybrid":
+        assumptions[3] = (
+            "GARP two-stage ranking: top eight 252-21 momentum candidates, then up to "
+            "five lowest point-in-time PBR assets (symbol-ascending ties). Both bar "
+            "and disclosure dates must strictly precede execution; latest eligible "
+            "bar supplies PBR, finite and positive, without imputation or row joins. "
+            "Each selected PBR asset receives fixed 1/5; shortfall is interest-free "
+            "USD cash. Generic weighting/max_positions are ignored in this branch. "
+            "No valid candidate PBR delegates to equal-weight momentum using "
+            "max_positions. Every nonselected asset has explicit zero weight; "
+            "no momentum candidates means liquidation. No leverage. "
             f"Configured rebalance: {strategy.rebalance}; warmup/purge: {warmup} closes/sessions."
         )
     oos_start = None

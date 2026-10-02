@@ -24,6 +24,7 @@ BacktestSignal = Literal[
     "crypto_trend_dual_ma",
     "vol_target_defensive",
     "defensive_rotation",
+    "garp_momentum_hybrid",
 ]
 RebalanceFrequency = Literal["daily", "weekly", "monthly"]
 ExecutionPrice = Literal["next_open"]
