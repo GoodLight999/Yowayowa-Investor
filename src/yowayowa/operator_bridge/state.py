@@ -56,8 +56,6 @@ class SQLiteOperatorState:
                 );
                 CREATE INDEX IF NOT EXISTS idx_order_reservations_created_at
                     ON order_reservations(created_at);
-                CREATE INDEX IF NOT EXISTS idx_order_reservations_reservation_day
-                    ON order_reservations(reservation_day);
                 CREATE INDEX IF NOT EXISTS idx_broker_audit_created_at
                     ON broker_audit(created_at);
                 CREATE INDEX IF NOT EXISTS idx_broker_audit_event_type
@@ -74,6 +72,10 @@ class SQLiteOperatorState:
                     "UPDATE order_reservations SET reservation_day = substr(created_at, 1, 10) "
                     "WHERE reservation_day IS NULL"
                 )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_order_reservations_reservation_day "
+                "ON order_reservations(reservation_day)"
+            )
             self._migrate_legacy_audit(connection)
 
     def allocate_rss_order_id(self, client_order_id: str) -> int:
@@ -366,10 +368,39 @@ class SQLiteOperatorState:
                 (status, now, client_order_id),
             )
 
+    @property
+    def current_day(self) -> str:
+        return datetime.now(UTC).date().isoformat()
+
     def count_submission_attempts_today(self) -> int:
-        today = datetime.now(UTC).date().isoformat()
+        today = self.current_day
         with self._connect() as connection:
             return self._query_daily_count(connection, today)
+
+    def has_today_reservation(self, client_order_id: str) -> bool:
+        today = self.current_day
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1 FROM order_reservations
+                WHERE client_order_id = ?
+                  AND COALESCE(reservation_day, substr(created_at, 1, 10)) = ?
+                """,
+                (client_order_id, today),
+            ).fetchone()
+            return row is not None
+
+    def update_reservation_day(self, client_order_id: str, day: str) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE order_reservations
+                SET reservation_day = ?, updated_at = ?
+                WHERE client_order_id = ?
+                """,
+                (day, now, client_order_id),
+            )
 
     def audit_events(self) -> list[dict[str, object]]:
         with self._connect() as connection:

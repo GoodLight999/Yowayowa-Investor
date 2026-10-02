@@ -126,14 +126,20 @@ def create_operator_bridge_app(
             )
 
         preview = connector.preview_order(intent)
+        raw_count = state.count_submission_attempts_today()
+        is_today = state.has_today_reservation(intent.client_order_id)
+        orders_submitted_today = max(0, raw_count - 1) if is_today else raw_count
         decision = evaluate_broker_execution(
             settings,
             preview,
-            orders_submitted_today=max(0, state.count_submission_attempts_today() - 1),
+            orders_submitted_today=orders_submitted_today,
         )
         if not decision.allowed:
             state.record_submission_failure(intent.client_order_id, status="REJECTED")
             raise HTTPException(status_code=409, detail=list(decision.reasons))
+
+        if not is_today:
+            state.update_reservation_day(intent.client_order_id, state.current_day)
 
         state.append_audit(
             "order_submit_attempt",

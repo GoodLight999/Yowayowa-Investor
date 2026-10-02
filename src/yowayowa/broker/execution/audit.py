@@ -20,7 +20,8 @@ import hashlib
 import json
 import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -77,6 +78,8 @@ class AppendOnlyAuditLog:
         self._state_path = self._dir / AUDIT_STATE_FILE_NAME
         self._clock: Callable[[], datetime] = clock or _now_utc
         self._lock = threading.RLock()
+        self._lock_file: Any = None
+        self._lock_depth: int = 0
 
     @property
     def path(self) -> Path:
@@ -85,6 +88,28 @@ class AppendOnlyAuditLog:
     @property
     def state_path(self) -> Path:
         return self._state_path
+
+    @contextmanager
+    def _file_lock(self) -> Iterator[None]:
+        self._dir.mkdir(parents=True, exist_ok=True)
+        lock_path = self._dir / (AUDIT_FILE_NAME + ".lock")
+        with self._lock:
+            if self._lock_depth == 0:
+                self._lock_file = open(lock_path, "a")  # noqa: SIM115
+                fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_EX)
+            self._lock_depth += 1
+            try:
+                yield
+            finally:
+                self._lock_depth -= 1
+                if self._lock_depth == 0:
+                    try:
+                        if self._lock_file is not None:
+                            fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
+                    finally:
+                        if self._lock_file is not None:
+                            self._lock_file.close()
+                            self._lock_file = None
 
     def _write_state(self, count: int, last_entry_hash: str | None) -> None:
         """Atomically persist {count, last_entry_hash} to the sidecar file."""
@@ -108,36 +133,30 @@ class AppendOnlyAuditLog:
             raise ValueError(f"unknown audit kind: {kind!r}")
         if not client_order_id:
             raise ValueError("client_order_id must not be empty")
-        self._dir.mkdir(parents=True, exist_ok=True)
-        lock_path = self._dir / (AUDIT_FILE_NAME + ".lock")
-        with self._lock, open(lock_path, "a") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                problems = self.verify()
-                if problems:
-                    raise AuditIntegrityCompromisedError(
-                        f"Audit trail integrity compromised: {'; '.join(problems)}"
-                    )
-                entries, _problems = self._scan()
-                seq = (entries[-1].seq + 1) if entries else 1
-                prev_hash = entries[-1].entry_hash if entries else _GENESIS_PREV_HASH
-                line: dict[str, Any] = {
-                    "seq": seq,
-                    "ts": self._clock().isoformat(),
-                    "kind": kind,
-                    "client_order_id": client_order_id,
-                    "payload": payload,
-                    "prev_hash": prev_hash,
-                }
-                line["entry_hash"] = entry_hash(line)
-                with self._path.open("a", encoding="utf-8") as handle:
-                    handle.write(json.dumps(line, ensure_ascii=False, separators=(",", ":")) + "\n")
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                self._write_state(seq, line["entry_hash"])
-                return AuditEntry.model_validate(line)
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        with self._file_lock():
+            problems = self.verify()
+            if problems:
+                raise AuditIntegrityCompromisedError(
+                    f"Audit trail integrity compromised: {'; '.join(problems)}"
+                )
+            entries, _problems = self._scan()
+            seq = (entries[-1].seq + 1) if entries else 1
+            prev_hash = entries[-1].entry_hash if entries else _GENESIS_PREV_HASH
+            line: dict[str, Any] = {
+                "seq": seq,
+                "ts": self._clock().isoformat(),
+                "kind": kind,
+                "client_order_id": client_order_id,
+                "payload": payload,
+                "prev_hash": prev_hash,
+            }
+            line["entry_hash"] = entry_hash(line)
+            with self._path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(line, ensure_ascii=False, separators=(",", ":")) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            self._write_state(seq, line["entry_hash"])
+            return AuditEntry.model_validate(line)
 
     def _scan(self) -> tuple[list[AuditEntry], list[str]]:
         """Parse the log file, reporting unparsable lines instead of raising.
@@ -178,37 +197,38 @@ class AppendOnlyAuditLog:
         in-place tampering of the last entry are detected. Never raises.
         """
 
-        if not self._path.exists():
-            if self._state_path.exists():
-                return ["audit log file missing while state sidecar exists"]
-            return []
+        with self._file_lock():
+            if not self._path.exists():
+                if self._state_path.exists():
+                    return ["audit log file missing while state sidecar exists"]
+                return []
 
-        problems: list[str] = []
-        entries, scan_problems = self._scan()
-        problems.extend(scan_problems)
-        expected_prev = _GENESIS_PREV_HASH
-        expected_seq = 1
-        for entry in entries:
-            label = f"entry seq={entry.seq}"
-            if entry.seq != expected_seq:
-                problems.append(f"{label}: expected seq {expected_seq}, found {entry.seq}")
-            if entry.prev_hash != expected_prev:
-                problems.append(f"{label}: prev_hash does not match the previous entry hash")
-            recompute: dict[str, Any] = {
-                "seq": entry.seq,
-                "ts": entry.ts.isoformat(),
-                "kind": entry.kind,
-                "client_order_id": entry.client_order_id,
-                "payload": entry.payload,
-                "prev_hash": entry.prev_hash,
-            }
-            if entry_hash(recompute) != entry.entry_hash:
-                problems.append(f"{label}: entry_hash does not match recomputed content hash")
-            expected_prev = entry.entry_hash
-            expected_seq = entry.seq + 1
-        state_problems = self._verify_state(entries, has_chain_problems=bool(problems))
-        problems.extend(state_problems)
-        return problems
+            problems: list[str] = []
+            entries, scan_problems = self._scan()
+            problems.extend(scan_problems)
+            expected_prev = _GENESIS_PREV_HASH
+            expected_seq = 1
+            for entry in entries:
+                label = f"entry seq={entry.seq}"
+                if entry.seq != expected_seq:
+                    problems.append(f"{label}: expected seq {expected_seq}, found {entry.seq}")
+                if entry.prev_hash != expected_prev:
+                    problems.append(f"{label}: prev_hash does not match the previous entry hash")
+                recompute: dict[str, Any] = {
+                    "seq": entry.seq,
+                    "ts": entry.ts.isoformat(),
+                    "kind": entry.kind,
+                    "client_order_id": entry.client_order_id,
+                    "payload": entry.payload,
+                    "prev_hash": entry.prev_hash,
+                }
+                if entry_hash(recompute) != entry.entry_hash:
+                    problems.append(f"{label}: entry_hash does not match recomputed content hash")
+                expected_prev = entry.entry_hash
+                expected_seq = entry.seq + 1
+            state_problems = self._verify_state(entries, has_chain_problems=bool(problems))
+            problems.extend(state_problems)
+            return problems
 
     def _verify_state(
         self, entries: list[AuditEntry], *, has_chain_problems: bool = False
@@ -225,15 +245,8 @@ class AppendOnlyAuditLog:
             if has_chain_problems:
                 return []
             # Upgrade path: only self-heal when the parsed chain is completely intact.
-            # Perform backfill under lock.
-            lock_path = self._dir / (AUDIT_FILE_NAME + ".lock")
-            with self._lock, open(lock_path, "a") as lock_file:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-                try:
-                    if not self._state_path.exists():
-                        self._backfill_state(entries)
-                finally:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            # Caller verify() already holds self._file_lock.
+            self._backfill_state(entries)
             return []
         try:
             state = json.loads(self._state_path.read_text(encoding="utf-8"))
@@ -256,23 +269,18 @@ class AppendOnlyAuditLog:
 
     def upgrade_state_if_needed(self) -> None:
         """Explicit upgrade path: backfill sidecar under lock after verifying chain."""
-        self._dir.mkdir(parents=True, exist_ok=True)
-        lock_path = self._dir / (AUDIT_FILE_NAME + ".lock")
-        with self._lock, open(lock_path, "a") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-            try:
-                if not self._path.exists() or self._state_path.exists():
-                    return
-                problems = self.verify()
-                if problems:
-                    detail = "; ".join(problems)
-                    raise AuditIntegrityCompromisedError(
-                        f"Cannot upgrade state: audit trail integrity compromised: {detail}"
-                    )
+        with self._file_lock():
+            if not self._path.exists() or self._state_path.exists():
+                return
+            problems = self.verify()
+            if problems:
+                detail = "; ".join(problems)
+                raise AuditIntegrityCompromisedError(
+                    f"Cannot upgrade state: audit trail integrity compromised: {detail}"
+                )
+            if not self._state_path.exists():
                 entries, _ = self._scan()
                 self._backfill_state(entries)
-            finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def replay(self) -> list[AuditEntry]:
         """Replay hook for restart-safe state rebuilds (alias of entries())."""
