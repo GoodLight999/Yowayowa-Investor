@@ -11,8 +11,39 @@ import pytest
 
 from yowayowa.config import Settings
 from yowayowa.providers.sec import SecClient
-from yowayowa.sec_pbr import build_pbr, filing_inputs, join_pbr, split_calendar
+from yowayowa.sec_pbr import (
+    build_pbr,
+    digest,
+    filing_inputs,
+    join_pbr,
+    split_calendar,
+)
 from yowayowa.services.backtest import _garp_point_in_time_pbr, _target_weights
+
+
+def seal_supply(directory: Path) -> None:
+    """Hash offline fixture artifacts, using the real portable schema."""
+    (directory / "split-calendar.json").write_text("{}\n")
+    (directory / "ticker-map.json").write_text("{}\n")
+    (directory / "raw.json").write_text("{}\n")
+    manifest = {
+        "schema_version": 2,
+        "ticker_map": {
+            "raw_snapshot": "ticker-map.json",
+            "raw_sha256": digest(directory / "ticker-map.json"),
+        },
+        "split_calendar_sha256": digest(directory / "split-calendar.json"),
+        "symbols": {
+            p.stem: {
+                "output_sha256": digest(p),
+                "raw_snapshots": [
+                    {"raw_snapshot": "raw.json", "raw_sha256": digest(directory / "raw.json")}
+                ],
+            }
+            for p in directory.glob("*.jsonl")
+        },
+    }
+    (directory / "manifest.json").write_text(json.dumps(manifest))
 
 
 def fact(
@@ -114,6 +145,7 @@ def test_latest_eligible_row_missing_remains_missing(tmp_path: Path) -> None:
         )
         + "\n"
     )
+    seal_supply(tmp_path)
     joined = join_pbr(original, tmp_path)
     mapped = {date.fromisoformat(r["as_of"]): r for r in joined["AAPL"]}
     assert _garp_point_in_time_pbr(mapped, date(2024, 5, 8)) is None
@@ -174,7 +206,7 @@ def test_gaap_shares_already_retroactively_presented_post_period_split() -> None
 def test_googl_20_point_5_is_not_40() -> None:
     events = split_calendar(
         [bar("2022-07-15", 2235.55), bar("2022-07-18", 109.03, 112.64)],
-        payload([], [], splits=[fact(2), fact(20)]),
+        payload([], [], splits=[fact(2), fact(20, end="2022-07-15", filed="2022-07-27")]),
     )
     assert events[0]["ratio"] == 20
     assert events[0]["observed_close_ratio"] == pytest.approx(20.5039897)
@@ -182,18 +214,20 @@ def test_googl_20_point_5_is_not_40() -> None:
 
 def test_tsla_intraday_move_does_not_change_5_to_4() -> None:
     events = split_calendar(
-        [bar("2020-08-28", 2213.4), bar("2020-08-31", 498.32, 444.61)], payload([], [])
+        [bar("2020-08-28", 2213.4), bar("2020-08-31", 498.32, 444.61)],
+        payload([], [], splits=[fact(5, end="2020-08-10", filed="2020-10-26")]),
     )
     assert events[0]["ratio"] == 5
 
 
-def test_future_split_tags_do_not_control_multiplier() -> None:
+def test_missing_or_unrelated_future_tags_do_not_authorize_split() -> None:
     bars = [bar("2024-06-07", 100), bar("2024-06-10", 10)]
     a, _ = build_pbr("AAPL", bars, payload([fact(1000)], [fact(100)]))
     b, _ = build_pbr(
         "AAPL", bars, payload([fact(1000)], [fact(100)], splits=[fact(3, filed="2025-08-01")])
     )
     assert a == b
+    assert a[-1]["split_factor"] == 1
 
 
 def test_no_split_detected_in_normal_prices() -> None:
@@ -232,6 +266,7 @@ def test_invalid_equity_is_not_used(field: str, value: Any) -> None:
 )
 def test_loader_rejects_future_or_wrong_symbol(tmp_path: Path, row: dict[str, Any]) -> None:
     (tmp_path / "AAPL.jsonl").write_text(json.dumps(row) + "\n")
+    seal_supply(tmp_path)
     with pytest.raises(ValueError):
         join_pbr({"AAPL": [bar("2024-05-06")]}, tmp_path)
 
@@ -253,6 +288,9 @@ def test_no_sidecar_keeps_momentum_fallback(tmp_path: Path) -> None:
         ]
         for s in runner.UNIVERSE
     }
+    for symbol in histories:
+        (tmp_path / f"{symbol}.jsonl").write_text("")
+    seal_supply(tmp_path)
     joined = join_pbr(histories, tmp_path)
     rows = runner.map_histories(joined, date(2021, 1, 1))
     garp, momentum, _ = runner.definitions()

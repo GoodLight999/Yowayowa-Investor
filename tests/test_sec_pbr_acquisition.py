@@ -78,7 +78,8 @@ def test_snapshot_replay_no_network_xom_history_and_prices_immutable(
         ),
     )
     first = module.generate(tmp_path)
-    assert first["symbols"]["XOM"]["chosen_cik"] == "0000034088"
+    assert first["symbols"]["XOM"]["merged_ciks"] == ["0002115436", "0000034088"]
+    assert first["symbols"]["XOM"]["used_ciks"] == ["0000034088"]
     assert first["symbols"]["SPY"]["valid_pbr_rows"] == 0
     assert calls == ["mapping", "0000000001", "0002115436", "0000034088"]
     outputs = {p: p.read_bytes() for p in (tmp_path / "fundamentals").rglob("*") if p.is_file()}
@@ -128,3 +129,26 @@ def test_generator_404_cached_and_403_stops(
     with pytest.raises(httpx.HTTPStatusError):
         module.generate(tmp_path / "denied")
     assert not (tmp_path / "denied/fundamentals/sec-raw/CIK0000000001.json").exists()
+
+
+def test_issuer_lineage_survives_missing_or_legacy_ticker_mapping() -> None:
+    module = generator_module()
+    assert module.issuer_candidates("XOM", None) == ["0002115436", "0000034088"]
+    assert module.issuer_candidates("XOM", "0000034088") == ["0002115436", "0000034088"]
+    with pytest.raises(ValueError, match="Unreviewed issuer"):
+        module.issuer_candidates("XOM", "0000000001")
+    assert module.issuer_candidates("AAPL", None) == []
+    assert module.issuer_candidates("AAPL", "0000320193") == ["0000320193"]
+
+
+def test_generator_rejects_wrong_snapshot_cik(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = generator_module()
+    monkeypatch.setattr(module, "UNIVERSE", ["AAPL"])
+    raw = tmp_path / "fundamentals/sec-raw"
+    raw.mkdir(parents=True)
+    (raw / "ticker-map.json").write_text(json.dumps({"mapping": {"AAPL": {"cik": "0000000001"}}}))
+    (raw / "CIK0000000001.json").write_text(json.dumps({"payload": {"cik": 2}, "status": 200}))
+    with pytest.raises(ValueError, match="Snapshot CIK"):
+        module.generate(tmp_path, offline=True)

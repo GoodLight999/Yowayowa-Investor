@@ -7288,7 +7288,7 @@
             },
             {
               "symbol": "XOM",
-              "pbr": 2.6225592545194014
+              "pbr": 2.551516038098543
             },
             {
               "symbol": "AMZN",
@@ -12595,7 +12595,7 @@
             },
             {
               "symbol": "XOM",
-              "pbr": 2.6225592545194014
+              "pbr": 2.551516038098543
             },
             {
               "symbol": "AMZN",
@@ -12787,12 +12787,22 @@
     "c_oos_max_drawdown_reduction": "pass"
   },
   "pbr_supply": {
+    "schema_version": 2,
     "provider": "sec-edgar",
     "license_class": "official_public",
+    "ticker_map": {
+      "raw_snapshot": "../sec-raw/ticker-map.json",
+      "raw_sha256": "865c62766d4f2722baac3c1378fd542965d50e57099cb8c4fc814a9b6941410f"
+    },
     "symbols": {
       "AAPL": {
         "mapped_cik": "0000320193",
-        "chosen_cik": "0000320193",
+        "merged_ciks": [
+          "0000320193"
+        ],
+        "used_ciks": [
+          "0000320193"
+        ],
         "cik_filing_counts": {
           "0000320193": 70
         },
@@ -12806,13 +12816,23 @@
         "share_bases": [
           "instant"
         ],
-        "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0000320193.json",
-        "raw_sha256": "984d4a0773d72eab0120388595e58fd8c935e1e01f1077cd06302dc6cbe94300",
+        "raw_snapshots": [
+          {
+            "cik": "0000320193",
+            "raw_snapshot": "../sec-raw/CIK0000320193.json",
+            "raw_sha256": "984d4a0773d72eab0120388595e58fd8c935e1e01f1077cd06302dc6cbe94300"
+          }
+        ],
         "output_sha256": "e285b261b3112e9078810788f98eaac90fca1850e23d56d62c665819f5756aca"
       },
       "MSFT": {
         "mapped_cik": "0000789019",
-        "chosen_cik": "0000789019",
+        "merged_ciks": [
+          "0000789019"
+        ],
+        "used_ciks": [
+          "0000789019"
+        ],
         "cik_filing_counts": {
           "0000789019": 68
         },
@@ -12826,13 +12846,23 @@
         "share_bases": [
           "instant"
         ],
-        "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0000789019.json",
-        "raw_sha256": "4064f3b2a48c0276a80a73f98af6099a956cae47be9a9c2a2fe19d17c0cd34ce",
+        "raw_snapshots": [
+          {
+            "cik": "0000789019",
+            "raw_snapshot": "../sec-raw/CIK0000789019.json",
+            "raw_sha256": "4064f3b2a48c0276a80a73f98af6099a956cae47be9a9c2a2fe19d17c0cd34ce"
+          }
+        ],
         "output_sha256": "f03ebf6373d7dae6a5b2e7866b3d5dbab38ad489db0ebeabd02ea9f3059086a1"
       },
       "NVDA": {
         "mapped_cik": "0001045810",
-        "chosen_cik": "0001045810",
+        "merged_ciks": [
+          "0001045810"
+        ],
+        "used_ciks": [
+          "0001045810"
+        ],
         "cik_filing_counts": {
           "0001045810": 69
         },
@@ -12846,13 +12876,23 @@
         "share_bases": [
           "instant"
         ],
-        "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0001045810.json",
-        "raw_sha256": "56a17302f9260c54c7472b888ef2771801bc1baaaee9969df5c3b6b86fce461c",
+        "raw_snapshots": [
+          {
+            "cik": "0001045810",
+            "raw_snapshot": "../sec-raw/CIK0001045810.json",
+            "raw_sha256": "56a17302f9260c54c7472b888ef2771801bc1baaaee9969df5c3b6b86fce461c"
+          }
+        ],
         "output_sha256": "c606dfe4a4a5b55424db9c22815d24cb7b3af42a0769c5c6ca743fd2016479e0"
       },
       "GOOGL": {
         "mapped_cik": "0001652044",
-        "chosen_cik": "0001652044",
+        "merged_ciks": [
+          "0001652044"
+        ],
+        "used_ciks": [
+          "0001652044"
+        ],
         "cik_filing_counts": {
           "0001652044": 44
         },
@@ -12866,13 +12906,23 @@
         "share_bases": [
           "instant"
         ],
-        "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0001652044.json",
-        "raw_sha256": "fae482edecd532c350a97f90e17fe119889a2e1822259a3df644c84ee98d5f63",
+        "raw_snapshots": [
+          {
+            "cik": "0001652044",
+            "raw_snapshot": "../sec-raw/CIK0001652044.json",
+            "raw_sha256": "fae482edecd532c350a97f90e17fe119889a2e1822259a3df644c84ee98d5f63"
+          }
+        ],
         "output_sha256": "6060d6c5d91b8c893eb1f497abe6fd3c2b9c74b4c37914dd1195b8bfdb4b044c"
       },
       "AMZN": {
         "mapped_cik": "0001018724",
-        "chosen_cik": "0001018724",
+        "merged_ciks": [
+          "0001018724"
+        ],
+        "used_ciks": [
+          "0001018724"
+        ],
         "cik_filing_counts": {
           "0001018724": 69
         },
@@ -12886,13 +12936,23 @@
         "share_bases": [
           "instant"
         ],
-        "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0001018724.json",
-        "raw_sha256": "5c8bdbe4740c789ba4be5b80fbf2c98f0be553aa6bca616d6fdd020f0c657054",
+        "raw_snapshots": [
+          {
+            "cik": "0001018724",
+            "raw_snapshot": "../sec-raw/CIK0001018724.json",
+            "raw_sha256": "5c8bdbe4740c789ba4be5b80fbf2c98f0be553aa6bca616d6fdd020f0c657054"
+          }
+        ],
         "output_sha256": "9aa97a84abbc32f60b074f7d266bc4005847a5b91e3c82a3d9f4a325dc1a4c28"
       },
       "META": {
         "mapped_cik": "0001326801",
-        "chosen_cik": "0001326801",
+        "merged_ciks": [
+          "0001326801"
+        ],
+        "used_ciks": [
+          "0001326801"
+        ],
         "cik_filing_counts": {
           "0001326801": 57
         },
@@ -12906,13 +12966,23 @@
         "share_bases": [
           "period_average"
         ],
-        "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0001326801.json",
-        "raw_sha256": "3645a52ccb41fa2deb14de7a9b72a81a27b7695f5dad697512ce76595f6513cc",
+        "raw_snapshots": [
+          {
+            "cik": "0001326801",
+            "raw_snapshot": "../sec-raw/CIK0001326801.json",
+            "raw_sha256": "3645a52ccb41fa2deb14de7a9b72a81a27b7695f5dad697512ce76595f6513cc"
+          }
+        ],
         "output_sha256": "507d07e5457525e96d73c2e3b3b37dbc6c04f5d503514a60d45add12d13fb663"
       },
       "TSLA": {
         "mapped_cik": "0001318605",
-        "chosen_cik": "0001318605",
+        "merged_ciks": [
+          "0001318605"
+        ],
+        "used_ciks": [
+          "0001318605"
+        ],
         "cik_filing_counts": {
           "0001318605": 62
         },
@@ -12926,13 +12996,23 @@
         "share_bases": [
           "instant"
         ],
-        "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0001318605.json",
-        "raw_sha256": "8049e9ebcb7e5029cffc942b9d30e9327065593209904ad0a2f89eb5435f8dcb",
+        "raw_snapshots": [
+          {
+            "cik": "0001318605",
+            "raw_snapshot": "../sec-raw/CIK0001318605.json",
+            "raw_sha256": "8049e9ebcb7e5029cffc942b9d30e9327065593209904ad0a2f89eb5435f8dcb"
+          }
+        ],
         "output_sha256": "f30ae738775e9db9eef720c1b55d9e9ebfca0b8df9663f2dd430e266b574bc60"
       },
       "JPM": {
         "mapped_cik": "0000019617",
-        "chosen_cik": "0000019617",
+        "merged_ciks": [
+          "0000019617"
+        ],
+        "used_ciks": [
+          "0000019617"
+        ],
         "cik_filing_counts": {
           "0000019617": 70
         },
@@ -12946,13 +13026,25 @@
         "share_bases": [
           "instant"
         ],
-        "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0000019617.json",
-        "raw_sha256": "c1b24c1dd8b0b2d316efb7ce985b633ae74d5c9835319a24ee4fc3f85978aa59",
+        "raw_snapshots": [
+          {
+            "cik": "0000019617",
+            "raw_snapshot": "../sec-raw/CIK0000019617.json",
+            "raw_sha256": "c1b24c1dd8b0b2d316efb7ce985b633ae74d5c9835319a24ee4fc3f85978aa59"
+          }
+        ],
         "output_sha256": "7869eca11087619c8af4e107aca92d8e019b74056c61c24569ec9e36a0f9f971"
       },
       "XOM": {
         "mapped_cik": "0002115436",
-        "chosen_cik": "0000034088",
+        "merged_ciks": [
+          "0002115436",
+          "0000034088"
+        ],
+        "used_ciks": [
+          "0000034088",
+          "0002115436"
+        ],
         "cik_filing_counts": {
           "0002115436": 1,
           "0000034088": 69
@@ -12967,26 +13059,37 @@
         "share_bases": [
           "instant"
         ],
-        "raw_snapshot": "/root/current-work/yowayowa-investor/data/fundamentals/sec-raw/CIK0000034088.json",
-        "raw_sha256": "6762358b8e119b465f87be224a256da96895e4fb0648dc3e9383318bf003cedb",
-        "output_sha256": "39806263bfb13c70a5c7ca01c9ebfcb2f407582c5add4023e18304389817b222"
+        "raw_snapshots": [
+          {
+            "cik": "0002115436",
+            "raw_snapshot": "../sec-raw/CIK0002115436.json",
+            "raw_sha256": "a201c1c1345f4ac46516f2ccfdd3992f858e60f7584323a8014bf5ba2f6dbad6"
+          },
+          {
+            "cik": "0000034088",
+            "raw_snapshot": "../sec-raw/CIK0000034088.json",
+            "raw_sha256": "6762358b8e119b465f87be224a256da96895e4fb0648dc3e9383318bf003cedb"
+          }
+        ],
+        "output_sha256": "4670f8a399fb7b4693001d412e377d3a68fa95950d6ee945df28fe6ea298ed54"
       },
       "SPY": {
         "rows": 0,
         "valid_pbr_rows": 0,
-        "reason": "ETF: structural PBR absence; companyfacts 404 confirmed by CTO"
+        "reason": "ETF: structural PBR absence; companyfacts 404 confirmed by CTO",
+        "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       }
     },
     "method": {
-      "financial_selection": "latest disclosed period, whole same-accession equity/shares",
+      "financial_selection": "latest filed across reviewed issuer CIKs; whole same-CIK/accession equity/shares",
       "disclosure": "SEC filed, never period_end; engine keeps strict < decision date",
-      "split_detection": "observed price discontinuity; standard ratio snapped within 15%",
-      "split_sec_tags": "retrospective validation only, never timing or share multiplier input",
+      "split_detection": "positive finite open/close; nearby SEC ratio confirmation within 15%; reverse/fractional supported",
+      "split_sec_tags": "retrospective eligibility and exact ratio; observed prices date event; not an ex-ante action feed",
       "per": "not supplied; no same-accession trailing earnings pipeline implemented",
       "price_storage": "unchanged; share unit series alone adjusted",
       "meta_approximation": "same-accession basic period-average shares, not instant shares"
     },
-    "split_calendar_sha256": "b3eae66fe0761866de62e49b3a7e352a4f610d7df39de05fab5865156e542ab1",
+    "split_calendar_sha256": "ae7668f015440277c86cce1aab7dc62f963772430cf37343851007f0d397d522",
     "split_events": {
       "AAPL": [
         {
@@ -12996,11 +13099,13 @@
           "previous_close": 499.23,
           "close": 129.04,
           "residual_return": 0.03391222482623224,
-          "method": "observed_price_discontinuity_standard_ratio",
+          "method": "price_discontinuity_with_nearby_sec_ratio_confirmation",
           "sec_first_filed": "2020-10-30",
           "sec_accession": "0000320193-20-000096",
+          "sec_cik": "0000320193",
           "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
-          "sec_is_retrospective_validation_only": true
+          "sec_is_retrospective_validation_only": false,
+          "sec_is_retrospective_eligibility_gate": true
         }
       ],
       "MSFT": [],
@@ -13012,11 +13117,13 @@
           "previous_close": 751.19,
           "close": 186.12,
           "residual_return": -0.008932493776541262,
-          "method": "observed_price_discontinuity_standard_ratio",
+          "method": "price_discontinuity_with_nearby_sec_ratio_confirmation",
           "sec_first_filed": "2021-08-20",
           "sec_accession": "0001045810-21-000131",
+          "sec_cik": "0001045810",
           "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
-          "sec_is_retrospective_validation_only": true
+          "sec_is_retrospective_validation_only": false,
+          "sec_is_retrospective_eligibility_gate": true
         },
         {
           "effective_date": "2024-06-10",
@@ -13025,11 +13132,13 @@
           "previous_close": 1208.88,
           "close": 121.79,
           "residual_return": 0.007461451922440521,
-          "method": "observed_price_discontinuity_standard_ratio",
+          "method": "price_discontinuity_with_nearby_sec_ratio_confirmation",
           "sec_first_filed": "2024-08-28",
           "sec_accession": "0001045810-24-000264",
+          "sec_cik": "0001045810",
           "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
-          "sec_is_retrospective_validation_only": true
+          "sec_is_retrospective_validation_only": false,
+          "sec_is_retrospective_eligibility_gate": true
         }
       ],
       "GOOGL": [
@@ -13040,11 +13149,13 @@
           "previous_close": 2235.55,
           "close": 109.03,
           "residual_return": -0.024580080964415996,
-          "method": "observed_price_discontinuity_standard_ratio",
+          "method": "price_discontinuity_with_nearby_sec_ratio_confirmation",
           "sec_first_filed": "2022-07-27",
           "sec_accession": "0001652044-22-000071",
+          "sec_cik": "0001652044",
           "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
-          "sec_is_retrospective_validation_only": true
+          "sec_is_retrospective_validation_only": false,
+          "sec_is_retrospective_eligibility_gate": true
         }
       ],
       "AMZN": [
@@ -13055,11 +13166,13 @@
           "previous_close": 2447.0,
           "close": 124.79,
           "residual_return": 0.019942787086228098,
-          "method": "observed_price_discontinuity_standard_ratio",
+          "method": "price_discontinuity_with_nearby_sec_ratio_confirmation",
           "sec_first_filed": "2022-07-29",
           "sec_accession": "0001018724-22-000019",
+          "sec_cik": "0001018724",
           "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
-          "sec_is_retrospective_validation_only": true
+          "sec_is_retrospective_validation_only": false,
+          "sec_is_retrospective_eligibility_gate": true
         }
       ],
       "META": [],
@@ -13071,11 +13184,13 @@
           "previous_close": 2213.4,
           "close": 498.32,
           "residual_return": 0.12568898527152794,
-          "method": "observed_price_discontinuity_standard_ratio",
+          "method": "price_discontinuity_with_nearby_sec_ratio_confirmation",
           "sec_first_filed": "2020-10-26",
           "sec_accession": "0001564590-20-047486",
+          "sec_cik": "0001318605",
           "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
-          "sec_is_retrospective_validation_only": true
+          "sec_is_retrospective_validation_only": false,
+          "sec_is_retrospective_eligibility_gate": true
         },
         {
           "effective_date": "2022-08-25",
@@ -13084,11 +13199,13 @@
           "previous_close": 891.29,
           "close": 296.07,
           "residual_return": -0.0034556653838817564,
-          "method": "observed_price_discontinuity_standard_ratio",
+          "method": "price_discontinuity_with_nearby_sec_ratio_confirmation",
           "sec_first_filed": "2022-10-24",
           "sec_accession": "0000950170-22-019867",
+          "sec_cik": "0001318605",
           "sec_tag": "us-gaap:StockholdersEquityNoteStockSplitConversionRatio1",
-          "sec_is_retrospective_validation_only": true
+          "sec_is_retrospective_validation_only": false,
+          "sec_is_retrospective_eligibility_gate": true
         }
       ],
       "JPM": [],

@@ -18,7 +18,7 @@ from yowayowa.backtest_models import (
     BacktestRunResponse,
     BacktestStrategyDefinition,
 )
-from yowayowa.sec_pbr import join_pbr
+from yowayowa.sec_pbr import join_pbr, verify_supply
 from yowayowa.services.backtest import (
     _garp_momentum_candidates,
     _garp_point_in_time_pbr,
@@ -452,14 +452,9 @@ def main() -> None:
         },
     }
     if args.pbr_dir:
-        manifest = args.pbr_dir / "manifest.json"
         calendar = args.pbr_dir / "split-calendar.json"
-        supply: dict[str, Any] = (
-            json.loads(manifest.read_text())
-            if manifest.exists()
-            else {"reason": "No supply manifest"}
-        )
-        supply["split_events"] = json.loads(calendar.read_text()) if calendar.exists() else {}
+        supply = verify_supply(args.pbr_dir)
+        supply["split_events"] = json.loads(calendar.read_text())
         output["pbr_supply"] = supply
         output["assumptions"]["coverage"] = (
             "Exact bar-date whole-financial-row sidecar join; no cross-date fill; "

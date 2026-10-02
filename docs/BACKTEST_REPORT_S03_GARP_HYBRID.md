@@ -2,6 +2,9 @@
 
 ## 結論
 
+追記（供給完了）: SEC実PBR供給とXOM新旧CIK併合を完了。供給後の実測は [S-03 PBR supply](BACKTEST_REPORT_S03_PBR_SUPPLY.md) / `backtest_results_s03_supplied.json` を参照。以下は供給なし初回baselineの記録で、`backtest_results_s03.json` は回帰基準として不変。
+供給後の(a) OOS Sharpe 0.309216 > −0.310141、(b) IS–OOS CAGR差9.1948% < 22.9203%、(d) full CI下限−9.4416%は達成、(c) full DD −54.9811% vs −34.6371%は未達（OOS DDは改善）のため **採用未承認**。生価格分割損益の制約は継続。
+
 二段階ランキングと A/B 計測器の実装は完了。PBR/disclosure_date の実入力は全10銘柄・全行欠損であり、実データでは GARP は全リバランスで momentum-only にフォールバックする。full/IS/OOS の metrics・equity_curve・trades が必須 baseline と完全一致し、全指標と bootstrap CI の差は厳密に0。これは実装/フォールバックの検証であって、PBR フィルタの効用の検証ではない。合格目安(a)–(d)はすべて「PBR供給なしのため評価不能」。合成PBRによる実行結果は含めていない。
 
 ## 実装・再現性・検証
@@ -155,7 +158,7 @@ S03 baseline とP3 momentumのfield-by-field照合: 15カテゴリすべてTrue�
 ## 逸脱点・限界・実ポートフォリオとの関係
 
 - CTO承認の読み替え以外に設計逸脱なし。§9の本数は3、fallbackキー集合は正規化して比較。engine実行結果は厳密一致。P3のみstaleのため実装前再生成byteオラクルを使用。
-- PBR供給は別カードの責務。SEC EDGARからのPBR生成・本番データ補充は未実施。SPYはETFでcompanyfacts 404が想定される恒久欠損、他9銘柄の有効データだけでも固定slotで稼働する設計。SPY要件/偽PBRは追加しない。
+- 初回実装時にはPBR供給を別カードへ分離したが、現在は別成果物として完了（上記相互参照）。SPYはETFで構造的PBR欠損を維持し、偽PBRは追加しない。
 - METAの近似・ticker履歴問題、raw OHLCVの分割リーク/未調整価格問題は未処理。分割修正、配当、税、FX、market impact、delisting、point-in-time universeはモデル化していない。取得済み価格の不備を戦略alphaと誤認しない。
 - 高PBR銘柄を避けるという仮説はまだ測定不能。PBRは金融/IT等の業種構造差の影響を受けるため、供給後もセクター偏りの独立評価が必要。IID bootstrapは系列依存を扱わず将来予測区間ではない。
 
