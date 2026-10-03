@@ -273,7 +273,6 @@ def test_flow_parser_separates_status_marker_and_preserves_missing(
     assert rows[2].published_at.isoformat() == "2026-09-30T16:30:00+09:00"
 
 
-
 def _flow_lines_shifted(
     *,
     latest_purchase: str = "45.0%",
@@ -420,6 +419,7 @@ def test_flow_reingest_rejects_changed_historical_observation(
             assert preserved.payload["new_purchase_ratio_pct"] == 40.0
     finally:
         engine.dispose()
+
 
 def test_discovery_rejects_cross_host_and_uses_matching_artifact() -> None:
     html = """
