@@ -33,6 +33,10 @@ xbrl = ["arelle-release>=2.37,<3"]
 operator-ir = [
   "pdfminer.six>=20240506,<20270101",
 ]
+operator-jpx = [
+  "pymupdf>=1.26,<2",
+  "openpyxl>=3.1,<4",
+]
 operator-windows = [
   "xlwings>=0.33,<1",
   "pywin32>=308; platform_system == 'Windows'",
@@ -56,6 +60,9 @@ dev = [
   # CI runs `uv sync --extra dev`, so the PDF extraction path must be present
   # under dev as well; otherwise the real-parser tests would silently skip.
   "pdfminer.six>=20240506,<20270101",
+  # Real public JPX parser tests must not silently skip in CI.
+  "pymupdf>=1.26,<2",
+  "openpyxl>=3.1,<4",
 ]
 
 [project.scripts]
@@ -94,6 +101,16 @@ known-first-party = ["yowayowa"]
 "src/yowayowa/api/jpx_routes.py" = ["RUF001", "RUF002"]
 "src/yowayowa/jpx_margin_cli.py" = ["RUF001", "RUF002"]
 "tests/test_jpx_margin.py" = ["RUF001", "RUF002"]
+"src/yowayowa/jpx_public_models.py" = ["RUF001", "RUF002"]
+"src/yowayowa/providers/jpx_public_common.py" = ["RUF001", "RUF002"]
+"src/yowayowa/providers/jpx_public_balance.py" = ["RUF001", "RUF002"]
+"src/yowayowa/providers/jpx_public_xlsx.py" = ["RUF001", "RUF002"]
+"src/yowayowa/providers/jpx_public_flow.py" = ["RUF001", "RUF002"]
+"src/yowayowa/providers/jpx_public_margin.py" = ["RUF001", "RUF002"]
+"src/yowayowa/services/jpx_public_margin.py" = ["RUF001", "RUF002"]
+"src/yowayowa/services/jpx_margin_signals.py" = ["RUF001", "RUF002"]
+"src/yowayowa/jpx_public_cli.py" = ["RUF001", "RUF002"]
+"tests/test_jpx_public_margin.py" = ["RUF001", "RUF002"]
 # EDINET screening carries the official Japanese descriptions verbatim
 # (訂正有価証券報告書 etc. with fullwidth characters); they are source data.
 "tests/test_screening_pipeline.py" = ["RUF001", "RUF002"]
