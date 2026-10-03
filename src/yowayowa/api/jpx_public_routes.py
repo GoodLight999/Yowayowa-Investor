@@ -65,7 +65,7 @@ def _normalize_kinds(raw: str) -> list[JpxPublicKind]:
                 detail=f"unknown JPX public kind: {value}",
             )
         if value not in result:
-            result.append(value)  # type: ignore[arg-type]
+            result.append(cast(JpxPublicKind, value))
     if not result:
         raise HTTPException(status_code=422, detail="kinds must not be empty")
     return result
