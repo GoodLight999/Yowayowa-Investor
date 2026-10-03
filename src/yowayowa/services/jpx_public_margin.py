@@ -587,16 +587,11 @@ def ingest_jpx_margin_flow_pdf(
                 continue
             if existing.payload != flow_payload(row):
                 raise JpxPublicMarginParseError(
-                    "historical flow observation changed: "
-                    f"{row.trade_date.isoformat()} {row.code}"
+                    f"historical flow observation changed: {row.trade_date.isoformat()} {row.code}"
                 )
 
         latest_rows = [row for row in rows if row.trade_date == latest_date]
-        existing_latest = {
-            row.key: row
-            for row in existing_rows
-            if row.as_of_date == latest_date
-        }
+        existing_latest = {row.key: row for row in existing_rows if row.as_of_date == latest_date}
         incoming_latest = {row.code: flow_payload(row) for row in latest_rows}
         latest_changed = set(existing_latest) != set(incoming_latest) or any(
             existing_latest[code].payload != payload
