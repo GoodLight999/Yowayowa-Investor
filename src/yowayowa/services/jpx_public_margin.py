@@ -11,6 +11,7 @@ from typing import Final, Literal
 from urllib.parse import urljoin, urlparse
 
 import httpx
+from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
