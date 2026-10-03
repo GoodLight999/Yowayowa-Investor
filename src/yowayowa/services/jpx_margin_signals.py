@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -71,7 +71,7 @@ def _signal(
     metrics: dict[str, int | float | str | bool | None],
     reason: str,
     provenances: list[Provenance],
-    available_times: list,
+    available_times: list[datetime],
 ) -> JpxMarginSignal:
     return JpxMarginSignal(
         signal=signal,
@@ -466,8 +466,10 @@ def scan_jpx_margin_signals(
             short_ratio_threshold=short_ratio_threshold,
             flow_buy_threshold=flow_buy_threshold,
         )
-    else:
+    elif signal == "watch-flags":
         results = _watch_rows(session)
+    else:
+        raise ValueError(f"unknown JPX margin signal: {signal}")
 
     priority = {
         "crowded-long": "long_listed_ratio_pct",
