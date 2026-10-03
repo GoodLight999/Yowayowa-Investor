@@ -29,7 +29,6 @@ from yowayowa.services.jpx_public_margin import (
     ingest_jpx_public_balance_pdf,
 )
 
-
 SOURCE = "https://www.jpx.co.jp/example"
 RETRIEVED = datetime(2026, 10, 2, 8, 0, tzinfo=UTC)
 
