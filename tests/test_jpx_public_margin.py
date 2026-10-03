@@ -362,6 +362,54 @@ def test_flow_reingest_preserves_overlapping_history(
         engine.dispose()
 
 
+def test_flow_reingest_ignores_changed_current_status_on_historical_ratio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    later = datetime(2026, 10, 3, 8, 0, tzinfo=UTC)
+    try:
+        with Session(engine) as session:
+            monkeypatch.setattr(
+                flow_parser,
+                "extract_jpx_pdf_lines",
+                lambda _: _flow_lines("40.0%"),
+            )
+            ingest_jpx_margin_flow_pdf(
+                session,
+                b"flow-first",
+                source_url=SOURCE,
+                retrieved_at=RETRIEVED,
+            )
+
+            shifted = _flow_lines_shifted(prior_purchase="40.0%")
+            shifted[3] = "規"
+            monkeypatch.setattr(
+                flow_parser,
+                "extract_jpx_pdf_lines",
+                lambda _: shifted,
+            )
+            ingest_jpx_margin_flow_pdf(
+                session,
+                b"flow-status-changed",
+                source_url=SOURCE,
+                retrieved_at=later,
+            )
+
+            preserved = session.scalar(
+                select(JpxMarginAuxRecord).where(
+                    JpxMarginAuxRecord.kind == "flow",
+                    JpxMarginAuxRecord.as_of_date == date(2026, 10, 2),
+                    JpxMarginAuxRecord.code == "72030",
+                )
+            )
+            assert preserved is not None
+            assert preserved.payload["status_marker"] == "日"
+            assert preserved.payload["new_purchase_ratio_pct"] == 40.0
+    finally:
+        engine.dispose()
+
+
 def test_flow_reingest_rejects_changed_historical_observation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
