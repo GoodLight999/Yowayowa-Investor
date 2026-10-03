@@ -410,10 +410,15 @@ def _validate_watch_against_balance(session: Session, rows: list[JpxMarginWatch]
                 detail.long_standardized_source_change,
             ),
         )
-        for field, left, right in optional_pairs:
-            if left is not None and right is not None and left != right:
+        for optional_field, optional_left, optional_right in optional_pairs:
+            if (
+                optional_left is not None
+                and optional_right is not None
+                and optional_left != optional_right
+            ):
                 raise JpxPublicMarginParseError(
-                    f"watch/all-issue mismatch {watch.code}.{field}: {left} != {right}"
+                    "watch/all-issue mismatch "
+                    f"{watch.code}.{optional_field}: {optional_left} != {optional_right}"
                 )
 
 
