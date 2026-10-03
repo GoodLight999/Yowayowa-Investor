@@ -48,8 +48,6 @@ def parse_jpx_margin_flow_pdf(
     if len(dates) > 3:
         raise JpxPublicMarginParseError(f"unexpected flow date count: {len(dates)}")
 
-    publication_date = dates[0]
-    published_at = publication_at(publication_date, 16, 30)
     rows: list[JpxMarginFlow] = []
     issue_codes: set[str] = set()
     seen: set[tuple[object, str]] = set()
@@ -88,6 +86,7 @@ def parse_jpx_margin_flow_pdf(
         issue_codes.add(code)
 
         for date_index, trade_date in enumerate(dates):
+            published_at = publication_at(trade_date, 16, 30)
             key = (trade_date, code)
             if key in seen:
                 raise JpxPublicMarginParseError(f"duplicate flow key {key}")
