@@ -159,9 +159,7 @@ def _balance_source_map(
     code: str | None = None,
     dates: list[date] | None = None,
 ) -> dict[tuple[date, str], Provenance]:
-    statement = select(JpxMarginAuxRecord).where(
-        JpxMarginAuxRecord.kind == "balance_source"
-    )
+    statement = select(JpxMarginAuxRecord).where(JpxMarginAuxRecord.kind == "balance_source")
     if code is not None:
         statement = statement.where(JpxMarginAuxRecord.code == code)
     if dates:
