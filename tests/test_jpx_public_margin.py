@@ -136,7 +136,7 @@ def _flow_lines(
         "10.0%",
         purchase,
         "9.0%",
-        "35.0%",
+        purchase,
         "8.0%",
         "30.0%",
     ]
