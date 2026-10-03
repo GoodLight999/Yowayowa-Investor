@@ -79,22 +79,30 @@ def _balance_lines(
         "▲ 100",
         "800",
         "▲ 100",
+        "1 銘柄",
+        "株数 Shs.",
         "総合計",
         "1 銘柄",
+        "株数 Shs.",
         "プライム 小計",
-        "1 銘柄",
+        "0 銘柄",
+        "株数 Shs.",
         "スタンダード 小計",
         "0 銘柄",
+        "株数 Shs.",
         "グロース 小計",
         "0 銘柄",
+        "株数 Shs.",
         "投信等 小計",
-        "0 銘柄",
-        "貸借銘柄",
         "1 銘柄",
+        "株数 Shs.",
+        "貸借銘柄",
+        "0 銘柄",
+        "株数 Shs.",
         "制度信用銘柄",
         "0 銘柄",
+        "株数 Shs.",
         "その他",
-        "0 銘柄",
     ]
 
 
@@ -173,7 +181,7 @@ def test_balance_parser_fails_closed_if_declared_count_does_not_match(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     lines = _balance_lines()
-    lines[lines.index("総合計") + 1] = "2 銘柄"
+    lines[lines.index("総合計") - 2] = "2 銘柄"
     monkeypatch.setattr(balance_parser, "extract_jpx_pdf_lines", lambda _: lines)
     with pytest.raises(ValueError, match="count mismatch"):
         parse_jpx_public_balance_pdf(b"synthetic-pdf", source_url=SOURCE)
