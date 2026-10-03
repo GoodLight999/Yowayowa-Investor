@@ -21,9 +21,7 @@ from yowayowa.providers.jpx_public_common import (
     sha256_bytes,
 )
 
-JP_TRADE_DATE_RE: Final = re.compile(
-    r"(20\d{2})年(\d{1,2})月(\d{1,2})日売買分"
-)
+JP_TRADE_DATE_RE: Final = re.compile(r"(20\d{2})年(\d{1,2})月(\d{1,2})日売買分")
 
 
 def parse_jpx_margin_flow_pdf(
@@ -48,9 +46,7 @@ def parse_jpx_margin_flow_pdf(
     if not dates:
         raise JpxPublicMarginParseError("flow dates not found")
     if len(dates) > 3:
-        raise JpxPublicMarginParseError(
-            f"unexpected flow date count: {len(dates)}"
-        )
+        raise JpxPublicMarginParseError(f"unexpected flow date count: {len(dates)}")
 
     publication_date = dates[0]
     published_at = publication_at(publication_date, 16, 30)
@@ -85,11 +81,7 @@ def parse_jpx_margin_flow_pdf(
                 status_marker = marker
                 company_name = company_name[len(prefix) :].strip()
                 break
-        if (
-            status_marker is None
-            and index >= 4
-            and lines[index - 4].strip() in STATUS_MARKERS
-        ):
+        if status_marker is None and index >= 4 and lines[index - 4].strip() in STATUS_MARKERS:
             status_marker = lines[index - 4].strip()
         if not company_name or company_name in STATUS_MARKERS:
             continue
