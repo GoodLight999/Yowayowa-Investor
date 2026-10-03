@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import re
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
 import typer
+from pydantic import BaseModel
 from rich import print
-from pydantic import BaseModel\nfrom rich.table import Table
+from rich.table import Table
 
 from yowayowa.config import get_settings
 from yowayowa.db import get_session
