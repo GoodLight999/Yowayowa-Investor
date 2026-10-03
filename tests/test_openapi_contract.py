@@ -79,6 +79,12 @@ REQUIRED_CORE_PATHS = {
     # read-only IR / filing research (WD-C3)
     "/v1/ir/instruments/{symbol}/timeline",
     "/v1/ir/documents/kpi-history",
+    # Free official JPX daily margin publications
+    "/v1/jpx/public/sync",
+    "/v1/jpx/public/details/{code}",
+    "/v1/jpx/public/flow/{code}",
+    "/v1/jpx/public/premium/{source_code}",
+    "/v1/jpx/public/signals/{signal}",
 }
 
 

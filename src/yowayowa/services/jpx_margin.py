@@ -19,7 +19,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from yowayowa.db import JpxMarginBalanceRecord
+from yowayowa.db import JpxMarginAuxRecord, JpxMarginBalanceRecord
 from yowayowa.domain import LicenseClass, Provenance
 from yowayowa.jpx_models import JpxMarginBalance, JpxMarginBalancePoint, JpxMarginSeries
 from yowayowa.providers.jpx_margin import parse_jpx_margin_csv
@@ -64,6 +64,15 @@ def ingest_jpx_margin_csv(
                     JpxMarginBalanceRecord.application_date == application_date
                 )
             )
+            # If a paid/reference file replaces a day previously ingested from
+            # the free public PDF, clear only the last-writer provenance marker.
+            # Public-only detail rows remain source facts in their own right.
+            session.execute(
+                delete(JpxMarginAuxRecord).where(
+                    JpxMarginAuxRecord.kind == "balance_source",
+                    JpxMarginAuxRecord.as_of_date == application_date,
+                )
+            )
             for balance in balances:
                 if balance.application_date != application_date:
                     continue
@@ -101,6 +110,8 @@ def ingest_jpx_margin_csv(
 def _point_from_record(
     record: JpxMarginBalanceRecord,
     previous: JpxMarginBalanceRecord | None,
+    *,
+    provenance: Provenance | None = None,
 ) -> JpxMarginBalancePoint:
     short_change = record.short_total - previous.short_total if previous is not None else None
     long_change = record.long_total - previous.long_total if previous is not None else None
@@ -117,7 +128,7 @@ def _point_from_record(
         short_long_ratio=short_long_ratio,
         previous_application_date=previous.application_date if previous is not None else None,
         retrieved_at=record.retrieved_at,
-        provenance=_provenance_from_record(record),
+        provenance=provenance or _provenance_from_record(record),
     )
 
 
@@ -135,6 +146,34 @@ def _provenance_from_record(record: JpxMarginBalanceRecord) -> Provenance:
     )
 
 
+def _public_provenance_from_aux(row: JpxMarginAuxRecord) -> Provenance | None:
+    raw = row.payload.get("provenance")
+    if not isinstance(raw, dict):
+        return None
+    return Provenance.model_validate(raw)
+
+
+def _balance_source_map(
+    session: Session,
+    *,
+    code: str | None = None,
+    dates: list[date] | None = None,
+) -> dict[tuple[date, str], Provenance]:
+    statement = select(JpxMarginAuxRecord).where(JpxMarginAuxRecord.kind == "balance_source")
+    if code is not None:
+        statement = statement.where(JpxMarginAuxRecord.code == code)
+    if dates:
+        statement = statement.where(JpxMarginAuxRecord.as_of_date.in_(dates))
+    result: dict[tuple[date, str], Provenance] = {}
+    for row in session.scalars(statement):
+        if row.code is None:
+            continue
+        source = _public_provenance_from_aux(row)
+        if source is not None:
+            result[(row.as_of_date, row.code)] = source
+    return result
+
+
 def read_jpx_margin_by_code(
     session: Session,
     code: str,
@@ -143,10 +182,11 @@ def read_jpx_margin_by_code(
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> JpxMarginSeries:
-    """Time series for one code, oldest first.
+    """Time series for one code, oldest first, with true previous-date changes.
 
-    Default window is the most recent ``limit`` application dates; explicit
-    ``date_from``/``date_to`` bound the query instead (limit still applies).
+    The returned limit is applied after finding the immediately preceding
+    persisted application date. Thus limit=1 still reports a real daily change
+    when an earlier row exists; the previous row itself is not returned.
     """
 
     statement = select(JpxMarginBalanceRecord).where(JpxMarginBalanceRecord.code == code)
@@ -159,10 +199,35 @@ def read_jpx_margin_by_code(
     ).limit(limit)
     rows = list(session.scalars(statement))
     rows.reverse()
+    if not rows:
+        return JpxMarginSeries(code=code, points=[])
+
+    previous = session.scalar(
+        select(JpxMarginBalanceRecord)
+        .where(
+            JpxMarginBalanceRecord.code == code,
+            JpxMarginBalanceRecord.application_date < rows[0].application_date,
+        )
+        .order_by(
+            JpxMarginBalanceRecord.application_date.desc(),
+            JpxMarginBalanceRecord.id.desc(),
+        )
+        .limit(1)
+    )
+    provenance_by_key = _balance_source_map(
+        session,
+        code=code,
+        dates=[row.application_date for row in rows],
+    )
     points: list[JpxMarginBalancePoint] = []
-    previous: JpxMarginBalanceRecord | None = None
     for row in rows:
-        points.append(_point_from_record(row, previous))
+        points.append(
+            _point_from_record(
+                row,
+                previous,
+                provenance=provenance_by_key.get((row.application_date, row.code)),
+            )
+        )
         previous = row
     return JpxMarginSeries(code=code, points=points)
 
@@ -180,7 +245,18 @@ def read_jpx_margin_by_date(
             .order_by(JpxMarginBalanceRecord.code)
         )
     )
-    return [_point_from_record(row, None) for row in rows]
+    provenance_by_key = _balance_source_map(
+        session,
+        dates=[application_date],
+    )
+    return [
+        _point_from_record(
+            row,
+            None,
+            provenance=provenance_by_key.get((row.application_date, row.code)),
+        )
+        for row in rows
+    ]
 
 
 def latest_jpx_margin_date(session: Session) -> date | None:

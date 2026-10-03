@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     mode: Literal["personal", "public"] = "personal"
     database_url: str = Field(default_factory=_default_database_url)
     private_acquisition_data_dir: str = "./data/private-acquisition"
+    jpx_public_raw_cache_dir: str = "./data/jpx/raw"
     broker_rakuten_web_profile_dir: str = "./data/broker-profiles/rakuten"
     broker_session_notify_state_path: str = "./data/broker-session/notify-state.json"
     broker_rakuten_web_user_agent: str | None = None

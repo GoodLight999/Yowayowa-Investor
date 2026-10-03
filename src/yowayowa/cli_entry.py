@@ -20,6 +20,15 @@ from yowayowa.hypothesis_cli import app as hypothesis_app
 from yowayowa.institutional_cli import app as institutional_app
 from yowayowa.ir_cli import app as ir_app
 from yowayowa.jpx_margin_cli import jpx_margin, jpx_margin_ingest
+from yowayowa.jpx_public_cli import (
+    jpx_margin_detail,
+    jpx_margin_flow,
+    jpx_margin_scan,
+    jpx_margin_watch,
+    jpx_premium,
+    jpx_public_ingest,
+    jpx_public_sync,
+)
 from yowayowa.license_cli import app as license_app
 from yowayowa.macro_cli import app as macro_app
 from yowayowa.ohlcv_coverage_cli import ohlcv_audit
@@ -36,6 +45,13 @@ app.add_typer(events_app, name="events")
 app.add_typer(backtest_app, name="backtest")
 app.command(name="jpx-margin-ingest")(jpx_margin_ingest)
 app.command(name="jpx-margin")(jpx_margin)
+app.command(name="jpx-public-ingest")(jpx_public_ingest)
+app.command(name="jpx-public-sync")(jpx_public_sync)
+app.command(name="jpx-margin-scan")(jpx_margin_scan)
+app.command(name="jpx-margin-detail")(jpx_margin_detail)
+app.command(name="jpx-margin-flow")(jpx_margin_flow)
+app.command(name="jpx-margin-watch")(jpx_margin_watch)
+app.command(name="jpx-premium")(jpx_premium)
 app.command(name="credit-margin-fetch")(credit_margin_fetch)
 app.command(name="credit-margin")(credit_margin)
 app.command(name="crypto-fetch")(crypto_fetch)
