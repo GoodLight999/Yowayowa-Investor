@@ -352,7 +352,9 @@ class JpxMarginAuxRecord(Base):
     # can still be converted correctly instead of being guessed. "utc" for every
     # row written under the normalized convention; a JST publication source
     # records "jst" so its pre-conversion wall time remains interpretable.
-    instant_tz: Mapped[str] = mapped_column(String(8), nullable=False, default="utc", server_default="utc")
+    instant_tz: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="utc", server_default="utc"
+    )
 
 
 class CreditMarginWeeklyRecord(Base):

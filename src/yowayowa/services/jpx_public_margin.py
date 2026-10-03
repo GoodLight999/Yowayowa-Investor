@@ -125,7 +125,7 @@ def _store_instant(value: datetime) -> tuple[datetime, str]:
             "an explicit timezone offset is required"
         )
     offset = value.utcoffset()
-    assert offset is not None  # noqa: S101 - tzinfo present implies an offset
+    assert offset is not None  # tzinfo present implies an offset
     origin = "utc" if offset == timedelta(0) else "jst"
     return value.astimezone(UTC).replace(tzinfo=None), origin
 
@@ -149,9 +149,7 @@ def jpx_instant(value: datetime, origin: str | None, *, field: str) -> datetime:
         )
     zone = _INSTANT_ORIGINS.get(origin)
     if zone is None:
-        raise JpxPublicMarginInstantError(
-            f"stored {field} has unknown timezone origin {origin!r}"
-        )
+        raise JpxPublicMarginInstantError(f"stored {field} has unknown timezone origin {origin!r}")
     return value.replace(tzinfo=zone).astimezone(UTC)
 
 
@@ -709,9 +707,7 @@ def ingest_jpx_margin_flow_pdf(
             }
             incoming_payloads = {row.code: flow_payload(row) for row in latest_rows}
             stored_payloads = {
-                row.key: row.payload
-                for row in existing_rows
-                if row.as_of_date == replaceable_date
+                row.key: row.payload for row in existing_rows if row.as_of_date == replaceable_date
             }
             latest_changed = existing_latest != set(incoming_payloads) or any(
                 stored_payloads[code] != payload

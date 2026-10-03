@@ -631,9 +631,7 @@ def test_stale_artifact_cannot_rewrite_persisted_historical_day(
             monkeypatch.setattr(
                 flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines_shifted()
             )
-            ingest_jpx_margin_flow_pdf(
-                session, b"newer", source_url=SOURCE, retrieved_at=RETRIEVED
-            )
+            ingest_jpx_margin_flow_pdf(session, b"newer", source_url=SOURCE, retrieved_at=RETRIEVED)
             before = _flow_snapshot(session)
 
             stale = _flow_lines_shifted(prior_purchase="99.0%", oldest_purchase="99.0%")
@@ -662,16 +660,12 @@ def test_stale_artifact_without_change_is_a_no_op(
             monkeypatch.setattr(
                 flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines_shifted()
             )
-            ingest_jpx_margin_flow_pdf(
-                session, b"newer", source_url=SOURCE, retrieved_at=RETRIEVED
-            )
+            ingest_jpx_margin_flow_pdf(session, b"newer", source_url=SOURCE, retrieved_at=RETRIEVED)
             before = _flow_snapshot(session)
 
             # Same artifact bytes for the overlapping days, re-delivered later.
             overlapping = _flow_lines_shifted()
-            monkeypatch.setattr(
-                flow_parser, "extract_jpx_pdf_lines", lambda _: overlapping
-            )
+            monkeypatch.setattr(flow_parser, "extract_jpx_pdf_lines", lambda _: overlapping)
             ingest_jpx_margin_flow_pdf(
                 session,
                 b"identical",
@@ -693,12 +687,8 @@ def test_sqlite_roundtrip_preserves_absolute_publication_instant(
     try:
         with Session(engine) as session:
             monkeypatch.setattr(flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines())
-            parsed = parse_jpx_margin_flow_pdf(
-                b"flow", source_url=SOURCE, retrieved_at=RETRIEVED
-            )
-            ingest_jpx_margin_flow_pdf(
-                session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED
-            )
+            parsed = parse_jpx_margin_flow_pdf(b"flow", source_url=SOURCE, retrieved_at=RETRIEVED)
+            ingest_jpx_margin_flow_pdf(session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED)
             recovered = read_jpx_margin_flow(session, "72030")[0]
             assert recovered.published_at.tzinfo is not None
             assert recovered.published_at == parsed[0].published_at.astimezone(UTC)
@@ -719,9 +709,7 @@ def test_legacy_naive_row_without_origin_fails_closed(
     try:
         with Session(engine) as session:
             monkeypatch.setattr(flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines())
-            ingest_jpx_margin_flow_pdf(
-                session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED
-            )
+            ingest_jpx_margin_flow_pdf(session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED)
             record = session.scalar(
                 select(JpxMarginAuxRecord).where(JpxMarginAuxRecord.kind == "flow")
             )
@@ -753,9 +741,7 @@ def test_available_at_selects_true_latest_mixed_source_instant(
     try:
         with Session(engine) as session:
             monkeypatch.setattr(flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines())
-            ingest_jpx_margin_flow_pdf(
-                session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED
-            )
+            ingest_jpx_margin_flow_pdf(session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED)
             premium_observed = datetime(2026, 10, 2, 10, 0, tzinfo=UTC)
             ingest_jpx_premium_xlsx(
                 session,
