@@ -276,11 +276,14 @@ def test_discovery_rejects_cross_host_and_uses_matching_artifact() -> None:
     <a href="/files/latest.xlsx">xlsx</a>
     <a href="/files/latest.pdf">pdf</a>
     """
-    assert discover_jpx_artifact_url(
-        html,
-        page_url="https://www.jpx.co.jp/markets/x.html",
-        extension=".pdf",
-    ) == "https://www.jpx.co.jp/files/latest.pdf"
+    assert (
+        discover_jpx_artifact_url(
+            html,
+            page_url="https://www.jpx.co.jp/markets/x.html",
+            extension=".pdf",
+        )
+        == "https://www.jpx.co.jp/files/latest.pdf"
+    )
 
 
 def test_limit_one_still_uses_true_previous_persisted_day() -> None:
