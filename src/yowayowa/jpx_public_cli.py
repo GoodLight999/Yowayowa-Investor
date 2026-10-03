@@ -58,9 +58,7 @@ def _require_personal_source() -> None:
 def _kind(value: str) -> JpxPublicKind:
     normalized = value.strip().lower()
     if normalized not in _KINDS:
-        raise typer.BadParameter(
-            "kind must be one of balance, watch, premium, flow"
-        )
+        raise typer.BadParameter("kind must be one of balance, watch, premium, flow")
     return cast(JpxPublicKind, normalized)
 
 
