@@ -29,12 +29,8 @@ from yowayowa.providers.jpx_public_common import (
 
 APP_DATE_RE: Final = re.compile(r"(20\d{2})/(\d{1,2})/(\d{1,2})\s*申込み現在")
 SLASH_DATE_RE: Final = re.compile(r"^(20\d{2})/(\d{1,2})/(\d{1,2})$")
-ISIN_SHARE_RE: Final = re.compile(
-    r"^(?P<isin>[A-Z]{2}[A-Z0-9]{10})\s+株数\s+Shs\.\s*$"
-)
-ISIN_VALUE_RE: Final = re.compile(
-    r"^(?P<isin>[A-Z]{2}[A-Z0-9]{10})\s+金額\s+Val\.\s*$"
-)
+ISIN_SHARE_RE: Final = re.compile(r"^(?P<isin>[A-Z]{2}[A-Z0-9]{10})\s+株数\s+Shs\.\s*$")
+ISIN_VALUE_RE: Final = re.compile(r"^(?P<isin>[A-Z]{2}[A-Z0-9]{10})\s+金額\s+Val\.\s*$")
 COUNT_LINE_RE: Final = re.compile(r"^(\d+)\s*銘柄$")
 LOT_MARKERS: Final = frozenset({"A", "J", "K", "B", "M", "C", "T", "F"})
 
@@ -83,9 +79,7 @@ def _declared_counts(lines: list[str]) -> tuple[int, dict[str, int], dict[str, i
     if total is None:
         raise JpxPublicMarginParseError("document total issue count not found")
     if set(sections) != set(SECTIONS):
-        raise JpxPublicMarginParseError(
-            f"document section counts incomplete: {sorted(sections)}"
-        )
+        raise JpxPublicMarginParseError(f"document section counts incomplete: {sorted(sections)}")
     if set(margins) != MARGIN_LABELS:
         raise JpxPublicMarginParseError(
             f"document margin-type counts incomplete: {sorted(margins)}"
@@ -93,9 +87,7 @@ def _declared_counts(lines: list[str]) -> tuple[int, dict[str, int], dict[str, i
     return total, sections, margins
 
 
-def _issue_meta(
-    lines: list[str], code_index: int
-) -> tuple[str, str, str, str | None]:
+def _issue_meta(lines: list[str], code_index: int) -> tuple[str, str, str, str | None]:
     start = max(0, code_index - 12)
     margin_marker: str | None = None
     for position in range(code_index - 1, start - 1, -1):
@@ -103,9 +95,7 @@ def _issue_meta(
             margin_marker = lines[position].strip()
             break
     if margin_marker is None:
-        raise JpxPublicMarginParseError(
-            f"margin marker not found before {lines[code_index]!r}"
-        )
+        raise JpxPublicMarginParseError(f"margin marker not found before {lines[code_index]!r}")
 
     section: str | None = None
     issue: str | None = None
@@ -125,9 +115,7 @@ def _issue_meta(
             break
 
     if section is None or not issue:
-        raise JpxPublicMarginParseError(
-            f"issue/section not found before {lines[code_index]!r}"
-        )
+        raise JpxPublicMarginParseError(f"issue/section not found before {lines[code_index]!r}")
     if len(issue) > 2 and issue[0] in LOT_MARKERS and issue[1].isspace():
         issue = issue[2:].strip()
     return issue, section, margin_marker, None
@@ -144,9 +132,7 @@ def _share_sequence(raw: list[str], *, code: str) -> bool:
         for position in (6, 8, 10, 12):
             required_int(raw[position], field=f"{code}.component")
         for position in (7, 9, 11, 13):
-            parse_int_token(
-                raw[position], allow_missing=True, field=f"{code}.component_change"
-            )
+            parse_int_token(raw[position], allow_missing=True, field=f"{code}.component_change")
     except JpxPublicMarginParseError:
         return False
     return True
@@ -157,9 +143,7 @@ def _value_sequence(raw: list[str], *, code: str) -> bool:
         for position in (0, 3, 6, 8, 10, 12):
             required_int(raw[position], field=f"{code}.value")
         for position in (1, 4, 7, 9, 11, 13):
-            parse_int_token(
-                raw[position], allow_missing=True, field=f"{code}.value_change"
-            )
+            parse_int_token(raw[position], allow_missing=True, field=f"{code}.value_change")
         if raw[2].strip() not in {"-", "*"} or raw[5].strip() not in {"-", "*"}:
             return False
     except JpxPublicMarginParseError:
@@ -184,14 +168,10 @@ def _find_sequence(
         unit_marker = next((item for item in skipped if item in LOT_MARKERS), None)
         return raw, position, unit_marker
     row_kind = "value" if value else "share"
-    raise JpxPublicMarginParseError(
-        f"{row_kind} data sequence not found for {code}"
-    )
+    raise JpxPublicMarginParseError(f"{row_kind} data sequence not found for {code}")
 
 
-def _find_value_anchor(
-    lines: list[str], *, start: int, isin: str, code: str
-) -> int:
+def _find_value_anchor(lines: list[str], *, start: int, isin: str, code: str) -> int:
     for position in range(start, min(len(lines), start + 400)):
         match = ISIN_VALUE_RE.fullmatch(lines[position].strip())
         if match and match.group("isin") == isin:
@@ -211,9 +191,7 @@ def parse_jpx_public_balance_pdf(
     header = "\n".join(lines[:120])
     match = APP_DATE_RE.search(header)
     if not match:
-        raise JpxPublicMarginParseError(
-            "application date not found in all-issue PDF"
-        )
+        raise JpxPublicMarginParseError("application date not found in all-issue PDF")
     application_date = parse_date(*match.groups())
     publication_date: date | None = None
     for line in lines[:120]:
@@ -224,9 +202,7 @@ def parse_jpx_public_balance_pdf(
                 publication_date = candidate
                 break
     if publication_date is None:
-        raise JpxPublicMarginParseError(
-            "publication date not found in all-issue PDF"
-        )
+        raise JpxPublicMarginParseError("publication date not found in all-issue PDF")
 
     declared_count, declared_sections, declared_margins = _declared_counts(lines)
     retrieved = retrieved_at or utc_now()
@@ -248,33 +224,23 @@ def parse_jpx_public_balance_pdf(
             index += 1
             continue
         if code in seen:
-            raise JpxPublicMarginParseError(
-                f"duplicate issue code in all-issue PDF: {code}"
-            )
+            raise JpxPublicMarginParseError(f"duplicate issue code in all-issue PDF: {code}")
 
         issue, section, margin_marker, _ = _issue_meta(lines, index)
         isin = share_match.group("isin")
-        raw, share_start, unit_marker = _find_sequence(
-            lines, index + 2, code=code, value=False
-        )
+        raw, share_start, unit_marker = _find_sequence(lines, index + 2, code=code, value=False)
 
         short_total = required_int(raw[0], field=f"{code}.short_total")
-        short_change = parse_int_token(
-            raw[1], allow_missing=True, field=f"{code}.short_change"
-        )
+        short_change = parse_int_token(raw[1], allow_missing=True, field=f"{code}.short_change")
         short_ratio = parse_ratio_token(raw[2], field=f"{code}.short_ratio")
         long_total = required_int(raw[3], field=f"{code}.long_total")
-        long_change = parse_int_token(
-            raw[4], allow_missing=True, field=f"{code}.long_change"
-        )
+        long_change = parse_int_token(raw[4], allow_missing=True, field=f"{code}.long_change")
         long_ratio = parse_ratio_token(raw[5], field=f"{code}.long_ratio")
         short_negotiable = required_int(raw[6], field=f"{code}.short_negotiable")
         short_negotiable_change = parse_int_token(
             raw[7], allow_missing=True, field=f"{code}.short_negotiable_change"
         )
-        short_standardized = required_int(
-            raw[8], field=f"{code}.short_standardized"
-        )
+        short_standardized = required_int(raw[8], field=f"{code}.short_standardized")
         short_standardized_change = parse_int_token(
             raw[9], allow_missing=True, field=f"{code}.short_standardized_change"
         )
@@ -287,13 +253,9 @@ def parse_jpx_public_balance_pdf(
             raw[13], allow_missing=True, field=f"{code}.long_standardized_change"
         )
         if short_total != short_negotiable + short_standardized:
-            raise JpxPublicMarginParseError(
-                f"share short identity violation for {code}"
-            )
+            raise JpxPublicMarginParseError(f"share short identity violation for {code}")
         if long_total != long_negotiable + long_standardized:
-            raise JpxPublicMarginParseError(
-                f"share long identity violation for {code}"
-            )
+            raise JpxPublicMarginParseError(f"share long identity violation for {code}")
 
         value_anchor = _find_value_anchor(
             lines,
@@ -301,25 +263,17 @@ def parse_jpx_public_balance_pdf(
             isin=isin,
             code=code,
         )
-        value_raw, value_start, _ = _find_sequence(
-            lines, value_anchor + 1, code=code, value=True
-        )
+        value_raw, value_start, _ = _find_sequence(lines, value_anchor + 1, code=code, value=True)
 
-        short_total_value = required_int(
-            value_raw[0], field=f"{code}.short_total_value"
-        )
+        short_total_value = required_int(value_raw[0], field=f"{code}.short_total_value")
         short_value_change = parse_int_token(
             value_raw[1], allow_missing=True, field=f"{code}.short_value_change"
         )
-        long_total_value = required_int(
-            value_raw[3], field=f"{code}.long_total_value"
-        )
+        long_total_value = required_int(value_raw[3], field=f"{code}.long_total_value")
         long_value_change = parse_int_token(
             value_raw[4], allow_missing=True, field=f"{code}.long_value_change"
         )
-        short_negotiable_value = required_int(
-            value_raw[6], field=f"{code}.short_negotiable_value"
-        )
+        short_negotiable_value = required_int(value_raw[6], field=f"{code}.short_negotiable_value")
         short_negotiable_value_change = parse_int_token(
             value_raw[7],
             allow_missing=True,
@@ -333,9 +287,7 @@ def parse_jpx_public_balance_pdf(
             allow_missing=True,
             field=f"{code}.short_standardized_value_change",
         )
-        long_negotiable_value = required_int(
-            value_raw[10], field=f"{code}.long_negotiable_value"
-        )
+        long_negotiable_value = required_int(value_raw[10], field=f"{code}.long_negotiable_value")
         long_negotiable_value_change = parse_int_token(
             value_raw[11],
             allow_missing=True,
@@ -350,13 +302,9 @@ def parse_jpx_public_balance_pdf(
             field=f"{code}.long_standardized_value_change",
         )
         if short_total_value != short_negotiable_value + short_standardized_value:
-            raise JpxPublicMarginParseError(
-                f"value short identity violation for {code}"
-            )
+            raise JpxPublicMarginParseError(f"value short identity violation for {code}")
         if long_total_value != long_negotiable_value + long_standardized_value:
-            raise JpxPublicMarginParseError(
-                f"value long identity violation for {code}"
-            )
+            raise JpxPublicMarginParseError(f"value long identity violation for {code}")
 
         row_provenance = provenance(
             source="JPX 銘柄別信用取引残高（日次） public PDF",
