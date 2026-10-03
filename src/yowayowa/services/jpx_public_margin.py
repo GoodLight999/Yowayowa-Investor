@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Final, Literal
@@ -12,7 +12,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from yowayowa.db import JpxMarginAuxRecord, JpxMarginBalanceRecord
@@ -24,6 +24,7 @@ from yowayowa.jpx_public_models import (
     JpxPremiumCharge,
     JpxPublicIngestResult,
 )
+from yowayowa.providers.jpx_public_common import JST
 from yowayowa.providers.jpx_public_margin import (
     JpxPublicMarginParseError,
     parse_jpx_margin_flow_pdf,
@@ -103,6 +104,65 @@ def _payload(model: BaseModel, *, exclude: set[str]) -> dict[str, object]:
     return result
 
 
+class JpxPublicMarginInstantError(JpxPublicMarginParseError):
+    """A stored JPX aux instant has no establishable timezone origin (AS-JPX-03)."""
+
+
+#: Origins a stored ``jpx_margin_aux`` instant may be recorded in.
+_INSTANT_ORIGINS: Final[dict[str, tzinfo]] = {"utc": UTC, "jst": JST}
+
+
+def _store_instant(value: datetime) -> tuple[datetime, str]:
+    """Convert an aware instant to the naive-UTC storage form plus its origin.
+
+    A naive input is a programming error upstream, never a value to guess at:
+    treating it as UTC would silently shift a JST wall time by nine hours.
+    """
+
+    if value.tzinfo is None:
+        raise JpxPublicMarginInstantError(
+            f"refusing to persist naive JPX instant {value.isoformat()}; "
+            "an explicit timezone offset is required"
+        )
+    offset = value.utcoffset()
+    assert offset is not None  # noqa: S101 - tzinfo present implies an offset
+    origin = "utc" if offset == timedelta(0) else "jst"
+    return value.astimezone(UTC).replace(tzinfo=None), origin
+
+
+def jpx_instant(value: datetime, origin: str | None, *, field: str) -> datetime:
+    """Recover an aware absolute instant from a stored JPX aux value (AS-JPX-03).
+
+    Rows written under the normalized convention carry their origin and are
+    unambiguous. A legacy row with ``origin is None`` holds naive wall time
+    whose timezone cannot be established from the column, so it fails closed
+    instead of being relabeled UTC.
+    """
+
+    if value.tzinfo is not None:
+        return value.astimezone(UTC)
+    if origin is None:
+        raise JpxPublicMarginInstantError(
+            f"stored {field} {value.isoformat()} has no recorded timezone origin; "
+            "refusing to assume UTC for a legacy JPX row. Re-ingest the source "
+            "artifact or set instant_tz explicitly."
+        )
+    zone = _INSTANT_ORIGINS.get(origin)
+    if zone is None:
+        raise JpxPublicMarginInstantError(
+            f"stored {field} has unknown timezone origin {origin!r}"
+        )
+    return value.replace(tzinfo=zone).astimezone(UTC)
+
+
+def _row_instant(row: JpxMarginAuxRecord, *, field: str) -> datetime:
+    if field == "published_at":
+        if row.published_at is None:
+            raise ValueError("incomplete JPX aux persistence row: published_at is null")
+        return jpx_instant(row.published_at, row.instant_tz, field="published_at")
+    return jpx_instant(row.retrieved_at, row.instant_tz, field="retrieved_at")
+
+
 def _add_aux(
     session: Session,
     *,
@@ -117,6 +177,16 @@ def _add_aux(
     published_at: datetime | None,
     retrieved_at: datetime,
 ) -> None:
+    stored_published: datetime | None = None
+    origin = "utc"
+    if published_at is not None:
+        stored_published, published_origin = _store_instant(published_at)
+        origin = published_origin
+    stored_retrieved, retrieved_origin = _store_instant(retrieved_at)
+    if origin == "utc" and retrieved_origin != "utc":
+        # published_at carries the availability instant the source declared; when
+        # it is UTC and retrieval was not, the UTC origin still governs both.
+        origin = retrieved_origin if stored_published is None else origin
     session.add(
         JpxMarginAuxRecord(
             kind=kind,
@@ -127,8 +197,9 @@ def _add_aux(
             payload=payload,
             source_url=source_url,
             source_sha256=source_sha256,
-            published_at=published_at,
-            retrieved_at=retrieved_at,
+            published_at=stored_published,
+            retrieved_at=stored_retrieved,
+            instant_tz=origin,
         )
     )
 
@@ -248,8 +319,8 @@ def _detail_from_aux(row: JpxMarginAuxRecord) -> JpxMarginDailyDetail:
             **row.payload,
             "application_date": row.as_of_date,
             "code": row.code,
-            "published_at": row.published_at,
-            "retrieved_at": row.retrieved_at,
+            "published_at": _row_instant(row, field="published_at"),
+            "retrieved_at": _row_instant(row, field="retrieved_at"),
             "source_sha256": row.source_sha256,
             "provenance": _aux_provenance(
                 row, default_source="JPX 銘柄別信用取引残高（日次） public PDF"
@@ -266,8 +337,8 @@ def _watch_from_aux(row: JpxMarginAuxRecord) -> JpxMarginWatch:
             **row.payload,
             "application_date": row.as_of_date,
             "code": row.code,
-            "published_at": row.published_at,
-            "retrieved_at": row.retrieved_at,
+            "published_at": _row_instant(row, field="published_at"),
+            "retrieved_at": _row_instant(row, field="retrieved_at"),
             "source_sha256": row.source_sha256,
             "provenance": _aux_provenance(
                 row, default_source="JPX 日々公表銘柄等信用取引残高 XLSX"
@@ -285,8 +356,8 @@ def _premium_from_aux(row: JpxMarginAuxRecord) -> JpxPremiumCharge:
             "trade_date": row.as_of_date,
             "source_code": row.source_code,
             "resolved_jpx_code": row.code,
-            "published_at": row.published_at,
-            "retrieved_at": row.retrieved_at,
+            "published_at": _row_instant(row, field="published_at"),
+            "retrieved_at": _row_instant(row, field="retrieved_at"),
             "source_sha256": row.source_sha256,
             "provenance": _aux_provenance(row, default_source="JPX 品貸料率一覧 XLSX"),
         }
@@ -301,8 +372,8 @@ def _flow_from_aux(row: JpxMarginAuxRecord) -> JpxMarginFlow:
             **row.payload,
             "trade_date": row.as_of_date,
             "code": row.code,
-            "published_at": row.published_at,
-            "retrieved_at": row.retrieved_at,
+            "published_at": _row_instant(row, field="published_at"),
+            "retrieved_at": _row_instant(row, field="retrieved_at"),
             "source_sha256": row.source_sha256,
             "provenance": _aux_provenance(row, default_source="JPX 信用取引売買比率 PDF"),
         }
@@ -313,17 +384,19 @@ def _aux_provenance(row: JpxMarginAuxRecord, *, default_source: str) -> Provenan
     raw = row.payload.get("provenance")
     if isinstance(raw, dict):
         return Provenance.model_validate(raw)
+    published = _row_instant(row, field="published_at")
+    retrieved = _row_instant(row, field="retrieved_at")
     notes: list[str] = []
     if row.source_sha256:
         notes.append(f"sha256:{row.source_sha256}")
     if row.published_at:
-        notes.append(f"published_at:{row.published_at.isoformat()}")
+        notes.append(f"published_at:{published.isoformat()}")
     return Provenance(
         provider="jpx_public_margin",
         source=default_source,
         source_url=row.source_url,
         license_class=LicenseClass.OFFICIAL_PUBLIC,
-        retrieved_at=row.retrieved_at,
+        retrieved_at=retrieved,
         as_of=row.as_of_date,
         notes=notes,
     )
@@ -550,15 +623,34 @@ def ingest_jpx_margin_flow_pdf(
     Each daily PDF repeats up to two earlier trade dates. Those overlapping
     historical observations are immutable point-in-time facts: an identical
     re-publication is ignored, while a changed historical value fails closed.
-    Only the newest trade date in the artifact may be replaced as a same-day
-    correction.
+
+    Immutability is decided by the observation frontier — the union of the
+    persisted latest trade date and the incoming artifact's dates — not by the
+    incoming PDF alone. Once a later trade date has been persisted, an incoming
+    artifact whose newest date is *older* than that persisted frontier is stale:
+    it may not overwrite any date that is already historical, and only dates it
+    is the frontier for are replaceable as a same-current-day correction. A
+    stale artifact carrying changed historical values fails closed with a full
+    write rollback, and no partially written state survives.
     """
 
     retrieved = retrieved_at or datetime.now(UTC)
     rows = parse_jpx_margin_flow_pdf(data, source_url=source_url, retrieved_at=retrieved)
     dates = {row.trade_date for row in rows}
-    latest_date = max(dates)
-    historical_dates = dates - {latest_date}
+    incoming_latest = max(dates)
+
+    persisted_latest = session.scalar(
+        select(func.max(JpxMarginAuxRecord.as_of_date)).where(
+            JpxMarginAuxRecord.kind == "flow",
+        )
+    )
+    persisted_frontier = persisted_latest if persisted_latest is not None else incoming_latest
+    if incoming_latest < persisted_frontier:
+        stale_artifact = True
+        replaceable_dates: set[date] = set()
+    else:
+        stale_artifact = False
+        replaceable_dates = {incoming_latest}
 
     existing_rows = list(
         session.scalars(
@@ -593,7 +685,7 @@ def ingest_jpx_margin_flow_pdf(
 
     try:
         for row in rows:
-            if row.trade_date not in historical_dates:
+            if row.trade_date in replaceable_dates:
                 continue
             existing = existing_by_key.get((row.trade_date, row.code))
             if existing is None:
@@ -601,28 +693,42 @@ def ingest_jpx_margin_flow_pdf(
             if immutable_flow_observation(existing.payload) != immutable_flow_observation(
                 flow_payload(row)
             ):
+                suffix = " (stale artifact)" if stale_artifact else ""
                 raise JpxPublicMarginParseError(
-                    f"historical flow observation changed: {row.trade_date.isoformat()} {row.code}"
+                    f"historical flow observation changed: {row.trade_date.isoformat()} "
+                    f"{row.code}{suffix}"
                 )
 
-        latest_rows = [row for row in rows if row.trade_date == latest_date]
-        existing_latest = {row.key: row for row in existing_rows if row.as_of_date == latest_date}
-        incoming_latest = {row.code: flow_payload(row) for row in latest_rows}
-        latest_changed = set(existing_latest) != set(incoming_latest) or any(
-            existing_latest[code].payload != payload
-            for code, payload in incoming_latest.items()
-            if code in existing_latest
-        )
-        if latest_changed:
-            replace_aux_dates(session, kind="flow", dates={latest_date})
+        replaced_dates: set[date] = set()
+        for replaceable_date in replaceable_dates:
+            latest_rows = [row for row in rows if row.trade_date == replaceable_date]
+            if not latest_rows:
+                continue
+            existing_latest = {
+                row.key for row in existing_rows if row.as_of_date == replaceable_date
+            }
+            incoming_payloads = {row.code: flow_payload(row) for row in latest_rows}
+            stored_payloads = {
+                row.key: row.payload
+                for row in existing_rows
+                if row.as_of_date == replaceable_date
+            }
+            latest_changed = existing_latest != set(incoming_payloads) or any(
+                stored_payloads[code] != payload
+                for code, payload in incoming_payloads.items()
+                if code in stored_payloads
+            )
+            if latest_changed:
+                replace_aux_dates(session, kind="flow", dates={replaceable_date})
+                replaced_dates.add(replaceable_date)
 
         for row in rows:
             payload = flow_payload(row)
             existing = existing_by_key.get((row.trade_date, row.code))
-
-            if row.trade_date in historical_dates and existing is not None:
-                continue
-            if row.trade_date == latest_date and not latest_changed and existing is not None:
+            if existing is not None and row.trade_date not in replaced_dates:
+                # Either immutable history (identical overlap) or an unchanged
+                # current-day row: provenance and payload stay exactly as first
+                # persisted. A re-published artifact never rewrites it.
                 continue
 
             _add_aux(

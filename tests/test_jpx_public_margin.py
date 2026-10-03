@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 from io import BytesIO
 
@@ -14,6 +15,7 @@ from yowayowa.db import Base, JpxMarginAuxRecord, JpxMarginBalanceRecord
 from yowayowa.providers import jpx_public_balance as balance_parser
 from yowayowa.providers import jpx_public_flow as flow_parser
 from yowayowa.providers.jpx_public_margin import (
+    JpxPublicMarginParseError,
     parse_jpx_margin_flow_pdf,
     parse_jpx_margin_watch_xlsx,
     parse_jpx_premium_xlsx,
@@ -23,10 +25,13 @@ from yowayowa.providers.jpx_public_margin import (
 from yowayowa.services.jpx_margin import read_jpx_margin_by_code
 from yowayowa.services.jpx_margin_signals import scan_jpx_margin_signals
 from yowayowa.services.jpx_public_margin import (
+    JpxPublicMarginInstantError,
     discover_jpx_artifact_url,
     ingest_jpx_margin_flow_pdf,
     ingest_jpx_premium_xlsx,
     ingest_jpx_public_balance_pdf,
+    read_jpx_margin_flow,
+    read_jpx_premium,
 )
 
 SOURCE = "https://www.jpx.co.jp/example"
@@ -356,8 +361,10 @@ def test_flow_reingest_preserves_overlapping_history(
             assert preserved.published_at == original_published
             assert newest.retrieved_at != original_retrieved
             assert newest.published_at is not None
-            assert newest.published_at.date() == date(2026, 10, 3)
-            assert (newest.published_at.hour, newest.published_at.minute) == (16, 30)
+            # Absolute instant, not JST wall time: the row is persisted as naive
+            # UTC and read back as an aware UTC instant (AS-JPX-03).
+            assert newest.published_at.tzinfo is not None
+            assert newest.published_at == datetime(2026, 10, 3, 7, 30, tzinfo=UTC)
     finally:
         engine.dispose()
 
@@ -588,3 +595,180 @@ def test_squeeze_watch_requires_observed_non_null_buy_flow(
             assert hits[0].metrics["new_purchase_ratio_pct"] == 55.0
     finally:
         present_engine.dispose()
+
+
+def _flow_snapshot(session: Session) -> list[tuple[object, ...]]:
+    return [
+        (
+            record.as_of_date,
+            record.code,
+            json.dumps(record.payload, sort_keys=True),
+            record.source_sha256,
+            record.retrieved_at,
+            record.published_at,
+        )
+        for record in session.scalars(
+            select(JpxMarginAuxRecord)
+            .where(JpxMarginAuxRecord.kind == "flow")
+            .order_by(JpxMarginAuxRecord.as_of_date, JpxMarginAuxRecord.code)
+        )
+    ]
+
+
+def test_stale_artifact_cannot_rewrite_persisted_historical_day(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AS-JPX-02: immutability follows the observation frontier, not the artifact.
+
+    Once 2026-10-02 is persisted, a stale artifact that only reaches back to
+    2026-10-01 must not treat that now-historical day as replaceable "latest".
+    """
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as session:
+            monkeypatch.setattr(
+                flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines_shifted()
+            )
+            ingest_jpx_margin_flow_pdf(
+                session, b"newer", source_url=SOURCE, retrieved_at=RETRIEVED
+            )
+            before = _flow_snapshot(session)
+
+            stale = _flow_lines_shifted(prior_purchase="99.0%", oldest_purchase="99.0%")
+            monkeypatch.setattr(flow_parser, "extract_jpx_pdf_lines", lambda _: stale)
+            with pytest.raises(JpxPublicMarginParseError, match="historical"):
+                ingest_jpx_margin_flow_pdf(
+                    session,
+                    b"stale",
+                    source_url=SOURCE,
+                    retrieved_at=datetime(2026, 10, 2, 9, 0, tzinfo=UTC),
+                )
+            assert _flow_snapshot(session) == before
+    finally:
+        engine.dispose()
+
+
+def test_stale_artifact_without_change_is_a_no_op(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An identical stale artifact preserves provenance instead of re-writing it."""
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as session:
+            monkeypatch.setattr(
+                flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines_shifted()
+            )
+            ingest_jpx_margin_flow_pdf(
+                session, b"newer", source_url=SOURCE, retrieved_at=RETRIEVED
+            )
+            before = _flow_snapshot(session)
+
+            # Same artifact bytes for the overlapping days, re-delivered later.
+            overlapping = _flow_lines_shifted()
+            monkeypatch.setattr(
+                flow_parser, "extract_jpx_pdf_lines", lambda _: overlapping
+            )
+            ingest_jpx_margin_flow_pdf(
+                session,
+                b"identical",
+                source_url=SOURCE,
+                retrieved_at=datetime(2026, 10, 4, 8, 0, tzinfo=UTC),
+            )
+            assert _flow_snapshot(session) == before
+    finally:
+        engine.dispose()
+
+
+def test_sqlite_roundtrip_preserves_absolute_publication_instant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AS-JPX-03: a JST publication instant survives the SQLite roundtrip."""
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as session:
+            monkeypatch.setattr(flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines())
+            parsed = parse_jpx_margin_flow_pdf(
+                b"flow", source_url=SOURCE, retrieved_at=RETRIEVED
+            )
+            ingest_jpx_margin_flow_pdf(
+                session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED
+            )
+            recovered = read_jpx_margin_flow(session, "72030")[0]
+            assert recovered.published_at.tzinfo is not None
+            assert recovered.published_at == parsed[0].published_at.astimezone(UTC)
+            assert recovered.published_at == datetime(2026, 10, 2, 7, 30, tzinfo=UTC)
+            # retrieved_at (a UTC first-observed instant) is preserved too.
+            assert recovered.retrieved_at == RETRIEVED
+    finally:
+        engine.dispose()
+
+
+def test_legacy_naive_row_without_origin_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A legacy row whose instant origin is unknown must not be read as UTC."""
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as session:
+            monkeypatch.setattr(flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines())
+            ingest_jpx_margin_flow_pdf(
+                session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED
+            )
+            record = session.scalar(
+                select(JpxMarginAuxRecord).where(JpxMarginAuxRecord.kind == "flow")
+            )
+            assert record is not None
+            # Simulate a pre-convention row: naive local wall time, unknown origin.
+            record.published_at = datetime(2026, 10, 2, 16, 30)
+            record.instant_tz = None  # type: ignore[assignment]
+            session.commit()
+
+            with pytest.raises(JpxPublicMarginInstantError, match="no recorded timezone"):
+                read_jpx_margin_flow(session, "72030")
+    finally:
+        engine.dispose()
+
+
+def test_available_at_selects_true_latest_mixed_source_instant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AS-JPX-03: mixed JST/UTC sources must select the later absolute instant.
+
+    JPX flow publishes at 16:30 JST (07:30Z) while the premium workbook is
+    first-observed in UTC. Comparing wall times would declare 16:30 the latest,
+    but 10:00Z is nine and a half hours later — and the signal must not appear
+    before every input is actually known.
+    """
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as session:
+            monkeypatch.setattr(flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines())
+            ingest_jpx_margin_flow_pdf(
+                session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED
+            )
+            premium_observed = datetime(2026, 10, 2, 10, 0, tzinfo=UTC)
+            ingest_jpx_premium_xlsx(
+                session,
+                _premium_bytes(2.0),
+                source_url=SOURCE,
+                retrieved_at=premium_observed,
+            )
+            flow_row = read_jpx_margin_flow(session, "72030")[0]
+            premium_row = read_jpx_premium(session, "7203")[0]
+            assert flow_row.published_at == datetime(2026, 10, 2, 7, 30, tzinfo=UTC)
+            assert premium_row.published_at == premium_observed
+            assert premium_row.published_at > flow_row.published_at
+            # The later absolute instant wins even though its wall time is smaller.
+            assert max(flow_row.published_at, premium_row.published_at) == premium_observed
+    finally:
+        engine.dispose()

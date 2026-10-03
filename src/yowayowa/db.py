@@ -308,6 +308,21 @@ class JpxMarginAuxRecord(Base):
     publication-specific facts that do not belong in that canonical schema:
     source-reported daily changes/listed-share ratios, watch/regulatory flags,
     premium charges, same-day flow ratios, and last-writer provenance.
+
+    Instant convention (AS-JPX-03): ``published_at`` and ``retrieved_at`` are
+    stored as **naive UTC wall time**. SQLite has no offset-aware datetime type,
+    so ``DateTime(timezone=True)`` silently discards the offset on bind and
+    returns a naive value that looks like the original local wall time. That
+    turned a JST 16:30 publication (an absolute 07:30Z) into a value that a
+    mixed-source ``max()`` would compare as if it were 16:30Z — exposing a
+    signal hours before every input was known. Normalizing on write and
+    re-attaching UTC on read makes persistence lossless and every comparison
+    in the read path an absolute-instant comparison.
+
+    A row written before this convention may hold naive *local* wall time
+    whose origin cannot be inferred from the column alone. Read paths therefore
+    go through :func:`yowayowa.services.jpx_public_margin.jpx_instant`, which
+    fails closed for such legacy rows instead of relabeling them as UTC.
     """
 
     __tablename__ = "jpx_margin_aux"
@@ -333,6 +348,11 @@ class JpxMarginAuxRecord(Base):
         DateTime(timezone=True), nullable=True, index=True
     )
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # Instant origin of published_at/retrieved_at, so a legacy local-time row
+    # can still be converted correctly instead of being guessed. "utc" for every
+    # row written under the normalized convention; a JST publication source
+    # records "jst" so its pre-conversion wall time remains interpretable.
+    instant_tz: Mapped[str] = mapped_column(String(8), nullable=False, default="utc", server_default="utc")
 
 
 class CreditMarginWeeklyRecord(Base):
@@ -483,6 +503,7 @@ def init_database(settings: Settings | None = None) -> None:
     _ensure_positions_version(_engine)
     _ensure_positions_unique_constraint(_engine)
     _ensure_screening_candidates_document_id(_engine)
+    _ensure_jpx_margin_aux_instant_tz(_engine)
 
 
 def _ensure_hypothesis_records_table(engine: Engine) -> None:
@@ -496,13 +517,31 @@ def _ensure_hypothesis_records_table(engine: Engine) -> None:
 
 
 def _ensure_price_alert_notifications_table(engine: Engine) -> None:
-    """WD-C5 additive, idempotent migration; existing alert data is untouched."""
+    """WD-C5 additive, idempotent; existing alert data is untouched."""
 
     Base.metadata.create_all(
         engine,
         tables=[cast(Table, PriceAlertNotificationRecord.__table__)],
         checkfirst=True,
     )
+
+
+def _ensure_jpx_margin_aux_instant_tz(engine: Engine) -> None:
+    """Additive migration for the JPX aux instant-origin column (AS-JPX-03).
+
+    ``create_all`` never alters an existing SQLite table, so an installation
+    created before ``instant_tz`` existed keeps the old schema. Adding the
+    column is enough: existing rows default to ``NULL``, which the read path
+    treats as *unknown origin* and refuses to interpret, rather than assuming
+    UTC. No existing timestamp is rewritten — silently relabeling a legacy
+    local-time wall time as UTC would be the exact defect being fixed.
+    """
+
+    columns = {column["name"] for column in inspect(engine).get_columns("jpx_margin_aux")}
+    if "instant_tz" in columns:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE jpx_margin_aux ADD COLUMN instant_tz VARCHAR(8)"))
 
 
 def _ensure_positions_version(engine: Engine) -> None:

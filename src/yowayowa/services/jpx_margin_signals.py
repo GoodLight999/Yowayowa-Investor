@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ from yowayowa.db import JpxMarginAuxRecord, JpxMarginBalanceRecord
 from yowayowa.domain import Provenance
 from yowayowa.jpx_public_models import JpxMarginSignal, JpxMarginSignalKind
 from yowayowa.services.jpx_public_margin import (
+    JpxPublicMarginInstantError,
     _detail_from_aux,
     _flow_from_aux,
     _premium_from_aux,
@@ -65,6 +66,21 @@ def _signal(
     provenances: list[Provenance],
     available_times: list[datetime],
 ) -> JpxMarginSignal:
+    # The availability instant is the *absolute* latest of every contributing
+    # source, and JPX publication times are JST while first-observed XLSX
+    # times are UTC. Comparing raw wall times would pick the larger clock
+    # reading rather than the later instant, exposing the signal before one of
+    # its inputs was actually known (AS-JPX-03). Normalizing to UTC first makes
+    # max() an absolute-instant comparison; a naive input is a bug upstream and
+    # is rejected rather than guessed at.
+    normalized: list[datetime] = []
+    for instant in available_times:
+        if instant.tzinfo is None:
+            raise JpxPublicMarginInstantError(
+                f"naive availability instant {instant.isoformat()} for signal "
+                f"{signal} {code}: an explicit timezone offset is required"
+            )
+        normalized.append(instant.astimezone(UTC))
     return JpxMarginSignal(
         signal=signal,
         as_of_date=as_of_date,
@@ -72,7 +88,7 @@ def _signal(
         company_name=company_name,
         metrics=metrics,
         reason=reason,
-        available_at=max(available_times),
+        available_at=max(normalized),
         provenance=provenances,
     )
 
