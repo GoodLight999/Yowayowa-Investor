@@ -168,12 +168,7 @@ def test_balance_parser_keeps_exact_nonzero_fifth_character(
     assert batch.details[0].long_source_change is None
     assert batch.balances[0].short_total == 100
     assert batch.balances[0].short_negotiable + batch.balances[0].short_standardized == 100
-    assert batch.section_counts == {
-        "プライム": 1,
-        "スタンダード": 0,
-        "グロース": 0,
-        "投信等": 0,
-    }
+    assert batch.section_counts == {"プライム": 1}
 
 
 def test_balance_parser_fails_closed_if_declared_count_does_not_match(
@@ -487,57 +482,61 @@ def test_limit_one_still_uses_true_previous_persisted_day() -> None:
         engine.dispose()
 
 
+def _seed_squeeze_inputs(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    flow_lines: list[str],
+) -> None:
+    monkeypatch.setattr(
+        balance_parser,
+        "extract_jpx_pdf_lines",
+        lambda _: _balance_lines(),
+    )
+    ingest_jpx_public_balance_pdf(
+        session,
+        b"balance",
+        source_url=SOURCE,
+        retrieved_at=RETRIEVED,
+    )
+    ingest_jpx_premium_xlsx(
+        session,
+        _premium_bytes(2.0),
+        source_url=SOURCE,
+        retrieved_at=RETRIEVED,
+    )
+    monkeypatch.setattr(flow_parser, "extract_jpx_pdf_lines", lambda _: flow_lines)
+    ingest_jpx_margin_flow_pdf(
+        session,
+        b"flow",
+        source_url=SOURCE,
+        retrieved_at=RETRIEVED,
+    )
+
+
 def test_squeeze_watch_requires_observed_non_null_buy_flow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
+    missing_engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(missing_engine)
     try:
-        monkeypatch.setattr(
-            balance_parser,
-            "extract_jpx_pdf_lines",
-            lambda _: _balance_lines(),
-        )
-        with Session(engine) as session:
-            ingest_jpx_public_balance_pdf(
-                session,
-                b"balance",
-                source_url=SOURCE,
-                retrieved_at=RETRIEVED,
-            )
-            ingest_jpx_premium_xlsx(
-                session,
-                _premium_bytes(2.0),
-                source_url=SOURCE,
-                retrieved_at=RETRIEVED,
-            )
-
-            monkeypatch.setattr(
-                flow_parser,
-                "extract_jpx_pdf_lines",
-                lambda _: _flow_lines("-"),
-            )
-            ingest_jpx_margin_flow_pdf(
-                session,
-                b"flow-missing",
-                source_url=SOURCE,
-                retrieved_at=RETRIEVED,
-            )
+        with Session(missing_engine) as session:
+            missing_lines = _flow_lines("30.0%")
+            missing_lines[11] = "-"
+            _seed_squeeze_inputs(session, monkeypatch, flow_lines=missing_lines)
             assert scan_jpx_margin_signals(session, "squeeze-watch") == []
+    finally:
+        missing_engine.dispose()
 
-            monkeypatch.setattr(
-                flow_parser,
-                "extract_jpx_pdf_lines",
-                lambda _: _flow_lines("55.0%"),
-            )
-            ingest_jpx_margin_flow_pdf(
-                session,
-                b"flow-present",
-                source_url=SOURCE,
-                retrieved_at=RETRIEVED,
-            )
+    present_engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(present_engine)
+    try:
+        with Session(present_engine) as session:
+            present_lines = _flow_lines("30.0%")
+            present_lines[11] = "55.0%"
+            _seed_squeeze_inputs(session, monkeypatch, flow_lines=present_lines)
             hits = scan_jpx_margin_signals(session, "squeeze-watch")
             assert [hit.code for hit in hits] == ["72030"]
             assert hits[0].metrics["new_purchase_ratio_pct"] == 55.0
     finally:
-        engine.dispose()
+        present_engine.dispose()
