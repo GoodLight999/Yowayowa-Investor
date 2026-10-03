@@ -1,0 +1,39 @@
+.datasource-browser-keys {
+  display: grid;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  background: var(--sheet);
+}
+.datasource-browser-keys .datasource-key-panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+}
+.datasource-key-disclosure > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 11px;
+  cursor: pointer;
+  list-style: none;
+}
+.datasource-key-disclosure > summary::-webkit-details-marker { display: none; }
+.datasource-key-disclosure > summary::after {
+  content: '+';
+  color: var(--faint);
+  font: 400 15px var(--mono);
+}
+.datasource-key-disclosure[open] > summary::after { content: '−'; }
+.datasource-key-disclosure > summary strong { display: block; font-size: 12px; }
+.datasource-key-disclosure > summary small { display: block; margin-top: 2px; }
+.datasource-key-body {
+  display: grid;
+  gap: 8px;
+  padding: 10px 11px 11px;
+  border-top: 1px solid var(--line);
+}
+.datasource-key-body p { margin: 0; }

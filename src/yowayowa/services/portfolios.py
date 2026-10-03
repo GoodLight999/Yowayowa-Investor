@@ -1,0 +1,553 @@
+from __future__ import annotations
+
+from collections import defaultdict
+from datetime import UTC, datetime
+from decimal import Decimal
+
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from yowayowa.db import (
+    BrokerExecutionApplicationRecord,
+    PortfolioRecord,
+    PortfolioSnapshotRecord,
+    PositionRecord,
+    utcnow,
+)
+from yowayowa.domain import (
+    CurrencyExposure,
+    Portfolio,
+    PortfolioAnalytics,
+    PortfolioSnapshot,
+    Position,
+    PositionAnalytics,
+    PositionBulkUpsert,
+    PositionUpsert,
+)
+from yowayowa.providers.base import MarketDataProvider
+from yowayowa.symbols import normalize_currency, normalize_symbol
+
+
+class PositionVersionConflictError(ValueError):
+    """A position changed since the caller last observed its version."""
+
+
+def _to_model(row: PortfolioRecord) -> Portfolio:
+    return Portfolio(
+        id=row.id,
+        name=row.name,
+        base_currency=row.base_currency,
+        positions=[
+            Position(
+                symbol=item.symbol,
+                quantity=item.quantity,
+                average_cost=item.average_cost,
+                currency=item.currency,
+                version=getattr(item, "version", 1) or 1,
+            )
+            for item in row.positions
+        ],
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _snapshot_to_model(row: PortfolioSnapshotRecord) -> PortfolioSnapshot:
+    return PortfolioSnapshot(
+        id=row.id,
+        portfolio_id=row.portfolio_id,
+        net_market_value=float(row.net_market_value),
+        gross_market_value=float(row.gross_market_value),
+        unrealized_pnl=float(row.unrealized_pnl),
+        day_pnl=float(row.day_pnl),
+        captured_at=row.captured_at,
+    )
+
+
+def list_portfolios(session: Session) -> list[Portfolio]:
+    rows = session.scalars(select(PortfolioRecord).order_by(PortfolioRecord.name)).unique().all()
+    return [_to_model(row) for row in rows]
+
+
+def get_portfolio(session: Session, portfolio_id: int) -> Portfolio:
+    row = session.get(PortfolioRecord, portfolio_id)
+    if row is None:
+        raise LookupError(f"Portfolio {portfolio_id} not found")
+    return _to_model(row)
+
+
+def create_portfolio(session: Session, name: str, base_currency: str) -> Portfolio:
+    now = utcnow()
+    row = PortfolioRecord(
+        name=name.strip(),
+        base_currency=normalize_currency(base_currency),
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return _to_model(row)
+
+
+def upsert_position(
+    session: Session,
+    portfolio_id: int,
+    payload: PositionUpsert,
+    expected_version: int | None = None,
+) -> Portfolio:
+    row = session.get(PortfolioRecord, portfolio_id)
+    if row is None:
+        raise LookupError(f"Portfolio {portfolio_id} not found")
+    symbol = normalize_symbol(payload.symbol)
+    currency = normalize_currency(payload.currency)
+    existing = next((position for position in row.positions if position.symbol == symbol), None)
+    target_expected_version = (
+        expected_version if expected_version is not None else payload.expected_version
+    )
+    try:
+        if existing is None:
+            if target_expected_version is not None and target_expected_version != 0:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was removed or changed")
+            row.positions.append(
+                PositionRecord(
+                    symbol=symbol,
+                    quantity=payload.quantity,
+                    average_cost=payload.average_cost,
+                    currency=currency,
+                    version=1,
+                )
+            )
+        else:
+            if target_expected_version is not None and existing.version != target_expected_version:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was changed")
+            target_version = existing.version or 1
+            result = session.execute(
+                update(PositionRecord)
+                .where(
+                    PositionRecord.id == existing.id,
+                    PositionRecord.version == target_version,
+                )
+                .values(
+                    quantity=payload.quantity,
+                    average_cost=payload.average_cost,
+                    currency=currency,
+                    version=target_version + 1,
+                )
+            )
+            result_rowcount: int | None = result.rowcount  # type: ignore[attr-defined]
+            if result_rowcount != 1:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was changed")
+            session.expire(existing)
+        row.updated_at = utcnow()
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise PositionVersionConflictError(f"position {symbol} conflict / already exists") from exc
+    except Exception:
+        session.rollback()
+        raise
+    session.expire_all()
+    session.refresh(row)
+    return _to_model(row)
+
+
+def bulk_upsert_positions(
+    session: Session,
+    portfolio_id: int,
+    payload: PositionBulkUpsert,
+) -> Portfolio:
+    row = session.get(PortfolioRecord, portfolio_id)
+    if row is None:
+        raise LookupError(f"Portfolio {portfolio_id} not found")
+
+    normalized: dict[str, tuple[PositionUpsert, str]] = {}
+    for item in payload.positions:
+        symbol = normalize_symbol(item.symbol)
+        currency = normalize_currency(item.currency)
+        normalized[symbol] = (item, currency)
+
+    try:
+        existing_by_symbol = {position.symbol: position for position in row.positions}
+
+        if payload.replace:
+            # Delete positions not present in new payload and flush deletions
+            # before any new inserts to avoid unique constraint collisions.
+            to_remove = [p for p in list(row.positions) if p.symbol not in normalized]
+            for p in to_remove:
+                row.positions.remove(p)
+            if to_remove:
+                session.flush()
+            existing_by_symbol = {position.symbol: position for position in row.positions}
+
+        for symbol, (item, currency) in normalized.items():
+            existing = existing_by_symbol.get(symbol)
+            if existing is None:
+                if item.expected_version is not None and item.expected_version != 0:
+                    session.rollback()
+                    raise PositionVersionConflictError(f"position {symbol} was removed or changed")
+            elif item.expected_version is not None and existing.version != item.expected_version:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was changed")
+            if existing is None:
+                row.positions.append(
+                    PositionRecord(
+                        symbol=symbol,
+                        quantity=item.quantity,
+                        average_cost=item.average_cost,
+                        currency=currency,
+                        version=1,
+                    )
+                )
+            else:
+                target_version = existing.version or 1
+                result = session.execute(
+                    update(PositionRecord)
+                    .where(
+                        PositionRecord.id == existing.id,
+                        PositionRecord.version == target_version,
+                    )
+                    .values(
+                        quantity=item.quantity,
+                        average_cost=item.average_cost,
+                        currency=currency,
+                        version=target_version + 1,
+                    )
+                )
+                result_rowcount: int | None = result.rowcount  # type: ignore[attr-defined]
+                if result_rowcount != 1:
+                    session.rollback()
+                    raise PositionVersionConflictError(f"position {symbol} was changed")
+                session.expire(existing)
+
+        row.updated_at = utcnow()
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise PositionVersionConflictError("position conflict / concurrent modification") from exc
+    except Exception:
+        session.rollback()
+        raise
+    session.expire_all()
+    session.refresh(row)
+    return _to_model(row)
+
+
+def applied_execution_fingerprints(
+    session: Session,
+    portfolio_id: int,
+    market: str,
+) -> dict[str, str]:
+    rows = session.scalars(
+        select(BrokerExecutionApplicationRecord).where(
+            BrokerExecutionApplicationRecord.portfolio_id == portfolio_id,
+            BrokerExecutionApplicationRecord.market == market,
+        )
+    ).all()
+    return {row.execution_id: row.execution_fingerprint for row in rows}
+
+
+def apply_execution_reconciliation(
+    session: Session,
+    portfolio_id: int,
+    positions: list[PositionUpsert],
+    *,
+    market: str,
+    execution_fingerprints: dict[str, str],
+    preview_id: str,
+    expected_versions: dict[str, int | None] | None = None,
+) -> Portfolio:
+    """Atomically upsert approved holdings and record applied fill identities."""
+    session.expire_all()
+    row = session.get(PortfolioRecord, portfolio_id)
+    if row is None:
+        raise LookupError(f"Portfolio {portfolio_id} not found")
+    if not execution_fingerprints:
+        raise ValueError("No unapplied broker executions to apply")
+
+    existing = applied_execution_fingerprints(session, portfolio_id, market)
+    if set(existing).intersection(execution_fingerprints):
+        raise ValueError("One or more executions were already applied; refresh the preview")
+
+    normalized: dict[str, tuple[PositionUpsert, str]] = {}
+    for item in positions:
+        symbol = normalize_symbol(item.symbol)
+        currency = normalize_currency(item.currency)
+        normalized[symbol] = (item, currency)
+
+    existing_by_symbol = {position.symbol: position for position in row.positions}
+    expected_versions = expected_versions or {}
+    if set(expected_versions) != set(normalized):
+        session.rollback()
+        raise PositionVersionConflictError("expected position versions do not match changes")
+    for symbol, (item, currency) in normalized.items():
+        position = existing_by_symbol.get(symbol)
+        expected_version = expected_versions[symbol]
+        if position is None:
+            if expected_version is not None:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was removed or changed")
+        elif expected_version is None or position.version != expected_version:
+            session.rollback()
+            raise PositionVersionConflictError(f"position {symbol} was changed")
+        if position is None:
+            row.positions.append(
+                PositionRecord(
+                    symbol=symbol,
+                    quantity=item.quantity,
+                    average_cost=item.average_cost,
+                    currency=currency,
+                    version=1,
+                )
+            )
+        else:
+            result = session.execute(
+                update(PositionRecord)
+                .where(
+                    PositionRecord.id == position.id,
+                    PositionRecord.version == expected_version,
+                )
+                .values(
+                    quantity=item.quantity,
+                    average_cost=item.average_cost,
+                    currency=currency,
+                    version=(position.version or 1) + 1,
+                )
+            )
+            result_rowcount: int | None = result.rowcount  # type: ignore[attr-defined]
+            if result_rowcount != 1:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was changed")
+            session.expire(position)
+
+    applied_at = utcnow()
+    session.add_all(
+        [
+            BrokerExecutionApplicationRecord(
+                portfolio_id=portfolio_id,
+                market=market,
+                execution_id=execution_id,
+                execution_fingerprint=fingerprint,
+                preview_id=preview_id,
+                applied_at=applied_at,
+            )
+            for execution_id, fingerprint in execution_fingerprints.items()
+        ]
+    )
+    row.updated_at = applied_at
+    session.commit()
+    session.refresh(row)
+    return _to_model(row)
+
+
+def remove_position(
+    session: Session,
+    portfolio_id: int,
+    symbol: str,
+    expected_version: int | None = None,
+) -> Portfolio:
+    row = session.get(PortfolioRecord, portfolio_id)
+    if row is None:
+        raise LookupError(f"Portfolio {portfolio_id} not found")
+    normalized = normalize_symbol(symbol)
+    existing = next((position for position in row.positions if position.symbol == normalized), None)
+    if expected_version is not None and (existing is None or existing.version != expected_version):
+        session.rollback()
+        raise PositionVersionConflictError(f"position {normalized} was changed or removed")
+    if existing is not None:
+        row.positions.remove(existing)
+        row.updated_at = utcnow()
+        session.commit()
+        session.refresh(row)
+    return _to_model(row)
+
+
+def record_portfolio_snapshot(
+    session: Session,
+    analytics: PortfolioAnalytics,
+) -> PortfolioSnapshot:
+    row = PortfolioSnapshotRecord(
+        portfolio_id=analytics.portfolio_id,
+        net_market_value=Decimal(str(analytics.net_market_value)),
+        gross_market_value=Decimal(str(analytics.gross_market_value)),
+        unrealized_pnl=Decimal(str(analytics.unrealized_pnl)),
+        day_pnl=Decimal(str(analytics.day_pnl)),
+        captured_at=analytics.evaluated_at,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return _snapshot_to_model(row)
+
+
+def list_portfolio_snapshots(
+    session: Session,
+    portfolio_id: int,
+    limit: int = 365,
+) -> list[PortfolioSnapshot]:
+    if session.get(PortfolioRecord, portfolio_id) is None:
+        raise LookupError(f"Portfolio {portfolio_id} not found")
+    rows = session.scalars(
+        select(PortfolioSnapshotRecord)
+        .where(PortfolioSnapshotRecord.portfolio_id == portfolio_id)
+        .order_by(PortfolioSnapshotRecord.captured_at.desc())
+        .limit(limit)
+    ).all()
+    return [_snapshot_to_model(row) for row in reversed(rows)]
+
+
+def _fx_symbol(source_currency: str, base_currency: str) -> str | None:
+    source = normalize_currency(source_currency)
+    base = normalize_currency(base_currency)
+    if source == base:
+        return None
+    if source == "USD":
+        return f"{base}=X"
+    return f"{source}{base}=X"
+
+
+def portfolio_analytics(
+    portfolio: Portfolio,
+    provider: MarketDataProvider,
+) -> PortfolioAnalytics:
+    quote_symbols = [position.symbol for position in portfolio.positions]
+    fx_by_currency: dict[str, str] = {}
+    for position in portfolio.positions:
+        fx_symbol = _fx_symbol(position.currency, portfolio.base_currency)
+        if fx_symbol:
+            fx_by_currency[position.currency] = fx_symbol
+            quote_symbols.append(fx_symbol)
+
+    batch = provider.quotes(quote_symbols)
+    positions: list[PositionAnalytics] = []
+    unavailable: list[str] = []
+    currency_net: defaultdict[str, float] = defaultdict(float)
+    currency_gross: defaultdict[str, float] = defaultdict(float)
+    net_market_value = 0.0
+    gross_market_value = 0.0
+    known_cost_basis = 0.0
+    known_cost_market_value = 0.0
+    unrealized_pnl = 0.0
+    day_pnl = 0.0
+    previous_gross_value = 0.0
+
+    for position in portfolio.positions:
+        quote = batch.quotes.get(position.symbol)
+        fx_symbol = fx_by_currency.get(position.currency)
+        fx_quote = batch.quotes.get(fx_symbol) if fx_symbol else None
+        if quote is None or (fx_symbol and fx_quote is None):
+            unavailable.append(position.symbol)
+            continue
+
+        fx_to_base = fx_quote.price if fx_quote else 1.0
+        previous_fx_to_base = fx_to_base
+        if fx_quote and fx_quote.previous_close not in {None, 0}:
+            assert fx_quote.previous_close is not None
+            previous_fx_to_base = fx_quote.previous_close
+        quantity = float(position.quantity)
+        market_value = quantity * quote.price * fx_to_base
+        position_gross = abs(market_value)
+        net_market_value += market_value
+        gross_market_value += position_gross
+        currency_net[position.currency] += market_value
+        currency_gross[position.currency] += position_gross
+
+        cost_basis: float | None = None
+        position_unrealized: float | None = None
+        unrealized_pct: float | None = None
+        if position.average_cost is not None:
+            average_cost = float(position.average_cost)
+            cost_basis = abs(quantity * average_cost * fx_to_base)
+            position_unrealized = (quote.price - average_cost) * quantity * fx_to_base
+            known_cost_basis += cost_basis
+            known_cost_market_value += position_gross
+            unrealized_pnl += position_unrealized
+            if cost_basis:
+                unrealized_pct = position_unrealized / cost_basis
+
+        position_day_pnl: float | None = None
+        position_day_change: float | None = None
+        if quote.previous_close not in {None, 0}:
+            assert quote.previous_close is not None
+            previous_value = quantity * quote.previous_close * previous_fx_to_base
+            previous_exposure = abs(previous_value)
+            position_day_pnl = market_value - previous_value
+            day_pnl += position_day_pnl
+            previous_gross_value += previous_exposure
+            if previous_exposure:
+                position_day_change = position_day_pnl / previous_exposure
+
+        positions.append(
+            PositionAnalytics(
+                symbol=position.symbol,
+                quantity=position.quantity,
+                currency=position.currency,
+                average_cost=position.average_cost,
+                price=quote.price,
+                previous_close=quote.previous_close,
+                fx_to_base=fx_to_base,
+                previous_fx_to_base=previous_fx_to_base,
+                market_value_base=market_value,
+                cost_basis_base=cost_basis,
+                unrealized_pnl_base=position_unrealized,
+                unrealized_pnl_pct=unrealized_pct,
+                day_pnl_base=position_day_pnl,
+                day_change_pct=position_day_change,
+                as_of=quote.as_of,
+            )
+        )
+
+    if gross_market_value:
+        positions = [
+            item.model_copy(update={"weight": abs(item.market_value_base) / gross_market_value})
+            for item in positions
+        ]
+    positions.sort(key=lambda item: (-item.weight, item.symbol))
+
+    currency_exposure = [
+        CurrencyExposure(
+            currency=currency,
+            market_value_base=currency_net[currency],
+            weight=(gross / gross_market_value if gross_market_value else 0.0),
+        )
+        for currency, gross in sorted(
+            currency_gross.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
+    provenance = batch.provenance.model_copy(
+        update={
+            "notes": [
+                *batch.provenance.notes,
+                "Daily P/L includes both security-price and FX-rate movement when prior "
+                "FX is available.",
+                "Average-cost unrealized P/L is calculated in the position currency and "
+                "translated at current FX; acquisition-time FX is not reconstructed.",
+            ]
+        }
+    )
+
+    return PortfolioAnalytics(
+        portfolio_id=portfolio.id,
+        name=portfolio.name,
+        base_currency=portfolio.base_currency,
+        net_market_value=net_market_value,
+        gross_market_value=gross_market_value,
+        known_cost_basis=known_cost_basis,
+        known_cost_market_value=known_cost_market_value,
+        unrealized_pnl=unrealized_pnl,
+        unrealized_pnl_pct=(unrealized_pnl / known_cost_basis if known_cost_basis else None),
+        day_pnl=day_pnl,
+        day_change_pct=(day_pnl / previous_gross_value if previous_gross_value else None),
+        largest_position_weight=max((item.weight for item in positions), default=0.0),
+        concentration_hhi=sum(item.weight**2 for item in positions),
+        positions=positions,
+        currency_exposure=currency_exposure,
+        unavailable_symbols=sorted(set(unavailable)),
+        provenance=provenance,
+        evaluated_at=datetime.now(UTC),
+    )

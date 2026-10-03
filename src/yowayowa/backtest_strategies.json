@@ -1,0 +1,68 @@
+[
+  {
+    "id": "momentum_12_1",
+    "name": "12-1 month momentum",
+    "description": "Rank by trailing 252-session return skipping the most recent 21 sessions.",
+    "signal": "momentum_12_1",
+    "universe": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "JPM", "XOM", "SPY"],
+    "rebalance": "monthly",
+    "max_positions": 5,
+    "weighting": "equal",
+    "execution": "next_open"
+  },
+  {
+    "id": "low_volatility",
+    "name": "Inverse-volatility portfolio",
+    "description": "Select the lowest-volatility names and weight inversely to trailing 60-session volatility.",
+    "signal": "low_volatility",
+    "universe": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "JPM", "XOM", "SPY"],
+    "rebalance": "monthly",
+    "max_positions": 5,
+    "weighting": "inverse_volatility",
+    "execution": "next_open"
+  },
+  {
+    "id": "mean_reversion_20",
+    "name": "20-session mean reversion",
+    "description": "Rank by the inverse of trailing 20-session price return.",
+    "signal": "mean_reversion_20",
+    "universe": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "JPM", "XOM", "SPY"],
+    "rebalance": "monthly",
+    "max_positions": 5,
+    "weighting": "equal",
+    "execution": "next_open"
+  },
+  {
+    "id": "equal_weight",
+    "name": "Equal-weight baseline",
+    "description": "Equal weight all universe constituents, rebalanced at the configured frequency.",
+    "signal": "equal_weight",
+    "universe": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "JPM", "XOM", "SPY"],
+    "rebalance": "monthly",
+    "max_positions": 10,
+    "weighting": "equal",
+    "execution": "next_open"
+  },
+  {
+    "id": "value_fundamental",
+    "name": "Fundamental value proxy",
+    "description": "Ranks point-in-time pbr, per, and conservative net-cash ratio fields; requires disclosure_date strictly before execution.",
+    "signal": "value_fundamental",
+    "universe": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "JPM", "XOM", "SPY"],
+    "rebalance": "monthly",
+    "max_positions": 5,
+    "weighting": "equal",
+    "execution": "next_open"
+  },
+  {
+    "id": "kiyohara_value",
+    "name": "Kiyohara value proxy",
+    "description": "Ranks point-in-time pbr, per, and Kiyohara net-cash ratio fields; requires disclosure_date strictly before execution.",
+    "signal": "kiyohara_value",
+    "universe": ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "JPM", "XOM", "SPY"],
+    "rebalance": "monthly",
+    "max_positions": 5,
+    "weighting": "equal",
+    "execution": "next_open"
+  }
+]

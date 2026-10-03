@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ u('chart.title') }} · Yowayowa-Investor{% endblock %}
+{% block head %}<script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
+{% block content %}
+<section class="page-head">
+  <div><h1>{{ u('chart.title') }}</h1><p class="ux-subtitle">{{ h('chart.subtitle') }}</p></div>
+  <button id="compose-chart" class="primary" type="button">{{ u('chart.show') }}</button>
+</section>
+
+<section class="chart-guide" aria-label="{{ u('chart.beginner_title') }}">
+  <div class="chart-guide-step"><strong>{{ u('chart.step1') }}</strong><small>{{ u('chart.step1_note') }}</small></div>
+  <div class="chart-guide-step"><strong>{{ u('chart.step2') }}</strong><small>{{ u('chart.step2_note') }}</small></div>
+  <div class="chart-guide-step"><strong>{{ u('chart.step3') }}</strong><small>{{ u('chart.step3_note') }}</small></div>
+</section>
+<div class="chart-examples">
+  <strong class="chart-examples-label">{{ u('chart.examples') }}:</strong>
+  <button class="ghost" type="button" data-chart-example="prices">{{ u('chart.example.prices') }}</button>
+  <button class="ghost" type="button" data-chart-example="financial">{{ u('chart.example.financial') }}</button>
+  <button class="ghost" type="button" data-chart-example="correlation">{{ u('chart.example.correlation') }}</button>
+</div>
+
+<section class="panel" style="margin-bottom:12px">
+  <div class="section-heading"><h2>{{ x('discover.preset') }}</h2><span id="chart-preset-status" class="muted">—</span></div>
+  <div class="toolbar" style="padding:10px">
+    <select id="chart-preset-select" aria-label="{{ x('discover.preset') }}"><option value="">—</option></select>
+    <input id="chart-preset-name" maxlength="100" placeholder="{{ x('discover.preset') }}">
+    <button id="chart-preset-save" class="ghost" type="button">{{ t('common.add') }}</button>
+    <button id="chart-preset-load" class="ghost" type="button">{{ t('common.run') }}</button>
+    <button id="chart-preset-delete" class="ghost" type="button">{{ t('common.remove') }}</button>
+  </div>
+</section>
+<div class="composer-layout">
+  <div>
+    <section class="panel">
+      <div class="section-heading"><div><h2>{{ h('chart.sources') }}</h2><small class="term-note">追加するデータ系列。IDは内部で自動管理します。</small></div></div>
+      <div id="composer-sources"></div>
+      <div class="composer-actions"><button id="add-chart-source" class="ghost" type="button">{{ h('chart.add_source') }}</button></div>
+    </section>
+    <section class="panel" style="margin-top:12px">
+      <div class="section-heading"><div><h2>{{ h('chart.formulas') }}</h2><small class="term-note">上の系列同士から比率・差・相関を作る上級機能です。不要なら空のままで構いません。</small></div></div>
+      <div id="composer-formulas"></div>
+      <div class="composer-actions"><button id="add-chart-formula" class="ghost" type="button">{{ h('chart.add_formula') }}</button></div>
+      <p class="ux-note" style="padding:0 10px 10px">{{ h('chart.asof_note') }}</p>
+    </section>
+    <section class="panel" style="margin-top:12px">
+      <div class="section-heading"><h2>{{ h('chart.errors') }}</h2></div>
+      <div id="composer-errors" class="composer-errors muted">{{ h('chart.no_errors') }}</div>
+    </section>
+  </div>
+  <div>
+    <section class="panel chart-panel">
+      <div class="section-heading"><h2>{{ h('chart.result') }}</h2><span id="composer-status" class="pill">—</span></div>
+      <div id="composer-chart" role="img" aria-label="{{ h('chart.result') }}"></div>
+    </section>
+    <section class="panel" style="margin-top:12px">
+      <div class="section-heading"><h2>{{ h('chart.provenance') }}</h2></div>
+      <div id="composer-provenance" class="muted">—</div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/charts.js"></script><script src="/static/charts_ux.js"></script>{% endblock %}
