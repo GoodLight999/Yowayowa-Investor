@@ -20,25 +20,19 @@ from yowayowa.services.jpx_public_margin import (
 
 def _latest_aux_date(session: Session, kind: str) -> date | None:
     return session.scalar(
-        select(func.max(JpxMarginAuxRecord.as_of_date)).where(
-            JpxMarginAuxRecord.kind == kind
-        )
+        select(func.max(JpxMarginAuxRecord.as_of_date)).where(JpxMarginAuxRecord.kind == kind)
     )
 
 
 def _aux_date_set(session: Session, kind: str) -> set[date]:
     return set(
         session.scalars(
-            select(JpxMarginAuxRecord.as_of_date)
-            .where(JpxMarginAuxRecord.kind == kind)
-            .distinct()
+            select(JpxMarginAuxRecord.as_of_date).where(JpxMarginAuxRecord.kind == kind).distinct()
         )
     )
 
 
-def _aux_rows(
-    session: Session, *, kind: str, as_of_date: date
-) -> list[JpxMarginAuxRecord]:
+def _aux_rows(session: Session, *, kind: str, as_of_date: date) -> list[JpxMarginAuxRecord]:
     return list(
         session.scalars(
             select(JpxMarginAuxRecord).where(
@@ -49,9 +43,7 @@ def _aux_rows(
     )
 
 
-def _balances(
-    session: Session, application_date: date
-) -> dict[str, JpxMarginBalanceRecord]:
+def _balances(session: Session, application_date: date) -> dict[str, JpxMarginBalanceRecord]:
     return {
         row.code: row
         for row in session.scalars(
@@ -118,9 +110,7 @@ def _balance_signal_rows(
                 "long_change": detail.long_source_change,
                 "long_listed_ratio_pct": detail.long_listed_ratio_pct,
             }
-            reason = (
-                "high listed-share long balance and positive source-reported daily change"
-            )
+            reason = "high listed-share long balance and positive source-reported daily change"
         elif signal == "crowded-short":
             if (
                 detail.short_listed_ratio_pct is None
@@ -134,9 +124,7 @@ def _balance_signal_rows(
                 "short_change": detail.short_source_change,
                 "short_listed_ratio_pct": detail.short_listed_ratio_pct,
             }
-            reason = (
-                "high listed-share short balance and positive source-reported daily change"
-            )
+            reason = "high listed-share short balance and positive source-reported daily change"
         elif signal == "long-unwind":
             change = detail.long_source_change
             if change is None or change >= 0:
@@ -194,11 +182,7 @@ def _flow_signal_rows(
     results: list[JpxMarginSignal] = []
     for aux in _aux_rows(session, kind="flow", as_of_date=day):
         flow = _flow_from_aux(aux)
-        value = (
-            flow.new_purchase_ratio_pct
-            if signal == "flow-buy"
-            else flow.new_sales_ratio_pct
-        )
+        value = flow.new_purchase_ratio_pct if signal == "flow-buy" else flow.new_sales_ratio_pct
         threshold = flow_buy_threshold if signal == "flow-buy" else flow_sell_threshold
         if value is None or value < threshold:
             continue
@@ -376,8 +360,7 @@ def _squeeze_rows(
                     "new_purchase_ratio_pct": flow.new_purchase_ratio_pct,
                 },
                 reason=(
-                    "short crowding + positive stock-loan premium + "
-                    "observed buy-flow dominance"
+                    "short crowding + positive stock-loan premium + observed buy-flow dominance"
                 ),
                 provenances=[
                     detail.provenance,
