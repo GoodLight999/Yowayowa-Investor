@@ -38,9 +38,7 @@ def parse_jpx_margin_watch_xlsx(
 
     application_date: date | None = None
     publication_date: date | None = None
-    for row in sheet.iter_rows(
-        min_row=1, max_row=min(sheet.max_row, 40), values_only=True
-    ):
+    for row in sheet.iter_rows(min_row=1, max_row=min(sheet.max_row, 40), values_only=True):
         values = list(row)
         dates: list[date] = []
         for raw in values:
@@ -54,9 +52,7 @@ def parse_jpx_margin_watch_xlsx(
             publication_date = dates[1] if len(dates) > 1 else None
             break
     if application_date is None or publication_date is None:
-        raise JpxPublicMarginParseError(
-            "application/publication date not found in watch XLSX"
-        )
+        raise JpxPublicMarginParseError("application/publication date not found in watch XLSX")
 
     published_at = publication_at(publication_date, 16, 0)
     row_provenance = provenance(
@@ -76,14 +72,10 @@ def parse_jpx_margin_watch_xlsx(
             values += [None] * (23 - len(values))
         code = str(values[6] or "").strip().upper()
         isin = str(values[7] or "").strip().upper()
-        if not JPX_CODE_RE.fullmatch(code) or not re.fullmatch(
-            r"[A-Z]{2}[A-Z0-9]{10}", isin
-        ):
+        if not JPX_CODE_RE.fullmatch(code) or not re.fullmatch(r"[A-Z]{2}[A-Z0-9]{10}", isin):
             continue
         if code in seen:
-            raise JpxPublicMarginParseError(
-                f"duplicate watch XLSX code {code} at row {row_number}"
-            )
+            raise JpxPublicMarginParseError(f"duplicate watch XLSX code {code} at row {row_number}")
         seen.add(code)
 
         margin_marker = str(values[5]).strip() if values[5] else None
@@ -92,12 +84,8 @@ def parse_jpx_margin_watch_xlsx(
                 f"unexpected watch margin marker {margin_marker!r} at row {row_number}"
             )
 
-        short_total = required_xlsx_int(
-            values[8], field=f"watch[{row_number}].short_total"
-        )
-        long_total = required_xlsx_int(
-            values[11], field=f"watch[{row_number}].long_total"
-        )
+        short_total = required_xlsx_int(values[8], field=f"watch[{row_number}].short_total")
+        long_total = required_xlsx_int(values[11], field=f"watch[{row_number}].long_total")
         short_negotiable = required_xlsx_int(
             values[15], field=f"watch[{row_number}].short_negotiable"
         )
@@ -111,13 +99,9 @@ def parse_jpx_margin_watch_xlsx(
             values[21], field=f"watch[{row_number}].long_standardized"
         )
         if short_total != short_negotiable + short_standardized:
-            raise JpxPublicMarginParseError(
-                f"watch short identity violation for {code}"
-            )
+            raise JpxPublicMarginParseError(f"watch short identity violation for {code}")
         if long_total != long_negotiable + long_standardized:
-            raise JpxPublicMarginParseError(
-                f"watch long identity violation for {code}"
-            )
+            raise JpxPublicMarginParseError(f"watch long identity violation for {code}")
 
         rows.append(
             JpxMarginWatch(
@@ -208,9 +192,7 @@ def parse_jpx_premium_xlsx(
     rows: list[JpxPremiumCharge] = []
     seen: set[tuple[date, str, str]] = set()
 
-    for row_number, row in enumerate(
-        sheet.iter_rows(min_row=4, values_only=True), start=4
-    ):
+    for row_number, row in enumerate(sheet.iter_rows(min_row=4, values_only=True), start=4):
         values = list(row)
         if len(values) < 7:
             continue
@@ -283,9 +265,7 @@ def parse_jpx_premium_xlsx(
     return rows
 
 
-def safe_jpx_code_from_premium(
-    source_code: str, known_codes: set[str]
-) -> str | None:
+def safe_jpx_code_from_premium(source_code: str, known_codes: set[str]) -> str | None:
     """Resolve 4-char premium codes only to exact ordinary-code xxxx0 rows."""
 
     candidate = source_code.upper() + "0"
