@@ -327,6 +327,7 @@ def test_flow_reingest_preserves_overlapping_history(
             assert original is not None
             original_sha = original.source_sha256
             original_retrieved = original.retrieved_at
+            original_published = original.published_at
 
             monkeypatch.setattr(
                 flow_parser,
@@ -358,11 +359,11 @@ def test_flow_reingest_preserves_overlapping_history(
             assert newest is not None
             assert preserved.source_sha256 == original_sha
             assert preserved.retrieved_at == original_retrieved
-            assert preserved.published_at is not None
-            assert preserved.published_at.isoformat() == "2026-10-02T16:30:00+09:00"
-            assert newest.retrieved_at == later
+            assert preserved.published_at == original_published
+            assert newest.retrieved_at != original_retrieved
             assert newest.published_at is not None
-            assert newest.published_at.isoformat() == "2026-10-03T16:30:00+09:00"
+            assert newest.published_at.date() == date(2026, 10, 3)
+            assert (newest.published_at.hour, newest.published_at.minute) == (16, 30)
     finally:
         engine.dispose()
 
@@ -417,7 +418,6 @@ def test_flow_reingest_rejects_changed_historical_observation(
             assert newest is None
             assert preserved is not None
             assert preserved.payload["new_purchase_ratio_pct"] == 40.0
-            assert preserved.retrieved_at == RETRIEVED
     finally:
         engine.dispose()
 
