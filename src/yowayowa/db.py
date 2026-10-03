@@ -297,6 +297,41 @@ class JpxMarginBalanceRecord(Base):
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class JpxMarginAuxRecord(Base):
+    """Auxiliary facts from free JPX daily margin publications.
+
+    The canonical all-issue balances remain in JpxMarginBalanceRecord so paid
+    reference CSV and free public PDF share one history. This table stores
+    publication-specific facts that do not belong in that canonical schema:
+    source-reported daily changes/listed-share ratios, watch/regulatory flags,
+    premium charges, same-day flow ratios, and last-writer provenance.
+    """
+
+    __tablename__ = "jpx_margin_aux"
+    __table_args__ = (
+        UniqueConstraint(
+            "kind",
+            "as_of_date",
+            "key",
+            name="uq_jpx_margin_aux_kind_date_key",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(24), index=True)
+    as_of_date: Mapped[date] = mapped_column(Date, index=True)
+    key: Mapped[str] = mapped_column(String(96), index=True)
+    code: Mapped[str | None] = mapped_column(String(5), nullable=True, index=True)
+    source_code: Mapped[str | None] = mapped_column(String(8), nullable=True, index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    source_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class CreditMarginWeeklyRecord(Base):
     """One code's weekly credit balances for one as-of week (P4-C).
 
