@@ -376,7 +376,7 @@ def _validate_watch_against_balance(session: Session, rows: list[JpxMarginWatch]
         detail = details.get(watch.code)
         if detail is None:
             continue
-        optional_pairs = (
+        optional_pairs: tuple[tuple[str, int | float | None, int | float | None], ...] = (
             ("short_change", watch.short_change, detail.short_source_change),
             ("long_change", watch.long_change, detail.long_source_change),
             (
