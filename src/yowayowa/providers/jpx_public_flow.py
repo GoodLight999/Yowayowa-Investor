@@ -78,13 +78,21 @@ def parse_jpx_margin_flow_pdf(
             continue
 
         company_name = lines[index - 3].strip()
+        status_marker: str | None = None
+        for marker in STATUS_MARKERS:
+            prefix = marker + " "
+            if company_name.startswith(prefix):
+                status_marker = marker
+                company_name = company_name[len(prefix) :].strip()
+                break
+        if (
+            status_marker is None
+            and index >= 4
+            and lines[index - 4].strip() in STATUS_MARKERS
+        ):
+            status_marker = lines[index - 4].strip()
         if not company_name or company_name in STATUS_MARKERS:
             continue
-        status_marker = (
-            lines[index - 4].strip()
-            if index >= 4 and lines[index - 4].strip() in STATUS_MARKERS
-            else None
-        )
         issue_codes.add(code)
 
         for date_index, trade_date in enumerate(dates):
