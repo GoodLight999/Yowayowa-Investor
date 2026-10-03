@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable
-from datetime import UTC, date, datetime, timedelta, tzinfo
+from datetime import UTC, date, datetime, tzinfo
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Final, Literal
@@ -24,7 +24,6 @@ from yowayowa.jpx_public_models import (
     JpxPremiumCharge,
     JpxPublicIngestResult,
 )
-from yowayowa.providers.jpx_public_common import JST
 from yowayowa.providers.jpx_public_margin import (
     JpxPublicMarginParseError,
     parse_jpx_margin_flow_pdf,
@@ -108,8 +107,15 @@ class JpxPublicMarginInstantError(JpxPublicMarginParseError):
     """A stored JPX aux instant has no establishable timezone origin (AS-JPX-03)."""
 
 
-#: Origins a stored ``jpx_margin_aux`` instant may be recorded in.
-_INSTANT_ORIGINS: Final[dict[str, tzinfo]] = {"utc": UTC, "jst": JST}
+#: Zones a stored ``jpx_margin_aux`` wall time may be recorded in. Only the
+#: normalized UTC form is ever written: ``_store_instant`` always converts on
+#: write, so a second zone here would only invite a double conversion on read.
+#: A legacy row's local wall time is never relabeled — it is migrated
+#: explicitly or refused.
+_INSTANT_ORIGINS: Final[dict[str, tzinfo]] = {"utc": UTC}
+
+#: Origin recorded for every row written under the normalized convention.
+STORED_INSTANT_ORIGIN: Final[str] = "utc"
 
 
 def _store_instant(value: datetime) -> tuple[datetime, str]:
@@ -124,10 +130,8 @@ def _store_instant(value: datetime) -> tuple[datetime, str]:
             f"refusing to persist naive JPX instant {value.isoformat()}; "
             "an explicit timezone offset is required"
         )
-    offset = value.utcoffset()
-    assert offset is not None  # tzinfo present implies an offset
-    origin = "utc" if offset == timedelta(0) else "jst"
-    return value.astimezone(UTC).replace(tzinfo=None), origin
+    assert value.utcoffset() is not None  # tzinfo present implies an offset
+    return value.astimezone(UTC).replace(tzinfo=None), STORED_INSTANT_ORIGIN
 
 
 def jpx_instant(value: datetime, origin: str | None, *, field: str) -> datetime:
@@ -176,15 +180,9 @@ def _add_aux(
     retrieved_at: datetime,
 ) -> None:
     stored_published: datetime | None = None
-    origin = "utc"
     if published_at is not None:
-        stored_published, published_origin = _store_instant(published_at)
-        origin = published_origin
-    stored_retrieved, retrieved_origin = _store_instant(retrieved_at)
-    if origin == "utc" and retrieved_origin != "utc":
-        # published_at carries the availability instant the source declared; when
-        # it is UTC and retrieval was not, the UTC origin still governs both.
-        origin = retrieved_origin if stored_published is None else origin
+        stored_published, _ = _store_instant(published_at)
+    stored_retrieved, _ = _store_instant(retrieved_at)
     session.add(
         JpxMarginAuxRecord(
             kind=kind,
@@ -197,7 +195,7 @@ def _add_aux(
             source_sha256=source_sha256,
             published_at=stored_published,
             retrieved_at=stored_retrieved,
-            instant_tz=origin,
+            instant_tz=STORED_INSTANT_ORIGIN,
         )
     )
 
@@ -899,13 +897,16 @@ def read_jpx_margin_flow(session: Session, code: str, *, limit: int = 30) -> lis
 
 
 __all__ = [
+    "STORED_INSTANT_ORIGIN",
     "JpxPublicKind",
+    "JpxPublicMarginInstantError",
     "discover_jpx_artifact_url",
     "ingest_jpx_margin_flow_pdf",
     "ingest_jpx_margin_watch_xlsx",
     "ingest_jpx_premium_xlsx",
     "ingest_jpx_public_artifact",
     "ingest_jpx_public_balance_pdf",
+    "jpx_instant",
     "read_jpx_margin_details",
     "read_jpx_margin_flow",
     "read_jpx_margin_watch",

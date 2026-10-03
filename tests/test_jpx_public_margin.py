@@ -25,6 +25,7 @@ from yowayowa.providers.jpx_public_margin import (
 from yowayowa.services.jpx_margin import read_jpx_margin_by_code
 from yowayowa.services.jpx_margin_signals import scan_jpx_margin_signals
 from yowayowa.services.jpx_public_margin import (
+    STORED_INSTANT_ORIGIN,
     JpxPublicMarginInstantError,
     discover_jpx_artifact_url,
     ingest_jpx_margin_flow_pdf,
@@ -367,7 +368,7 @@ def test_flow_reingest_preserves_overlapping_history(
             # test_sqlite_roundtrip_preserves_absolute_publication_instant.
             assert newest.published_at == datetime(2026, 10, 3, 7, 30)
             assert newest.published_at.tzinfo is None
-            assert newest.instant_tz == "jst"
+            assert newest.instant_tz == STORED_INSTANT_ORIGIN
             assert read_jpx_margin_flow(session, "72030")[-1].published_at == datetime(
                 2026, 10, 3, 7, 30, tzinfo=UTC
             )
