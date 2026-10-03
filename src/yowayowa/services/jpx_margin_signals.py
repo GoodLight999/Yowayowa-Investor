@@ -97,6 +97,7 @@ def _balance_signal_rows(
         if balance is None:
             continue
 
+        metrics: dict[str, int | float | str | bool | None]
         if signal == "crowded-long":
             if (
                 detail.long_listed_ratio_pct is None
