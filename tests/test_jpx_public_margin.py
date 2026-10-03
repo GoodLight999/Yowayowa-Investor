@@ -361,10 +361,16 @@ def test_flow_reingest_preserves_overlapping_history(
             assert preserved.published_at == original_published
             assert newest.retrieved_at != original_retrieved
             assert newest.published_at is not None
-            # Absolute instant, not JST wall time: the row is persisted as naive
-            # UTC and read back as an aware UTC instant (AS-JPX-03).
-            assert newest.published_at.tzinfo is not None
-            assert newest.published_at == datetime(2026, 10, 3, 7, 30, tzinfo=UTC)
+            # Storage form: naive UTC wall time, with its origin recorded, so
+            # the absolute instant survives SQLite (AS-JPX-03). The public read
+            # path re-attaches UTC and is asserted in
+            # test_sqlite_roundtrip_preserves_absolute_publication_instant.
+            assert newest.published_at == datetime(2026, 10, 3, 7, 30)
+            assert newest.published_at.tzinfo is None
+            assert newest.instant_tz == "jst"
+            assert read_jpx_margin_flow(session, "72030")[-1].published_at == datetime(
+                2026, 10, 3, 7, 30, tzinfo=UTC
+            )
     finally:
         engine.dispose()
 
@@ -691,7 +697,7 @@ def test_sqlite_roundtrip_preserves_absolute_publication_instant(
             )
             parsed = parse_jpx_margin_flow_pdf(b"flow", source_url=SOURCE, retrieved_at=RETRIEVED)
             ingest_jpx_margin_flow_pdf(session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED)
-            recovered = read_jpx_margin_flow(session, "72030")[0]
+            recovered = read_jpx_margin_flow(session, "72030")[-1]
             assert recovered.published_at.tzinfo is not None
             assert recovered.published_at == parsed[0].published_at.astimezone(UTC)
             assert recovered.published_at == datetime(2026, 10, 2, 7, 30, tzinfo=UTC)
@@ -714,13 +720,14 @@ def test_legacy_naive_row_without_origin_fails_closed(
                 flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines("40.0%")
             )
             ingest_jpx_margin_flow_pdf(session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED)
-            record = session.scalar(
-                select(JpxMarginAuxRecord).where(JpxMarginAuxRecord.kind == "flow")
+            records = list(
+                session.scalars(select(JpxMarginAuxRecord).where(JpxMarginAuxRecord.kind == "flow"))
             )
-            assert record is not None
+            assert records
             # Simulate a pre-convention row: naive local wall time, unknown origin.
-            record.published_at = datetime(2026, 10, 2, 16, 30)
-            record.instant_tz = None  # type: ignore[assignment]
+            for record in records:
+                record.published_at = datetime(2026, 10, 2, 16, 30)
+                record.instant_tz = None
             session.commit()
 
             with pytest.raises(JpxPublicMarginInstantError, match="no recorded timezone"):
@@ -755,8 +762,8 @@ def test_available_at_selects_true_latest_mixed_source_instant(
                 source_url=SOURCE,
                 retrieved_at=premium_observed,
             )
-            flow_row = read_jpx_margin_flow(session, "72030")[0]
-            premium_row = read_jpx_premium(session, "7203")[0]
+            flow_row = read_jpx_margin_flow(session, "72030")[-1]
+            premium_row = read_jpx_premium(session, "7203")[-1]
             assert flow_row.published_at == datetime(2026, 10, 2, 7, 30, tzinfo=UTC)
             assert premium_row.published_at == premium_observed
             assert premium_row.published_at > flow_row.published_at
