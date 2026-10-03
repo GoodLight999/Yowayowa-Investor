@@ -34,7 +34,7 @@ operator-ir = [
   "pdfminer.six>=20240506,<20270101",
 ]
 operator-jpx = [
-  "pymupdf>=1.26,<2",
+  "pdfminer.six>=20240506,<20270101",
   "openpyxl>=3.1,<4",
 ]
 operator-windows = [
@@ -60,8 +60,7 @@ dev = [
   # CI runs `uv sync --extra dev`, so the PDF extraction path must be present
   # under dev as well; otherwise the real-parser tests would silently skip.
   "pdfminer.six>=20240506,<20270101",
-  # Real public JPX parser tests must not silently skip in CI.
-  "pymupdf>=1.26,<2",
+  # Real public JPX XLSX parser tests must not silently skip in CI.
   "openpyxl>=3.1,<4",
 ]
 
