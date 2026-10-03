@@ -86,25 +86,37 @@ def provenance(
 
 
 def extract_jpx_pdf_lines(data: bytes) -> list[str]:
-    """Extract PDF text in content-stream order with PyMuPDF."""
+    """Extract table rows with the existing MIT-licensed pdfminer dependency.
+
+    The tight layout parameters reproduce JPX's visual row order rather than
+    pdfminer's default multi-column reading order. Empty lines are discarded;
+    the parsers still validate row identities and document-level counts.
+    """
 
     try:
-        import fitz
+        from pdfminer.high_level import extract_text
+        from pdfminer.layout import LAParams
     except ImportError as exc:  # pragma: no cover
         raise JpxPublicMarginParseError(
-            "PyMuPDF is required; install yowayowa-investor[operator-jpx]"
+            "pdfminer.six is required; install yowayowa-investor[operator-jpx]"
         ) from exc
     try:
-        document = fitz.open(stream=data, filetype="pdf")
+        text = extract_text(
+            io.BytesIO(data),
+            laparams=LAParams(
+                boxes_flow=None,
+                line_margin=0.1,
+                char_margin=1.0,
+                word_margin=0.1,
+            ),
+        )
     except Exception as exc:
         raise JpxPublicMarginParseError(
             f"invalid JPX PDF: {type(exc).__name__}: {exc}"
         ) from exc
-    if document.page_count < 1:
-        raise JpxPublicMarginParseError("JPX PDF has no pages")
-    lines: list[str] = []
-    for page in document:
-        lines.extend(line.strip() for line in page.get_text("text").splitlines())
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        raise JpxPublicMarginParseError("JPX PDF has no extractable text")
     return lines
 
 
