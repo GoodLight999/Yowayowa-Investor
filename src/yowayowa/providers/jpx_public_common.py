@@ -149,9 +149,9 @@ def parse_ratio_token(raw: str, *, field: str) -> float | None:
         raise JpxPublicMarginParseError(f"invalid percentage {field}: {raw!r}") from exc
 
 
-def load_xlsx(data: bytes):
+def load_xlsx(data: bytes) -> Any:
     try:
-        from openpyxl import load_workbook
+        from openpyxl import load_workbook  # type: ignore[import-untyped]
     except ImportError as exc:  # pragma: no cover
         raise JpxPublicMarginParseError(
             "openpyxl is required; install yowayowa-investor[operator-jpx]"
