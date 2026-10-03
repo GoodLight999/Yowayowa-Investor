@@ -65,7 +65,7 @@ class StockOhlcvRecord(BaseModel):
 
     symbol: str
     interval: Literal["1d"] = "1d"
-    currency: str = Field(default="USD", min_length=3, max_length=3)
+    currency: str = Field(min_length=3, max_length=3)
     provider: str
     source_url: str
     license_class: str = Field(description="LicenseClass value, e.g. personal_only")

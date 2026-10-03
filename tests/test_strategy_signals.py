@@ -15,6 +15,7 @@ def _history(symbol_index: int = 0, count: int = 62) -> list[dict[str, object]]:
             "as_of": start + timedelta(days=index),
             "close": 100 + symbol_index * 10 + index * (symbol_index + 1),
             "provider": "alpaca",
+            "currency": "USD",
             "source_url": "https://example.invalid/data",
             "license_class": "personal_only",
             "retrieved_at": "2026-10-01T00:00:00+00:00",

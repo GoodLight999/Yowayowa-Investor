@@ -16,7 +16,7 @@ from yowayowa.broker_models import (
     BrokerQuote,
     BrokerTransport,
 )
-from yowayowa.operator_bridge.excel import MacroRunner, WorksheetRunner
+from yowayowa.operator_bridge.excel import MacroRunner, PreparedMacroRunner, WorksheetRunner
 from yowayowa.providers.rakuten_ms2_rss import (
     RSS_CANCEL_ORDER_V_FUNCTION,
     RSS_STOCK_ORDER_V_FUNCTION,
@@ -65,10 +65,24 @@ class RakutenMs2RssLocalConnector:
     def preview_order(self, intent: BrokerOrderIntent) -> BrokerOrderPreview:
         return preview_cash_stock_order(intent)
 
-    def submit_order(self, intent: BrokerOrderIntent) -> BrokerOrderReceipt:
+    def submit_order(
+        self,
+        intent: BrokerOrderIntent,
+        *,
+        dispatch: Callable[[Callable[[], object]], object] | None = None,
+    ) -> BrokerOrderReceipt:
         rss_order_id = self._allocate_rss_order_id(intent.client_order_id)
         args = build_cash_stock_order_v_args(intent, rss_order_id=rss_order_id)
-        raw = self._macro_runner.run_macro(RSS_STOCK_ORDER_V_FUNCTION, args)
+
+        def invoke() -> object:
+            return self._macro_runner.run_macro(RSS_STOCK_ORDER_V_FUNCTION, args)
+
+        prepared = (
+            self._macro_runner.prepare_macro(RSS_STOCK_ORDER_V_FUNCTION, args)
+            if isinstance(self._macro_runner, PreparedMacroRunner)
+            else invoke
+        )
+        raw = dispatch(prepared) if dispatch is not None else prepared()
         message = None if raw is None else str(raw)
         rejected_markers = (
             "エラー",

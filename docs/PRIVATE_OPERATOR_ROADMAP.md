@@ -516,22 +516,33 @@ The system can answer:
 
 ### JPX daily margin balances
 
-JPX announced daily all-issue margin-balance publication beginning 2026-09-28 if migration proceeds.
+JPX began daily all-issue publication on 2026-09-28.
 
-**Status: weekly credit-margin scraping DONE (parser/persistence/API/CLI +
-`yowayowa-alpaca`-style weekly cron); the NEW daily all-issue feed is NOT
-STARTED until the live production format exists (from 2026-09-28).**
+**Status: IMPLEMENTED on the current integration branch — real free-production
+PDF/XLSX formats inspected, parser/persistence/API/CLI and deterministic
+supply-demand scans implemented; CI acceptance remains the delivery gate.**
 
-When the live production format exists:
-- inspect actual format and semantics;
-- ingest daily history with provenance;
-- persist sell/buy balances and changes;
-- capture negotiable/general vs standardized/system-margin breakdowns;
-- capture balance values and listed-share ratios where provided;
-- add instrument-page supply/demand history;
-- add screener/comparison fields;
-- add abrupt-change alerts;
-- snapshot values for later forward validation.
+Implemented:
+- ingest the free all-issue 01 PDF into the existing canonical JPX daily
+  balance history without collapsing exact five-character local codes;
+- preserve general vs standardized balances, JPY values, source-reported
+  changes and listed-share ratios;
+- ingest 日々公表 flags/balances, 品貸料, and same-day 信用取引売買比率;
+- cross-check same-date 日々公表 rows against the all-issue canonical balance;
+- content-address raw downloads and retain source / as-of / published-at /
+  retrieved-at provenance;
+- expose detail/flow/premium/watch reads plus transparent scans through API
+  and CLI;
+- fail closed on document-count drift, duplicate identifiers, arithmetic
+  identity failure and malformed/missing required values;
+- compute previous-day deltas correctly even when the caller asks for only the
+  latest point.
+
+Remaining product work:
+- instrument-page supply/demand visualization;
+- optional integration of JPX signals into the general screener/comparison
+  and AI evidence packet;
+- accumulate point-in-time history for forward outcome validation.
 
 ### Additional private Japan sources
 

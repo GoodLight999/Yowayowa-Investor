@@ -11,7 +11,7 @@ Personal research backtest; not investment advice. Prices are Binance daily BTCU
 
 ## Results
 
-All strategies use monthly rebalancing, next-open execution, and 15 bps estimated one-way transaction cost (10 bps commission + 5 bps slippage). Metrics are net of modeled costs. Annualization uses `annualization_days=365` for daily 24/7 crypto: CAGR, Sharpe, Sortino, gross turnover, bootstrap CAGR confidence intervals, and derived Calmar (including IS/OOS).
+The original four strategies use monthly rebalancing; `crypto_trend_dual_ma` uses daily decisions. All use next-open execution and 15 bps estimated one-way transaction cost (10 bps commission + 5 bps slippage). Metrics are net of modeled costs. Annualization uses `annualization_days=365` for daily 24/7 crypto: CAGR, Sharpe, Sortino, gross turnover, bootstrap CAGR confidence intervals, and derived Calmar (including IS/OOS).
 
 | Strategy | Status | CAGR | Sharpe | Sortino | Max drawdown | Calmar | Hit rate | Annual turnover | OOS CAGR | OOS Sharpe | Bootstrap 95% CI (CAGR) |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
@@ -19,6 +19,7 @@ All strategies use monthly rebalancing, next-open execution, and 15 bps estimate
 | Crypto inverse volatility | complete | 0.2340 | 0.6751 | 1.0145 | -0.5847 | 0.4003 | 0.4810 | 0.9904 | -0.3020 | -0.4651 | [-0.2559, 0.9926] |
 | Crypto 20-session mean reversion | complete | 0.2934 | 0.7547 | 1.1438 | -0.6015 | 0.4877 | 0.5022 | 0.7316 | -0.2947 | -0.4106 | [-0.2349, 1.1333] |
 | Crypto 1/N | complete | 0.4044 | 0.9102 | 1.3877 | -0.6015 | 0.6723 | 0.5168 | 0.7387 | -0.3192 | -0.4724 | [-0.1766, 1.2980] |
+| Crypto dual-MA trend filter | complete | 0.2185 | 0.7250 | 1.1056 | -0.3975 | 0.5498 | 0.2770 | 15.4627 | 0.3633 | 1.6000 | [-0.1572, 0.7580] |
 
 ## Warmup and selection
 
@@ -28,6 +29,7 @@ All strategies use monthly rebalancing, next-open execution, and 15 bps estimate
 | Crypto inverse volatility | 2023-04-01 | 90 |
 | Crypto 20-session mean reversion | 2023-02-01 | 31 |
 | Crypto 1/N | 2023-01-01 | 0 |
+| Crypto dual-MA trend filter | 2023-07-20 | 200 |
 
 - Low volatility requires 60 prior close returns (61 closes), for both selection and inverse-volatility weighting. No trade occurs before warmup; once ready, execution waits for the next scheduled monthly rebalance.
 - Momentum uses 253 prior closes and a 22-session skip; mean reversion uses 21 prior closes. These are session lookbacks, not calendar-month definitions.
@@ -35,6 +37,7 @@ All strategies use monthly rebalancing, next-open execution, and 15 bps estimate
 
 ## Method and caveats
 
+- `crypto_trend_dual_ma`: each asset independently passes only when close(t-1) > SMA200(t-1), using strictly prior closes. Fewer than 200 closes and equality fail closed. Daily active 1/N allocation is 50/50 with both active, 100% with one active, and 100% interest-free cash with none; explicit zero targets liquidate old holdings. Warmup and purge both use 200 sessions. See `BACKTEST_REPORT_S01_CRYPTO_TREND.md` for the Japanese evaluation and sensitivity analysis.
 - The P2 backtest engine is reused: prior-session signals, next-open execution, explicit transaction costs, portfolio weight drift, and purged chronological holdout/OOS calculation.
 - Metrics and provenance are preserved in `crypto_backtest_results.json`; bootstrap uses 1,000 IID daily-return resamples and fixed seed 20260930. Confidence intervals are descriptive, not forecast intervals.
 - Binance data is exchange-specific BTC/USDT and ETH/USDT, not USD/reference pricing. USDT is the numeraire, not converted to USD; no FX/depeg adjustment, funding, borrow, taxes, custody, exchange outages, or market impact beyond fixed slippage is modeled.
@@ -43,6 +46,8 @@ All strategies use monthly rebalancing, next-open execution, and 15 bps estimate
 
 ## Provenance
 
+- BTC: provider `binance`, source `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d`, license `personal_only`, retrieved 2026-09-30T02:48:27.373052Z, coverage 2023-01-01–2026-09-29.
+- ETH: provider `binance`, source `https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1d`, license `personal_only`, retrieved 2026-09-30T02:48:27.636646Z, coverage 2023-01-01–2026-09-29.
 - BTC: provider `binance`, source `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d`, license `personal_only`, retrieved 2026-09-30T02:48:27.373052Z, coverage 2023-01-01–2026-09-29.
 - ETH: provider `binance`, source `https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1d`, license `personal_only`, retrieved 2026-09-30T02:48:27.636646Z, coverage 2023-01-01–2026-09-29.
 - BTC: provider `binance`, source `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d`, license `personal_only`, retrieved 2026-09-30T02:48:27.373052Z, coverage 2023-01-01–2026-09-29.

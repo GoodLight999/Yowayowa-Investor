@@ -2726,6 +2726,7 @@ cli = [
 dev = [
     { name = "httpx2" },
     { name = "mypy" },
+    { name = "openpyxl" },
     { name = "pandas-stubs" },
     { name = "pdfminer-six" },
     { name = "pytest" },
@@ -2742,6 +2743,10 @@ operator-browser = [
     { name = "playwright" },
 ]
 operator-ir = [
+    { name = "pdfminer-six" },
+]
+operator-jpx = [
+    { name = "openpyxl" },
     { name = "pdfminer-six" },
 ]
 operator-windows = [
@@ -2765,12 +2770,15 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.17,<2" },
     { name = "numpy", specifier = ">=2.3,<3" },
+    { name = "openpyxl", marker = "extra == 'dev'", specifier = ">=3.1,<4" },
+    { name = "openpyxl", marker = "extra == 'operator-jpx'", specifier = ">=3.1,<4" },
     { name = "orjson", specifier = ">=3.11,<4" },
     { name = "pandas", specifier = ">=2.3,<3" },
     { name = "pandas-stubs", marker = "extra == 'dev'", specifier = ">=2.3.0" },
     { name = "pandas-ta-classic", specifier = ">=0.6,<1" },
     { name = "pdfminer-six", marker = "extra == 'dev'", specifier = ">=20240506,<20270101" },
     { name = "pdfminer-six", marker = "extra == 'operator-ir'", specifier = ">=20240506,<20270101" },
+    { name = "pdfminer-six", marker = "extra == 'operator-jpx'", specifier = ">=20240506,<20270101" },
     { name = "playwright", marker = "extra == 'operator-browser'", specifier = ">=1.26,<2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "pydantic", specifier = ">=2.11,<3" },
@@ -2794,4 +2802,4 @@ requires-dist = [
     { name = "xlwings", marker = "extra == 'operator-windows'", specifier = ">=0.33,<1" },
     { name = "yfinance", specifier = ">=1.0,<2" },
 ]
-provides-extras = ["cli", "serve", "xbrl", "operator-ir", "operator-windows", "operator-browser", "dev"]
+provides-extras = ["cli", "serve", "xbrl", "operator-ir", "operator-jpx", "operator-windows", "operator-browser", "dev"]

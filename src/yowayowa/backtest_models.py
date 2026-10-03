@@ -13,6 +13,7 @@ BacktestSignal = Literal[
     "equal_weight",
     "value_fundamental",
     "kiyohara_value",
+    "crypto_trend_dual_ma",
 ]
 RebalanceFrequency = Literal["daily", "weekly", "monthly"]
 ExecutionPrice = Literal["next_open"]
@@ -28,6 +29,7 @@ class BacktestStrategyDefinition(BaseModel):
     max_positions: int = Field(default=10, ge=1, le=100)
     weighting: Literal["equal", "inverse_volatility"] = "equal"
     execution: ExecutionPrice = "next_open"
+    lookback: int | None = Field(default=None, ge=2, le=1000)
 
     @model_validator(mode="after")
     def validate_universe(self) -> BacktestStrategyDefinition:

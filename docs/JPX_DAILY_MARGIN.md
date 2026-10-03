@@ -1,130 +1,198 @@
-# JPX daily margin balances (銘柄別信用取引残高・日次)
+# JPX daily margin data
 
-Status: **format confirmed, live data pending** (publication starts 2026-09-28).
+Status: **live free publications integrated and fixture-verified** (2026-10-03).
 
-This document records the observed publication facts and the ingestion contract
-for the JPX daily issue-level margin balance service. It satisfies the P4-A
-first report requirement (roadmap: "JPX daily margin balances") while live data
-does not exist yet.
+Yowayowa supports both the paid JPX総研 reference feed and the free
+JPX/TSE publications. They share the canonical daily all-issue balance table;
+publication-specific facts remain separate auxiliary facts with their own
+provenance and timestamps.
 
-## Publication facts (verified 2026-09-24)
+## Source families
 
-- Announced by JPX総研 on 2026-07-29:
-  https://www.jpx.co.jp/corporate/news/news-releases/6020/20260729-01.html
-- Coverage: all TSE-listed issues; balances as of the previous business day,
-  split sell/buy and general (一般) vs standardized/system (制度) margin.
-- Daily publication cadence: around 16:00 JST each business day, for the
-  previous trading day's application date (申込日).
-- Start date: 2026-09-28 (planned). Application-date data from 2026-09-25
-  onward. Amount (value) columns exist only for application dates from
-  2026-09-25 onward.
-- Access is a **paid JPX総研 contract** (TMI reference service or J-Quants Pro).
-  Distribution channels: website CSV download, FTP/SFTP data feed, Snowflake
-  sharing, and the J-Quants Pro REST API.
+### Free official publications
 
-## Official URLs
+- all-issue daily margin balance:
+  https://www.jpx.co.jp/markets/statistics-equities/margin/01.html
+- 日々公表銘柄等信用取引残高:
+  https://www.jpx.co.jp/markets/statistics-equities/margin/index.html
+- 品貸料:
+  https://www.jpx.co.jp/markets/statistics-equities/margin/02.html
+- 信用取引売買比率:
+  https://www.jpx.co.jp/markets/statistics-equities/margin/03.html
 
-- TMI reference page (service + fees + specs):
-  https://www.jpx.co.jp/markets/paid-info-equities/reference/05.html
-- Web usage manual (PDF):
-  https://www.jpx.co.jp/markets/paid-info-equities/reference/co3pgt0000004g0w-att/webhowto.pdf
-- File specification (PDF, covers Web & DFS files):
-  https://www.jpx.co.jp/markets/paid-info-equities/reference/t13vrt000001k10u-att/JPXReferenceWeb_2709.pdf
-- Sample file (dummy data, official format):
-  https://www.jpx.co.jp/markets/paid-info-equities/reference/t13vrt000001k10u-att/sample_outstanding_margin.zip
-- J-Quants Pro API reference (銘柄別信用取引残高・日次):
-  https://jpx.gitbook.io/j-quants-pro-ja/api-reference/margin_interest
-- Weekly predecessor (existing service, same issue-level concept):
-  https://www.jpx.co.jp/markets/paid-info-equities/reference/09.html
+The all-issue balance and watch-list publications are previous-business-day
+facts published around 16:00 JST. The margin-trading ratio publication carries
+same-day trading-flow observations and is published around 16:30 JST. Keep
+`as_of`, `published_at`, and `retrieved_at` distinct: a backtest must not
+use a balance before it was actually published.
 
-Do not confuse with the pre-existing 日々公表信用取引残高
-(`/markets/daily_margin_interest` on J-Quants, 個別銘柄信用取引残高表 on the
-JPX website), which only covers 日々公表銘柄 designated by TSE/日本証券金融.
-The new service covers **all** margin-tradable TSE issues daily.
+### Instant storage and availability
 
-## Observed CSV format (from official sample ZIP, 2026-09-24)
+`jpx_margin_aux` stores every instant as **naive UTC wall time** with its origin
+in `instant_tz`. SQLite has no offset-aware datetime type, so a `+09:00` JST
+publication instant would otherwise be persisted as bare local wall time and read
+back indistinguishable from UTC. A JPX 16:30 JST publication is 07:30Z; treating
+it as 16:30Z would let a signal that mixes JST publication times with UTC
+first-observed XLSX times be dated hours before one of its inputs was known. The
+read paths normalize before any comparison and emit offset-aware UTC, so
+`available_at` is the true latest *absolute* instant, not the largest clock
+reading. A row written before this convention carries no origin and is **refused**
+on read rather than silently relabeled UTC — re-ingest the artifact or migrate
+`instant_tz` explicitly.
 
-ZIP layout: `Web&DFS/OutstandingMarginTradingByIssue.csv` (English),
-`Web&DFS/JP_OutstandingMarginTradingByIssue.csv` (Japanese), `Readme.txt`.
-Web and DFS (FTP/SFTP) distributions use the identical file.
+### Immutable flow history
 
-- Encoding: English CSV is UTF-8 without BOM; Japanese CSV is CP932
-  (Shift-JIS family, verified byte-level). Line endings CRLF.
-- Header row present, then one row per issue, fully quoted.
-- 18 columns, Japanese names in parentheses:
+Each daily flow PDF repeats the two preceding trade dates. Immutability is
+decided by the observation frontier — the union of the persisted latest trade
+date and the artifact's own newest date — not by the artifact alone. Once a later
+trade date is persisted, a **stale artifact** reaching back only to an earlier
+date cannot rewrite that now-historical day: it replaces nothing, an identical
+overlap is preserved byte-for-byte including provenance, and a changed
+historical value fails closed with a full write rollback. Only the frontier date
+itself may be replaced, as a same-current-day correction.
 
-| # | EN header | JP header | Notes |
-|---|-----------|-----------|-------|
-| 1 | Record Date | 申込日 | YYYYMMDD (application date) |
-| 2 | Local Code | 銘柄コード | 5-char JPX code, e.g. `13010`, `135A0` |
-| 3 | Company Name (English) | 銘柄名 | |
-| 4 | ISIN | ISIN | 12-char |
-| 5 | Market Segment Code | 市場コード | e.g. `0111` Prime, `0109` ETF, `0113` Growth |
-| 6 | Margin Code | 銘柄種別コード | `1` 信用, `2` 貸借, `3` その他 |
-| 7 | Short Margin Outstanding (volume) | 売合計信用残高（株数） | |
-| 8 | Long Margin Outstanding (volume) | 買合計信用残高（株数） | |
-| 9 | Short Negotiable Margin Outstanding (volume) | 売一般信用残高（株数） | |
-| 10 | Short Standardized Margin Outstanding (volume) | 売制度信用残高（株数） | |
-| 11 | Long Negotiable Margin Outstanding (volume) | 買一般信用残高（株数） | |
-| 12 | Long Standardized Margin Outstanding (volume) | 買制度信用残高（株数） | |
-| 13 | Short Margin Outstanding (value) | 売合計信用残高（金額） | JPY; only ≥ 2026-09-25 |
-| 14 | Long Margin Outstanding (value) | 買合計信用残高（金額） | JPY; only ≥ 2026-09-25 |
-| 15 | Short Negotiable Margin Outstanding (value) | 売一般信用残高（金額） | JPY; only ≥ 2026-09-25 |
-| 16 | Short Standardized Margin Outstanding (value) | 売制度信用残高（金額） | JPY; only ≥ 2026-09-25 |
-| 17 | Long Negotiable Margin Outstanding (value) | 買一般信用残高（金額） | JPY; only ≥ 2026-09-25 |
-| 18 | Long Standardized Margin Outstanding (value) | 買制度信用残高（金額） | JPY; only ≥ 2026-09-25 |
+### Paid reference feed
 
-Sample row (dummy data): `20260423,13010,KYOKUYO CO.,LTD.,JP3257200000,0111,2,
-3000,7000,1000,2000,3000,4000,300000,700000,100000,200000,300000,400000`.
+JPX総研 TMI / J-Quants Pro remains supported by
+`providers/jpx_margin.py`. Its 18-column CSV contract is the canonical
+structured representation for:
 
-Amount fields equal volume × (dummy) price in the sample; the value columns are
-the JPY notional of the outstanding balance.
+- application date;
+- exact five-character JPX local code;
+- company / ISIN / market / margin code;
+- short and long totals;
+- negotiable (一般) and standardized (制度) components;
+- the corresponding JPY values.
 
-## J-Quants Pro API shape (same business data)
+Individual contracted access remains `PERSONAL_ONLY`.
 
-`GET https://api.jquants-pro.com/v2/markets/margin_interest` with `code` /
-`date` / `from`+`to` / `pagination_key`. Field names map 1:1 to the CSV columns
-(`Date`=申込日, `ShortMarginOutstanding`, `ShortMarginOutstandingValue`, ...).
-The API additionally returns `PublishedDate` (公表日, delivery date) and
-company/sector metadata. The website/API distinction is transport only; the
-ingestion contract below applies to both.
+## Live free all-issue PDF verification
 
-## License and mode policy
+The 2026-10-01 application-date production PDF was inspected against the real
+JPX artifact, not the pre-launch sample.
 
-- Contracted JPX reference data is **personal-only** for this operator
-  (`LicenseClass.PERSONAL_ONLY`). Per `LICENSE_POLICY.md`, individual J-Quants
-  access is not public redistribution permission.
-- Public mode must fail closed: the provider descriptor is not redistributable,
-  so `enforce_provider_policy` refuses it outside personal mode.
-- Credentials (J-Quants Pro idToken flow or TMI web session) are operator
-  configuration, never committed.
+Acceptance facts:
 
-## Ingestion contract (fail-closed rules)
+- declared total: 4,250 issues;
+- parsed: 4,250 issues;
+- unique exact local codes: 4,250;
+- Prime 1,553 / Standard 1,553 / Growth 595 / 投信等 549;
+- 貸借 2,671 / 制度信用 1,565 / その他 14;
+- every volume row satisfies total = general + standardized on both sides;
+- every value row satisfies the same identity;
+- legitimate non-zero fifth-character codes are preserved, including class
+  securities such as `25935`, `92015`, `92025`, `94345`, and `94346`.
 
-1. Missing data is not zero. Empty amount cells (pre-2026-09-25 dates) parse to
-   `None`, never `0`. An unparseable numeric cell fails the ingest.
-2. Consistency check per row: total = negotiable + standardized for both sides
-   (sell and buy). A violation fails the batch (upstream corruption or format
-   drift), it is never silently coerced.
-3. Provenance is stored per record batch: provider `jpx_reference`, source URL
-   (or transport note for FTP/API), retrieved-at, application date (as-of),
-   license class `personal_only`.
-4. Time series persistence: one row per (application_date, code); re-ingesting
-   the same application date replaces that date's rows atomically (JPX states
-   corrections are re-published; last write for an application date wins, and
-   the raw file snapshot is kept for forward validation).
-5. Derived fields (daily change, short/long ratio) are computed at read time
-   from persisted balances only when the previous application date exists;
-   otherwise `None`. Ratios with a zero denominator are `None`, never infinity.
-6. Abrupt-change alerts: computed at read time from the persisted series
-   (configurable relative-change threshold), never written back as data.
+Never normalize the five-character JPX local code to a four-character symbol:
+doing so can merge a common share with a preferred/class security.
 
-## Remaining before live ingestion (after 2026-09-28)
+The free PDF is parsed with `pdfminer.six` using layout parameters tuned for
+the JPX table. Parsing is still fail-closed: document-level issue counts,
+section counts, margin-type counts, row identities, duplicate codes, and
+required numeric cells must all validate before any canonical day is replaced.
 
-- [ ] Fetch the first real daily file/API response and re-verify encoding,
-      header names, and the total = general + system identity against real data.
-- [ ] Ingest real data end-to-end with provenance and snapshot the raw file.
-- [ ] Surface supply/demand history, screener fields, and abrupt-change alerts
-      on the instrument page once real history accumulates.
-- [ ] Keep the weekly predecessor snapshots for forward validation of the new
-      daily series.
+## Cross-source validation
+
+The same-date 日々公表 XLSX is used as an independent structured cross-check
+when the canonical all-issue day is already persisted. For the supplied
+2026-10-01 fixture, all 429 overlapping issue rows agreed on the corresponding
+non-null balance/change fields.
+
+The 品貸料 workbook uses four-character source codes. These are **not**
+blindly converted to a five-character key. Yowayowa resolves only the exact
+ordinary-code candidate `SOURCE_CODE + "0"` when that exact five-character
+code exists in the same-date canonical universe. Class securities are never
+guessed.
+
+A `*****` premium charge means missing/not-applicable data and remains
+`None`; a numeric zero remains zero.
+
+The 信用取引売買比率 PDF stores status markers such as `規`, `日`, and
+`○` separately from the issue name. A published `-` remains `None`.
+The supplied 2026-10-02 artifact contains 31 issues across three trade dates
+(93 observations).
+
+## Persistence and provenance
+
+`JpxMarginBalanceRecord` remains the canonical balance history, regardless of
+whether a day came from the paid structured feed or the free PDF.
+
+`JpxMarginAuxRecord` stores source-specific facts:
+
+- `balance_source`: last-writer provenance for a canonical public-PDF row;
+- `balance_detail`: source-reported daily changes, listed-share ratios,
+  section and source labels;
+- `watch`: 日々公表 / JSF state and its published balance detail;
+- `premium`: stock-loan shortage / premium-charge facts;
+- `flow`: same-day new-margin sales/purchase ratios.
+
+Raw downloaded artifacts are content-addressed under
+`YOWAYOWA_JPX_PUBLIC_RAW_CACHE_DIR` using SHA-256. Re-fetching or a source
+correction can therefore be audited and reparsed.
+
+A complete artifact is parsed and validated before the affected date is
+deleted/replaced. Persistence is transactional; malformed input must leave the
+previous successful day untouched.
+
+## Derived read semantics
+
+Daily changes derived from canonical persisted balances use the immediately
+preceding persisted application date. The API applies `limit` only after that
+previous row is resolved, so `limit=1` still returns a correct latest daily
+change when a prior day exists.
+
+Missing data is never zero. Ratios with a zero denominator remain `None`.
+
+## Supply/demand screens
+
+`services/jpx_margin_signals.py` exposes transparent, source-backed scans:
+
+- `crowded-long`
+- `crowded-short`
+- `long-unwind`
+- `short-cover`
+- `borrow-stress`
+- `flow-buy`
+- `flow-sell`
+- `buy-flow-divergence`
+- `sell-flow-divergence`
+- `squeeze-watch`
+- `watch-flags`
+
+There is no opaque composite score. Each result carries its measured inputs,
+reason, source provenance and `available_at`. In particular,
+`squeeze-watch` requires an observed, non-null same-date buy-flow value;
+missing flow can never qualify.
+
+## API / CLI
+
+API:
+
+- `POST /v1/jpx/public/sync`
+- `GET /v1/jpx/public/details/{code}`
+- `GET /v1/jpx/public/watch/{code}`
+- `GET /v1/jpx/public/premium/{source_code}`
+- `GET /v1/jpx/public/flow/{code}`
+- `GET /v1/jpx/public/signals/{signal}`
+
+CLI:
+
+- `yowayowa jpx-public-sync`
+- `yowayowa jpx-public-ingest FILE --kind ... --source-url ...`
+- `yowayowa jpx-margin-scan SIGNAL`
+- `yowayowa jpx-margin-detail CODE`
+- `yowayowa jpx-margin-watch CODE`
+- `yowayowa jpx-margin-flow CODE`
+- `yowayowa jpx-premium SOURCE_CODE`
+
+## License / mode policy
+
+The free artifacts are official public JPX/TSE publications, classified
+`OFFICIAL_PUBLIC` for provenance. That classification does **not** itself
+grant redistribution rights. Until explicit public-display/API rights are
+reviewed and recorded, the provider descriptor remains
+`redistributable=False` and Yowayowa serves these routes only in personal
+mode.
+
+The paid JPX reference feed remains `PERSONAL_ONLY`; its contract is a
+separate source-rights boundary.

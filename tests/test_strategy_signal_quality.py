@@ -23,6 +23,7 @@ def _history(count: int = 81) -> list[dict[str, Any]]:
             "as_of": (date(2025, 1, 1) + timedelta(days=index)).isoformat(),
             "close": 200.0 - index,
             "provider": "alpaca",
+            "currency": "USD",
             "source_url": f"https://example.invalid/data/{index}",
             "license_class": "personal_only",
             "retrieved_at": "2025-06-01T00:00:00Z",
@@ -146,7 +147,14 @@ def test_alert_evaluator_preserves_source_metadata_for_entire_lookback() -> None
     assert provenance["observations"] == [
         {
             key: row[key]
-            for key in ("provider", "source_url", "license_class", "retrieved_at", "as_of")
+            for key in (
+                "provider",
+                "source_url",
+                "license_class",
+                "retrieved_at",
+                "as_of",
+                "currency",
+            )
         }
         for row in rows[-21:]
     ]

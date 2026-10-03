@@ -85,6 +85,9 @@ class PortfolioRecord(Base):
 
 class PositionRecord(Base):
     __tablename__ = "positions"
+    __table_args__ = (
+        UniqueConstraint("portfolio_id", "symbol", name="uq_positions_portfolio_symbol"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     portfolio_id: Mapped[int] = mapped_column(
@@ -297,6 +300,65 @@ class JpxMarginBalanceRecord(Base):
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class JpxMarginAuxRecord(Base):
+    """Auxiliary facts from free JPX daily margin publications.
+
+    The canonical all-issue balances remain in JpxMarginBalanceRecord so paid
+    reference CSV and free public PDF share one history. This table stores
+    publication-specific facts that do not belong in that canonical schema:
+    source-reported daily changes/listed-share ratios, watch/regulatory flags,
+    premium charges, same-day flow ratios, and last-writer provenance.
+
+    Instant convention (AS-JPX-03): ``published_at`` and ``retrieved_at`` are
+    stored as **naive UTC wall time**. SQLite has no offset-aware datetime type,
+    so ``DateTime(timezone=True)`` silently discards the offset on bind and
+    returns a naive value that looks like the original local wall time. That
+    turned a JST 16:30 publication (an absolute 07:30Z) into a value that a
+    mixed-source ``max()`` would compare as if it were 16:30Z — exposing a
+    signal hours before every input was known. Normalizing on write and
+    re-attaching UTC on read makes persistence lossless and every comparison
+    in the read path an absolute-instant comparison.
+
+    A row written before this convention may hold naive *local* wall time
+    whose origin cannot be inferred from the column alone. Read paths therefore
+    go through :func:`yowayowa.services.jpx_public_margin.jpx_instant`, which
+    fails closed for such legacy rows instead of relabeling them as UTC.
+    """
+
+    __tablename__ = "jpx_margin_aux"
+    __table_args__ = (
+        UniqueConstraint(
+            "kind",
+            "as_of_date",
+            "key",
+            name="uq_jpx_margin_aux_kind_date_key",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(24), index=True)
+    as_of_date: Mapped[date] = mapped_column(Date, index=True)
+    key: Mapped[str] = mapped_column(String(96), index=True)
+    code: Mapped[str | None] = mapped_column(String(5), nullable=True, index=True)
+    source_code: Mapped[str | None] = mapped_column(String(8), nullable=True, index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    source_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # Instant origin of published_at/retrieved_at. Every row written under the
+    # normalized convention records "utc" because _store_instant has already
+    # converted the value; a second zone would only risk a double conversion.
+    # Nullable on purpose: rows written before this column existed keep NULL,
+    # which the read path reports as unknown origin rather than resolving. Such
+    # a row must be migrated explicitly or re-ingested, never relabeled.
+    instant_tz: Mapped[str | None] = mapped_column(
+        String(8), nullable=True, default="utc", server_default="utc"
+    )
+
+
 class CreditMarginWeeklyRecord(Base):
     """One code's weekly credit balances for one as-of week (P4-C).
 
@@ -443,7 +505,9 @@ def init_database(settings: Settings | None = None) -> None:
     _ensure_price_alert_notifications_table(_engine)
     Base.metadata.create_all(_engine)
     _ensure_positions_version(_engine)
+    _ensure_positions_unique_constraint(_engine)
     _ensure_screening_candidates_document_id(_engine)
+    _ensure_jpx_margin_aux_instant_tz(_engine)
 
 
 def _ensure_hypothesis_records_table(engine: Engine) -> None:
@@ -457,13 +521,31 @@ def _ensure_hypothesis_records_table(engine: Engine) -> None:
 
 
 def _ensure_price_alert_notifications_table(engine: Engine) -> None:
-    """WD-C5 additive, idempotent migration; existing alert data is untouched."""
+    """WD-C5 additive, idempotent; existing alert data is untouched."""
 
     Base.metadata.create_all(
         engine,
         tables=[cast(Table, PriceAlertNotificationRecord.__table__)],
         checkfirst=True,
     )
+
+
+def _ensure_jpx_margin_aux_instant_tz(engine: Engine) -> None:
+    """Additive migration for the JPX aux instant-origin column (AS-JPX-03).
+
+    ``create_all`` never alters an existing SQLite table, so an installation
+    created before ``instant_tz`` existed keeps the old schema. Adding the
+    column is enough: existing rows default to ``NULL``, which the read path
+    treats as *unknown origin* and refuses to interpret, rather than assuming
+    UTC. No existing timestamp is rewritten — silently relabeling a legacy
+    local-time wall time as UTC would be the exact defect being fixed.
+    """
+
+    columns = {column["name"] for column in inspect(engine).get_columns("jpx_margin_aux")}
+    if "instant_tz" in columns:
+        return
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE jpx_margin_aux ADD COLUMN instant_tz VARCHAR(8)"))
 
 
 def _ensure_positions_version(engine: Engine) -> None:
@@ -473,6 +555,104 @@ def _ensure_positions_version(engine: Engine) -> None:
         with engine.begin() as conn:
             conn.execute(
                 text("ALTER TABLE positions ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+            )
+
+
+def _ensure_positions_unique_constraint(engine: Engine) -> None:
+    """Idempotent migration to ensure UniqueConstraint on (portfolio_id, symbol).
+
+    For SQLite: create_all does not alter existing tables. We inspect existing
+    unique constraints on 'positions'. If the unique constraint is missing, we
+    verify there are no duplicate (portfolio_id, symbol) rows (failing closed if
+    any duplicates exist), and rebuild the table safely preserving all rows.
+    """
+    inspector = inspect(engine)
+    if "positions" not in inspector.get_table_names():
+        return
+
+    unique_constraints = inspector.get_unique_constraints("positions")
+    for uc in unique_constraints:
+        if set(uc.get("column_names") or []) == {"portfolio_id", "symbol"}:
+            return
+
+    # Check for duplicate entries before migration
+    with engine.connect() as conn:
+        dup_query = text(
+            "SELECT portfolio_id, symbol, COUNT(*) AS cnt "
+            "FROM positions "
+            "GROUP BY portfolio_id, symbol "
+            "HAVING cnt > 1"
+        )
+        duplicates = conn.execute(dup_query).fetchall()
+        if duplicates:
+            detail = ", ".join(
+                f"(portfolio_id={row[0]}, symbol={row[1]!r}, count={row[2]})" for row in duplicates
+            )
+            raise RuntimeError(
+                "Cannot apply unique constraint to positions: existing duplicates found: "
+                f"{detail}. Manual resolution required."
+            )
+
+    dialect = engine.dialect.name
+    if dialect == "sqlite":
+        columns = {c["name"] for c in inspector.get_columns("positions")}
+        has_version = "version" in columns
+        with engine.begin() as conn:
+            conn.execute(text("PRAGMA foreign_keys = OFF"))
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE positions_new (
+                        id INTEGER NOT NULL PRIMARY KEY,
+                        portfolio_id INTEGER NOT NULL,
+                        symbol VARCHAR(32) NOT NULL,
+                        quantity NUMERIC(28, 10) NOT NULL,
+                        average_cost NUMERIC(28, 10),
+                        currency VARCHAR(3) NOT NULL,
+                        version INTEGER NOT NULL DEFAULT 1,
+                        FOREIGN KEY(portfolio_id) REFERENCES portfolios (id) ON DELETE CASCADE,
+                        CONSTRAINT uq_positions_portfolio_symbol UNIQUE (portfolio_id, symbol)
+                    )
+                    """
+                )
+            )
+            if has_version:
+                conn.execute(
+                    text(
+                        "INSERT INTO positions_new "
+                        "(id, portfolio_id, symbol, quantity, average_cost, currency, version)\n"
+                        "SELECT id, portfolio_id, symbol, quantity, average_cost, currency, "
+                        "version FROM positions"
+                    )
+                )
+            else:
+                conn.execute(
+                    text(
+                        "INSERT INTO positions_new "
+                        "(id, portfolio_id, symbol, quantity, average_cost, currency, version)\n"
+                        "SELECT id, portfolio_id, symbol, quantity, average_cost, currency, 1 "
+                        "FROM positions"
+                    )
+                )
+            conn.execute(text("DROP TABLE positions"))
+            conn.execute(text("ALTER TABLE positions_new RENAME TO positions"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_positions_portfolio_id "
+                    "ON positions (portfolio_id)"
+                )
+            )
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_positions_symbol ON positions (symbol)")
+            )
+            conn.execute(text("PRAGMA foreign_keys = ON"))
+    else:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE positions ADD CONSTRAINT uq_positions_portfolio_symbol "
+                    "UNIQUE (portfolio_id, symbol)"
+                )
             )
 
 

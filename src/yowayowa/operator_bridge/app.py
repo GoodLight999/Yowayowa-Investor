@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import ipaddress
+import json
 import secrets
 from pathlib import Path
 
@@ -20,8 +22,11 @@ from yowayowa.broker_models import (
 from yowayowa.config import Settings
 from yowayowa.operator_bridge.excel import XlwingsMacroRunner
 from yowayowa.operator_bridge.rakuten import RakutenMs2RssLocalConnector
-from yowayowa.operator_bridge.state import SQLiteOperatorState
-from yowayowa.services.broker_execution import evaluate_broker_execution
+from yowayowa.operator_bridge.state import BrokerDispatchBlocked, SQLiteOperatorState
+from yowayowa.services.broker_execution import (
+    BrokerExecutionBlocked,
+    evaluate_broker_execution,
+)
 
 
 def _loopback_host(host: str) -> bool:
@@ -33,6 +38,13 @@ def _loopback_host(host: str) -> bool:
         return False
 
 
+def _intent_hash(intent: BrokerOrderIntent) -> str:
+    data = intent.model_dump(mode="json")
+    data.pop("reason", None)
+    serialized = json.dumps(data, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(serialized).hexdigest()
+
+
 def create_operator_bridge_app(
     *,
     token: str,
@@ -42,6 +54,11 @@ def create_operator_bridge_app(
 ) -> FastAPI:
     if not token:
         raise ValueError("Operator Bridge token is required")
+    if (
+        getattr(state, "max_orders_per_day", None) is None
+        and settings.broker_max_orders_per_day is not None
+    ):
+        state.max_orders_per_day = settings.broker_max_orders_per_day
     app = FastAPI(
         title="Yowayowa Operator Bridge",
         docs_url=None,
@@ -85,37 +102,94 @@ def create_operator_bridge_app(
         dependencies=[Depends(authorize)],
     )
     def submit_order(intent: BrokerOrderIntent) -> BrokerOrderReceipt:
-        prior = state.latest_order_result(intent.client_order_id)
-        if prior is not None:
-            return BrokerOrderReceipt.model_validate(prior)
+        intent_hash = _intent_hash(intent)
+        status_res, receipt_data = state.reserve_order_submission(
+            intent.client_order_id,
+            intent_hash,
+            max_orders_per_day=settings.broker_max_orders_per_day,
+        )
+        if status_res == "MISMATCH":
+            raise HTTPException(
+                status_code=409,
+                detail=["Order intent payload mismatch for existing client_order_id"],
+            )
+        if status_res == "ALREADY_COMPLETED" and receipt_data:
+            return BrokerOrderReceipt.model_validate(receipt_data)
+        if status_res == "UNCERTAIN_OR_IN_FLIGHT":
+            raise HTTPException(
+                status_code=409,
+                detail=[
+                    "Order submission in progress or outcome uncertain; reconciliation required"
+                ],
+            )
+        if status_res == "DAILY_LIMIT_EXCEEDED":
+            raise HTTPException(
+                status_code=409,
+                detail=["Daily order count limit reached"],
+            )
+        if status_res != "RESERVED":
+            raise HTTPException(
+                status_code=409,
+                detail=[f"Unexpected order reservation state: {status_res}"],
+            )
 
         preview = connector.preview_order(intent)
+        raw_count = state.count_submission_attempts_today()
+        is_today = state.has_today_reservation(intent.client_order_id)
+        orders_submitted_today = max(0, raw_count - 1) if is_today else raw_count
         decision = evaluate_broker_execution(
             settings,
             preview,
-            orders_submitted_today=state.count_submission_attempts_today(),
+            orders_submitted_today=orders_submitted_today,
         )
         if not decision.allowed:
+            state.record_submission_failure(intent.client_order_id, status="REJECTED")
             raise HTTPException(status_code=409, detail=list(decision.reasons))
 
-        state.append_audit(
-            "order_submit_attempt",
-            client_order_id=intent.client_order_id,
-            payload={
-                "broker": preview.broker,
-                "transport": preview.transport,
-                "intent": intent.model_dump(mode="json"),
-                "estimated_notional": (
-                    str(preview.estimated_notional)
-                    if preview.estimated_notional is not None
-                    else None
-                ),
-                "currency": preview.currency,
-            },
-        )
+        if not is_today:
+            try:
+                state.update_reservation_day(
+                    intent.client_order_id,
+                    state.current_day,
+                )
+            except BrokerExecutionBlocked as exc:
+                state.record_submission_failure(intent.client_order_id, status="REJECTED")
+                raise HTTPException(status_code=409, detail=list(exc.args)) from exc
+
         try:
-            receipt = connector.submit_order(intent)
+            state.append_audit(
+                "order_submit_attempt",
+                client_order_id=intent.client_order_id,
+                payload={
+                    "broker": preview.broker,
+                    "transport": preview.transport,
+                    "intent": intent.model_dump(mode="json"),
+                    "estimated_notional": (
+                        str(preview.estimated_notional)
+                        if preview.estimated_notional is not None
+                        else None
+                    ),
+                    "currency": preview.currency,
+                },
+            )
+        except BrokerExecutionBlocked as exc:
+            state.record_submission_failure(intent.client_order_id, status="REJECTED")
+            raise HTTPException(status_code=409, detail=list(exc.args)) from exc
+
+        try:
+            receipt = connector.submit_order(
+                intent,
+                dispatch=lambda invoke: state.dispatch_submission(
+                    intent.client_order_id,
+                    invoke,
+                    max_orders_per_day=settings.broker_max_orders_per_day,
+                ),
+            )
+        except BrokerDispatchBlocked as exc:
+            state.record_submission_failure(intent.client_order_id, status="REJECTED")
+            raise HTTPException(status_code=409, detail=list(exc.args)) from exc
         except Exception as exc:
+            state.record_submission_failure(intent.client_order_id, status="UNKNOWN")
             state.append_audit(
                 "order_submit_error",
                 client_order_id=intent.client_order_id,
@@ -123,6 +197,7 @@ def create_operator_bridge_app(
             )
             raise HTTPException(status_code=502, detail="Broker submission failed") from exc
 
+        state.record_submission_success(intent.client_order_id, receipt.model_dump(mode="json"))
         state.append_audit(
             "order_submit_result",
             client_order_id=intent.client_order_id,

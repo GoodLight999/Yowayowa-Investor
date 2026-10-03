@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from yowayowa.db import (
@@ -105,29 +106,52 @@ def upsert_position(
     target_expected_version = (
         expected_version if expected_version is not None else payload.expected_version
     )
-    if existing is None:
-        if target_expected_version is not None and target_expected_version != 0:
-            session.rollback()
-            raise PositionVersionConflictError(f"position {symbol} was removed or changed")
-        row.positions.append(
-            PositionRecord(
-                symbol=symbol,
-                quantity=payload.quantity,
-                average_cost=payload.average_cost,
-                currency=currency,
-                version=1,
+    try:
+        if existing is None:
+            if target_expected_version is not None and target_expected_version != 0:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was removed or changed")
+            row.positions.append(
+                PositionRecord(
+                    symbol=symbol,
+                    quantity=payload.quantity,
+                    average_cost=payload.average_cost,
+                    currency=currency,
+                    version=1,
+                )
             )
-        )
-    else:
-        if target_expected_version is not None and existing.version != target_expected_version:
-            session.rollback()
-            raise PositionVersionConflictError(f"position {symbol} was changed")
-        existing.quantity = payload.quantity
-        existing.average_cost = payload.average_cost
-        existing.currency = currency
-        existing.version = (existing.version or 1) + 1
-    row.updated_at = utcnow()
-    session.commit()
+        else:
+            if target_expected_version is not None and existing.version != target_expected_version:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was changed")
+            target_version = existing.version or 1
+            result = session.execute(
+                update(PositionRecord)
+                .where(
+                    PositionRecord.id == existing.id,
+                    PositionRecord.version == target_version,
+                )
+                .values(
+                    quantity=payload.quantity,
+                    average_cost=payload.average_cost,
+                    currency=currency,
+                    version=target_version + 1,
+                )
+            )
+            result_rowcount: int | None = result.rowcount  # type: ignore[attr-defined]
+            if result_rowcount != 1:
+                session.rollback()
+                raise PositionVersionConflictError(f"position {symbol} was changed")
+            session.expire(existing)
+        row.updated_at = utcnow()
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise PositionVersionConflictError(f"position {symbol} conflict / already exists") from exc
+    except Exception:
+        session.rollback()
+        raise
+    session.expire_all()
     session.refresh(row)
     return _to_model(row)
 
@@ -147,35 +171,68 @@ def bulk_upsert_positions(
         currency = normalize_currency(item.currency)
         normalized[symbol] = (item, currency)
 
-    if payload.replace:
-        row.positions.clear()
-    existing_by_symbol = {position.symbol: position for position in row.positions}
-    for symbol, (item, currency) in normalized.items():
-        existing = existing_by_symbol.get(symbol)
-        if existing is None:
-            if item.expected_version is not None and item.expected_version != 0:
+    try:
+        existing_by_symbol = {position.symbol: position for position in row.positions}
+
+        if payload.replace:
+            # Delete positions not present in new payload and flush deletions
+            # before any new inserts to avoid unique constraint collisions.
+            to_remove = [p for p in list(row.positions) if p.symbol not in normalized]
+            for p in to_remove:
+                row.positions.remove(p)
+            if to_remove:
+                session.flush()
+            existing_by_symbol = {position.symbol: position for position in row.positions}
+
+        for symbol, (item, currency) in normalized.items():
+            existing = existing_by_symbol.get(symbol)
+            if existing is None:
+                if item.expected_version is not None and item.expected_version != 0:
+                    session.rollback()
+                    raise PositionVersionConflictError(f"position {symbol} was removed or changed")
+            elif item.expected_version is not None and existing.version != item.expected_version:
                 session.rollback()
-                raise PositionVersionConflictError(f"position {symbol} was removed or changed")
-        elif item.expected_version is not None and existing.version != item.expected_version:
-            session.rollback()
-            raise PositionVersionConflictError(f"position {symbol} was changed")
-        if existing is None:
-            row.positions.append(
-                PositionRecord(
-                    symbol=symbol,
-                    quantity=item.quantity,
-                    average_cost=item.average_cost,
-                    currency=currency,
-                    version=1,
+                raise PositionVersionConflictError(f"position {symbol} was changed")
+            if existing is None:
+                row.positions.append(
+                    PositionRecord(
+                        symbol=symbol,
+                        quantity=item.quantity,
+                        average_cost=item.average_cost,
+                        currency=currency,
+                        version=1,
+                    )
                 )
-            )
-        else:
-            existing.quantity = item.quantity
-            existing.average_cost = item.average_cost
-            existing.currency = currency
-            existing.version = (existing.version or 1) + 1
-    row.updated_at = utcnow()
-    session.commit()
+            else:
+                target_version = existing.version or 1
+                result = session.execute(
+                    update(PositionRecord)
+                    .where(
+                        PositionRecord.id == existing.id,
+                        PositionRecord.version == target_version,
+                    )
+                    .values(
+                        quantity=item.quantity,
+                        average_cost=item.average_cost,
+                        currency=currency,
+                        version=target_version + 1,
+                    )
+                )
+                result_rowcount: int | None = result.rowcount  # type: ignore[attr-defined]
+                if result_rowcount != 1:
+                    session.rollback()
+                    raise PositionVersionConflictError(f"position {symbol} was changed")
+                session.expire(existing)
+
+        row.updated_at = utcnow()
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise PositionVersionConflictError("position conflict / concurrent modification") from exc
+    except Exception:
+        session.rollback()
+        raise
+    session.expire_all()
     session.refresh(row)
     return _to_model(row)
 
