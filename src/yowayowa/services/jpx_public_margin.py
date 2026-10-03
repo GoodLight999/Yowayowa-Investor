@@ -583,6 +583,14 @@ def ingest_jpx_margin_flow_pdf(
             },
         )
 
+    def immutable_flow_observation(payload: dict[str, object]) -> tuple[object, ...]:
+        return (
+            payload.get("new_sales_ratio_pct"),
+            payload.get("new_purchase_ratio_pct"),
+            payload.get("sales_star"),
+            payload.get("purchase_star"),
+        )
+
     try:
         for row in rows:
             if row.trade_date not in historical_dates:
@@ -590,7 +598,9 @@ def ingest_jpx_margin_flow_pdf(
             existing = existing_by_key.get((row.trade_date, row.code))
             if existing is None:
                 continue
-            if existing.payload != flow_payload(row):
+            if immutable_flow_observation(existing.payload) != immutable_flow_observation(
+                flow_payload(row)
+            ):
                 raise JpxPublicMarginParseError(
                     f"historical flow observation changed: {row.trade_date.isoformat()} {row.code}"
                 )
