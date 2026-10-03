@@ -7,10 +7,10 @@ from io import BytesIO
 
 import pytest
 from openpyxl import Workbook
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from yowayowa.db import Base, JpxMarginBalanceRecord
+from yowayowa.db import Base, JpxMarginAuxRecord, JpxMarginBalanceRecord
 from yowayowa.providers import jpx_public_balance as balance_parser
 from yowayowa.providers import jpx_public_flow as flow_parser
 from yowayowa.providers.jpx_public_margin import (
@@ -143,7 +143,7 @@ def _flow_lines(
         "10.0%",
         purchase,
         "9.0%",
-        purchase,
+        "35.0%",
         "8.0%",
         "30.0%",
     ]
@@ -268,7 +268,158 @@ def test_flow_parser_separates_status_marker_and_preserves_missing(
     assert latest.company_name == "テスト株式会社　普通株式"
     assert latest.new_purchase_ratio_pct is None
     assert latest.trade_date == date(2026, 10, 2)
+    assert latest.published_at.isoformat() == "2026-10-02T16:30:00+09:00"
+    assert rows[1].published_at.isoformat() == "2026-10-01T16:30:00+09:00"
+    assert rows[2].published_at.isoformat() == "2026-09-30T16:30:00+09:00"
 
+
+
+def _flow_lines_shifted(
+    *,
+    latest_purchase: str = "45.0%",
+    prior_purchase: str = "40.0%",
+    oldest_purchase: str = "35.0%",
+) -> list[str]:
+    return [
+        "2026年10月3日売買分",
+        "2026年10月2日売買分",
+        "2026年10月1日売買分",
+        "日",
+        "テスト株式会社　普通株式",
+        "プライム",
+        "貸",
+        "72030",
+        "11.0%",
+        latest_purchase,
+        "10.0%",
+        prior_purchase,
+        "9.0%",
+        oldest_purchase,
+    ]
+
+
+def test_flow_reingest_preserves_overlapping_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    later = datetime(2026, 10, 3, 8, 0, tzinfo=UTC)
+    try:
+        with Session(engine) as session:
+            monkeypatch.setattr(
+                flow_parser,
+                "extract_jpx_pdf_lines",
+                lambda _: _flow_lines("40.0%"),
+            )
+            ingest_jpx_margin_flow_pdf(
+                session,
+                b"flow-first",
+                source_url=SOURCE,
+                retrieved_at=RETRIEVED,
+            )
+            original = session.scalar(
+                select(JpxMarginAuxRecord).where(
+                    JpxMarginAuxRecord.kind == "flow",
+                    JpxMarginAuxRecord.as_of_date == date(2026, 10, 2),
+                    JpxMarginAuxRecord.code == "72030",
+                )
+            )
+            assert original is not None
+            original_sha = original.source_sha256
+            original_retrieved = original.retrieved_at
+
+            monkeypatch.setattr(
+                flow_parser,
+                "extract_jpx_pdf_lines",
+                lambda _: _flow_lines_shifted(),
+            )
+            ingest_jpx_margin_flow_pdf(
+                session,
+                b"flow-second",
+                source_url=SOURCE,
+                retrieved_at=later,
+            )
+
+            preserved = session.scalar(
+                select(JpxMarginAuxRecord).where(
+                    JpxMarginAuxRecord.kind == "flow",
+                    JpxMarginAuxRecord.as_of_date == date(2026, 10, 2),
+                    JpxMarginAuxRecord.code == "72030",
+                )
+            )
+            newest = session.scalar(
+                select(JpxMarginAuxRecord).where(
+                    JpxMarginAuxRecord.kind == "flow",
+                    JpxMarginAuxRecord.as_of_date == date(2026, 10, 3),
+                    JpxMarginAuxRecord.code == "72030",
+                )
+            )
+            assert preserved is not None
+            assert newest is not None
+            assert preserved.source_sha256 == original_sha
+            assert preserved.retrieved_at == original_retrieved
+            assert preserved.published_at is not None
+            assert preserved.published_at.isoformat() == "2026-10-02T16:30:00+09:00"
+            assert newest.retrieved_at == later
+            assert newest.published_at is not None
+            assert newest.published_at.isoformat() == "2026-10-03T16:30:00+09:00"
+    finally:
+        engine.dispose()
+
+
+def test_flow_reingest_rejects_changed_historical_observation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    later = datetime(2026, 10, 3, 8, 0, tzinfo=UTC)
+    try:
+        with Session(engine) as session:
+            monkeypatch.setattr(
+                flow_parser,
+                "extract_jpx_pdf_lines",
+                lambda _: _flow_lines("40.0%"),
+            )
+            ingest_jpx_margin_flow_pdf(
+                session,
+                b"flow-first",
+                source_url=SOURCE,
+                retrieved_at=RETRIEVED,
+            )
+
+            monkeypatch.setattr(
+                flow_parser,
+                "extract_jpx_pdf_lines",
+                lambda _: _flow_lines_shifted(prior_purchase="41.0%"),
+            )
+            with pytest.raises(ValueError, match="historical flow observation changed"):
+                ingest_jpx_margin_flow_pdf(
+                    session,
+                    b"flow-mutated-history",
+                    source_url=SOURCE,
+                    retrieved_at=later,
+                )
+
+            newest = session.scalar(
+                select(JpxMarginAuxRecord).where(
+                    JpxMarginAuxRecord.kind == "flow",
+                    JpxMarginAuxRecord.as_of_date == date(2026, 10, 3),
+                    JpxMarginAuxRecord.code == "72030",
+                )
+            )
+            preserved = session.scalar(
+                select(JpxMarginAuxRecord).where(
+                    JpxMarginAuxRecord.kind == "flow",
+                    JpxMarginAuxRecord.as_of_date == date(2026, 10, 2),
+                    JpxMarginAuxRecord.code == "72030",
+                )
+            )
+            assert newest is None
+            assert preserved is not None
+            assert preserved.payload["new_purchase_ratio_pct"] == 40.0
+            assert preserved.retrieved_at == RETRIEVED
+    finally:
+        engine.dispose()
 
 def test_discovery_rejects_cross_host_and_uses_matching_artifact() -> None:
     html = """
