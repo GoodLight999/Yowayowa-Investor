@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -133,7 +134,10 @@ def premium_history(
     _require_public_margin_source()
     normalized = source_code.strip().upper()
     if not re.fullmatch(r"[0-9]{3}[0-9A-Z]", normalized):
-        raise HTTPException(status_code=422, detail="source_code must be a 4-character JPX code")
+        raise HTTPException(
+            status_code=422,
+            detail="source_code must be a 4-character JPX code",
+        )
     session = get_session()
     try:
         return read_jpx_premium(session, normalized, limit=limit)
