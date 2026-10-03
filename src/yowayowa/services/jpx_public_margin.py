@@ -540,12 +540,81 @@ def ingest_jpx_margin_flow_pdf(
     source_url: str,
     retrieved_at: datetime | None = None,
 ) -> JpxPublicIngestResult:
+    """Persist flow observations without rewriting already-published history.
+
+    Each daily PDF repeats up to two earlier trade dates. Those overlapping
+    historical observations are immutable point-in-time facts: an identical
+    re-publication is ignored, while a changed historical value fails closed.
+    Only the newest trade date in the artifact may be replaced as a same-day
+    correction.
+    """
+
     retrieved = retrieved_at or datetime.now(UTC)
     rows = parse_jpx_margin_flow_pdf(data, source_url=source_url, retrieved_at=retrieved)
     dates = {row.trade_date for row in rows}
+    latest_date = max(dates)
+    historical_dates = dates - {latest_date}
+
+    existing_rows = list(
+        session.scalars(
+            select(JpxMarginAuxRecord).where(
+                JpxMarginAuxRecord.kind == "flow",
+                JpxMarginAuxRecord.as_of_date.in_(dates),
+            )
+        )
+    )
+    existing_by_key = {(row.as_of_date, row.key): row for row in existing_rows}
+
+    def flow_payload(row: JpxMarginFlow) -> dict[str, object]:
+        return _payload(
+            row,
+            exclude={
+                "trade_date",
+                "code",
+                "published_at",
+                "retrieved_at",
+                "source_sha256",
+                "provenance",
+            },
+        )
+
     try:
-        replace_aux_dates(session, kind="flow", dates=dates)
         for row in rows:
+            if row.trade_date not in historical_dates:
+                continue
+            existing = existing_by_key.get((row.trade_date, row.code))
+            if existing is None:
+                continue
+            if existing.payload != flow_payload(row):
+                raise JpxPublicMarginParseError(
+                    "historical flow observation changed: "
+                    f"{row.trade_date.isoformat()} {row.code}"
+                )
+
+        latest_rows = [row for row in rows if row.trade_date == latest_date]
+        existing_latest = {
+            row.key: row
+            for row in existing_rows
+            if row.as_of_date == latest_date
+        }
+        incoming_latest = {row.code: flow_payload(row) for row in latest_rows}
+        latest_changed = set(existing_latest) != set(incoming_latest) or any(
+            existing_latest[code].payload != payload
+            for code, payload in incoming_latest.items()
+            if code in existing_latest
+        )
+        if latest_changed:
+            replace_aux_dates(session, kind="flow", dates={latest_date})
+
+        for row in rows:
+            payload = flow_payload(row)
+            existing = existing_by_key.get((row.trade_date, row.code))
+
+            if row.trade_date in historical_dates and existing is not None:
+                continue
+            if row.trade_date == latest_date and not latest_changed and existing is not None:
+                continue
+
             _add_aux(
                 session,
                 kind="flow",
@@ -553,17 +622,7 @@ def ingest_jpx_margin_flow_pdf(
                 key=row.code,
                 code=row.code,
                 source_code=None,
-                payload=_payload(
-                    row,
-                    exclude={
-                        "trade_date",
-                        "code",
-                        "published_at",
-                        "retrieved_at",
-                        "source_sha256",
-                        "provenance",
-                    },
-                ),
+                payload=payload,
                 source_url=source_url,
                 source_sha256=row.source_sha256,
                 published_at=row.published_at,
