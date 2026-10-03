@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from io import BytesIO
 
-import pytest
 from openpyxl import Workbook
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
