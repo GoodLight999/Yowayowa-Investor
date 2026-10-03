@@ -35,7 +35,8 @@ from yowayowa.api.hypothesis_routes import router as hypotheses_router
 from yowayowa.api.import_routes import router as import_router
 from yowayowa.api.institutional_routes import router as institutional_router
 from yowayowa.api.ir_routes import router as ir_router
-from yowayowa.api.jpx_routes import router as jpx_router\nfrom yowayowa.api.jpx_public_routes import router as jpx_public_router
+from yowayowa.api.jpx_public_routes import router as jpx_public_router
+from yowayowa.api.jpx_routes import router as jpx_router
 from yowayowa.api.license_routes import router as license_router
 from yowayowa.api.macro_routes import router as macro_router
 from yowayowa.api.portfolio_sizing_routes import router as portfolio_sizing_router
@@ -226,7 +227,8 @@ app.include_router(private_router)
 app.include_router(broker_read_router)
 app.include_router(broker_execution_router)
 app.include_router(ir_router)
-app.include_router(jpx_router)\napp.include_router(jpx_public_router)
+app.include_router(jpx_router)
+app.include_router(jpx_public_router)
 app.include_router(credit_router)
 app.include_router(crypto_router)
 app.include_router(stock_router)
