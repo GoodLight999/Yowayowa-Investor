@@ -51,9 +51,7 @@ def parse_date(year: str, month: str, day: str) -> date:
     try:
         return date(int(year), int(month), int(day))
     except ValueError as exc:
-        raise JpxPublicMarginParseError(
-            f"invalid JPX date {year}/{month}/{day}"
-        ) from exc
+        raise JpxPublicMarginParseError(f"invalid JPX date {year}/{month}/{day}") from exc
 
 
 def publication_at(day: date, hour: int, minute: int) -> datetime:
@@ -111,9 +109,7 @@ def extract_jpx_pdf_lines(data: bytes) -> list[str]:
             ),
         )
     except Exception as exc:
-        raise JpxPublicMarginParseError(
-            f"invalid JPX PDF: {type(exc).__name__}: {exc}"
-        ) from exc
+        raise JpxPublicMarginParseError(f"invalid JPX PDF: {type(exc).__name__}: {exc}") from exc
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines:
         raise JpxPublicMarginParseError("JPX PDF has no extractable text")
@@ -163,15 +159,11 @@ def load_xlsx(data: bytes):
     try:
         return load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     except Exception as exc:
-        raise JpxPublicMarginParseError(
-            f"invalid JPX XLSX: {type(exc).__name__}: {exc}"
-        ) from exc
+        raise JpxPublicMarginParseError(f"invalid JPX XLSX: {type(exc).__name__}: {exc}") from exc
 
 
 def xlsx_int(raw: Any, *, allow_missing: bool, field: str) -> int | None:
-    if raw is None or (
-        isinstance(raw, str) and raw.strip() in {"-", "－", "*", "*****", ""}
-    ):
+    if raw is None or (isinstance(raw, str) and raw.strip() in {"-", "－", "*", "*****", ""}):
         if allow_missing:
             return None
         raise JpxPublicMarginParseError(f"missing required {field}: {raw!r}")
@@ -191,9 +183,7 @@ def required_xlsx_int(raw: Any, *, field: str) -> int:
 
 
 def xlsx_float(raw: Any, *, allow_missing: bool, field: str) -> float | None:
-    if raw is None or (
-        isinstance(raw, str) and raw.strip() in {"-", "－", "*", "*****", ""}
-    ):
+    if raw is None or (isinstance(raw, str) and raw.strip() in {"-", "－", "*", "*****", ""}):
         if allow_missing:
             return None
         raise JpxPublicMarginParseError(f"missing required {field}: {raw!r}")
