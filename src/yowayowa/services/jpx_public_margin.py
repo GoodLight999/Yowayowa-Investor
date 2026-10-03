@@ -55,9 +55,7 @@ class _AnchorCollector(HTMLParser):
         super().__init__()
         self.hrefs: list[str] = []
 
-    def handle_starttag(
-        self, tag: str, attrs: list[tuple[str, str | None]]
-    ) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.casefold() != "a":
             return
         for name, value in attrs:
@@ -65,9 +63,7 @@ class _AnchorCollector(HTMLParser):
                 self.hrefs.append(value)
 
 
-def discover_jpx_artifact_url(
-    html: str, *, page_url: str, extension: str
-) -> str:
+def discover_jpx_artifact_url(html: str, *, page_url: str, extension: str) -> str:
     """Discover the latest artifact from the official page, preserving DOM order."""
 
     parser = _AnchorCollector()
@@ -80,9 +76,7 @@ def discover_jpx_artifact_url(
             continue
         if parsed.path.casefold().endswith(extension.casefold()):
             return candidate
-    raise JpxPublicMarginParseError(
-        f"no {extension} artifact link found on JPX page {page_url}"
-    )
+    raise JpxPublicMarginParseError(f"no {extension} artifact link found on JPX page {page_url}")
 
 
 def _cache_raw(
@@ -168,9 +162,7 @@ def ingest_jpx_public_balance_pdf(
     day = batch.application_date
     try:
         session.execute(
-            delete(JpxMarginBalanceRecord).where(
-                JpxMarginBalanceRecord.application_date == day
-            )
+            delete(JpxMarginBalanceRecord).where(JpxMarginBalanceRecord.application_date == day)
         )
         replace_aux_dates(session, kind="balance_source", dates={day})
         replace_aux_dates(session, kind="balance_detail", dates={day})
@@ -317,9 +309,7 @@ def _flow_from_aux(row: JpxMarginAuxRecord) -> JpxMarginFlow:
     )
 
 
-def _aux_provenance(
-    row: JpxMarginAuxRecord, *, default_source: str
-) -> Provenance:
+def _aux_provenance(row: JpxMarginAuxRecord, *, default_source: str) -> Provenance:
     raw = row.payload.get("provenance")
     if isinstance(raw, dict):
         return Provenance.model_validate(raw)
@@ -339,9 +329,7 @@ def _aux_provenance(
     )
 
 
-def _validate_watch_against_balance(
-    session: Session, rows: list[JpxMarginWatch]
-) -> None:
+def _validate_watch_against_balance(session: Session, rows: list[JpxMarginWatch]) -> None:
     if not rows:
         return
     application_date = rows[0].application_date
@@ -437,9 +425,7 @@ def ingest_jpx_margin_watch_xlsx(
     retrieved_at: datetime | None = None,
 ) -> JpxPublicIngestResult:
     retrieved = retrieved_at or datetime.now(UTC)
-    rows = parse_jpx_margin_watch_xlsx(
-        data, source_url=source_url, retrieved_at=retrieved
-    )
+    rows = parse_jpx_margin_watch_xlsx(data, source_url=source_url, retrieved_at=retrieved)
     _validate_watch_against_balance(session, rows)
     dates = {row.application_date for row in rows}
     try:
@@ -489,9 +475,7 @@ def ingest_jpx_premium_xlsx(
     retrieved_at: datetime | None = None,
 ) -> JpxPublicIngestResult:
     retrieved = retrieved_at or datetime.now(UTC)
-    rows = parse_jpx_premium_xlsx(
-        data, source_url=source_url, retrieved_at=retrieved
-    )
+    rows = parse_jpx_premium_xlsx(data, source_url=source_url, retrieved_at=retrieved)
     dates = {row.trade_date for row in rows}
     known_by_date: dict[date, set[str]] = {}
     resolved_rows: list[JpxPremiumCharge] = []
@@ -508,11 +492,7 @@ def ingest_jpx_premium_xlsx(
             known_by_date[row.trade_date] = known
         resolved_rows.append(
             row.model_copy(
-                update={
-                    "resolved_jpx_code": safe_jpx_code_from_premium(
-                        row.source_code, known
-                    )
-                }
+                update={"resolved_jpx_code": safe_jpx_code_from_premium(row.source_code, known)}
             )
         )
     try:
@@ -561,9 +541,7 @@ def ingest_jpx_margin_flow_pdf(
     retrieved_at: datetime | None = None,
 ) -> JpxPublicIngestResult:
     retrieved = retrieved_at or datetime.now(UTC)
-    rows = parse_jpx_margin_flow_pdf(
-        data, source_url=source_url, retrieved_at=retrieved
-    )
+    rows = parse_jpx_margin_flow_pdf(data, source_url=source_url, retrieved_at=retrieved)
     dates = {row.trade_date for row in rows}
     try:
         replace_aux_dates(session, kind="flow", dates=dates)
@@ -643,9 +621,7 @@ def sync_jpx_public_margin(
     if invalid:
         raise ValueError(f"unknown JPX public kinds: {invalid}")
     order: list[JpxPublicKind] = [
-        kind
-        for kind in ("balance", "watch", "premium", "flow")
-        if kind in requested
+        kind for kind in ("balance", "watch", "premium", "flow") if kind in requested
     ]
     results: list[JpxPublicIngestResult] = []
     with httpx.Client(
@@ -701,9 +677,7 @@ def read_jpx_margin_details(
     return [_detail_from_aux(row) for row in rows]
 
 
-def read_jpx_margin_watch(
-    session: Session, code: str, *, limit: int = 30
-) -> list[JpxMarginWatch]:
+def read_jpx_margin_watch(session: Session, code: str, *, limit: int = 30) -> list[JpxMarginWatch]:
     rows = list(
         session.scalars(
             select(JpxMarginAuxRecord)
@@ -737,9 +711,7 @@ def read_jpx_premium(
     return [_premium_from_aux(row) for row in rows]
 
 
-def read_jpx_margin_flow(
-    session: Session, code: str, *, limit: int = 30
-) -> list[JpxMarginFlow]:
+def read_jpx_margin_flow(session: Session, code: str, *, limit: int = 30) -> list[JpxMarginFlow]:
     rows = list(
         session.scalars(
             select(JpxMarginAuxRecord)
