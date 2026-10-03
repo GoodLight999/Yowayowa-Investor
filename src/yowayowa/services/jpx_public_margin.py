@@ -101,9 +101,8 @@ def _cache_raw(
     return target
 
 
-def _payload(model: object, *, exclude: set[str]) -> dict[str, object]:
-    dump = getattr(model, "model_dump")
-    result = dump(mode="json", exclude=exclude)
+def _payload(model: BaseModel, *, exclude: set[str]) -> dict[str, object]:
+    result = model.model_dump(mode="json", exclude=exclude)
     if not isinstance(result, dict):
         raise TypeError("unexpected pydantic model dump")
     return result
