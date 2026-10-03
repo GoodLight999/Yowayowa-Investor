@@ -14,6 +14,8 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 
+from yowayowa.db import positions_unique_constraint_status
+
 _ARCHIVE_SHA = re.compile(r"/archive/([0-9a-fA-F]{7,40})\.zip(?:$|[?#])")
 _LOGGER = logging.getLogger("yowayowa.vercel")
 _ASSET_PREFIXES = ("/static/", "/assets/")
@@ -166,4 +168,7 @@ def install_vercel_observability(app: FastAPI) -> None:
             "request_id": _request_id(request),
             "source": runtime_source_info(),
             "vercel": _vercel_runtime(),
+            "database": {
+                "positions_unique_constraint": positions_unique_constraint_status(),
+            },
         }

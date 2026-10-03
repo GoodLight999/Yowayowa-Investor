@@ -1,3 +1,4 @@
+import os
 from datetime import UTC, datetime
 
 from sqlalchemy import create_engine
@@ -477,13 +478,128 @@ def test_ensure_positions_unique_constraint_upgrade_and_fail_closed(tmp_path) ->
             )
             conn.execute(text("INSERT INTO positions VALUES (1, 1, 'AAPL', 10, 150, 'USD')"))
             conn.execute(text("INSERT INTO positions VALUES (2, 1, 'AAPL', 20, 155, 'USD')"))
-        import pytest
 
-        with pytest.raises(RuntimeError, match="existing duplicates found"):
-            _ensure_positions_unique_constraint(engine_dup)
+        from yowayowa.db import (
+            _ensure_positions_unique_constraint,
+            _reset_positions_constraint_blocker,
+            positions_unique_constraint_status,
+        )
+
+        # Fail closed means: do not apply the constraint, and report the
+        # blocker. It must NOT raise, because this migration runs inside the
+        # ASGI lifespan — raising aborts startup and every route answers 500
+        # (the production outage this test previously pinned).
+        _reset_positions_constraint_blocker()
+        _ensure_positions_unique_constraint(engine_dup)
+
+        status = positions_unique_constraint_status()
+        assert status["applied"] is False
+        assert "existing duplicates found" in str(status["reason"])
+        # The constraint was NOT applied, so the duplicates remain intact.
+        assert (
+            any(
+                set(uc.get("column_names") or []) == {"portfolio_id", "symbol"}
+                for uc in inspect(engine_dup).get_unique_constraints("positions")
+            )
+            is False
+        )
+        with engine_dup.connect() as conn:
+            assert len(conn.execute(text("SELECT id FROM positions")).fetchall()) == 2
         engine_dup.dispose()
     finally:
         engine.dispose()
+
+
+def test_positions_unique_constraint_blocker_resets_on_restart(tmp_path) -> None:
+    """A recorded blocker must not persist as permanently stuck state.
+
+    ``init_database`` runs the migrations on every startup, so a database
+    repaired between two startups must report applied=True again.
+    """
+
+    from yowayowa import db as db_module
+    from yowayowa.db import _record_positions_constraint_blocker, positions_unique_constraint_status
+
+    _record_positions_constraint_blocker("existing duplicates found: probe")
+    assert positions_unique_constraint_status()["applied"] is False
+
+    db_module.init_database()  # re-runs migrations against a fresh database
+    assert positions_unique_constraint_status() == {"applied": True, "reason": None}
+
+
+def test_app_boots_when_positions_migration_is_blocked(tmp_path) -> None:
+    """Regression: a blocked migration must not abort application startup.
+
+    The production outage (HTTP 500 / FUNCTION_INVOCATION_FAILED on EVERY route)
+    came from ``init_database()`` raising inside the ASGI lifespan. Duplicate
+    positions are a repairable data condition; they must not make the whole
+    application unservable. This test pins the boot-survival invariant directly
+    against the real lifespan, not just the migration helper.
+    """
+
+    from sqlalchemy import create_engine, text
+
+    from yowayowa import db as db_module
+    from yowayowa.db import positions_unique_constraint_status
+
+    db_path = tmp_path / "blocked_positions.db"
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE portfolios ("
+                    "id INTEGER NOT NULL PRIMARY KEY, "
+                    "name VARCHAR(100) NOT NULL, "
+                    "base_currency VARCHAR(3) NOT NULL, "
+                    "created_at DATETIME NOT NULL, "
+                    "updated_at DATETIME NOT NULL)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TABLE positions ("
+                    "id INTEGER NOT NULL PRIMARY KEY, "
+                    "portfolio_id INTEGER NOT NULL, "
+                    "symbol VARCHAR(32) NOT NULL, "
+                    "quantity NUMERIC(28, 10) NOT NULL, "
+                    "average_cost NUMERIC(28, 10), "
+                    "currency VARCHAR(3) NOT NULL, "
+                    "FOREIGN KEY(portfolio_id) REFERENCES portfolios (id))"
+                )
+            )
+            conn.execute(
+                text("INSERT INTO portfolios VALUES (1, 'L', 'JPY', '2026-01-01', '2026-01-01')")
+            )
+            conn.execute(text("INSERT INTO positions VALUES (1, 1, '7203.T', 100, 1000, 'JPY')"))
+            conn.execute(text("INSERT INTO positions VALUES (2, 1, '7203.T', 50, 1100, 'JPY')"))
+    finally:
+        engine.dispose()
+
+    previous_url = os.environ.get("YOWAYOWA_DATABASE_URL")
+    os.environ["YOWAYOWA_DATABASE_URL"] = f"sqlite:///{db_path}"
+    try:
+        db_module.init_database()  # must not raise
+        assert positions_unique_constraint_status()["applied"] is False
+
+        from fastapi.testclient import TestClient
+
+        from yowayowa.api.app import app
+
+        with TestClient(app) as client:
+            health = client.get("/v1/health")
+            runtime = client.get("/internal/debug/runtime")
+
+        assert health.status_code == 200
+        assert runtime.status_code == 200
+        reported = runtime.json()["database"]["positions_unique_constraint"]
+        assert reported["applied"] is False
+        assert "existing duplicates found" in reported["reason"]
+    finally:
+        if previous_url is None:
+            os.environ.pop("YOWAYOWA_DATABASE_URL", None)
+        else:
+            os.environ["YOWAYOWA_DATABASE_URL"] = previous_url
 
 
 def test_bulk_upsert_replace_same_symbol_and_mixed_autoflush() -> None:

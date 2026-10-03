@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -32,6 +33,8 @@ from sqlalchemy.orm import (
 )
 
 from .config import Settings, get_settings
+
+_LOGGER = logging.getLogger("yowayowa.db")
 
 
 class Base(DeclarativeBase):
@@ -499,6 +502,10 @@ def init_database(settings: Settings | None = None) -> None:
         _engine.dispose()
     _engine = make_engine(settings)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
+    # Re-evaluate the migration state on every startup: a previous invocation in
+    # the same process must not make an applied (or repaired) migration look
+    # permanently blocked.
+    _reset_positions_constraint_blocker()
     _ensure_hypothesis_records_table(_engine)
     # WD-C5's new inbox is an additive migration kept explicit so existing
     # installations gain the table without rebuilding or altering old rows.
@@ -558,6 +565,42 @@ def _ensure_positions_version(engine: Engine) -> None:
             )
 
 
+_POSITIONS_CONSTRAINT_BLOCKER: str | None = None
+
+
+def _reset_positions_constraint_blocker() -> None:
+    """Clear the recorded blocker so the next evaluation starts fresh."""
+
+    global _POSITIONS_CONSTRAINT_BLOCKER
+    _POSITIONS_CONSTRAINT_BLOCKER = None
+
+
+def _record_positions_constraint_blocker(reason: str) -> None:
+    """Record that the positions unique-constraint migration is unresolved.
+
+    Recorded rather than raised: see ``_ensure_positions_unique_constraint``.
+    The message deliberately contains no secret and no absolute path.
+    """
+
+    global _POSITIONS_CONSTRAINT_BLOCKER
+    _POSITIONS_CONSTRAINT_BLOCKER = reason
+    _LOGGER.error("positions_unique_constraint_migration_skipped reason=%s", reason)
+
+
+def positions_unique_constraint_status() -> dict[str, object]:
+    """Report whether the positions unique constraint is applied and why not.
+
+    ``applied`` is True when no blocker was recorded during startup. A False
+    value means position writes are unprotected against concurrent initial
+    inserts; the duplicates already in the table are reported so an operator
+    can repair them explicitly.
+    """
+
+    if _POSITIONS_CONSTRAINT_BLOCKER is None:
+        return {"applied": True, "reason": None}
+    return {"applied": False, "reason": _POSITIONS_CONSTRAINT_BLOCKER}
+
+
 def _ensure_positions_unique_constraint(engine: Engine) -> None:
     """Idempotent migration to ensure UniqueConstraint on (portfolio_id, symbol).
 
@@ -565,6 +608,18 @@ def _ensure_positions_unique_constraint(engine: Engine) -> None:
     unique constraints on 'positions'. If the unique constraint is missing, we
     verify there are no duplicate (portfolio_id, symbol) rows (failing closed if
     any duplicates exist), and rebuild the table safely preserving all rows.
+
+    Fail-closed here means *do not apply* the constraint and report the blocker;
+    it deliberately does NOT mean *refuse to start*. This function runs inside
+    the ASGI lifespan, so an exception escapes before the function serves any
+    byte and Vercel reports FUNCTION_INVOCATION_FAILED for EVERY route. That
+    turns a repairable data condition into a total outage of unrelated
+    read-only surfaces. The constraint is a write-side concurrency guard, not a
+    correctness prerequisite for serving reads, so the safe behavior is to skip
+    the migration, keep serving, and expose the unresolved state where an
+    operator will actually see it (see ``positions_unique_constraint_status`` and
+    the ``/internal/debug/runtime`` payload). Losing the guard degrades write
+    concurrency; killing the process loses the entire product.
     """
     inspector = inspect(engine)
     if "positions" not in inspector.get_table_names():
@@ -588,10 +643,8 @@ def _ensure_positions_unique_constraint(engine: Engine) -> None:
             detail = ", ".join(
                 f"(portfolio_id={row[0]}, symbol={row[1]!r}, count={row[2]})" for row in duplicates
             )
-            raise RuntimeError(
-                "Cannot apply unique constraint to positions: existing duplicates found: "
-                f"{detail}. Manual resolution required."
-            )
+            _record_positions_constraint_blocker("existing duplicates found: " + detail)
+            return
 
     dialect = engine.dialect.name
     if dialect == "sqlite":
