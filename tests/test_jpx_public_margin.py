@@ -686,7 +686,9 @@ def test_sqlite_roundtrip_preserves_absolute_publication_instant(
     Base.metadata.create_all(engine)
     try:
         with Session(engine) as session:
-            monkeypatch.setattr(flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines())
+            monkeypatch.setattr(
+                flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines("40.0%")
+            )
             parsed = parse_jpx_margin_flow_pdf(b"flow", source_url=SOURCE, retrieved_at=RETRIEVED)
             ingest_jpx_margin_flow_pdf(session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED)
             recovered = read_jpx_margin_flow(session, "72030")[0]
@@ -708,7 +710,9 @@ def test_legacy_naive_row_without_origin_fails_closed(
     Base.metadata.create_all(engine)
     try:
         with Session(engine) as session:
-            monkeypatch.setattr(flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines())
+            monkeypatch.setattr(
+                flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines("40.0%")
+            )
             ingest_jpx_margin_flow_pdf(session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED)
             record = session.scalar(
                 select(JpxMarginAuxRecord).where(JpxMarginAuxRecord.kind == "flow")
@@ -740,7 +744,9 @@ def test_available_at_selects_true_latest_mixed_source_instant(
     Base.metadata.create_all(engine)
     try:
         with Session(engine) as session:
-            monkeypatch.setattr(flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines())
+            monkeypatch.setattr(
+                flow_parser, "extract_jpx_pdf_lines", lambda _: _flow_lines("40.0%")
+            )
             ingest_jpx_margin_flow_pdf(session, b"flow", source_url=SOURCE, retrieved_at=RETRIEVED)
             premium_observed = datetime(2026, 10, 2, 10, 0, tzinfo=UTC)
             ingest_jpx_premium_xlsx(
