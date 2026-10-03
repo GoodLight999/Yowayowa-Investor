@@ -9,7 +9,7 @@ from typing import cast
 
 import typer
 from rich import print
-from rich.table import Table
+from pydantic import BaseModel\nfrom rich.table import Table
 
 from yowayowa.config import get_settings
 from yowayowa.db import get_session
@@ -68,8 +68,8 @@ def _code(value: str) -> str:
         raise typer.BadParameter(str(exc)) from exc
 
 
-def _echo_models(rows: list[object]) -> None:
-    payload = [getattr(row, "model_dump")(mode="json") for row in rows]
+def _echo_models(rows: Sequence[BaseModel]) -> None:
+    payload = [row.model_dump(mode="json") for row in rows]
     typer.echo(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
 
 
@@ -169,7 +169,7 @@ def jpx_margin_scan(
     finally:
         session.close()
     if json_output:
-        _echo_models(list(rows))
+        _echo_models(rows)
         return
     table = Table("As-of", "Code", "Company", "Reason", "Metrics", "Available")
     for row in rows:
@@ -194,7 +194,7 @@ def jpx_margin_detail(
         rows = read_jpx_margin_details(session, _code(code), limit=limit)
     finally:
         session.close()
-    _echo_models(list(rows))
+    _echo_models(rows)
 
 
 def jpx_margin_flow(
@@ -207,7 +207,7 @@ def jpx_margin_flow(
         rows = read_jpx_margin_flow(session, _code(code), limit=limit)
     finally:
         session.close()
-    _echo_models(list(rows))
+    _echo_models(rows)
 
 
 def jpx_margin_watch(
@@ -220,7 +220,7 @@ def jpx_margin_watch(
         rows = read_jpx_margin_watch(session, _code(code), limit=limit)
     finally:
         session.close()
-    _echo_models(list(rows))
+    _echo_models(rows)
 
 
 def jpx_premium(
@@ -229,14 +229,14 @@ def jpx_premium(
 ) -> None:
     _require_personal_source()
     normalized = source_code.strip().upper()
-    if len(normalized) != 4 or not normalized.isalnum():
+    if not re.fullmatch(r"[0-9]{3}[0-9A-Z]", normalized):
         raise typer.BadParameter("source_code must be a 4-character JPX code")
     session = get_session()
     try:
         rows = read_jpx_premium(session, normalized, limit=limit)
     finally:
         session.close()
-    _echo_models(list(rows))
+    _echo_models(rows)
 
 
 __all__ = [
