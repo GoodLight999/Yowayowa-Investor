@@ -348,12 +348,12 @@ class JpxMarginAuxRecord(Base):
         DateTime(timezone=True), nullable=True, index=True
     )
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    # Instant origin of published_at/retrieved_at, so a legacy local-time row
-    # can still be converted correctly instead of being guessed. "utc" for every
-    # row written under the normalized convention; a JST publication source
-    # records "jst" so its pre-conversion wall time remains interpretable.
+    # Instant origin of published_at/retrieved_at. Every row written under the
+    # normalized convention records "utc" because _store_instant has already
+    # converted the value; a second zone would only risk a double conversion.
     # Nullable on purpose: rows written before this column existed keep NULL,
-    # which the read path reports as unknown origin rather than resolving.
+    # which the read path reports as unknown origin rather than resolving. Such
+    # a row must be migrated explicitly or re-ingested, never relabeled.
     instant_tz: Mapped[str | None] = mapped_column(
         String(8), nullable=True, default="utc", server_default="utc"
     )

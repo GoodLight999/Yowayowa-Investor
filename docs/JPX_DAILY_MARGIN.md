@@ -26,6 +26,31 @@ same-day trading-flow observations and is published around 16:30 JST. Keep
 `as_of`, `published_at`, and `retrieved_at` distinct: a backtest must not
 use a balance before it was actually published.
 
+### Instant storage and availability
+
+`jpx_margin_aux` stores every instant as **naive UTC wall time** with its origin
+in `instant_tz`. SQLite has no offset-aware datetime type, so a `+09:00` JST
+publication instant would otherwise be persisted as bare local wall time and read
+back indistinguishable from UTC. A JPX 16:30 JST publication is 07:30Z; treating
+it as 16:30Z would let a signal that mixes JST publication times with UTC
+first-observed XLSX times be dated hours before one of its inputs was known. The
+read paths normalize before any comparison and emit offset-aware UTC, so
+`available_at` is the true latest *absolute* instant, not the largest clock
+reading. A row written before this convention carries no origin and is **refused**
+on read rather than silently relabeled UTC — re-ingest the artifact or migrate
+`instant_tz` explicitly.
+
+### Immutable flow history
+
+Each daily flow PDF repeats the two preceding trade dates. Immutability is
+decided by the observation frontier — the union of the persisted latest trade
+date and the artifact's own newest date — not by the artifact alone. Once a later
+trade date is persisted, a **stale artifact** reaching back only to an earlier
+date cannot rewrite that now-historical day: it replaces nothing, an identical
+overlap is preserved byte-for-byte including provenance, and a changed
+historical value fails closed with a full write rollback. Only the frontier date
+itself may be replaced, as a same-current-day correction.
+
 ### Paid reference feed
 
 JPX総研 TMI / J-Quants Pro remains supported by
