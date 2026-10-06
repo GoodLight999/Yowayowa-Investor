@@ -1,0 +1,17 @@
+[Unit]
+Description=Yowayowa Investor personal-mode API
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/current-work/yowayowa-investor
+Environment=PYTHONPATH=src
+Environment=YOWAYOWA_MODE=personal
+Environment=YOWAYOWA_DATABASE_URL=sqlite:////root/current-work/yowayowa-investor/data/yowayowa.db
+ExecStart=/root/current-work/yowayowa-investor/.venv/bin/python -m uvicorn yowayowa.api.app:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

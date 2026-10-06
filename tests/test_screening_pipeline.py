@@ -1,0 +1,1006 @@
+"""Machine screening pipeline: EDINET flags, credit margin surges, Yahoo
+screener, persistence idempotency, API, models, AI tool (P4-D).
+
+All tests here are offline:
+- EDINET reads the fixture ``tests/fixtures/screening/edinet_daily_sample.jsonl``;
+- credit margin data is seeded into an in-memory SQLite database;
+- the Yahoo screener is replaced with a fake provider (same pattern as
+  ``test_yahoo_screener.py``).
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from datetime import UTC, date, datetime
+from pathlib import Path
+from unittest.mock import Mock
+
+import pytest
+from sqlalchemy import create_engine, inspect, select
+from sqlalchemy.orm import Session
+from starlette.testclient import TestClient
+from typer.testing import CliRunner
+
+from yowayowa.api.app import app
+from yowayowa.cli_entry import app as cli_app
+from yowayowa.config import Settings
+from yowayowa.db import Base, CreditMarginWeeklyRecord, ScreeningCandidateRecord
+from yowayowa.domain import LicenseClass, Provenance
+from yowayowa.research_models import MarketScreenResponse
+from yowayowa.screening_models import (
+    ScreeningCandidate,
+    ScreeningRunResult,
+    ScreeningSignal,
+    ScreeningSource,
+)
+from yowayowa.services.screening_pipeline import (
+    ScreeningRunDegradedError,
+    classify_edinet_filing,
+    persist_screening_run,
+    read_screening_candidates,
+    run_screening_pipeline,
+)
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "screening"
+EDINET_SAMPLE = FIXTURES / "edinet_daily_sample.jsonl"
+EDINET_EMPTY = FIXTURES / "edinet_daily_empty.jsonl"
+
+RETRIEVED_AT = datetime(2026, 9, 24, 12, 0, tzinfo=UTC)
+SIGNAL_DATE = date(2026, 9, 24)
+SIGNAL_WEEK = date(2026, 9, 11)
+PREVIOUS_WEEK = date(2026, 9, 4)
+SIGNAL_RETRIEVED = datetime(2026, 9, 24, 12, 0, tzinfo=UTC)
+
+runner = CliRunner()
+
+
+def _memory_engine():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    return engine
+
+
+def _credit_row(
+    code: str,
+    as_of: date,
+    short_total: int,
+    long_total: int,
+    *,
+    previous_short: int | None = None,
+    previous_long: int | None = None,
+) -> tuple[CreditMarginWeeklyRecord, CreditMarginWeeklyRecord]:
+    base = Provenance(
+        provider="yahoo_finance_margin",
+        source="Yahoo!ファイナンス 信用残 weekly history (quote page)",
+        source_url=f"https://finance.yahoo.co.jp/quote/{code}.T/margin",
+        license_class=LicenseClass.PERSONAL_ONLY,
+        retrieved_at=SIGNAL_RETRIEVED,
+        as_of=as_of,
+    )
+    latest = CreditMarginWeeklyRecord(
+        as_of_date=as_of,
+        code=code,
+        short_total=short_total,
+        long_total=long_total,
+        source_url=base.source_url,
+        provider="yahoo_finance_margin",
+        retrieved_at=SIGNAL_RETRIEVED,
+        notes=[],
+    )
+    previous = None
+    if previous_short is not None and previous_long is not None:
+        previous = CreditMarginWeeklyRecord(
+            as_of_date=PREVIOUS_WEEK,
+            code=code,
+            short_total=previous_short,
+            long_total=previous_long,
+            source_url=base.source_url,
+            provider="yahoo_finance_margin",
+            retrieved_at=SIGNAL_RETRIEVED,
+            notes=[],
+        )
+    return latest, previous
+
+
+def _seed_credit_engine(engine) -> None:
+    rows: list[CreditMarginWeeklyRecord] = []
+    # Surge: 100 -> 200 short (+100%), long 200 -> 300 (+50%) — both fire.
+    latest, previous = _credit_row(
+        "6758", SIGNAL_WEEK, 300, 400, previous_short=150, previous_long=200
+    )
+    rows += [latest, previous]
+    # Drop: 200 -> 100 short (-50%) — short drop fires.
+    latest, previous = _credit_row(
+        "7203", SIGNAL_WEEK, 100, 300, previous_short=200, previous_long=300
+    )
+    rows += [latest, previous]
+    # Long surge only: short flat, long 100 -> 200 (+100%).
+    latest, previous = _credit_row(
+        "7267", SIGNAL_WEEK, 100, 200, previous_short=100, previous_long=100
+    )
+    rows += [latest, previous]
+    # Nothing: short 100 -> 105, long 200 -> 205 (no threshold crossed).
+    latest, previous = _credit_row(
+        "9984", SIGNAL_WEEK, 105, 205, previous_short=100, previous_long=200
+    )
+    rows += [latest, previous]
+    # Only one week: cannot evaluate (recorded, never a trigger).
+    rows.append(
+        CreditMarginWeeklyRecord(
+            as_of_date=SIGNAL_WEEK,
+            code="8306",
+            short_total=500,
+            long_total=500,
+            source_url="https://finance.yahoo.co.jp/quote/8306.T/margin",
+            provider="yahoo_finance_margin",
+            retrieved_at=SIGNAL_RETRIEVED,
+            notes=[],
+        )
+    )
+    with Session(engine, expire_on_commit=False) as session:
+        session.add_all(rows)
+        session.commit()
+
+
+class FakeScreenerProvider:
+    """Offline replacement for YahooScreenerProvider (monkeypatch pattern)."""
+
+    def __init__(self, quotes: list[dict], total=None):
+        self.quotes = quotes
+        self.total = total
+        self.calls: list = []
+
+    def screen(self, request):
+        self.calls.append(request)
+        return MarketScreenResponse(
+            quotes=self.quotes,
+            total=self.total,
+            offset=request.offset,
+            size=request.size,
+            query={"filters": "fake"},
+            provenance=Provenance(
+                provider="yahoo/yfinance",
+                source="Yahoo Finance Equity Screener (fake)",
+                license_class=LicenseClass.PERSONAL_ONLY,
+                retrieved_at=SIGNAL_RETRIEVED,
+                as_of=SIGNAL_RETRIEVED,
+            ),
+        )
+
+
+# ------------------------------------------------------------------- source A
+
+
+def test_edinet_classification_and_skip_rules() -> None:
+    assert classify_edinet_filing("訂正有価証券報告書") is ScreeningSignal.FILING_FORECAST_REVISION
+    assert classify_edinet_filing("訂正報告書（大量保有報告書・変更報告書）") is (
+        ScreeningSignal.FILING_FORECAST_REVISION
+    )
+    assert classify_edinet_filing("自己株券消却に伴う臨時報告書") is ScreeningSignal.FILING_BUYBACK
+    assert (
+        classify_edinet_filing("公開買付け実施に伴う臨時報告書") is ScreeningSignal.FILING_BUYBACK
+    )
+    assert classify_edinet_filing("上場廃止に伴う臨時報告書") is ScreeningSignal.FILING_CANCELLATION
+    assert classify_edinet_filing("有価証券報告書") is None
+    assert classify_edinet_filing("半期報告書（内国投資信託受益証券）－第14期") is None
+
+
+def test_edinet_candidates_from_fixture() -> None:
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            result = run_screening_pipeline(
+                session,
+                edinet_path=EDINET_SAMPLE,
+                screener_mode="off",
+                credit_margin_mode="off",
+                run_date=SIGNAL_DATE,
+            )
+        codes_signals = sorted((c.code, c.signal) for c in result.candidates)
+        assert ("11115", ScreeningSignal.FILING_FORECAST_REVISION) in codes_signals
+        assert ("22225", ScreeningSignal.FILING_BUYBACK) in codes_signals
+        assert ("33335", ScreeningSignal.FILING_BUYBACK) in codes_signals
+        assert ("44445", ScreeningSignal.FILING_CANCELLATION) in codes_signals
+        assert ("66665", ScreeningSignal.FILING_BUYBACK) in codes_signals
+        edinet_candidates = [
+            c for c in result.candidates if c.source == ScreeningSource.EDINET_FILING
+        ]
+        assert len(edinet_candidates) == 5
+        counts = result.per_source_counts[ScreeningSource.EDINET_FILING.value]
+        assert counts["row_count"] == 12
+        assert counts["skipped_unclassified"] >= 2  # 通常 filings + funds skipped
+        assert counts["skipped_missing_code"] == 2  # no secCode -> no candidate
+        assert all(c.reason.startswith("EDINET提出") for c in edinet_candidates)
+        provenance = edinet_candidates[0].provenance
+        assert provenance.license_class == LicenseClass.OFFICIAL_PUBLIC
+        assert provenance.source_url is not None
+    finally:
+        engine.dispose()
+
+
+# ------------------------------------------------------------------- source B
+
+
+def test_credit_margin_signals_from_seeded_db() -> None:
+    engine = _memory_engine()
+    try:
+        _seed_credit_engine(engine)
+        with Session(engine, expire_on_commit=False) as session:
+            result = run_screening_pipeline(
+                session,
+                edinet_path=EDINET_EMPTY,
+                screener_mode="off",
+                credit_margin_mode="on",
+                run_date=SIGNAL_DATE,
+            )
+    finally:
+        engine.dispose()
+    credit = [c for c in result.candidates if c.source == ScreeningSource.CREDIT_MARGIN_WEEKLY]
+    by_key = {(c.code, c.signal): c for c in credit}
+    assert (
+        "6758",
+        ScreeningSignal.CREDIT_SHORT_SURGE,
+    ) in by_key, "short 150 -> 300 (+100%) must trigger a short surge"
+    assert ("6758", ScreeningSignal.CREDIT_LONG_SURGE) in by_key
+    assert ("7203", ScreeningSignal.CREDIT_SHORT_DROP) in by_key
+    assert ("7267", ScreeningSignal.CREDIT_LONG_SURGE) in by_key
+    assert ("9984", ScreeningSignal.CREDIT_SHORT_SURGE) not in by_key
+    assert all(c.code != "8306" for c in credit)  # one week only -> no ratio
+    surge = by_key[("6758", ScreeningSignal.CREDIT_SHORT_SURGE)]
+    assert surge.value["previous_short_total"] == 150
+    assert surge.value["short_total"] == 300
+    assert surge.value["ratio_change_1w"] == pytest.approx(1.0)
+    assert surge.reason.startswith("売残が前週比+30%以上")
+    counts = result.per_source_counts[ScreeningSource.CREDIT_MARGIN_WEEKLY.value]
+    assert counts["codes_with_two_weeks"] == 4
+    assert counts["codes_without_two_weeks"] == 1
+
+
+def test_credit_margin_empty_db_yields_zero_with_coverage() -> None:
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            result = run_screening_pipeline(
+                session,
+                edinet_path=EDINET_EMPTY,
+                screener_mode="off",
+                credit_margin_mode="on",
+                run_date=SIGNAL_DATE,
+            )
+    finally:
+        engine.dispose()
+    counts = result.per_source_counts[ScreeningSource.CREDIT_MARGIN_WEEKLY.value]
+    assert counts == {"codes_with_two_weeks": 0, "codes_without_two_weeks": 0, "candidates": 0}
+    assert result.coverage["credit_margin_weekly_coverage_complete"] is False
+
+
+# ------------------------------------------------------------------- source C
+
+
+def test_screener_candidates_and_unparseable_skips(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeScreenerProvider(
+        quotes=[
+            {"symbol": "6758.T", "regularMarketPrice": 1200.0, "dayvolume": 1234},
+            {"symbol": "55555.T", "regularMarketPrice": 999.0},
+            {"symbol": "RKLB", "regularMarketPrice": 30.0},  # non-JP: unparseable
+            {"symbol": "135A9.T", "regularMarketPrice": 30.0},  # 5-char code: skip
+            {},  # no symbol: unparseable
+        ]
+    )
+    monkeypatch.setattr(
+        "yowayowa.services.screening_pipeline._screener_factory",
+        lambda: fake,
+    )
+    result = run_screening_pipeline(
+        session=None,
+        screener_mode="on",
+        credit_margin_mode="off",
+        market_size=50,
+        run_date=SIGNAL_DATE,
+    )
+    screener = [c for c in result.candidates if c.source == ScreeningSource.MARKET_SCREENER]
+    assert sorted(c.code for c in screener) == ["6758"]
+    assert all(c.signal == ScreeningSignal.SCREENER_LOW_PE for c in screener)
+    counts = result.per_source_counts[ScreeningSource.MARKET_SCREENER.value]
+    assert counts["quotes"] == 5
+    assert counts["skipped_unparseable"] == 4  # RKLB, 135A9.T, empty row, 55555.T
+    assert counts["candidates"] == 1
+    assert fake.calls and fake.calls[0].size == 50
+    request_filters = fake.calls[0].filters
+    assert {f.field for f in request_filters} == {"region", "peratio.lasttwelvemonths"}
+
+    monkeypatch.undo()
+
+    # screener failure: coverage records the failure, other sources unaffected.
+    def _boom() -> FakeScreenerProvider:
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(
+        "yowayowa.services.screening_pipeline._screener_factory",
+        _boom,
+    )
+    failed = run_screening_pipeline(
+        session=None,
+        screener_mode="on",
+        credit_margin_mode="off",
+        run_date=SIGNAL_DATE,
+    )
+    assert failed.per_source_counts[ScreeningSource.MARKET_SCREENER.value]["candidates"] == 0
+    failed_counts = failed.per_source_counts[ScreeningSource.MARKET_SCREENER.value]
+    assert "provider_error" in failed_counts["reason"]
+
+
+# ------------------------------------------------- audit Y01: source isolation
+
+
+def test_invalid_edinet_json_isolated_screener_still_runs(tmp_path: Path) -> None:
+    """Audit Y01: a corrupt EDINET JSONL line must not abort the whole run."""
+
+    broken = tmp_path / "broken.jsonl"
+    broken.write_text("{invalid-json\n", encoding="utf-8")
+    fake = FakeScreenerProvider(quotes=[{"symbol": "6758.T", "regularMarketPrice": 1200.0}])
+    result = run_screening_pipeline(
+        session=None,
+        edinet_path=broken,
+        screener_mode="on",
+        screener_factory=lambda: fake,
+        credit_margin_mode="off",
+        run_date=SIGNAL_DATE,
+    )
+    counts = result.per_source_counts[ScreeningSource.EDINET_FILING.value]
+    assert counts["candidates"] == 0
+    assert counts["reason"] == "source_error: JSONDecodeError"
+    assert result.coverage["edinet_daily_record_count"] is None
+    assert result.coverage["edinet_coverage_complete"] is None
+    # The healthy screener source still ran and produced its candidate.
+    assert fake.calls, "screener factory must be called despite the EDINET failure"
+    screener = [c for c in result.candidates if c.source == ScreeningSource.MARKET_SCREENER]
+    assert [c.code for c in screener] == ["6758"]
+    # The failed source contributes no provenance (never fabricated).
+    assert all(p.provider != "edinet-v2" for p in [result.provenance])
+
+
+def test_credit_margin_session_error_isolated_other_sources_unaffected(
+    tmp_path: Path,
+) -> None:
+    """Audit Y01: a credit-margin DB failure must not abort the other sources."""
+
+    broken_edinet = tmp_path / "sample.jsonl"
+    broken_edinet.write_text(
+        json.dumps(
+            {
+                "docID": "S100TEST1",
+                "secCode": "67580",
+                "docDescription": "訂正有価証券報告書",
+                "filerName": "合成企業",
+                "submitDateTime": "2026-09-24 09:00",
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    exploding_session = Mock()
+    exploding_session.scalars.side_effect = RuntimeError("db gone")
+    fake = FakeScreenerProvider(quotes=[{"symbol": "6758.T", "regularMarketPrice": 1200.0}])
+    result = run_screening_pipeline(
+        exploding_session,  # type: ignore[arg-type]
+        edinet_path=broken_edinet,
+        screener_mode="on",
+        screener_factory=lambda: fake,
+        credit_margin_mode="on",
+        run_date=SIGNAL_DATE,
+    )
+    credit_counts = result.per_source_counts[ScreeningSource.CREDIT_MARGIN_WEEKLY.value]
+    assert credit_counts["candidates"] == 0
+    assert credit_counts["reason"] == "source_error: RuntimeError"
+    assert result.coverage["credit_margin_weekly_record_count"] is None
+    assert result.coverage["credit_margin_weekly_coverage_complete"] is None
+    # The other sources are unaffected: EDINET still produced its candidate
+    # (5-digit security code as EDINET publishes it).
+    edinet = [c for c in result.candidates if c.source == ScreeningSource.EDINET_FILING]
+    assert [c.code for c in edinet] == ["67580"]
+    screener = [c for c in result.candidates if c.source == ScreeningSource.MARKET_SCREENER]
+    assert [c.code for c in screener] == ["6758"]
+
+
+def test_public_mode_policy_disables_screener(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeScreenerProvider(quotes=[])
+    monkeypatch.setenv("YOWAYOWA_MODE", "public")
+    from yowayowa.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        result = run_screening_pipeline(
+            session=None,
+            screener_mode="policy",
+            credit_margin_mode="off",
+            run_date=SIGNAL_DATE,
+        )
+        screener_counts = result.per_source_counts[ScreeningSource.MARKET_SCREENER.value]
+        assert screener_counts["candidates"] == 0
+        assert screener_counts["reason"] == "policy_or_off"
+    finally:
+        monkeypatch.undo()
+        get_settings.cache_clear()
+    assert fake.calls == []  # for lint-symmetry; fake never constructed here
+
+
+# -------------------------------------------------- pipeline combination + models
+
+
+def test_pipeline_combines_sources_without_dedup() -> None:
+    engine = _memory_engine()
+    try:
+        _seed_credit_engine(engine)
+        fake = FakeScreenerProvider(quotes=[{"symbol": "6758.T", "regularMarketPrice": 1200.0}])
+        engine_session = Session(engine, expire_on_commit=False)
+        try:
+            result = run_screening_pipeline(
+                engine_session,
+                edinet_path=EDINET_SAMPLE,
+                screener_factory=lambda: fake,
+                market_size=50,
+                run_date=SIGNAL_DATE,
+            )
+        finally:
+            engine_session.close()
+    finally:
+        engine.dispose()
+    sources = {c.source for c in result.candidates}
+    assert sources == {
+        ScreeningSource.EDINET_FILING,
+        ScreeningSource.CREDIT_MARGIN_WEEKLY,
+        ScreeningSource.MARKET_SCREENER,
+    }
+    # No dedup: 6758 appears from two independent sources/signals.
+    codes_6758 = [c for c in result.candidates if c.code == "6758"]
+    assert len(codes_6758) >= 2
+    assert {c.signal for c in codes_6758} == {
+        ScreeningSignal.CREDIT_SHORT_SURGE,
+        ScreeningSignal.CREDIT_LONG_SURGE,
+        ScreeningSignal.SCREENER_LOW_PE,
+    }
+
+    # Missing-data invariant: any candidate always has full evidence + reason.
+    for candidate in result.candidates:
+        assert candidate.value
+        assert candidate.reason
+        assert candidate.provenance.provider
+        assert candidate.detected_at.tzinfo is not None
+
+    # Field-required invariant: ScreeningCandidate cannot be zero-filled.
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        ScreeningCandidate(
+            code="6758",
+            source=ScreeningSource.EDINET_FILING,
+            signal=ScreeningSignal.FILING_BUYBACK,
+        )
+
+
+# ---------------------------------------------------- audit Y03: document keys
+
+
+def _edinet_filing_rows(*doc_ids: str) -> ScreeningRunResult:
+    """One EDINET run with one 訂正有価証券報告書 row per given docID."""
+
+    path = FIXTURES / f"audit-y03-{'-'.join(doc_ids)}.jsonl"
+    path.write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "docID": doc_id,
+                    "secCode": "67580",
+                    "filerName": "合成企業",
+                    "docDescription": "訂正有価証券報告書",
+                    "submitDateTime": "2026-09-24 09:00",
+                },
+                ensure_ascii=False,
+            )
+            for doc_id in doc_ids
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    result = run_screening_pipeline(
+        session=None,
+        edinet_path=path,
+        screener_mode="off",
+        credit_margin_mode="off",
+        run_date=SIGNAL_DATE,
+    )
+    path.unlink()
+    return result
+
+
+def test_two_filings_same_issuer_signal_persist_both_documents() -> None:
+    """Audit Y03: DOC1/DOC2 for one issuer+signal must both persist."""
+
+    result = _edinet_filing_rows("DOC1", "DOC2")
+    assert [c.document_id for c in result.candidates] == ["DOC1", "DOC2"]
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            persisted = persist_screening_run(session, result)
+            assert persisted == {"inserted": 2, "updated": 0}
+            with Session(engine, expire_on_commit=False) as fresh:
+                rows = read_screening_candidates(fresh, run_date=SIGNAL_DATE)
+                assert sorted(row["document_id"] for row in rows) == ["DOC1", "DOC2"]
+    finally:
+        engine.dispose()
+
+
+def test_duplicate_docid_rows_in_one_file_are_skipped() -> None:
+    """Audit Y03: the same document twice is one candidate fact."""
+
+    result = _edinet_filing_rows("DOC1", "DOC1")
+    assert [c.document_id for c in result.candidates] == ["DOC1"]
+    counts = result.per_source_counts[ScreeningSource.EDINET_FILING.value]
+    assert counts["row_count"] == 2
+    assert counts["skipped_duplicate_doc"] == 1
+    assert counts["candidates"] == 1
+
+
+def test_read_screening_candidates_returns_document_id() -> None:
+    provenance = Provenance(
+        provider="edinet-v2",
+        source="fixture",
+        license_class=LicenseClass.OFFICIAL_PUBLIC,
+        retrieved_at=SIGNAL_RETRIEVED,
+        as_of=SIGNAL_DATE,
+    )
+    result = ScreeningRunResult(
+        run_date=SIGNAL_DATE,
+        candidates=[
+            ScreeningCandidate(
+                code="11115",
+                source=ScreeningSource.EDINET_FILING,
+                signal=ScreeningSignal.FILING_FORECAST_REVISION,
+                document_id="S100TEST1",
+                value={"doc_id": "S100TEST1"},
+                reason="訂正有価証券報告書",
+                provenance=provenance,
+                detected_at=SIGNAL_RETRIEVED,
+            ),
+        ],
+        per_source_counts={"edinet_filing": {"candidates": 1}},
+        coverage={},
+        provenance=provenance,
+    )
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            persist_screening_run(session, result)
+            with Session(engine, expire_on_commit=False) as fresh:
+                rows = read_screening_candidates(fresh, run_date=SIGNAL_DATE)
+                assert rows[0]["document_id"] == "S100TEST1"
+    finally:
+        engine.dispose()
+
+
+def test_init_database_migrates_legacy_screening_table(tmp_path: Path) -> None:
+    """Audit Y03: the legacy 4-column-unique table is rebuilt in place."""
+
+    from yowayowa import db as db_module
+    from yowayowa.db import init_database
+
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE screening_candidates (
+                id INTEGER NOT NULL,
+                run_date DATE NOT NULL,
+                source VARCHAR(32) NOT NULL,
+                code VARCHAR(5) NOT NULL,
+                signal VARCHAR(40) NOT NULL,
+                company_name VARCHAR(500),
+                value JSON NOT NULL,
+                reason VARCHAR(500) NOT NULL,
+                provenance JSON NOT NULL,
+                retrieved_at DATETIME NOT NULL,
+                PRIMARY KEY (id),
+                CONSTRAINT uq_screening_candidates_run_source_code_signal
+                    UNIQUE (run_date, source, code, signal)
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO screening_candidates VALUES (1, '2026-09-24', 'edinet_filing', "
+            "'6758', 'filing_forecast_revision', '合成企業', '{}', 'r', '{}', "
+            "'2026-09-24 12:00:00.000000')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    settings = Settings(database_url=f"sqlite:///{db_path}")
+    db_module.dispose_database()
+    try:
+        init_database(settings)
+        engine = db_module._engine
+        assert engine is not None
+        columns = {column["name"] for column in inspect(engine).get_columns("screening_candidates")}
+        assert "document_id" in columns
+        with Session(engine, expire_on_commit=False) as session:
+            legacy_rows = read_screening_candidates(session, run_date=SIGNAL_DATE)
+            assert len(legacy_rows) == 1
+            assert legacy_rows[0]["document_id"] is None
+            # Remains idempotent: re-running init_database is a no-op.
+            init_database(settings)
+            with Session(db_module._engine, expire_on_commit=False) as fresh:
+                assert len(read_screening_candidates(fresh, run_date=SIGNAL_DATE)) == 1
+    finally:
+        db_module.dispose_database()
+
+
+def test_run_result_with_no_sources_still_records_coverage(tmp_path: Path) -> None:
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            result = run_screening_pipeline(
+                session,
+                edinet_path=EDINET_EMPTY,
+                screener_mode="off",
+                credit_margin_mode="on",
+                run_date=SIGNAL_DATE,
+            )
+    finally:
+        engine.dispose()
+    assert result.candidates == []
+    assert isinstance(result, ScreeningRunResult)
+    assert result.run_date == SIGNAL_DATE
+
+
+# ------------------------------------------------------------------ persistence
+
+
+def _two_candidate_result() -> ScreeningRunResult:
+    provenance = Provenance(
+        provider="edinet-v2",
+        source="fixture",
+        license_class=LicenseClass.OFFICIAL_PUBLIC,
+        retrieved_at=SIGNAL_RETRIEVED,
+        as_of=SIGNAL_DATE,
+    )
+    return ScreeningRunResult(
+        run_date=SIGNAL_DATE,
+        candidates=[
+            ScreeningCandidate(
+                code="11115",
+                source=ScreeningSource.EDINET_FILING,
+                signal=ScreeningSignal.FILING_FORECAST_REVISION,
+                value={"doc_id": "S100TEST1"},
+                reason="訂正有価証券報告書",
+                provenance=provenance,
+                detected_at=SIGNAL_RETRIEVED,
+            ),
+            ScreeningCandidate(
+                code="6758",
+                source=ScreeningSource.CREDIT_MARGIN_WEEKLY,
+                signal=ScreeningSignal.CREDIT_SHORT_SURGE,
+                value={"short_total": 300, "ratio_change_1w": 1.0},
+                reason="売残が前週比+30%以上",
+                provenance=provenance,
+                detected_at=SIGNAL_RETRIEVED,
+            ),
+        ],
+        per_source_counts={"edinet_filing": {"candidates": 1}},
+        coverage={"edinet_coverage_complete": True},
+        provenance=provenance,
+    )
+
+
+def test_persist_screening_run_is_idempotent_per_run_date() -> None:
+    engine = _memory_engine()
+    try:
+        result = _two_candidate_result()
+        with Session(engine, expire_on_commit=False) as session:
+            first = persist_screening_run(session, result)
+            assert first == {"inserted": 2, "updated": 0}
+            second = persist_screening_run(session, result)
+            assert second == {"inserted": 2, "updated": 2}
+            total = session.scalar(
+                select(ScreeningCandidateRecord).order_by(ScreeningCandidateRecord.id)
+            )
+            assert total is not None
+            with Session(engine, expire_on_commit=False) as fresh:
+                ids = fresh.scalars(select(ScreeningCandidateRecord.id)).all()
+                assert len(ids) == 2  # delete + insert keeps exactly two rows
+                restored = fresh.scalars(
+                    select(ScreeningCandidateRecord).order_by(ScreeningCandidateRecord.id)
+                ).all()
+                assert {r.code for r in restored} == {"11115", "6758"}
+                # read provenance restores the capture provenance.
+                read = read_screening_candidates(fresh, run_date=SIGNAL_DATE)
+                assert read
+                assert read[0]["provenance"]["provider"] == "edinet-v2"
+            del total
+    finally:
+        engine.dispose()
+
+
+# ---------------------------------------------------- audit Y02: degraded guard
+
+
+def _degraded_screener_result(run_date: date) -> ScreeningRunResult:
+    """One screener-origin run whose screener fetch failed (audit Y02)."""
+
+    provenance = Provenance(
+        provider="test",
+        source="fixture",
+        license_class=LicenseClass.PERSONAL_ONLY,
+        retrieved_at=SIGNAL_RETRIEVED,
+        as_of=run_date,
+    )
+    return ScreeningRunResult(
+        run_date=run_date,
+        candidates=[],
+        per_source_counts={
+            "market_screener": {
+                "candidates": 0,
+                "reason": "provider_error: RuntimeError",
+            },
+        },
+        coverage={},
+        provenance=provenance,
+    )
+
+
+def _screener_candidate_result() -> ScreeningRunResult:
+    """One previous good snapshot whose rows came from the screener."""
+
+    provenance = Provenance(
+        provider="test",
+        source="fixture",
+        license_class=LicenseClass.PERSONAL_ONLY,
+        retrieved_at=SIGNAL_RETRIEVED,
+        as_of=SIGNAL_DATE,
+    )
+    return ScreeningRunResult(
+        run_date=SIGNAL_DATE,
+        candidates=[
+            ScreeningCandidate(
+                code="6758",
+                source=ScreeningSource.MARKET_SCREENER,
+                signal=ScreeningSignal.SCREENER_LOW_PE,
+                value={"symbol": "6758.T"},
+                reason="合成データ",
+                provenance=provenance,
+                detected_at=SIGNAL_RETRIEVED,
+            ),
+        ],
+        per_source_counts={"market_screener": {"candidates": 1}},
+        coverage={},
+        provenance=provenance,
+    )
+
+
+def test_degraded_same_day_run_does_not_erase_previous_candidates() -> None:
+    """Audit Y02: a failed same-day re-fetch must refuse to replace rows."""
+
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            persist_screening_run(session, _screener_candidate_result())
+            degraded = _degraded_screener_result(SIGNAL_DATE)
+            with pytest.raises(ScreeningRunDegradedError) as excinfo:
+                persist_screening_run(session, degraded)
+            message = str(excinfo.value)
+            assert "market_screener" in message
+            assert "provider_error: RuntimeError" in message
+            # Nothing was written: the original snapshot survives untouched.
+            with Session(engine, expire_on_commit=False) as fresh:
+                rows = read_screening_candidates(fresh, run_date=SIGNAL_DATE)
+                assert {row["code"] for row in rows} == {"6758"}
+    finally:
+        engine.dispose()
+
+
+def test_degraded_run_persists_when_failed_source_has_no_existing_rows() -> None:
+    """Audit Y02: no existing rows for the failed source -> nothing to lose."""
+
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            # Only credit-margin rows exist for today; the degraded run's
+            # failure is EDINET file_missing (no edinet rows to lose).
+            credit_only = _two_candidate_result()
+            credit_only.candidates = [
+                c
+                for c in credit_only.candidates
+                if c.source == ScreeningSource.CREDIT_MARGIN_WEEKLY
+            ]
+            persist_screening_run(session, credit_only)
+            degraded = ScreeningRunResult(
+                run_date=SIGNAL_DATE,
+                candidates=[],
+                per_source_counts={
+                    "edinet_filing": {"candidates": 0, "reason": "file_missing"},
+                },
+                coverage={},
+                provenance=credit_only.provenance,
+            )
+            persisted = persist_screening_run(session, degraded)
+            assert persisted == {"inserted": 0, "updated": 1}
+            with Session(engine, expire_on_commit=False) as fresh:
+                rows = read_screening_candidates(fresh, run_date=SIGNAL_DATE)
+                assert rows == []  # credit row replaced by the empty re-run
+    finally:
+        engine.dispose()
+
+
+def test_clean_same_day_rerun_still_replaces_rows() -> None:
+    """Audit Y02: a healthy same-day re-run stays idempotent (no guard trip)."""
+
+    engine = _memory_engine()
+    try:
+        with Session(engine, expire_on_commit=False) as session:
+            first = persist_screening_run(session, _two_candidate_result())
+            assert first == {"inserted": 2, "updated": 0}
+            rerun = _two_candidate_result()
+            rerun.per_source_counts = {"edinet_filing": {"candidates": 1}}
+            second = persist_screening_run(session, rerun)
+            assert second == {"inserted": 2, "updated": 2}
+            with Session(engine, expire_on_commit=False) as fresh:
+                rows = read_screening_candidates(fresh, run_date=SIGNAL_DATE)
+                assert {row["code"] for row in rows} == {"11115", "6758"}
+    finally:
+        engine.dispose()
+
+
+def test_api_degraded_rerun_returns_409_and_keeps_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Audit Y02: the API converts the degraded guard into HTTP 409."""
+
+    _api_db_engine(monkeypatch, tmp_path)
+    fake = FakeScreenerProvider(quotes=[{"symbol": "6758.T", "regularMarketPrice": 1200.0}])
+    monkeypatch.setattr(
+        "yowayowa.services.screening_pipeline._screener_factory",
+        lambda: fake,
+    )
+    with TestClient(app) as client:
+        first = client.post("/v1/screening/run")
+        assert first.status_code == 200
+        assert first.json()["persisted"]["inserted"] >= 1
+
+        # Second run: screener fetch now fails while rows exist for today.
+        def _boom() -> FakeScreenerProvider:
+            raise RuntimeError("取得障害")
+
+        monkeypatch.setattr(
+            "yowayowa.services.screening_pipeline._screener_factory",
+            _boom,
+        )
+        second = client.post("/v1/screening/run")
+        assert second.status_code == 409
+        assert "market_screener" in second.json()["detail"]
+
+        # The first snapshot's rows survive the refused re-run.
+        candidates = client.get("/v1/screening/candidates", params={"signal": "screener_low_pe"})
+        assert candidates.status_code == 200
+        rows = candidates.json()
+        assert rows and rows[0]["code"] == "6758"
+
+
+# ------------------------------------------------------------------------ API
+
+
+def _api_db_engine(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from yowayowa import db as db_module
+
+    monkeypatch.setenv("YOWAYOWA_DATABASE_URL", f"sqlite:///{tmp_path / 'screening-api.db'}")
+    db_module.dispose_database()
+
+
+def test_api_run_and_candidates(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    _api_db_engine(monkeypatch, tmp_path)
+    fake = FakeScreenerProvider(quotes=[{"symbol": "6758.T", "regularMarketPrice": 1200.0}])
+    monkeypatch.setattr(
+        "yowayowa.services.screening_pipeline._screener_factory",
+        lambda: fake,
+    )
+    with TestClient(app) as client:
+        response = client.post("/v1/screening/run")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["persisted"]["inserted"] >= 1
+        # The run date is "today" as seen by the pipeline itself; comparing to
+        # a fresh date.today() here would flake when the test session crosses
+        # midnight JST between the POST and the assertion.
+        assert (
+            payload["result"]["run_date"]
+            == date.fromisoformat(payload["result"]["run_date"]).isoformat()
+        )
+
+        candidates = client.get("/v1/screening/candidates", params={"signal": "screener_low_pe"})
+        assert candidates.status_code == 200
+        rows = candidates.json()
+        assert rows and rows[0]["code"] == "6758"
+        assert rows[0]["provenance"]["provider"]
+
+
+def test_api_fails_closed_outside_personal_mode(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    _api_db_engine(monkeypatch, tmp_path)
+    monkeypatch.setenv("YOWAYOWA_MODE", "public")
+    monkeypatch.setenv("YOWAYOWA_API_TOKEN", "public-token")
+    from yowayowa.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        with TestClient(app) as client:
+            run_response = client.post(
+                "/v1/screening/run", headers={"Authorization": "Bearer public-token"}
+            )
+            assert run_response.status_code == 403
+            assert "personal" in run_response.json()["detail"]
+            read_response = client.get(
+                "/v1/screening/candidates", headers={"Authorization": "Bearer public-token"}
+            )
+            assert read_response.status_code == 403
+    finally:
+        monkeypatch.undo()
+        get_settings.cache_clear()
+
+
+def test_openapi_contains_screening_paths() -> None:
+    schema = app.openapi()
+    assert {"/v1/screening/run", "/v1/screening/candidates"} <= set(schema["paths"])
+
+
+# ------------------------------------------------------------------------ CLI
+
+
+def test_cli_screening_run_and_candidates(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from yowayowa import db as db_module
+
+    monkeypatch.setenv("YOWAYOWA_DATABASE_URL", f"sqlite:///{tmp_path / 'cli.db'}")
+    db_module.dispose_database()
+    fake = FakeScreenerProvider(quotes=[{"symbol": "6758.T", "regularMarketPrice": 1200.0}])
+    monkeypatch.setattr(
+        "yowayowa.services.screening_pipeline._screener_factory",
+        lambda: fake,
+    )
+    result = runner.invoke(cli_app, ["screening-run"])
+    assert result.exit_code == 0, result.output
+    assert "screening run" in result.output
+
+    listing = runner.invoke(cli_app, ["screening-candidates", "6758"])
+    assert listing.exit_code == 0, listing.output
+    assert "6758" in listing.output
+
+    listing_all = runner.invoke(cli_app, ["screening-candidates", "ALL"])
+    assert listing_all.exit_code == 0, listing_all.output
+
+    monkeypatch.undo()
+    db_module.dispose_database()
+
+
+# ------------------------------------------------------------------- AI tool
+
+
+def test_ai_tool_get_screening_candidates_reads_session() -> None:
+
+    from yowayowa.services.ai_agent import InvestmentResearchAgent
+
+    engine = _memory_engine()
+    try:
+        result = _two_candidate_result()
+        with Session(engine, expire_on_commit=False) as session:
+            persist_screening_run(session, result)
+        agent = InvestmentResearchAgent(
+            Settings(database_url="sqlite:///:memory:"),
+            session,
+        )
+        payload = agent._tool_screening_candidates({})
+        assert payload and payload[0]["code"] in {"11115", "6758"}
+        limited = agent._tool_screening_candidates({"limit": 1})
+        assert len(limited) == 1
+    finally:
+        engine.dispose()

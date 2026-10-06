@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ t('compare.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-head"><h1>{{ t('compare.title') }}</h1></section>
+{% if app_mode == 'personal' %}
+<section class="panel" style="margin-bottom:12px">
+  <div class="section-heading"><h2>{{ x('discover.preset') }}</h2><span id="compare-preset-status" class="muted">—</span></div>
+  <form id="compare-preset-form" class="toolbar">
+    <select id="compare-preset-select" aria-label="{{ x('discover.preset') }}"><option value="">—</option></select>
+    <input id="compare-preset-name" maxlength="100" required placeholder="{{ x('discover.preset') }}">
+    <button id="compare-preset-save" class="ghost" type="submit">+ {{ x('discover.preset') }}</button>
+    <button id="compare-preset-load" class="ghost" type="button">{{ x('discover.preset') }} →</button>
+    <button id="compare-preset-delete" class="ghost" type="button">− {{ x('discover.preset') }}</button>
+  </form>
+</section>
+{% endif %}
+<section class="panel">
+  <form id="compare-form" class="screen-form">
+    <div class="field">
+      <label for="compare-symbols">{{ t('compare.symbols') }}</label>
+      <textarea id="compare-symbols" rows="2" placeholder="AAPL, MSFT, 7203.T"></textarea>
+      <small>{{ t('compare.symbol_limit') }}</small>
+    </div>
+    <div class="field">
+      <label>{{ t('compare.metrics') }}</label>
+      <div id="metric-picker" class="metric-picker" aria-label="{{ t('compare.metrics_aria') }}"></div>
+    </div>
+    <div class="toolbar">
+      <button class="primary" type="submit">{{ t('compare.title') }}</button>
+      {% if app_mode == 'personal' %}<button id="use-main-watchlist" class="ghost" type="button">{{ t('compare.use_watchlist') }}</button>{% endif %}
+    </div>
+  </form>
+</section>
+<section class="panel compare-results-panel">
+  <div class="section-heading"><h2>{{ t('common.results') }}</h2><span id="compare-meta" class="pill">—</span></div>
+  <div id="compare-results" class="table-wrap muted" style="padding:12px">{{ t('compare.prompt') }}</div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/compare.js"></script>{% endblock %}

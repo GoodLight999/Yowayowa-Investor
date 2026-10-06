@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ l('licenses.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><h1>{{ l('licenses.title') }}</h1><p>{{ l('licenses.subtitle') }}</p></div>
+  <span class="muted">{{ l('licenses.mode') }} · {{ source_licenses.mode }}</span>
+</section>
+<section class="sheet">
+  <p>{{ l('licenses.policy_note') }}</p>
+  <p class="muted">{{ l('licenses.local_note') }}</p>
+</section>
+<section class="sheet">
+  <div class="research-table-wrap">
+    <table class="research-table">
+      <thead>
+        <tr>
+          <th>{{ l('licenses.source') }}</th>
+          <th>{{ l('licenses.access') }}</th>
+          <th>{{ l('licenses.display') }}</th>
+          <th>{{ l('licenses.api') }}</th>
+          <th>{{ l('licenses.derived') }}</th>
+          <th>{{ l('licenses.attribution') }}</th>
+          <th>{{ l('licenses.reviewed') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for policy in source_licenses.sources %}
+        <tr>
+          <td>
+            <strong>{{ policy.source }}</strong>
+            <small class="muted">{{ policy.key }} · {{ policy.license_class }}</small>
+          </td>
+          <td>{{ policy.access }}</td>
+          <td>{{ l('licenses.yes') if policy.public_display else l('licenses.no') }}</td>
+          <td>{{ l('licenses.yes') if policy.public_api else l('licenses.no') }}</td>
+          <td>{{ l('licenses.yes') if policy.derived_analysis_public else l('licenses.no') }}</td>
+          <td>
+            {% if policy.attribution_required %}
+              {{ policy.attribution or l('licenses.yes') }}
+            {% else %}
+              {{ l('licenses.none') }}
+            {% endif %}
+          </td>
+          <td>{{ policy.reviewed_on }}</td>
+        </tr>
+        <tr>
+          <td colspan="7">
+            <a href="{{ policy.terms_url }}" rel="noreferrer">Terms / policy ↗</a>
+            {% if policy.notes %}<span class="muted"> · {{ policy.notes | join(' · ') }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

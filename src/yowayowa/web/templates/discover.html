@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ x('discover.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <h1>{{ x('discover.title') }}</h1>
+    <p class="ux-subtitle">{{ x('discover.subtitle') }}</p>
+  </div>
+</section>
+
+<section class="sheet">
+  <form id="discover-form">
+    <div class="research-toolbar">
+      <div class="field">
+        <label for="discover-preset">{{ x('discover.preset') }}</label>
+        <select id="discover-preset"><option value="">{{ x('discover.custom') }}</option></select>
+      </div>
+      <div class="field compact">
+        <label for="discover-region">{{ x('discover.region') }}</label>
+        <select id="discover-region"><option value="">ALL</option></select>
+      </div>
+    </div>
+    <p id="discover-strategy-note" class="ux-note" hidden></p>
+
+    <div class="section-title-line">
+      <div>
+        <h2>{{ x('discover.filters') }}</h2>
+        <p class="ux-note">{% if locale == 'ja' %}必要な条件だけ追加してください。並び順や取得件数は「表示設定」から変更できます。{% else %}Add only the conditions that matter. Sorting and result count live under Display settings.{% endif %}</p>
+      </div>
+      <button class="ghost" id="discover-add-filter" type="button">{{ x('discover.add_filter') }}</button>
+    </div>
+    <div class="research-filter-list" id="discover-filters"></div>
+
+    <details class="advanced-tools discover-display-settings">
+      <summary class="section-heading">{% if locale == 'ja' %}表示設定{% else %}Display settings{% endif %}</summary>
+      <div class="advanced-tools-links research-toolbar">
+        <div class="field">
+          <label for="discover-sort">{{ x('discover.sort') }}</label>
+          <select id="discover-sort"><option value="">—</option></select>
+        </div>
+        <div class="field compact">
+          <label for="discover-order">{{ x('discover.order') }}</label>
+          <select id="discover-order">
+            <option value="desc">{{ x('discover.desc') }}</option>
+            <option value="asc">{{ x('discover.asc') }}</option>
+          </select>
+        </div>
+        <div class="field compact">
+          <label for="discover-size">{{ x('discover.size') }}</label>
+          <select id="discover-size"><option selected>25</option><option>50</option><option>100</option><option>250</option></select>
+        </div>
+      </div>
+    </details>
+
+    <div class="research-actions discover-run-actions">
+      <button class="primary" type="submit">{{ x('discover.run') }}</button>
+      <span class="muted" id="discover-status">{{ x('discover.catalog_loading') }}</span>
+    </div>
+  </form>
+</section>
+
+<section class="sheet">
+  <div class="section-title-line">
+    <h2>{{ x('discover.results') }}</h2>
+    <div class="research-actions">
+      <button class="ghost" id="discover-compare" type="button" disabled>{{ x('discover.compare') }}</button>
+      <button class="ghost" id="discover-watchlist" type="button" disabled>{{ x('discover.watchlist') }}</button>
+      <button class="ghost" id="discover-ai" type="button" disabled>{{ x('discover.ask_ai') }}</button>
+      <button class="ghost" id="discover-export" type="button" disabled>{{ x('discover.export') }}</button>
+    </div>
+  </div>
+  <div id="discover-results"><span class="muted">—</span></div>
+  <div class="provider-source-note" id="discover-provenance"></div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/discover.js"></script>{% endblock %}

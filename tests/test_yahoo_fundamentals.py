@@ -1,0 +1,521 @@
+from datetime import date
+from decimal import Decimal
+
+import pandas as pd
+import pytest
+
+from yowayowa.config import Settings
+from yowayowa.domain import Fundamentals, LicenseClass, MetricPoint, MetricSeries, Provenance
+from yowayowa.providers import yahoo_fundamentals
+from yowayowa.providers.fundamentals import (
+    ListingAwareFundamentalsProvider,
+    SecFirstFundamentalsProvider,
+    is_non_us_exchange_listing,
+)
+from yowayowa.providers.yahoo_fundamentals import YahooFundamentalsProvider
+
+
+class FakeTicker:
+    def __init__(self, symbol: str) -> None:
+        self.symbol = symbol
+
+    def get_income_stmt(self, **_: object) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                pd.Timestamp("2025-12-31"): [1000, 400, 100, 50, 2.5, 20],
+                pd.Timestamp("2024-12-31"): [800, 300, 80, 40, 2.0, 20],
+            },
+            index=[
+                "Total Revenue",
+                "Gross Profit",
+                "Operating Income",
+                "Net Income",
+                "Diluted EPS",
+                "Diluted Average Shares",
+            ],
+        )
+
+    def get_balance_sheet(self, **_: object) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                pd.Timestamp("2025-12-31"): [2000, 900, 1100, 250],
+                pd.Timestamp("2024-12-31"): [1800, 850, 950, 200],
+            },
+            index=[
+                "Total Assets",
+                "Total Liabilities Net Minority Interest",
+                "Stockholders Equity",
+                "Cash Cash Equivalents And Short Term Investments",
+            ],
+        )
+
+    def get_cash_flow(self, **_: object) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                pd.Timestamp("2025-12-31"): [120, -30],
+                pd.Timestamp("2024-12-31"): [100, -20],
+            },
+            index=["Operating Cash Flow", "Capital Expenditure"],
+        )
+
+    def get_history_metadata(self) -> dict[str, object]:
+        return {
+            "longName": "Example Japan Corp",
+            "currency": "JPY",
+            "symbol": self.symbol,
+        }
+
+    def get_info(self) -> dict[str, object]:
+        raise AssertionError("company_facts must not depend on quoteSummary get_info")
+
+
+def test_yahoo_annual_fundamentals_are_normalized(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(yahoo_fundamentals.yf, "Ticker", FakeTicker)
+    provider = YahooFundamentalsProvider(Settings(database_url="sqlite:///:memory:"))
+
+    result = provider.company_facts("7203.T")
+
+    assert result.symbol == "7203.T"
+    assert result.company_name == "Example Japan Corp"
+    assert result.cik == ""
+    assert result.provenance.license_class == LicenseClass.PERSONAL_ONLY
+    assert result.provenance.as_of == date(2025, 12, 31)
+    assert result.metrics["revenue"].points[-1].value == 1000
+    assert result.metrics["revenue"].points[-1].unit == "JPY"
+    assert result.metrics["capex"].points[-1].value == 30
+    assert result.metrics["shares_diluted"].points[-1].unit == "shares"
+
+
+def test_yahoo_metadata_failure_does_not_discard_japanese_statements(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    class MetadataFailureTicker(FakeTicker):
+        def get_history_metadata(self) -> dict[str, object]:
+            raise RuntimeError("metadata unavailable")
+
+    monkeypatch.setattr(yahoo_fundamentals.yf, "Ticker", MetadataFailureTicker)
+    provider = YahooFundamentalsProvider(Settings(database_url="sqlite:///:memory:"))
+
+    result = provider.company_facts("7203.T")
+
+    assert result.company_name == "7203.T"
+    assert result.metrics["revenue"].points[-1].unit == "JPY"
+    assert result.metrics["eps_diluted"].points[-1].unit == "JPY/share"
+
+
+class _EpsTicker(FakeTicker):
+    """Frequency-aware FakeTicker variant whose income rows are per-test."""
+
+    def get_income_stmt(
+        self,
+        *,
+        freq: str | None = None,
+        frequency: str | None = None,
+        **_: object,
+    ) -> pd.DataFrame:
+        if (freq or frequency) == "quarterly":
+            return pd.DataFrame()
+        return self._income()
+
+    def _income(self) -> pd.DataFrame:
+        raise NotImplementedError
+
+
+def _income_frame(eps: list[float]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            pd.Timestamp("2025-12-31"): [1000, 400, eps[0], 20],
+            pd.Timestamp("2024-12-31"): [800, 40, eps[1], 20],
+        },
+        index=[
+            "Total Revenue",
+            "Net Income",
+            "Diluted EPS",
+            "Diluted Average Shares",
+        ],
+    )
+
+
+def test_eps_diluted_derived_when_row_missing(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    class NoEpsRowTicker(_EpsTicker):
+        def _income(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    pd.Timestamp("2025-12-31"): [1000, 400, 20],
+                    pd.Timestamp("2024-12-31"): [800, 40, 20],
+                },
+                index=["Total Revenue", "Net Income", "Diluted Average Shares"],
+            )
+
+    monkeypatch.setattr(yahoo_fundamentals.yf, "Ticker", NoEpsRowTicker)
+    provider = YahooFundamentalsProvider(Settings(database_url="sqlite:///:memory:"))
+
+    result = provider.company_facts("7203.T")
+
+    points = result.metrics["eps_diluted"].points
+    assert len(points) == 2
+    assert float(points[-1].value) == pytest.approx(20.0, rel=0.01)
+    assert float(points[-2].value) == pytest.approx(2.0, rel=0.01)
+    assert points[-1].unit == "JPY/share"
+    assert points[-1].period_end == date(2025, 12, 31)
+    assert points[-1].fiscal_year == 2025
+
+
+def test_eps_diluted_zero_is_replaced_by_derivation(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    class ZeroEpsTicker(_EpsTicker):
+        def _income(self) -> pd.DataFrame:
+            return _income_frame([0.0, 0.0])
+
+    monkeypatch.setattr(yahoo_fundamentals.yf, "Ticker", ZeroEpsTicker)
+    provider = YahooFundamentalsProvider(Settings(database_url="sqlite:///:memory:"))
+
+    result = provider.company_facts("7203.T")
+
+    points = result.metrics["eps_diluted"].points
+    assert len(points) == 2
+    assert float(points[-1].value) == pytest.approx(20.0, rel=0.01)
+    assert float(points[-2].value) == pytest.approx(2.0, rel=0.01)
+    assert all(point.value != 0 for point in points)
+
+
+def test_eps_diluted_yahoo_value_not_overwritten(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    class YahooEpsTicker(_EpsTicker):
+        def _income(self) -> pd.DataFrame:
+            return _income_frame([2.5, 2.0])
+
+    monkeypatch.setattr(yahoo_fundamentals.yf, "Ticker", YahooEpsTicker)
+    provider = YahooFundamentalsProvider(Settings(database_url="sqlite:///:memory:"))
+
+    result = provider.company_facts("7203.T")
+
+    points = result.metrics["eps_diluted"].points
+    assert len(points) == 2
+    assert float(points[-1].value) == pytest.approx(2.5, rel=0.01)
+    assert float(points[-2].value) == pytest.approx(2.0, rel=0.01)
+
+
+class PrimaryMissing:
+    def company_facts(self, symbol: str) -> Fundamentals:
+        raise LookupError(symbol)
+
+
+class PrimaryBroken:
+    def company_facts(self, symbol: str) -> Fundamentals:
+        raise RuntimeError(symbol)
+
+
+class Fallback:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def company_facts(self, symbol: str) -> Fundamentals:
+        self.calls.append(symbol)
+        return Fundamentals(
+            symbol=symbol,
+            cik="",
+            company_name="Fallback",
+            metrics={},
+            provenance=Provenance(
+                provider="fallback",
+                source="fixture",
+                license_class=LicenseClass.PERSONAL_ONLY,
+                retrieved_at="2026-08-13T00:00:00Z",
+            ),
+        )
+
+
+def test_listing_aware_provider_routes_before_network_failure() -> None:
+    international = Fallback()
+    provider = ListingAwareFundamentalsProvider(PrimaryBroken(), international)
+
+    result = provider.company_facts("7203.T")
+
+    assert result.company_name == "Fallback"
+    assert international.calls == ["7203.T"]
+
+
+def test_listing_aware_provider_does_not_treat_us_class_share_as_international() -> None:
+    international = Fallback()
+    provider = ListingAwareFundamentalsProvider(PrimaryMissing(), international)
+
+    with pytest.raises(LookupError):
+        provider.company_facts("BRK.B")
+
+    assert international.calls == []
+    assert is_non_us_exchange_listing("7203.T") is True
+    assert is_non_us_exchange_listing("BRK.B") is False
+
+
+def test_sec_first_provider_falls_back_only_when_issuer_is_not_in_sec() -> None:
+    fallback = Fallback()
+    provider = SecFirstFundamentalsProvider(PrimaryMissing(), fallback)
+    result = provider.company_facts("7203.T")
+    assert result.company_name == "Fallback"
+    assert fallback.calls == ["7203.T"]
+
+
+def test_sec_first_provider_does_not_hide_primary_outage() -> None:
+    fallback = Fallback()
+    provider = SecFirstFundamentalsProvider(PrimaryBroken(), fallback)
+    with pytest.raises(RuntimeError):
+        provider.company_facts("RKLB")
+    assert fallback.calls == []
+
+
+def test_eps_diluted_non_finite_shares_are_skipped() -> None:
+    metrics = {
+        "net_income": MetricSeries(
+            key="net_income",
+            label="Net income",
+            points=[
+                MetricPoint(
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("400"),
+                    unit="JPY",
+                )
+            ],
+        ),
+        # model_construct bypasses pydantic's finite-number validation, which is
+        # exactly how a non-finite value can reach the derivation guard.
+        "shares_diluted": MetricSeries.model_construct(
+            key="shares_diluted",
+            label="Diluted shares",
+            points=[
+                MetricPoint.model_construct(
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("NaN"),
+                    unit="shares",
+                )
+            ],
+        ),
+    }
+
+    YahooFundamentalsProvider._derive_eps_diluted(metrics, "JPY")
+
+    assert "eps_diluted" not in metrics
+
+
+def test_eps_diluted_zero_shares_are_skipped() -> None:
+    metrics = {
+        "net_income": _series("net_income", "400"),
+        "shares_diluted": _series("shares_diluted", "0"),
+    }
+
+    YahooFundamentalsProvider._derive_eps_diluted(metrics, "JPY")
+
+    assert "eps_diluted" not in metrics
+
+
+def test_eps_diluted_non_finite_net_income_is_skipped() -> None:
+    metrics = {
+        "net_income": MetricSeries.model_construct(
+            key="net_income",
+            label="Net income",
+            points=[
+                MetricPoint.model_construct(
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("Infinity"),
+                    unit="JPY",
+                )
+            ],
+        ),
+        "shares_diluted": MetricSeries(
+            key="shares_diluted",
+            label="Diluted shares",
+            points=[
+                MetricPoint(
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("20"),
+                    unit="shares",
+                )
+            ],
+        ),
+    }
+
+    YahooFundamentalsProvider._derive_eps_diluted(metrics, "JPY")
+
+    assert "eps_diluted" not in metrics
+
+
+def test_eps_diluted_missing_counterpart_series_is_noop() -> None:
+    YahooFundamentalsProvider._derive_eps_diluted({}, "JPY")
+
+    only_net = {
+        "net_income": _series("net_income", "400"),
+    }
+    YahooFundamentalsProvider._derive_eps_diluted(only_net, "JPY")
+
+    assert "eps_diluted" not in only_net
+    only_shares = {
+        "shares_diluted": _series("shares_diluted", "20"),
+    }
+    YahooFundamentalsProvider._derive_eps_diluted(only_shares, "JPY")
+
+    assert "eps_diluted" not in only_shares
+
+
+def _series(key: str, value: str) -> MetricSeries:
+    return MetricSeries(
+        key=key,
+        label=key.replace("_", " "),
+        points=[
+            MetricPoint(
+                period_end=date(2025, 12, 31),
+                value=Decimal(value),
+                unit="JPY" if key == "net_income" else "shares",
+            )
+        ],
+    )
+
+
+def test_eps_diluted_derives_value_from_finite_inputs() -> None:
+    metrics = {
+        "net_income": _series("net_income", "400"),
+        "shares_diluted": _series("shares_diluted", "20"),
+    }
+
+    YahooFundamentalsProvider._derive_eps_diluted(metrics, "JPY")
+
+    points = metrics["eps_diluted"].points
+    assert len(points) == 1
+    assert points[0].value == Decimal("20.000000")
+    assert points[0].unit == "JPY/share"
+    assert points[0].form == "Yahoo normalized statement"
+
+
+def test_safe_frame_falls_back_to_frequency_kwarg() -> None:
+    calls: list[dict[str, str]] = []
+
+    def legacy_loader(**kwargs: str) -> pd.DataFrame:
+        calls.append(kwargs)
+        if "freq" in kwargs:
+            raise TypeError("legacy yfinance uses frequency=")
+        return pd.DataFrame({"2025-12-31": [1]})
+
+    frame = YahooFundamentalsProvider._safe_frame(legacy_loader, "yearly")
+
+    assert not frame.empty
+    assert calls == [{"freq": "yearly"}, {"frequency": "yearly"}]
+
+
+def test_safe_frame_returns_empty_when_both_signatures_fail() -> None:
+    def broken_loader(**_: str) -> pd.DataFrame:
+        raise RuntimeError("boom")
+
+    assert YahooFundamentalsProvider._safe_frame(broken_loader, "yearly").empty
+
+
+def test_safe_frame_rejects_non_dataframe_payload() -> None:
+    assert YahooFundamentalsProvider._safe_frame(lambda **_: "not-a-frame", "yearly").empty
+
+
+def test_point_rejects_unparseable_value_or_period() -> None:
+    build = YahooFundamentalsProvider._point
+
+    assert build("assets", "2025-12-31", "not-a-number", "yearly", "JPY") is None
+    assert build("assets", "2025-12-31", float("nan"), "yearly", "JPY") is None
+    assert build("assets", "garbage-period", "100", "yearly", "JPY") is None
+    assert build("assets", None, "100", "yearly", "JPY") is None
+
+
+def test_point_normalizes_capex_to_positive_outflow() -> None:
+    point = YahooFundamentalsProvider._point("capex", "2025-12-31", "-120.5", "yearly", "JPY")
+
+    assert point is not None
+    assert point.value == Decimal("120.5")
+    assert point.unit == "JPY"
+
+
+def test_point_units_differ_by_key_and_currency() -> None:
+    shares = YahooFundamentalsProvider._point(
+        "shares_diluted", "2025-12-31", "20", "quarterly", "JPY"
+    )
+    eps = YahooFundamentalsProvider._point("eps_diluted", "2025-12-31", "2.5", "quarterly", "JPY")
+    eps_without_currency = YahooFundamentalsProvider._point(
+        "eps_diluted", "2025-12-31", "2.5", "quarterly", ""
+    )
+
+    assert shares is not None and shares.unit == "shares"
+    assert eps is not None and eps.unit == "JPY/share"
+    assert eps_without_currency is not None
+    assert eps_without_currency.unit == "per share"
+    assert shares is not None and shares.period_start == date(2025, 10, 3)
+    assert eps is not None and eps.period_start == date(2025, 10, 3)
+    assert shares is not None and shares.fiscal_period == "Q"
+
+
+def test_fill_fiscal_years_infers_fiscal_month_and_labels_points() -> None:
+    metrics = {
+        "assets": MetricSeries(
+            key="assets",
+            label="Assets",
+            points=[
+                MetricPoint(
+                    period_start=date(2025, 3, 1),
+                    period_end=date(2026, 2, 20),
+                    value=Decimal("1"),
+                    unit="JPY",
+                    fiscal_period="Q",
+                ),
+                MetricPoint(
+                    period_start=date(2025, 3, 1),
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("2"),
+                    unit="JPY",
+                    fiscal_period="Q",
+                ),
+                MetricPoint(
+                    period_start=date(2024, 3, 1),
+                    period_end=date(2024, 3, 31),
+                    value=Decimal("3"),
+                    unit="JPY",
+                    fiscal_period="Q",
+                ),
+            ],
+        )
+    }
+
+    YahooFundamentalsProvider._fill_fiscal_years(
+        metrics,
+        [
+            date(2023, 12, 31),
+            date(2024, 12, 31),
+            date(2025, 12, 31),
+        ],
+    )
+
+    points = metrics["assets"].points
+    # Fiscal month inferred as December: Feb-end belongs to next FY, Mar 2024
+    # (before December) stays in its own year.
+    assert points[0].fiscal_year == 2026
+    assert points[1].fiscal_year == 2025
+    assert points[2].fiscal_year == 2024
+
+
+def test_fill_fiscal_years_without_two_yearly_ends_labels_fy_only() -> None:
+    metrics = {
+        "assets": MetricSeries(
+            key="assets",
+            label="Assets",
+            points=[
+                MetricPoint(
+                    period_start=date(2025, 1, 1),
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("1"),
+                    unit="JPY",
+                    fiscal_period="FY",
+                ),
+                MetricPoint(
+                    period_start=date(2025, 10, 1),
+                    period_end=date(2025, 12, 31),
+                    value=Decimal("2"),
+                    unit="JPY",
+                    fiscal_period="Q",
+                ),
+            ],
+        )
+    }
+
+    YahooFundamentalsProvider._fill_fiscal_years(metrics, [date(2025, 12, 31)])
+
+    points = metrics["assets"].points
+    assert points[0].fiscal_year == 2025  # FY keeps period-end year
+    assert points[1].fiscal_year is None  # quarterly stays unlabeled
