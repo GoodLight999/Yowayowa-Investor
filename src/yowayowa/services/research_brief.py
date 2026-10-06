@@ -209,7 +209,8 @@ def _compact_market_for_prompt(market: dict[str, Any], *, market_kind: str) -> d
     ``latest_rows`` keep only the per-bar price fields; the per-row provenance
     and cumulative valuation fields (symbol/notes/disclosure_date/pbr/per/
     net_cash_ratio/kiyohara_net_cash_ratio) are hoisted into one ``source``
-    block per symbol, taken from the newest row (``latest_rows[0]``).
+    block per symbol, taken from the newest ORIGINAL row (``latest_rows[0]``)
+    — never from the projected price-only rows, which carry no provenance.
     """
 
     row_fields: tuple[str, ...]
@@ -227,11 +228,19 @@ def _compact_market_for_prompt(market: dict[str, Any], *, market_kind: str) -> d
         if not isinstance(symbol_evidence, dict):
             projected_symbols[str(symbol)] = symbol_evidence
             continue
+        # Hoist the per-symbol provenance from the ORIGINAL newest row
+        # (``latest_rows[0]``), not from ``rows_out``: the projected rows keep
+        # only price fields, so a source block built from them would be all
+        # None and every market-data citation URL would silently vanish from
+        # the prompt. Missing keys are simply omitted (no None fabrication).
         latest_rows = symbol_evidence.get("latest_rows")
         rows_out: list[dict[str, Any]] = []
+        newest_original: dict[str, Any] | None = None
         if isinstance(latest_rows, list):
             for row in latest_rows:
                 if isinstance(row, dict):
+                    if newest_original is None:
+                        newest_original = row
                     rows_out.append({field: row.get(field) for field in row_fields})
                 else:
                     rows_out.append(row)
@@ -239,12 +248,14 @@ def _compact_market_for_prompt(market: dict[str, Any], *, market_kind: str) -> d
             "row_count": symbol_evidence.get("row_count"),
             "latest_rows": rows_out,
         }
-        for row in rows_out:
-            if isinstance(row, dict):
-                source: dict[str, Any] = {field: row.get(field) for field in source_fields}
-                source["retrieved_at"] = row.get("retrieved_at")
+        if newest_original is not None:
+            source: dict[str, Any] = {
+                field: newest_original[field]
+                for field in (*source_fields, "retrieved_at")
+                if field in newest_original
+            }
+            if source:
                 symbol_out["source"] = source
-                break
         projected_symbols[str(symbol)] = symbol_out
     compacted["symbols"] = projected_symbols
     return compacted

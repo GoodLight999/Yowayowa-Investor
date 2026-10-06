@@ -331,6 +331,101 @@ def test_compact_prompt_keeps_citation_anchors_and_discipline() -> None:
     assert f"{len(BRIEF_SECTIONS)}セクション" in prompt
 
 
+# ------------------------------------------------- provenance values survive
+# Regression for the CTO acceptance finding on 5d2c7c0: the per-symbol
+# source block was built from the already-projected price-only rows, so
+# provider/source_url/license_class/interval/currency/retrieved_at all came
+# out null and every market-data citation URL was dropped from the prompt.
+# The pre-existing ``assert "source_url" in prompt`` checks only the KEY
+# name, which survives even when every VALUE is null — these assertions
+# check the actual values instead. The two per-symbol tests FAIL on
+# 5d2c7c0; the EDINET test is a defensive strengthening of the line-321
+# assertion (EDINET provenance was never dropped, so it passes either way).
+
+
+def test_prompt_keeps_per_symbol_source_url_values() -> None:
+    """Every synthetic symbol's source_url VALUE reaches the prompt."""
+
+    evidence = _large_evidence()
+    prompt = _budget_service()._brief_prompt(evidence)
+    newest_urls = [
+        symbol_evidence["latest_rows"][0]["source_url"]
+        for market_kind in ("stocks", "crypto")
+        for symbol_evidence in evidence["prices"][market_kind]["symbols"].values()
+    ]
+    assert len(newest_urls) == 14
+    for url in newest_urls:
+        assert url in prompt  # fails at 5d2c7c0: value was null, URL dropped
+
+
+def test_prompt_keeps_edinet_source_url_value() -> None:
+    """The EDINET source_url value (not just the key name) reaches the prompt."""
+
+    evidence = _large_evidence()
+    prompt = _budget_service()._brief_prompt(evidence)
+    edinet_urls = {
+        entry["source_url"]
+        for field in ("filings", "large_filings")
+        for entry in evidence["edinet"][field]
+    }
+    assert edinet_urls
+    for url in edinet_urls:
+        assert url in prompt
+
+
+def test_compact_evidence_source_block_matches_original_row() -> None:
+    """Compact per-symbol source blocks carry the ORIGINAL row's provenance.
+
+    Builds a small explicit packet (AAPL / BTC, matching the real-data
+    repro) and compares the compacted ``source`` block against
+    ``latest_rows[0]`` of the untouched evidence. Fails on 5d2c7c0, where
+    the block was built from the projected price-only rows (all null).
+    """
+
+    aapl_row = _stock_row("AAPL", 0)
+    btc_row = _crypto_row("BTC", 0)
+    evidence: dict[str, Any] = {
+        "prices": {
+            "stocks": {
+                "symbols": {
+                    "AAPL": {"row_count": 1, "latest_rows": [aapl_row]},
+                },
+            },
+            "crypto": {
+                "symbols": {
+                    "BTC": {"row_count": 1, "latest_rows": [btc_row]},
+                },
+            },
+        },
+    }
+    compacted = _compact_evidence_for_prompt(evidence)
+    for market_kind, symbol, row in (
+        ("stocks", "AAPL", aapl_row),
+        ("crypto", "BTC", btc_row),
+    ):
+        source = compacted["prices"][market_kind]["symbols"][symbol]["source"]
+        assert source["source_url"] == row["source_url"]  # fails at 5d2c7c0 (None)
+        assert source["provider"] == row["provider"]  # fails at 5d2c7c0 (None)
+        assert source["license_class"] == row["license_class"]
+        assert source["interval"] == row["interval"]
+        assert source["currency"] == row["currency"]
+        assert source["retrieved_at"] == row["retrieved_at"]
+
+    # A key absent from the original row must not be fabricated as None.
+    partial_row = {key: value for key, value in aapl_row.items() if key != "interval"}
+    partial_evidence: dict[str, Any] = {
+        "prices": {
+            "stocks": {
+                "symbols": {"AAPL": {"row_count": 1, "latest_rows": [partial_row]}},
+            },
+        },
+    }
+    partial_compact = _compact_evidence_for_prompt(partial_evidence)
+    partial_source = partial_compact["prices"]["stocks"]["symbols"]["AAPL"]["source"]
+    assert "interval" not in partial_source
+    assert partial_source["source_url"] == partial_row["source_url"]
+
+
 # ------------------------------------------------------------ budget enforcement
 
 
