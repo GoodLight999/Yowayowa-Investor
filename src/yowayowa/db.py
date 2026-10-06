@@ -636,7 +636,7 @@ def _ensure_positions_unique_constraint(engine: Engine) -> None:
             "SELECT portfolio_id, symbol, COUNT(*) AS cnt "
             "FROM positions "
             "GROUP BY portfolio_id, symbol "
-            "HAVING cnt > 1"
+            "HAVING COUNT(*) > 1"
         )
         duplicates = conn.execute(dup_query).fetchall()
         if duplicates:
@@ -700,12 +700,17 @@ def _ensure_positions_unique_constraint(engine: Engine) -> None:
             )
             conn.execute(text("PRAGMA foreign_keys = ON"))
     else:
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    "ALTER TABLE positions ADD CONSTRAINT uq_positions_portfolio_symbol "
-                    "UNIQUE (portfolio_id, symbol)"
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE positions ADD CONSTRAINT uq_positions_portfolio_symbol "
+                        "UNIQUE (portfolio_id, symbol)"
+                    )
                 )
+        except Exception as exc:  # startup must survive a migration failure
+            _record_positions_constraint_blocker(
+                f"constraint application failed: {type(exc).__name__}"
             )
 
 
