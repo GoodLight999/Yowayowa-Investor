@@ -122,6 +122,8 @@ known-first-party = ["yowayowa"]
 "src/yowayowa/services/research_ask.py" = ["RUF001", "RUF002"]
 "src/yowayowa/research_cli.py" = ["RUF001", "RUF002"]
 "tests/test_research_brief.py" = ["RUF001", "RUF002"]
+"tests/test_research_ask_adversarial.py" = ["RUF001", "RUF002"]
+"tests/test_research_ask_prompt_budget.py" = ["RUF001", "RUF002"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
