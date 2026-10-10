@@ -1,0 +1,101 @@
+# デモ運用ループ v1.1 運用手順（ゼロ発注・ペーパー）
+
+作成: worker-flash / 2026-10-10、v1.1更新 2026-10-11
+対象タスク: t_d9a25dd2（実装 worker-flash）
+仕様: SHORT_TERM_STRATEGY_DESIGN.md (t_421158aa) §2-2・§2-1・§3 M1–M9、
+実装仕様 DEMO_LOOP_V1_IMPLEMENTATION_SPEC.md (t_fcd37354) D1–D12、
+反証レビュー (t_c998951d) の F2/F3/F7/F8 採用。
+
+v1.0 からの変更点（2026-10-11）:
+- cron 3本へ集約（decide / fill / weekly）。旧 mark 単独ジョブは削除
+  （mark は decide 冒頭で前日分を処理するため）。
+- 旧 v1.0 wrapper（decide.sh/fill.sh/mark.sh/report.sh/demo_loop.sh）は
+  `ops/demo-loop/legacy_v1/` へ退避。現役は daily.sh / fill_v2.sh / weekly.sh の3本。
+- daily.sh の `report_if_monday` 呼び出しを削除（CLIに存在しないサブコマンドだった）。
+  週次レポートは weekly.sh（月曜）が担当。
+
+## 1. 構成（cron 3本・VPS で軽い処理のみ）
+
+| phase | cron script | JST時刻 | 対応UTC | 内容 |
+|---|---|---|---|---|
+| daily | `demo_loop_decide.sh` → `ops/demo-loop/daily.sh` | 09:20 | 00:20 | crypto-fetch → mark(前日分) → decide(+mtm) → anchor |
+| fill | `demo_loop_fill.sh` → `ops/demo-loop/fill_v2.sh` | 11:05 | 02:05 | 1h tape 取得 → resolve_fills(guard評価) → mtm |
+| weekly | `demo_loop_report.sh` → `ops/demo-loop/weekly.sh` | 月 09:50 | 月 00:50 | paperloop_verify → 週次サマリー1行 |
+
+- すべて no_agent cron（LLMを使わない）。flock による直列化つき
+  （`data/demo-loop/.lock`、ロック競合時は exit 0）。
+- Hermes cron の schedule はホストローカル（JST）で解釈されるため、登録は
+  `20 9 * * *` / `5 11 * * *` / `50 9 * * 1` の JST 表記
+  （= 仕様 §9 の UTC 00:20 / 02:05 / 月 00:50 と同じ瞬間）。
+
+## 2. データ source と追記手順
+
+- crypto: `data/crypto-ohlcv/{BTC,ETH}/ohlcv.jsonl`（Binance rows）。daily 冒頭で
+  `yowayowa crypto-fetch BTC ETH --days 5` を冪等追記（D12）。確定日足が26時間より
+  古いと HALT(stale_data)+skipped 行のみを書いて止まる（fail-closed・後追い取得なし）。
+- equity (book C): `data/stock-ohlcv/{SPY,IWM,JNJ,PG}/ohlcv.jsonl`。v1 では
+  未稼働（反証レビュー「帳簿Cは記録列だけ用意し行を書くのは2週目以降」採用）。
+  有効化は paperloop.py 修正。
+- 1時間tape: `data/demo-loop/tape/1h/{SYM}.jsonl`。fill 実行時に冪等追記。
+  約定価格はこの tape の「recorded_at 以降に始まった最初の1時間足の始値」
+  （commit-before-fill、F2/D5採択）。recorded_at より前の足での約定は assert で拒否。
+- 状態: ジャーナル `data/demo-loop/journal.jsonl`（前値ハッシュ連鎖・追記のみ）から
+  毎回 rebuild（state.json 非依存・D4冪等）。book別内訳は `{book}/journal.jsonl`。
+- 凍結入力: `data/demo-loop/inputs/{date}/{book}.json`（終値+as_of+input_sha256、D9）。
+- アンカー: `data/demo-loop/anchors.jsonl`（追記のたびに seq/row_hash を固定、改竄検出用）。
+
+## 3. 規律（クリティカル）
+
+- 発注経路ゼロ: broker / MT5 / operator_bridge / 注文エンドポイント文字列を一切持たない
+  （test_zero_order_path_is_free が grep テストで守る。M6）。
+- commit-before-fill: 約定価格は必ず recorded_at より後に始まった1時間足始値。
+  過去の価格での無断約定は禁止（F2/D5採択）。
+- 観測コスト = ペーパー約定価格とバックテスト約定価格（実行日の日足始値）との差の
+  符号付きbps（buy:+ / sell:−、D8）。1時間足の O-C はボラティリティでありコストではない（F3採択）。
+- 想定コストは 15 bps/売買（凍結。評価期間中の変更禁止）。
+- anti-scalp guard（paperloop_guard.check_trade）は純粋関数で、ジャーナルから復元した
+  last_fill_ts/side/opened_ts/fills_today を受ける（D6）。v1 の通常フローでは発火しない前提のため、
+  合成違反注文を使ったユニットテスト（test_guard_rejects_synthetic_violations 系）が
+  「拒否してログに残る」ことの証拠になる（F7採択・違反0件を根拠にしない）。
+- 5σ HALT は直前21日リターンの σ（当日を含まない、D1）で判定。当日込み窓では理論上発火しない。
+
+## 4. 継続・中止の機械基準（設計 §4。数値固定、評価期間中の変更禁止）
+
+- 4週: ループ成功率 >= 95%（28日の欠落1日まで）、recompute 一致 100%、発注 0、
+  guard違反 0（UTで）、観測コスト平均 <= 30 bps。
+- 12週: 帳簿DD <= ベンチマークDD × 0.6、累積損益 >= -10%、切替回数 <= 期待値の2倍、
+  ループ不具合HALT 0。
+- 26週: 12週「続行」×2（「保留」は1回まで）、DD <= ベンチ × 0.6、カルマー >= ベンチ、
+  観測コスト <= 22.5 bps（1.5×）、recompute 100% 維持。
+- 絶対停止線: 帳簿の高値からのDD <= -20%（mtm 行で毎日判定、HALT と連動して即停止）。
+- backfill 行（明示フラグ時のみ・D5/F8）は上記判定の分母から除外する（件数だけ数える）。
+
+## 5. 失敗時の復旧
+
+- データ失効は HALT(stale_data)+skipped 行のみ。決定の補完や後追い約定はしない（fail-closed）。
+- 欠落日の再実行は decide の backfill フラグで `backfill: true` 行を書き、判定から除外（F8採択）。
+- ジャーナルは追記のみ。削除・修復は禁止（ハッシュ連鎖と anchors.jsonl が改竄を検出する）。
+- `_load_journal` は壊れた行で ChainError → loop_cli は exit 2（D10）。1h tape cache の
+  みスキップを許容。
+
+## 6. 変更管理
+
+- パラメータ（SMA200、σ21窓、HALT閾値、コスト15 bps、帳簿Cの稼働週）は評価前に凍結、
+  評価期間中の改変は禁止。新しい仮説は影の帳簿 + strategy-trial-memo.md への事前登録1行で始める。
+
+## 7. cron 登録（cronjob_manage、no_agent=True、deliver local）
+
+- demo-loop-decide（9b64eaec1cb9）: `20 9 * * *` → scripts/demo_loop_decide.sh
+- demo-loop-fill（8994e1906300）: `5 11 * * *` → scripts/demo_loop_fill.sh
+- demo-loop-report-weekly（aa774e8b0d1b）: `50 9 * * 1` → scripts/demo_loop_report.sh
+- wrapper は flock を取ってから `exec bash <repo>/ops/demo-loop/{daily,fill_v2,weekly}.sh`。
+- deliver: 'local'（週次サマリーは Molt の実況で読み上げ）。
+
+## 8. 検収コマンド
+
+- 全体: `cd /root/current-work/yowayowa-investor && TZ=UTC make V=/root/current-work/yowayowa-investor/.venv verify`
+- 単体: `.venv/bin/pytest tests/test_paperloop.py -q --tb=no`（G/D/C2/M6 系 8本以上）
+- 連鎖検証: `.venv/bin/python -m yowayowa.paperloop_verify --data-dir ./data --json data/demo-loop/verify/latest.json`
+  （chain_ok / anchors_ok / R1 決定性 / R2 run_backtest 突合 / exit 0）
+- 生ログ: `data/demo-loop/journal.jsonl`（decision/mtm/fill 行 + ハッシュ連鎖）、
+  `data/demo-loop/anchors.jsonl`、`data/demo-loop/weekly_summary.jsonl`

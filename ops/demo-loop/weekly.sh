@@ -1,0 +1,22 @@
+#!/bin/bash
+# demo-loop weekly (spec §9): flock → paperloop_verify(prev week) → weekly_summary。
+# cron: 毎月曜 UTC 00:50 (JST 09:50)。検証→サマリの順。
+set -e
+LOCK=/root/current-work/yowayowa-investor/data/demo-loop/.lock
+mkdir -p "$(dirname "$LOCK")"
+exec 9>"$LOCK"
+if ! flock -n 9; then
+  echo "demo-loop weekly: another run holds the lock; exit silently"
+  exit 0
+fi
+REPO=/root/current-work/yowayowa-investor
+cd "$REPO"
+export YOWAYOWA_MODE=personal
+export PYTHONPATH="$REPO/src"
+PY="$REPO/.venv/bin/python"
+# verify (best effort; a chain break exits 2 and fails the job)
+FROM=$(date -u -d '7 days ago' +%F)
+TO=$(date -u +%F)
+"$PY" -m yowayowa.paperloop_verify --data-dir ./data --from "$FROM" --to "$TO" \
+  --json data/demo-loop/verify/latest.json || exit 2
+"$PY" -m yowayowa.loop_cli report | tee -a data/demo-loop/weekly_summary.jsonl
