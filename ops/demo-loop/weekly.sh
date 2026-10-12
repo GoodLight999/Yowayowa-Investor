@@ -19,6 +19,12 @@ FROM=$(date -u -d '7 days ago' +%F)
 TO=$(date -u +%F)
 "$PY" -m yowayowa.paperloop_verify --data-dir ./data --from "$FROM" --to "$TO" \
   --json data/demo-loop/verify/latest.json || exit 2
+# CUSUM edge-lifetime monitor for book A (PREREG_S01_EXT_2017_2022 section 5;
+# prereg.jsonl row __cusum_A__): z_w/S_w over complete ISO weeks of the mtm
+# history with the registered constants; S_w > 4.8 records PAUSE and S is
+# never reset after an alarm. Fail-closed (set -e): a monitor failure fails
+# the weekly job loudly instead of silently skipping the vital.
+"$PY" -m yowayowa.cusum_watch --data-dir ./data
 # weekly_summary() already appends the row itself (paperloop.py, summary_path);
 # teeing it here wrote EVERY row twice (measured 2026-10-12: one run produced
 # two identical lines). Print only - stdout is the cron log.
