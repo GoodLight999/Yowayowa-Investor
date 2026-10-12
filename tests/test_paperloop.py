@@ -184,9 +184,10 @@ def test_decide_fill_idempotency_and_mtm(tmp_path: Path, monkeypatch) -> None:
     assert pl.run_daily_decide(root, now) == 0
     # D5: recorded_at equals the injected wall clock, taken inside decide
     assert all(row["recorded_at"] == now.isoformat() for row in decisions)
-    # mtm rows exist for both books (D3) — one pair per daily run (2 runs)
+    # mtm rows exist for both books (D3) — B2: one pair only; the second run's
+    # duplicate mtm for the same date is refused, not re-written
     mtms = [row for row in pl._load_journal(root) if row.get("event") == "mtm"]
-    assert len(mtms) == 4
+    assert len(mtms) == 2
     # fill with no tape bars yet -> 0 resolved
     assert pl.resolve_fills(root, now) == 0
     # inject 1h bars AFTER recorded_at; both books fill 2 assets
@@ -225,12 +226,13 @@ def test_decide_fill_idempotency_and_mtm(tmp_path: Path, monkeypatch) -> None:
     _inject_bar(root, "BTC", later + timedelta(hours=1), 102.0)
     _inject_bar(root, "ETH", later + timedelta(hours=1), 61.0)
     resolved2 = pl.resolve_fills(root, later + timedelta(hours=2))
-    assert resolved2 == 2  # book A rebalance; benchmark holds (no pending)
+    assert resolved2 == 4  # book A rebalance 2 + benchmark hold-only fills 2
     rebalance_fills = [
         row
         for row in pl._load_journal(root)
         if row.get("event") == "fill"
         and str(row.get("decision_id", "")).endswith(f":{later.date().isoformat()}")
+        and row.get("book") == pl.S01_BOOK
     ]
     assert {row["side"] for row in rebalance_fills} == {"buy", "sell"}
     # the traded notional is the DELTA (far less than the full position sale)

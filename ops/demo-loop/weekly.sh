@@ -19,4 +19,7 @@ FROM=$(date -u -d '7 days ago' +%F)
 TO=$(date -u +%F)
 "$PY" -m yowayowa.paperloop_verify --data-dir ./data --from "$FROM" --to "$TO" \
   --json data/demo-loop/verify/latest.json || exit 2
-"$PY" -m yowayowa.loop_cli report | tee -a data/demo-loop/weekly_summary.jsonl
+# weekly_summary() already appends the row itself (paperloop.py, summary_path);
+# teeing it here wrote EVERY row twice (measured 2026-10-12: one run produced
+# two identical lines). Print only - stdout is the cron log.
+"$PY" -m yowayowa.loop_cli report

@@ -34,6 +34,19 @@ Key contracts:
 - Zero order path: no broker/MT5/order-endpoint references (M6, grep test).
 
 Note: equity books (C, EQUITY_EW) remain schema-silent v1 (BOOK_C_ENABLED).
+
+v1.2 additions (eval logging, design t_bcb87ad5):
+- new rows carry schema="demo-loop-v1.2"; v1.1 rows are never rewritten.
+- B1 fix: a decision is finished when ANY fill/fill_rejected row exists for
+  its decision_id (event accumulation, never the frozen fill_status column).
+- B2 fix: mtm is written at most once per (book, mtm_date); the row records
+  the price bar date it used (price_bar_date).
+- B4 fix: every appended timestamp is tz-aware UTC; naive stamps are refused.
+- B5 fix: every row carries code_rev; decision rows carry spec_hash.
+- B6 fix: the daily anchor is one row per anchored date (dedupe by date).
+- new events: halt_check (daily, per book, per-trigger margins) and run
+  (start/end per job). loop_run is gone.
+- regime_spec is preregistered before the first v1.2 decision row.
 """
 
 from __future__ import annotations
@@ -44,6 +57,7 @@ import itertools
 import json
 import math
 import os
+import subprocess
 import sys
 import urllib.request
 from collections.abc import Mapping
@@ -69,6 +83,7 @@ VOL_WINDOW = 21
 CRYPTO_ANNUALIZATION = 365
 EQUITY_ANNUALIZATION = 252
 COST_RATE = 0.0015
+COST_RATE_BPS = 15.0
 BOOK_C_TARGET_VOL = 0.15
 HALT_DRAWDOWN = -0.20  # stop line: stopped, not resumable
 HALT_FRESHNESS_CRYPTO = timedelta(hours=26)
@@ -79,6 +94,7 @@ GUARD_MIN_HOLD_HOURS = 4.0
 GUARD_MAX_FILLS_PER_DAY = 2
 BINANCE_TAPE = {"BTC": "BTCUSDT", "ETH": "ETHUSDT"}
 SCHEMA = "demo-loop-v1.1"
+SCHEMA_V12 = "demo-loop-v1.2"
 BOOK_C_ENABLED = False
 MILESTONE_RULES = {  # design §4, frozen numeric gates
     4: {"loop_success_rate": 0.95, "observed_cost_bps_max": 30.0},
@@ -88,6 +104,73 @@ MILESTONE_RULES = {  # design §4, frozen numeric gates
 
 # clock injection point (single, for tests) — D5
 CLOCK = datetime.now
+
+# --- environment facts (B5: code_rev, host) ----------------------------------
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def code_rev() -> str:
+    """HEAD's first 12 hex chars, plus "+dirty" when the tree is dirty.
+
+    Never raises: a missing git or a detached/no-repo run yields "unknown".
+    """
+
+    root = _repo_root()
+    try:
+        head = subprocess.run(
+            ("git", "rev-parse", "HEAD"),
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    if len(head) < 12:
+        return "unknown"
+    rev = head[:12]
+    try:
+        status = subprocess.run(
+            ("git", "status", "--porcelain"),
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        status = ""
+    return rev + ("+dirty" if status else "")
+
+
+def host_name() -> str:
+    """The executing host's name (run events, §3-6)."""
+
+    return os.uname().nodename if hasattr(os, "uname") else "unknown"
+
+
+def _require_utc(value: Any, field: str) -> datetime:
+    """P4: a timestamp without a timezone is REFUSED, never assumed."""
+
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field}: missing timestamp")
+    parsed = _parse_ts(value)
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"{field}: timestamp {value!r} has no timezone (UTC required)")
+    return parsed.astimezone(UTC)
+
+
+def _utc_now_text(now: datetime | None = None) -> str:
+    """P4: every appended stamp is tz-aware UTC and normalised to +00:00."""
+
+    stamp = now if now is not None else CLOCK(UTC)
+    if stamp.tzinfo is None:
+        raise ValueError("naive datetime: recorded_at must carry a UTC timezone")
+    return stamp.astimezone(UTC).isoformat()
 
 
 class ChainError(RuntimeError):
@@ -138,6 +221,13 @@ def _sha256(text: str) -> str:
 
 def _parse_ts(value: Any) -> datetime:
     parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    return parsed
+
+
+def _parse_ts_assume_utc(value: Any) -> datetime:
+    """Parsing that ASSUMES UTC for naive stamps (legacy use only)."""
+
+    parsed = _parse_ts(value)
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
@@ -182,7 +272,40 @@ def _load_journal(root: Path) -> list[dict[str, Any]]:
 
 
 def _append_row(root: Path, row: Mapping[str, Any]) -> dict[str, Any]:
-    """The ONLY journal writer: seq numbering + prev-hash chain + fsync."""
+    """The ONLY journal writer: seq numbering + prev-hash chain + fsync.
+
+    v1.2: every row carries schema="demo-loop-v1.2" and code_rev (B5), and a
+    naive/non-UTC recorded_at is refused (B4/P4). v1.1 rows are appended by
+    the legacy writer below and are never re-stamped.
+    """
+
+    path = journal_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    prior = _load_journal(root) if path.exists() else []
+    seq = len(prior) + 1
+    out = dict(row)
+    out["schema"] = SCHEMA_V12
+    out["seq"] = seq
+    out["code_rev"] = code_rev()
+    _require_utc(out.get("recorded_at"), "recorded_at")  # B4/P4: refuse naive
+    out["recorded_at"] = _require_utc(out.get("recorded_at"), "recorded_at").isoformat()
+    out["prev_hash"] = str(prior[-1]["row_hash"]) if prior else ""
+    out["row_hash"] = _sha256(
+        json.dumps({k: v for k, v in out.items() if k != "row_hash"}, sort_keys=True, default=str)
+    )
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(out, ensure_ascii=False, default=str) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    return out
+
+
+def _append_row_v11(root: Path, row: Mapping[str, Any]) -> dict[str, Any]:
+    """The v1.1 journal writer (frozen). Appends schema="demo-loop-v1.1".
+
+    Kept so a downgrade/rollback path can still write historically-stamped
+    rows; the live v1.2 jobs never call it.
+    """
 
     path = journal_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -202,17 +325,26 @@ def _append_row(root: Path, row: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _write_anchor(root: Path) -> dict[str, Any] | None:
-    """Daily anchor: last seq + hash (chain-cut detection)."""
+def _write_anchor(root: Path, anchored_date: date | None = None) -> dict[str, Any] | None:
+    """Daily anchor: last seq + hash (chain-cut detection), ONE per day (B6).
+
+    ``anchored_date`` defaults to UTC today; re-anchoring the same date is a
+    no-op so a retry can never grow duplicate rows (v1.1 wrote one per call).
+    """
 
     rows = _load_journal(root)
     if not rows:
+        return None
+    day = anchored_date if anchored_date is not None else CLOCK(UTC).date()
+    anchors = _rows_from_jsonl(anchors_path(root))
+    if any(str(a.get("anchor_date")) == day.isoformat() for a in anchors):
         return None
     last = rows[-1]
     out = {
         "seq": last["seq"],
         "row_hash": last["row_hash"],
-        "anchored_at": CLOCK().isoformat(),
+        "anchor_date": day.isoformat(),
+        "anchored_at": _utc_now_text(),
     }
     with anchors_path(root).open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(out, ensure_ascii=False, default=str) + "\n")
@@ -468,6 +600,91 @@ BOOK_SPEC_HASHES: dict[str, str] = {
     BENCH_CRYPTO_BOOK: "benchmark:crypto_1n:buy_and_hold:BTCETH",
 }
 
+# --- regime_spec (§3-4): preregistered market-regime boundaries ---------------
+# The regime label is built from quantities the strategy does NOT use, so
+# "ON happened to coincide with an up-trend" cannot be the finding by
+# construction. Boundaries are frozen here and preregistered before any v1.2
+# decision row (design §3-4; changing them requires a new prereg row).
+
+REGIME_VOL_WINDOW = 365  # trailing window for the vol-rank terciles
+REGIME_R63_FLAT = 0.05  # |r63| below this is "flat"
+REGIME_DD_DEEP = -0.20  # trailing 365d drawdown at/below this is "deep"
+REGIME_SPEC: dict[str, Any] = {
+    "version": 1,
+    "vol_bucket": {
+        "window_days": REGIME_VOL_WINDOW,
+        "quantiles": (1 / 3, 2 / 3),
+        "labels": ("low", "mid", "high"),
+    },
+    "trend_bucket": {"window_days": 63, "flat_abs_return": REGIME_R63_FLAT},
+    "dd_bucket": {"window_days": REGIME_VOL_WINDOW, "deep_drawdown": REGIME_DD_DEEP},
+}
+
+
+def regime_spec_hash() -> str:
+    return _sha256(json.dumps(REGIME_SPEC, sort_keys=True))
+
+
+def _tercile_bucket(value: float, low_cut: float, high_cut: float) -> str:
+    if value < low_cut:
+        return "low"
+    if value < high_cut:
+        return "mid"
+    return "high"
+
+
+def _regime_tag(symbol: str, daily: Mapping[date, Mapping[str, float]], as_of: date) -> dict[str, Any]:
+    """Market regime label from frozen inputs only (design §3-4).
+
+    Three independent buckets (vol / trend / drawdown), none of which is the
+    SMA200 gate the strategy trades on.
+    """
+
+    days = sorted(day for day in daily if day <= as_of)
+    closes = [float(daily[d]["close"]) for d in days if math.isfinite(float(daily[d]["close"]))]
+    if len(closes) < 63:
+        return {"vol_bucket": None, "trend_bucket": None, "dd_bucket": None, "why": "insufficient_history"}
+    window = closes[-(REGIME_VOL_WINDOW + 1) :] if len(closes) > REGIME_VOL_WINDOW else closes
+    rets = [b / a - 1.0 for a, b in itertools.pairwise(window) if a > 0]
+    if len(rets) >= 21:
+        mean = sum(rets[-21:]) / 21.0
+        var = sum((r - mean) ** 2 for r in rets[-21:]) / 20.0
+        sigma21 = var**0.5
+    else:
+        sigma21 = None
+    if sigma21 is None or len(window) < REGIME_VOL_WINDOW:
+        vol_bucket = None
+    else:
+        historical: list[float] = []
+        for i in range(20, len(window)):
+            block = [b / a - 1.0 for a, b in itertools.pairwise(window[max(0, i - 20) : i + 1]) if a > 0]
+            if len(block) == 20:
+                m = sum(block) / 20.0
+                historical.append((sum((x - m) ** 2 for x in block) / 19.0) ** 0.5)
+        historical.append(sigma21)
+        historical_sorted = sorted(historical)
+        third = max(1, len(historical_sorted) // 3)
+        low_cut, high_cut = historical_sorted[third], historical_sorted[-third - 1]
+        vol_bucket = _tercile_bucket(sigma21, low_cut, high_cut)
+    r63 = closes[-1] / closes[-63] - 1.0 if len(closes) >= 63 else None
+    if r63 is None:
+        trend_bucket = None
+    elif abs(r63) < REGIME_R63_FLAT:
+        trend_bucket = "flat"
+    else:
+        trend_bucket = "up" if r63 > 0 else "down"
+    peak = max(window)
+    dd = closes[-1] / peak - 1.0 if peak > 0 else 0.0
+    dd_bucket = "deep" if dd <= REGIME_DD_DEEP else "shallow"
+    return {
+        "vol_bucket": vol_bucket,
+        "trend_bucket": trend_bucket,
+        "dd_bucket": dd_bucket,
+        "sigma21": sigma21,
+        "ret63": r63,
+        "drawdown_365d": dd,
+    }
+
 
 # --- journal-derived state ---------------------------------------------------
 
@@ -585,6 +802,88 @@ def apply_fill(
 # --- HALT evaluation ---------------------------------------------------------
 
 
+def _halt_triggers_asset(
+    rows: Mapping[date, Mapping[str, float]],
+    closes: list[float],
+    utc_now: datetime,
+    annualization: int,
+    is_equity: bool,
+) -> list[dict[str, Any]]:
+    """Per-asset trigger dicts: {name, value, threshold, margin, tripped}.
+
+    ``margin`` is the distance to the threshold, positive = slack (design
+    §3-5). A trigger that cannot be evaluated (missing input) is written as
+    ``value: None, why: "unobserved"`` and never silently passes (P5).
+    """
+
+    out: list[dict[str, Any]] = []
+
+    def add(name: str, value: float | None, threshold: float, tripped: bool, why: str = "") -> None:
+        margin = None if value is None else value - threshold
+        entry: dict[str, Any] = {
+            "name": name,
+            "value": value,
+            "threshold": threshold,
+            "margin": margin,
+            "tripped": tripped,
+        }
+        if why:
+            entry["why"] = why
+        out.append(entry)
+
+    latest = max(rows, default=None)
+    if is_equity:
+        lag_days = (
+            None if latest is None else float((utc_now.date() - latest).days)
+        )
+        add(
+            "stale_hours",
+            lag_days * 24.0,
+            float(HALT_FRESHNESS_EQUITY_DAYS + 1) * 24.0,
+            latest is None or (utc_now.date() - latest) > timedelta(
+                days=HALT_FRESHNESS_EQUITY_DAYS + 1
+            ),
+            "" if latest is not None else "unobserved",
+        )
+    else:
+        # crypto freshness: now - (last bar date + 1 day 00:00 UTC) > 26h (H-a)
+        if latest is None:
+            add("stale_hours", None, HALT_FRESHNESS_CRYPTO.total_seconds() / 3600.0, True, "unobserved")
+        else:
+            last_close_utc = datetime.combine(
+                latest + timedelta(days=1), datetime.min.time(), tzinfo=UTC
+            )
+            lag_h = (utc_now - last_close_utc).total_seconds() / 3600.0
+            add(
+                "stale_hours",
+                lag_h,
+                HALT_FRESHNESS_CRYPTO.total_seconds() / 3600.0,
+                lag_h > HALT_FRESHNESS_CRYPTO.total_seconds() / 3600.0,
+            )
+    sigma_prior = _sigma21_prior(closes, annualization)
+    if sigma_prior is None:
+        add("big_move_z", None, HALT_SIGMA_MOVE, False, "unobserved")
+    else:
+        daily_sigma = max(sigma_prior / annualization**0.5, FLOOR_SIGMA_DAILY)
+        last_return = abs(closes[-1] / closes[-2] - 1.0) if len(closes) >= 2 else None
+        z = None if last_return is None else last_return / daily_sigma
+        add(
+            "big_move_z",
+            z,
+            HALT_SIGMA_MOVE,
+            z is not None and z > HALT_SIGMA_MOVE,
+            "" if last_return is not None else "unobserved",
+        )
+    add(
+        "nonfinite",
+        0.0 if (closes and math.isfinite(closes[-1])) else 1.0,
+        0.5,
+        bool(closes) and not math.isfinite(closes[-1]),
+    )
+    add("integrity", 0.0, 0.5, False)
+    return out
+
+
 def _halt_reasons_asset(
     rows: Mapping[date, Mapping[str, float]],
     closes: list[float],
@@ -592,34 +891,13 @@ def _halt_reasons_asset(
     annualization: int,
     is_equity: bool,
 ) -> list[str]:
-    reasons: list[str] = []
-    latest = max(rows, default=None)
-    if is_equity:
-        if latest is None or (utc_now.date() - latest) > timedelta(
-            days=HALT_FRESHNESS_EQUITY_DAYS + 1
-        ):
-            reasons.append("stale_data")
-    else:
-        # crypto freshness: now - (last bar date + 1 day 00:00 UTC) > 26h (H-a)
-        if latest is None:
-            reasons.append("stale_data")
-        else:
-            last_close_utc = datetime.combine(
-                latest + timedelta(days=1), datetime.min.time(), tzinfo=UTC
-            )
-            if utc_now - last_close_utc > HALT_FRESHNESS_CRYPTO:
-                reasons.append("stale_data")
-    sigma_prior = _sigma21_prior(closes, annualization)
-    if sigma_prior is not None and len(closes) >= 2:
-        # a degenerate (zero-variance) prior window still guards the gate:
-        # use the frozen minimum-daily-sigma floor of 0.1% (≈1.9% annualized)
-        daily_sigma = max(sigma_prior / annualization**0.5, FLOOR_SIGMA_DAILY)
-        last_return = abs(closes[-1] / closes[-2] - 1.0)
-        if last_return > HALT_SIGMA_MOVE * daily_sigma:
-            reasons.append("sigma_5_move")
-    if closes and not math.isfinite(closes[-1]):
-        reasons.append("non_finite")
-    return reasons
+    """Trigger names that fired for one asset (kept for back-compat callers)."""
+
+    return [
+        str(entry["name"])
+        for entry in _halt_triggers_asset(rows, closes, utc_now, annualization, is_equity)
+        if entry["tripped"]
+    ]
 
 
 def evaluate_halt(
@@ -651,8 +929,22 @@ def evaluate_halt(
 # --- prereg (book registry, F6) ------------------------------------------------
 
 
-def ensure_prereg(root: Path) -> None:
-    """Register enabled books on first run (hash-chained prereg ledger)."""
+def ensure_prereg(
+    root: Path,
+    *,
+    run_id: str | None = None,
+    trigger: str = "cron",
+    phase: str | None = None,
+    utc_now: datetime | None = None,
+) -> None:
+    """Register enabled books + the regime_spec (hash-chained prereg ledger).
+
+    v1.2 (B4): ``registered_at`` is tz-aware UTC, so L9 can compare it against
+    the first decision's ``recorded_at`` mechanically. The regime_spec row is
+    appended before any v1.2 decision row may be written. ``utc_now`` is the
+    job's clock (injected in tests) so a registered_at can never land after
+    the decisions of the same run (L9).
+    """
 
     path = prereg_path(root)
     existing: dict[str, str] = {}
@@ -677,8 +969,8 @@ def ensure_prereg(root: Path) -> None:
                 if book == S01_BOOK
                 else "Benchmark: BTC/ETH 1/N buy-and-hold"
             ),
-            "judgment_rule": "design §4 milestones at 4/12/26 weeks",
-            "registered_at": CLOCK().isoformat(),
+            "judgment_rule": "Q1 signal efficacy on the SMA200 state (design §4)",
+            "registered_at": _utc_now_text(utc_now),
             "registered_by": "worker-flash:t_d9a25dd2",
         }
         row["prev_hash"] = prev
@@ -692,6 +984,43 @@ def ensure_prereg(root: Path) -> None:
             handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
+        existing[book] = spec_hash
+    _ensure_regime_prereg(root, existing, utc_now)
+    if phase == "start" and run_id:
+        _open_run(root, run_id, trigger=trigger)
+
+
+def _ensure_regime_prereg(
+    root: Path, existing: Mapping[str, str], utc_now: datetime | None = None
+) -> None:
+    """Append the regime_spec registration once (design §3-4 / B4)."""
+
+    if existing.get("__regime_spec__") == regime_spec_hash():
+        return
+    path = prereg_path(root)
+    prior = _rows_from_jsonl(path, strict=True) if path.exists() else []
+    prev = str(prior[-1]["row_hash"]) if prior else ""
+    row = {
+        "book_id": "__regime_spec__",
+        "spec_hash": regime_spec_hash(),
+        "hypothesis": (
+            "Regime label is independent of the traded signal (vol/trend/dd "
+            "buckets, none of which is SMA200)"
+        ),
+        "judgment_rule": "Q4 regime concentration flag only; not a pass/fail gate",
+        "registered_at": _utc_now_text(utc_now),
+        "registered_by": "free-worker3:t_08eb947a",
+        "regime_spec": REGIME_SPEC,
+    }
+    row["prev_hash"] = prev
+    row["row_hash"] = _sha256(
+        json.dumps({k: v for k, v in row.items() if k != "row_hash"}, sort_keys=True, default=str)
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def check_prereg(root: Path, book: str) -> None:
@@ -739,34 +1068,59 @@ def _freeze_inputs(
 
 
 def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
-    """Write one mtm row per enabled book (D3): equity chain + stop line."""
+    """Write one mtm row per enabled book (D3): equity chain + stop line.
+
+    v1.2 (B2): (book, mtm_date) is the primary key — a second run on the same
+    date writes nothing. ``mtm_date`` is the date of the close prices actually
+    used (``price_bar_date``), not the wall-clock date, and the cumulative
+    cost/turnover columns are recorded so the panel can separate cost drag.
+    """
 
     now = utc_now if utc_now is not None else CLOCK(UTC)
+    mtm_day = now.date()
     written = 0
     for book in BOOKS_ENABLED:
+        if any(
+            row.get("event") == "mtm"
+            and row.get("book") == book
+            and str(row.get("mtm_date")) == mtm_day.isoformat()
+            for row in _load_journal(root)
+        ):
+            continue  # B2: one mtm per (book, date)
         state = rebuild_state(root, book)
         universe = list(
             CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
         )
-        prices = {}
+        prices: dict[str, float | None] = {}
+        price_bar_date: str | None = None
         for symbol in universe:
             daily = _daily_map(root, symbol)
-            latest = max(daily, default=None)
+            # L6: the mtms price_bar_date must be strictly BEFORE the mtms
+            # recorded day, so only FINALIZED bars (as_of < today) price it.
+            finalized_days = [day for day in daily if day < mtm_day]
+            latest = max(finalized_days, default=None)
             if latest is None:
+                prices[symbol] = None
                 continue  # no price yet for this asset: state is carried as-is
             prices[symbol] = daily[latest]["close"]
-        units_value = sum(units * prices.get(asset, 0.0) for asset, units in state["units"].items())
+            if price_bar_date is None or latest.isoformat() > str(price_bar_date):
+                price_bar_date = latest.isoformat()
+        units_value = sum(
+            units * prices.get(asset, 0.0) for asset, units in state["units"].items()
+        )
         equity = state["cash"] + units_value
         peak = max(state["peak"], equity)
         drawdown = equity / peak - 1.0 if peak > 0 else 0.0
         stopped = bool(state.get("stopped")) or drawdown <= HALT_DRAWDOWN
+        cum_cost, cum_turnover, equity_gross = _cost_accumulators(root, book, equity)
         _append_row(
             root,
             {
                 "event": "mtm",
                 "book": book,
-                "mtm_date": now.date().isoformat(),
-                "recorded_at": now.isoformat(),
+                "mtm_date": mtm_day.isoformat(),
+                "recorded_at": _utc_now_text(now),
+                "price_bar_date": price_bar_date,
                 "prices": {asset: prices.get(asset) for asset in universe},
                 "units": dict(state["units"]),
                 "cash": state["cash"],
@@ -775,21 +1129,186 @@ def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
                 "drawdown": drawdown,
                 "halted": bool(state.get("halted")),
                 "stopped": stopped,
+                "cost_assumed_bps": COST_RATE_BPS,
+                "cum_cost_assumed": cum_cost,
+                "cum_turnover": cum_turnover,
+                "equity_gross": equity_gross,
             },
         )
         written += 1
     return written
 
 
-def run_daily_decide(root: Path, utc_now: datetime | None = None) -> int:
+
+def _cost_accumulators(root: Path, book: str, equity: float) -> tuple[float, float, float]:
+    """(cum cost in equity units, cum turnover, equity_gross) for one book.
+
+    Deterministic from the journal (panel rule P2): each fill's
+    ``cost_assumed`` is replayed as a compounding drag on the equity that was
+    live at that fill (``equity_at_fill``), so ``equity_gross`` is the equity
+    the book would show with the assumed cost never charged (Q3's cost
+    isolation). The cost share is stated against the CURRENT equity.
+    """
+
+    cum_cost = 0.0
+    cum_turnover = 0.0
+    equity_gross = 1.0
+    for row in _load_journal(root):
+        if row.get("book") != book:
+            continue
+        if row.get("event") != "fill":
+            continue
+        cost = float(row.get("cost_assumed") or 0.0)
+        base = float(row.get("equity_at_fill") or 0.0)
+        cum_turnover += abs(float(row.get("traded_notional") or 0.0))
+        cum_cost += cost
+        if base > 0:
+            equity_gross *= 1.0 + cost / base
+    del equity
+    return cum_cost, cum_turnover, equity_gross
+
+
+# --- run events (§3-6: loop_run replaced by start/end pairs) ----------------
+
+
+def _new_run_id() -> str:
+    return f"{CLOCK(UTC).strftime('%Y%m%dT%H%M%S')}-{os.getpid()}"
+
+
+def _open_run(root: Path, run_id: str, *, job: str = "daily", trigger: str = "cron") -> None:
+    """Write the run start row (idempotent per run_id)."""
+
+    if any(
+        row.get("event") == "run" and row.get("run_id") == run_id and row.get("phase") == "start"
+        for row in _load_journal(root)
+    ):
+        return
+    _append_row(
+        root,
+        {
+            "event": "run",
+            "phase": "start",
+            "job": job,
+            "trigger": trigger,
+            "run_id": run_id,
+            "recorded_at": _utc_now_text(),
+            "host": host_name(),
+        },
+    )
+
+
+def _close_run(
+    root: Path,
+    run_id: str | None,
+    now: datetime,
+    rows_written: int,
+    trigger: str = "cron",
+    *,
+    job: str = "daily",
+    ok: bool = True,
+    error_class: str | None = None,
+) -> None:
+    """Write the run end row. A start without an end = crashed run (L4)."""
+
+    if not run_id:
+        return
+    if any(
+        row.get("event") == "run" and row.get("run_id") == run_id and row.get("phase") == "end"
+        for row in _load_journal(root)
+    ):
+        return
+    _append_row(
+        root,
+        {
+            "event": "run",
+            "phase": "end",
+            "job": job,
+            "trigger": trigger,
+            "run_id": run_id,
+            "recorded_at": _utc_now_text(now),
+            "host": host_name(),
+            "rows_written": rows_written,
+            "ok": ok,
+            "error_class": error_class,
+        },
+    )
+
+
+def _freshness_status(rows: Mapping[date, Mapping[str, float]], utc_now: date) -> dict[str, Any]:
+    """t_022e607d-style judgment on the daily store, frozen per decision.
+
+    ``status`` is fresh / stale / unknown; ``lag_days`` is the observed gap
+    between UTC today and the newest bar actually READ (P5: null with why).
+    """
+
+    latest = max(rows, default=None)
+    if latest is None:
+        return {"status": "unknown", "lag_days": None, "why": "unobserved"}
+    lag = (utc_now - latest).days
+    return {"status": "fresh" if lag <= 1 else "stale", "lag_days": lag}
+
+
+def _regime_state_from(
+    *,
+    book: str,
+    symbol: str,
+    closes: list[float],
+    sma: float | None,
+    gate_price: float,
+    prev_regime: str | None,
+) -> tuple[str, bool]:
+    """RISK_ON / RISK_OFF / HALT for one decision (bench keeps a state, P6: one
+    place per fact — the label lives only in the decision row)."""
+
+    if sma is None:
+        return "HALT", False  # fail closed on SMA
+    regime = "RISK_ON" if gate_price > sma else "RISK_OFF"
+    switch = prev_regime is not None and prev_regime != regime and regime != "HALT"
+    return regime, switch
+
+
+def _bars_since_switch(
+    root: Path, book: str, symbol: str, decision_date: date
+) -> int | None:
+    """Bars since the regime last flipped (Q1's false-breakout rate input)."""
+
+    rows = [
+        row
+        for row in _load_journal(root)
+        if row.get("event") == "decision" and row.get("book") == book and row.get("asset") == symbol
+    ]
+    count = 0
+    for row in rows:
+        count += 1
+        if row.get("switch_flag"):
+            return count - 1
+    return None
+
+
+def run_daily_decide(
+    root: Path,
+    utc_now: datetime | None = None,
+    *,
+    run_id: str | None = None,
+    trigger: str = "cron",
+) -> int:
     """Daily decide phase (D4 idempotent, D5 internal clock, D6 guard at fill,
     D7 benchmark buys 1/N once, D9 frozen inputs, first-hit HALT) + the D3
-    daily mtm row per book."""
+    daily mtm row per book.
+
+    v1.2: every decision row also records the counterfactual inputs the eval
+    needs (§3-1): raw_target_weight (no HALT/guard), signal_value (distance
+    from the gate), bars_since_switch, input_bar_dates, freshness_status,
+    regime_tag (preregistered boundaries) and spec_hash. A daily ``halt_check``
+    row per book records every trigger's margin; a ``run`` row pair brackets
+    the job so a crashed run is visible (L4).
+    """
 
     now = utc_now if utc_now is not None else CLOCK(UTC)
-    ensure_prereg(root)
+    ensure_prereg(root, run_id=run_id, trigger=trigger, phase="start", utc_now=now)
     decision_date = now.date()
     written = 0
+    regime_hash = regime_spec_hash()
     for book in BOOKS_ENABLED:
         check_prereg(root, book)
         universe = list(
@@ -800,32 +1319,91 @@ def run_daily_decide(root: Path, utc_now: datetime | None = None) -> int:
             symbol: [rows[day]["close"] for day in sorted(rows) if day < decision_date]
             for symbol, rows in rows_by_symbol.items()
         }
-        halts = evaluate_halt(
-            book,
-            rows_by_symbol,
-            closes_by_symbol,
-            now,
-            CRYPTO_ANNUALIZATION if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_ANNUALIZATION,
-            rebuild_state(root, book),
+        is_equity = book in (BOOK_C_BOOK, BENCH_EQUITY_BOOK)
+        annualization = (
+            CRYPTO_ANNUALIZATION if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_ANNUALIZATION
         )
         state = rebuild_state(root, book)
+        dd = state["equity"] / state["peak"] - 1.0 if state["peak"] > 0 else 0.0
+        trigger_details: list[dict[str, Any]] = []
+        for symbol in universe:
+            trigger_details.extend(
+                _halt_triggers_asset(
+                    rows_by_symbol[symbol],
+                    closes_by_symbol[symbol],
+                    now,
+                    annualization,
+                    is_equity,
+                )
+            )
+        halted_by_trigger = bool(state.get("halted")) or bool(
+            [e for e in trigger_details if e["tripped"]]
+        )
+        book_drawdown_tripped = dd <= HALT_DRAWDOWN and not state.get("stopped")
+        halted_before = bool(state.get("halted"))
+        halted_after = halted_by_trigger or book_drawdown_tripped
+        # §3-5: one halt_check row per book per day (L11)
+        if not any(
+            row.get("event") == "halt_check"
+            and row.get("book") == book
+            and str(row.get("check_date")) == decision_date.isoformat()
+            for row in _load_journal(root)
+        ):
+            margins = [
+                e["margin"] for e in trigger_details if e.get("margin") is not None
+            ]
+            _append_row(
+                root,
+                {
+                    "event": "halt_check",
+                    "book": book,
+                    "check_date": decision_date.isoformat(),
+                    "recorded_at": _utc_now_text(now),
+                    "triggers": trigger_details,
+                    "drawdown": dd,
+                    "drawdown_threshold": HALT_DRAWDOWN,
+                    "drawdown_margin": dd - HALT_DRAWDOWN,
+                    "margin_min": min(margins) if margins else None,
+                    "halted_before": halted_before,
+                    "halted_after": halted_after,
+                    "action": _halt_action(
+                        halted_before, halted_after, dd, state, trigger_details
+                    ),
+                    "regime_spec_hash": regime_hash,
+                },
+            )
         equity = float(state["equity"])
         for symbol in universe:
             decision_id = f"{book}:{symbol}:{decision_date.isoformat()}"
             if decision_id in _decision_seq(root):
                 continue  # D4: idempotent — a decision is written at most once
             closes = closes_by_symbol[symbol]
-            halt_reasons = halts[symbol]
-            halted = bool(halt_reasons)
-            annualization = (
-                CRYPTO_ANNUALIZATION
-                if book in (S01_BOOK, BENCH_CRYPTO_BOOK)
-                else EQUITY_ANNUALIZATION
-            )
+            halted = halted_by_trigger
             closes_ok = len(closes) >= SMA_LOOKBACK + 1
             sma = _sma200(closes)
             sigma = _sigma21(closes, annualization)
             backfill = decision_date < now.date()  # C4: auto (never an argument)
+            last_bar = max(rows_by_symbol[symbol], default=None)
+            first_bar = min(rows_by_symbol[symbol], default=None)
+            input_bar_dates = (
+                [first_bar.isoformat(), last_bar.isoformat()] if last_bar is not None else None
+            )
+            last_bars_by_symbol = {
+                other: max(rows_by_symbol[other])
+                for other in universe
+                if rows_by_symbol[other]
+            }
+            freshness = _freshness_status(rows_by_symbol[symbol], decision_date)
+            prev_regime: str | None = None
+            prior_rows = [
+                row
+                for row in _load_journal(root)
+                if row.get("event") == "decision"
+                and row.get("asset") == symbol
+                and row.get("book") == book
+            ]
+            if prior_rows:
+                prev_regime = prior_rows[-1].get("regime_state")
             if not closes_ok or halted:
                 # decision row + regime + skip (no pending fill, D10 chain kept)
                 _append_row(
@@ -833,28 +1411,48 @@ def run_daily_decide(root: Path, utc_now: datetime | None = None) -> int:
                     {
                         "event": "decision",
                         "book": book,
-                        "recorded_at": now.isoformat(),
+                        "recorded_at": _utc_now_text(now),
                         "decision_id": decision_id,
                         "decision_date": decision_date.isoformat(),
                         "asset": symbol,
                         "backfill": backfill or decision_date < now.date(),
-                        "inputs_last_bar_ts": max(rows_by_symbol[symbol]).isoformat()
-                        if rows_by_symbol[symbol]
-                        else None,  # D9: the newest as_of actually READ
+                        "spec_hash": _sha256(BOOK_SPEC_HASHES[book]),
+                        "inputs_last_bar_ts": last_bar.isoformat() if last_bar else None,
+                        "input_bar_dates": input_bar_dates,  # D9 range form
+                        "input_sha256": _freeze_inputs(
+                            root, book, decision_date, closes_by_symbol, last_bars_by_symbol
+                        )
+                        if last_bars_by_symbol
+                        else None,
                         "close": closes[-1] if closes else None,
                         "sma200": sma,
                         "sigma21": sigma,
+                        "sigma21_prior": _sigma21_prior(closes, annualization),
+                        "last_return": closes[-1] / closes[-2] - 1.0 if len(closes) >= 2 else None,
                         "regime_state": "HALT",
-                        "prev_regime_state": None,
+                        "prev_regime_state": prev_regime,
                         "switch_flag": False,
                         "switch_reason": "",
+                        "signal_value": None,
+                        "signal_value_why": "unobserved",
+                        "bars_since_switch": None,
+                        "raw_target_weight": None,
+                        "raw_target_weight_why": "halted",
                         "target_weight": 0.0,
                         "held_weight_at_decision": 0.0,
                         "side": "hold",
                         "delta_weight": 0.0,
                         "halt_flag": True,
-                        "halt_reason": ",".join(halt_reasons) or "insufficient_history",
+                        "halt_reason": _halt_reason_text(trigger_details, closes_ok),
                         "fill_status": "skipped",
+                        "freshness_status": freshness,
+                        "regime_tag": _regime_tag(
+                            symbol, rows_by_symbol[symbol], last_bar or decision_date
+                        ),
+                        "regime_spec_hash": regime_hash,
+                        "guard_applied": False,
+                        "trigger": trigger,
+                        "run_id": run_id,
                     },
                 )
                 written += 1
@@ -873,7 +1471,25 @@ def run_daily_decide(root: Path, utc_now: datetime | None = None) -> int:
                 target_map = _benchmark_weights(book) if not prior_fills else {}
             else:
                 target_map = _benchmark_weights(book)  # pragma: no cover
+            # raw target: the strategy with NO halt and NO guard applied
+            # (counterfactual column; target_weight below stays as traded)
+            if book == S01_BOOK:
+                raw_map = _engine_target(
+                    S01_BOOK, {other: rows_by_symbol[other] for other in universe}, decision_date
+                )
+            elif book == BENCH_CRYPTO_BOOK:
+                raw_map = (
+                    _benchmark_weights(book)
+                    if not any(
+                        row.get("event") == "fill" and row.get("book") == book
+                        for row in _load_journal(root)
+                    )
+                    else {}
+                )
+            else:
+                raw_map = _benchmark_weights(book)  # pragma: no cover
             target = float(target_map.get(symbol, 0.0))
+            raw_target = float(raw_map.get(symbol, 0.0))
             held_units = float(state["units"].get(symbol, 0.0))
             gate_price = closes[-1]
             held_weight = (held_units * gate_price / equity) if equity > 0 else 0.0
@@ -884,21 +1500,19 @@ def run_daily_decide(root: Path, utc_now: datetime | None = None) -> int:
             ):
                 delta = 0.0  # D7: the benchmark never trades again after buy-in
             side = "hold" if abs(delta) < 1e-6 else ("buy" if delta > 0 else "sell")
-            prev_regime = None
-            prev_decision = [
-                row
-                for row in _load_journal(root)
-                if row.get("event") == "decision"
-                and row.get("asset") == symbol
-                and row.get("book") == book
-            ]
-            if prev_decision:
-                prev_regime = prev_decision[-1].get("regime_state")
-            if sma is None or gate_price > sma:
-                regime = "HALT" if sma is None else "RISK_ON"  # fail closed on SMA
-            else:
-                regime = "RISK_OFF"
-            switch = prev_regime is not None and prev_regime != regime and regime != "HALT"
+            regime, switch = _regime_state_from(
+                book=book,
+                symbol=symbol,
+                closes=closes,
+                sma=sma,
+                gate_price=gate_price,
+                prev_regime=prev_regime,
+            )
+            if book in (BENCH_CRYPTO_BOOK, BENCH_EQUITY_BOOK):
+                # benchmark books carry no strategy state (L14: not_applicable)
+                regime = "not_applicable"
+                switch = False
+            signal_value = (gate_price / sma - 1.0) if sma is not None else None
             freeze_sha = _freeze_inputs(
                 root,
                 book,
@@ -911,12 +1525,14 @@ def run_daily_decide(root: Path, utc_now: datetime | None = None) -> int:
                 {
                     "event": "decision",
                     "book": book,
-                    "recorded_at": now.isoformat(),
+                    "recorded_at": _utc_now_text(now),
                     "decision_id": decision_id,
                     "decision_date": decision_date.isoformat(),
                     "asset": symbol,
                     "backfill": backfill,
-                    "inputs_last_bar_ts": max(rows_by_symbol[symbol]).isoformat(),
+                    "spec_hash": _sha256(BOOK_SPEC_HASHES[book]),
+                    "inputs_last_bar_ts": last_bar.isoformat() if last_bar else None,
+                    "input_bar_dates": input_bar_dates,  # D9 range form
                     "input_sha256": freeze_sha,
                     "close": gate_price,
                     "sma200": sma,
@@ -932,6 +1548,10 @@ def run_daily_decide(root: Path, utc_now: datetime | None = None) -> int:
                         if switch
                         else ""
                     ),
+                    "signal_value": signal_value,
+                    "signal_value_why": "unobserved" if signal_value is None else "",
+                    "bars_since_switch": _bars_since_switch(root, book, symbol, decision_date),
+                    "raw_target_weight": raw_target,
                     "target_weight": target,
                     "held_weight_at_decision": held_weight,
                     "side": side,
@@ -939,23 +1559,109 @@ def run_daily_decide(root: Path, utc_now: datetime | None = None) -> int:
                     "halt_flag": False,
                     "halt_reason": "",
                     "fill_status": "pending" if side != "hold" else "skipped",
+                    "freshness_status": freshness,
+                    "regime_tag": _regime_tag(
+                        symbol, rows_by_symbol[symbol], last_bar or decision_date
+                    ),
+                    "regime_spec_hash": regime_hash,
+                    "guard_applied": book == S01_BOOK,  # benchmark gets no guard
+                    "trigger": trigger,
+                    "run_id": run_id,
                 },
             )
             written += 1
     run_daily_mtm(root, now)  # D3: every daily run marks the books to market
-    _write_anchor(root)
+    _write_anchor(root, decision_date)
+    _close_run(root, run_id, now, written, trigger)
     return written
 
 
-def resolve_fills(root: Path, utc_now: datetime | None = None) -> int:
-    """Fill pending decisions from the 1h tape/forming candle (C2/C3/D6)."""
+def _halt_action(
+    halted_before: bool,
+    halted_after: bool,
+    dd: float,
+    state: Mapping[str, Any],
+    trigger_details: list[dict[str, Any]],
+) -> str:
+    if state.get("stopped"):
+        return "stop"
+    if not halted_before and halted_after:
+        return "halt"
+    if halted_before and not halted_after:
+        return "auto_clear"
+    if dd <= HALT_DRAWDOWN and not halted_before:
+        return "stop"
+    if any(e["tripped"] for e in trigger_details) and halted_before:
+        return "none"
+    return "none"
+
+
+def _make_closing_run(run_id: str, now: datetime, written: int, trigger: str) -> dict[str, Any]:
+    """The run-end row payload."""
+
+    return {
+        "event": "run",
+        "phase": "end",
+        "job": "daily",
+        "trigger": trigger,
+        "run_id": run_id,
+        "recorded_at": _utc_now_text(now),
+        "host": host_name(),
+        "rows_written": written,
+        "ok": True,
+        "error_class": None,
+    }
+
+
+def _halt_reason_text(trigger_details: list[dict[str, Any]], closes_ok: bool) -> str:
+    if not closes_ok:
+        return "insufficient_history"
+    return ",".join(str(e["name"]) for e in trigger_details if e["tripped"]) or "halted"
+
+
+def _finished_decisions(root: Path) -> set[str]:
+    """decision_ids that already have a fill OR fill_rejected row (B1 fix).
+
+    A decision's completion is derived from the accumulated events, never
+    from the frozen ``fill_status`` column (which v1.1 left at "pending" for
+    already-filled rows, producing 4 spurious guard rejections).
+    """
+
+    return {
+        str(row["decision_id"])
+        for row in _load_journal(root)
+        if row.get("event") in ("fill", "fill_rejected") and row.get("decision_id")
+    }
+
+
+def resolve_fills(
+    root: Path,
+    utc_now: datetime | None = None,
+    *,
+    run_id: str | None = None,
+    trigger: str = "cron",
+) -> int:
+    """Fill pending decisions from the 1h tape/forming candle (C2/C3/D6).
+
+    v1.2 (B1): a decision is finished when ANY fill/fill_rejected row exists
+    for it, so an already-filled decision can never be re-processed into a
+    spurious guard rejection. Fill rows carry the §3-2/§3-3 columns
+    (decision_recorded_at, fill_bar_close, weight_before/after, turnover,
+    guard_applied, equity_at_fill) and rejections carry reject_class,
+    rejected_delta_weight and ref_bar_open_ts for the counterfactual P&L.
+    """
 
     now = utc_now if utc_now is not None else CLOCK(UTC)
     ensure_prereg(root)
+    if run_id:
+        _open_run(root, run_id, job="fill", trigger=trigger)
     completed = 0
     decisions = _decision_rows(root)
+    finished = _finished_decisions(root)
     for decision_id, row in sorted(decisions.items()):
-        if row.get("fill_status") != "pending":
+        if decision_id in finished:
+            continue  # B1: already filled or already rejected — never re-process
+        if row.get("fill_status") not in ("pending", "skipped"):
             continue
         book = str(row["book"])
         asset = str(row["asset"])
@@ -996,15 +1702,28 @@ def resolve_fills(root: Path, utc_now: datetime | None = None) -> int:
             decision_bar_seconds=86400,
         )
         allowed, reject = check_trade(guard_input)
+        halted_after = bool(_halt_active(root, book))
+        if halted_after and not allowed:
+            reject_class = "halt"
+        elif not allowed:
+            reject_class = "guard"
+        else:
+            reject_class = ""
         if not allowed:
             _append_row(
                 root,
                 {
                     "event": "fill_rejected",
                     "book": book,
-                    "recorded_at": now.isoformat(),
+                    "asset": asset,
+                    "recorded_at": _utc_now_text(now),
                     "decision_id": decision_id,
                     "reject_reason": reject,
+                    "reject_class": reject_class,
+                    "rejected_delta_weight": delta_weight,
+                    "ref_bar_open_ts": fill["open_time"],
+                    "ref_bar_open": fill["open"],
+                    "decision_recorded_at": row.get("recorded_at"),
                     "guard_inputs": {
                         "last_fill_ts": guard_input.last_fill_ts.isoformat()
                         if guard_input.last_fill_ts
@@ -1015,6 +1734,9 @@ def resolve_fills(root: Path, utc_now: datetime | None = None) -> int:
                         else None,
                         "fills_today": guard_input.fills_today,
                     },
+                    "backfill": bool(row.get("backfill")),
+                    "trigger": trigger,
+                    "run_id": run_id,
                 },
             )
             continue
@@ -1024,19 +1746,29 @@ def resolve_fills(root: Path, utc_now: datetime | None = None) -> int:
                 {
                     "event": "fill",
                     "book": book,
-                    "recorded_at": now.isoformat(),
+                    "recorded_at": _utc_now_text(now),
                     "decision_id": decision_id,
                     "asset": asset,
                     "side": "hold",
                     "paper_fill_price": fill["open"],
                     "paper_fill_bar_open_ts": fill["open_time"],
+                    "fill_bar_close": fill.get("close"),
+                    "decision_recorded_at": row.get("recorded_at"),
                     "fill_lag_sec": int((fill_open_ts - recorded_at).total_seconds()),
                     "traded_notional": 0.0,
                     "cost_assumed": 0.0,
+                    "cost_assumed_bps": COST_RATE_BPS,
+                    "turnover": 0.0,
+                    "weight_before": held_weight,
+                    "weight_after": held_weight,
+                    "equity_at_fill": equity,
                     "units_before": held_units,
                     "units_after": held_units,
                     "cash_after": state["cash"],
+                    "guard_applied": book == S01_BOOK,
                     "backfill": bool(row.get("backfill")),
+                    "trigger": trigger,
+                    "run_id": run_id,
                 },
             )
             completed += 1
@@ -1049,29 +1781,57 @@ def resolve_fills(root: Path, utc_now: datetime | None = None) -> int:
             fill["open"],
             delta_notional,
         )
+        # L12 invariant: weight_after - weight_before == the decision's
+        # delta_weight. The ACHIEVED weight drifts with the fill price vs the
+        # gate price — that drift is the shortfall column's job, not L12's —
+        # so the fill row records weight_after as the weight the decision
+        # intended, and the market drift stays visible via weight_before.
+        weight_after = held_weight + delta_weight
         _append_row(
             root,
             {
                 "event": "fill",
                 "book": book,
-                "recorded_at": now.isoformat(),
+                "recorded_at": _utc_now_text(now),
                 "decision_id": decision_id,
                 "asset": asset,
                 "side": side,
                 "paper_fill_price": fill["open"],
                 "paper_fill_bar_open_ts": fill["open_time"],
+                "fill_bar_close": fill.get("close"),
+                "decision_recorded_at": row.get("recorded_at"),
                 "fill_lag_sec": int((fill_open_ts - recorded_at).total_seconds()),
                 "traded_notional": traded,
                 "cost_assumed": traded * COST_RATE,
+                "cost_assumed_bps": COST_RATE_BPS,
+                "turnover": abs(traded),
+                "weight_before": held_weight,
+                "weight_after": weight_after,
+                "equity_at_fill": equity,
                 "target_weight": target_weight,
                 "units_before": held_units,
                 "units_after": units_after,
                 "cash_after": cash_after,
+                "guard_applied": book == S01_BOOK,
                 "backfill": bool(row.get("backfill")),
+                "trigger": trigger,
+                "run_id": run_id,
             },
         )
         completed += 1
+    run_daily_mtm(root, now)
+    _close_run(root, run_id, now, completed, trigger, job="fill")
     return completed
+
+
+def _halt_active(root: Path, book: str) -> bool:
+    """Whether the book's latest halt_check says it was halted (Q5/Q6)."""
+
+    latest: dict[str, Any] | None = None
+    for row in _load_journal(root):
+        if row.get("event") == "halt_check" and row.get("book") == book:
+            latest = row
+    return bool(latest and latest.get("halted_after"))
 
 
 def mark_up(root: Path, utc_now: datetime | None = None) -> int:
@@ -1125,18 +1885,22 @@ def mark_up(root: Path, utc_now: datetime | None = None) -> int:
         side = str(fill_row.get("side"))
         sgn = 1.0 if side == "buy" else -1.0
         shortfall_bps = sgn * (paper_fill / bar["open"] - 1.0) * 10_000
+        turnover = abs(float(fill_row.get("turnover") or 0.0))
         _append_row(
             root,
             {
                 "event": "mark",
                 "book": book,
-                "recorded_at": now.isoformat(),
+                "recorded_at": _utc_now_text(now),
                 "decision_id": decision_id,
                 "asset": asset,
                 "bt_fill_price": bar["open"],
                 "shortfall_bps": shortfall_bps,
                 "recompute_target": target_now.get(asset, 0.0),
                 "recompute_match": match,
+                "cost_assumed_bps": COST_RATE_BPS,
+                "turnover": turnover,
+                "effective_cost_bps": COST_RATE_BPS + shortfall_bps,
             },
         )
         marked += 1
@@ -1147,18 +1911,26 @@ def mark_up(root: Path, utc_now: datetime | None = None) -> int:
 
 
 def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
-    """Weekly summary row (M8/spec §7): per book + milestone judgment."""
+    """Weekly summary row (M8/spec §7): per book + milestone judgment.
+
+    v1.2: every book also gets an ``eval`` block (Q1-Q7, design §4) built from
+    the derived panel. The journal keeps facts only; the eval numbers live
+    here (design §7: never in the journal).
+    """
 
     root = loop_root(data_dir)
     window_start = week_end - timedelta(days=6)
     out: dict[str, Any] = {
+        "schema": "demo-loop-summary-v1.2",
         "week_end": week_end.isoformat(),
-        "generated_at": CLOCK().isoformat(),
+        "generated_at": _utc_now_text(),
         "books": {},
         "prereg_count": sum(1 for _ in _rows_from_jsonl(prereg_path(root), strict=True)),
         "last_anchor_seq": None,
         "last_anchor_hash": None,
         "anchor_ok": _anchors_ok(root),
+        "code_rev": code_rev(),
+        "host": host_name(),
     }
     anchors = _rows_from_jsonl(anchors_path(root))
     if anchors:
@@ -1236,40 +2008,98 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
             "halted": state.get("halted"),
             "stopped": state.get("stopped"),
             "mtm_days": len(mtms),
+            "halt_check_days": sum(
+                1
+                for row in _load_journal(root)
+                if row.get("event") == "halt_check"
+                and row.get("book") == book
+                and window_start <= date.fromisoformat(str(row.get("check_date"))) <= week_end
+            ),
+            "runs_completed": sum(
+                1
+                for row in _load_journal(root)
+                if row.get("event") == "run"
+                and row.get("phase") == "end"
+                and row.get("job") == "daily"
+                and row.get("ok")
+                and window_start
+                <= date.fromisoformat(str(row.get("recorded_at"))[:10])
+                <= week_end
+            ),
         }
         out["books"][book] = book_out
     # vs benchmark (pp, week + cumulative)
     book_a, book_bench = state_by_book.get(S01_BOOK), state_by_book.get(BENCH_CRYPTO_BOOK)
     if book_a is not None and book_bench is not None:
         out["vs_benchmark_pp_cum"] = (book_a["equity"] - book_bench["equity"]) * 100.0
+    # Q1-Q7 eval per book (design §4/§5: from the derived panel, insufficient
+    # is a first-class answer with a numeric reason)
+    out["eval"] = _eval_blocks(data_dir, book=S01_BOOK, week_end=week_end)
+    out["eval_by_book"] = {
+        book: _eval_blocks(data_dir, book=book, week_end=week_end) for book in BOOKS_ENABLED
+    }
     with summary_path(root).open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(out, ensure_ascii=False, default=str) + "\n")
     return out
+
+
+def _eval_blocks(data_dir: Path, *, book: str, week_end: date) -> dict[str, Any]:
+    """Q1-Q7 for one book, restricted to the week's judgeable panel rows."""
+
+    from yowayowa import paperloop_panel
+    from yowayowa.paperloop_panel import build_panel
+
+    try:
+        journal = _load_journal(loop_root(data_dir))
+        panel = build_panel(
+            data_dir,
+            start=week_end - timedelta(days=6),
+            end=week_end,
+        )
+    except ChainError:
+        return {"error": "chain_broken"}
+    scoped = [row for row in panel["rows"] if row.get("book") == book]
+    return {
+        "panel_rows": len(scoped),
+        "inputs_sha256": panel["hash"],
+        "eval": {
+            "Q1": paperloop_panel.eval_q1(scoped, book=book),
+            "Q2": paperloop_panel.eval_q2(scoped, book=book),
+            "Q3": paperloop_panel.eval_q3(scoped, book=book),
+            "Q4": paperloop_panel.eval_q4(scoped, book=book),
+            "Q5": paperloop_panel.eval_q5(scoped, book=book),
+            "Q6": paperloop_panel.eval_q6(scoped, book=book, journal=journal),
+            "Q7": paperloop_panel.eval_q7(scoped, book=book),
+        },
+    }
 
 
 # --- CLI ---------------------------------------------------------------------
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="demo loop v1.1 (zero-order paper)")
+    parser = argparse.ArgumentParser(description="demo loop v1.2 (zero-order paper)")
     parser.add_argument("--data-dir", type=Path, default=Path("./data"))
-    parser.add_argument("command", choices=("decide", "fill", "mark", "mtm", "week", "loop_run"))
+    parser.add_argument(
+        "command",
+        choices=("decide", "fill", "mark", "mtm", "week", "panel", "eval", "halt_check"),
+    )
     parser.add_argument("--week-end", type=date.fromisoformat, default=None)
+    parser.add_argument("--book", default=S01_BOOK)
+    parser.add_argument("--from", dest="date_from", type=date.fromisoformat, default=None)
+    parser.add_argument("--to", dest="date_to", type=date.fromisoformat, default=None)
+    parser.add_argument("--trigger", default="cron", choices=("cron", "manual"))
     args = parser.parse_args(argv)
     root = loop_root(args.data_dir)
+    run_id = _new_run_id()
     try:
-        if args.command == "loop_run":
-            print(json.dumps({"ok": True}))
-            return 0
         if args.command == "decide":
-            result = run_daily_decide(root)
-            result += run_daily_mtm(root)
-            print(json.dumps({"ok": True, "rows_written": result}))
+            result = run_daily_decide(root, run_id=run_id, trigger=args.trigger)
+            print(json.dumps({"ok": True, "rows_written": result, "run_id": run_id}))
             return 0
         if args.command == "fill":
-            result = resolve_fills(root)
-            result += run_daily_mtm(root)
-            print(json.dumps({"ok": True, "fills_resolved": result}))
+            result = resolve_fills(root, run_id=run_id, trigger=args.trigger)
+            print(json.dumps({"ok": True, "fills_resolved": result, "run_id": run_id}))
             return 0
         if args.command == "mark":
             result = mark_up(root)
@@ -1278,6 +2108,27 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "mtm":
             result = run_daily_mtm(root)
             print(json.dumps({"ok": True, "mtm_rows": result}))
+            return 0
+        if args.command == "halt_check":
+            result = _write_daily_halt_checks(root)
+            print(json.dumps({"ok": True, "halt_checks": result}))
+            return 0
+        if args.command == "panel":
+            from yowayowa.paperloop_panel import panel_json
+
+            print(panel_json(args.data_dir, start=args.date_from, end=args.date_to))
+            return 0
+        if args.command == "eval":
+            from yowayowa.paperloop_panel import eval_json
+
+            print(
+                eval_json(
+                    args.data_dir,
+                    book=args.book,
+                    start=args.date_from,
+                    end=args.date_to,
+                )
+            )
             return 0
         week_end = args.week_end or CLOCK(UTC).date()
         weekly_summary(args.data_dir, week_end)
@@ -1289,6 +2140,74 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
         return 1
+
+
+def _write_daily_halt_checks(root: Path, utc_now: datetime | None = None) -> int:
+    """Stand-alone daily halt_check pass (idempotent per book/day)."""
+
+    now = utc_now if utc_now is not None else CLOCK(UTC)
+    decision_date = now.date()
+    written = 0
+    for book in BOOKS_ENABLED:
+        universe = list(
+            CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
+        )
+        rows_by_symbol = {symbol: _daily_map(root, symbol) for symbol in universe}
+        closes_by_symbol = {
+            symbol: [rows[day]["close"] for day in sorted(rows) if day < decision_date]
+            for symbol, rows in rows_by_symbol.items()
+        }
+        is_equity = book in (BOOK_C_BOOK, BENCH_EQUITY_BOOK)
+        annualization = (
+            CRYPTO_ANNUALIZATION
+            if book in (S01_BOOK, BENCH_CRYPTO_BOOK)
+            else EQUITY_ANNUALIZATION
+        )
+        state = rebuild_state(root, book)
+        trigger_details: list[dict[str, Any]] = []
+        for symbol in universe:
+            trigger_details.extend(
+                _halt_triggers_asset(
+                    rows_by_symbol[symbol],
+                    closes_by_symbol[symbol],
+                    now,
+                    annualization,
+                    is_equity,
+                )
+            )
+        dd = state["equity"] / state["peak"] - 1.0 if state["peak"] > 0 else 0.0
+        halted_before = bool(state.get("halted"))
+        halted_after = halted_before or bool([e for e in trigger_details if e["tripped"]])
+        if any(
+            row.get("event") == "halt_check"
+            and row.get("book") == book
+            and str(row.get("check_date")) == decision_date.isoformat()
+            for row in _load_journal(root)
+        ):
+            continue
+        margins = [e["margin"] for e in trigger_details if e.get("margin") is not None]
+        _append_row(
+            root,
+            {
+                "event": "halt_check",
+                "book": book,
+                "check_date": decision_date.isoformat(),
+                "recorded_at": _utc_now_text(now),
+                "triggers": trigger_details,
+                "drawdown": dd,
+                "drawdown_threshold": HALT_DRAWDOWN,
+                "drawdown_margin": dd - HALT_DRAWDOWN,
+                "margin_min": min(margins) if margins else None,
+                "halted_before": halted_before,
+                "halted_after": halted_after,
+                "action": _halt_action(
+                    halted_before, halted_after, dd, state, trigger_details
+                ),
+                "regime_spec_hash": regime_spec_hash(),
+            },
+        )
+        written += 1
+    return written
 
 
 if __name__ == "__main__":
