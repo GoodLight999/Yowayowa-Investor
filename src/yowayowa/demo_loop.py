@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from yowayowa.paperloop import (
     BENCH_CRYPTO_BOOK,
+    BENCH_DD_STOP,
     BENCH_EQUITY_BOOK,
     BOOK_C_BOOK,
     BOOK_C_ENABLED,
@@ -18,11 +19,14 @@ from yowayowa.paperloop import (
     MILESTONE_RULES,
     S01_BOOK,
     SCHEMA,
+    SCHEMA_V13,
     ChainError,
     apply_fill,
+    bench_dd_stop_fired,
     check_prereg,
     ensure_prereg,
     evaluate_halt,
+    is_live_schema,
     main,
     mark_up,
     rebuild_guard_input,
@@ -30,12 +34,15 @@ from yowayowa.paperloop import (
     resolve_fills,
     run_daily_decide,
     run_daily_mtm,
+    shortfall_bps_mean_upper95,
+    store_freeze_inputs,
     weekly_summary,
 )
 from yowayowa.paperloop_guard import GuardInput, check_trade
 
 __all__ = [
     "BENCH_CRYPTO_BOOK",
+    "BENCH_DD_STOP",
     "BENCH_EQUITY_BOOK",
     "BOOKS_ENABLED",
     "BOOK_C_BOOK",
@@ -46,13 +53,16 @@ __all__ = [
     "MILESTONE_RULES",
     "S01_BOOK",
     "SCHEMA",
+    "SCHEMA_V13",
     "ChainError",
     "GuardInput",
     "apply_fill",
+    "bench_dd_stop_fired",
     "check_prereg",
     "check_trade",
     "ensure_prereg",
     "evaluate_halt",
+    "is_live_schema",
     "main",
     "mark_up",
     "rebuild_guard_input",
@@ -60,5 +70,7 @@ __all__ = [
     "resolve_fills",
     "run_daily_decide",
     "run_daily_mtm",
+    "shortfall_bps_mean_upper95",
+    "store_freeze_inputs",
     "weekly_summary",
 ]
