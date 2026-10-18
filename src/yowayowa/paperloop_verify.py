@@ -1,7 +1,13 @@
-"""paperloop_verify: R1/R2/chain/anchors/commit-before-fill + L1-L14 checks.
+"""paperloop_verify: R1/R2/R3/chain/anchors/commit-before-fill + L1-L14 checks.
 
-Design t_bcb87ad5 §6. One integration check that fails → exit code 1; a broken
-hash chain → exit code 2 (unchanged from v1.1).
+Design t_bcb87ad5 §6, reconciliation t_69d006ad (cards t_554c40f6/t_2202c100).
+One integration check that fails → exit code 1; a broken hash chain → exit
+code 2 (unchanged from v1.1).
+
+v1.3: R1 is the frozen-file hash check (spec §8), R3 rebuilds the freeze
+payload from the CURRENT store and counts data_revised, and R2 (engine
+reconciliation) excludes R3-revised decision_ids from its denominator and
+reports R2_excluded_revised — a revision is counted, not failed.
 
 Usage:
   python -m yowayowa.paperloop_verify --data-dir ./data \
@@ -22,8 +28,9 @@ from typing import Any
 from yowayowa.paperloop import (
     BOOKS_ENABLED,
     CRYPTO_UNIVERSE,
-    S01_BOOK,
+    LIVE_SCHEMAS,
     SCHEMA_V12,
+    SCHEMA_V13,
     STRATEGY_BOOKS,
     ChainError,
     _anchors_ok,
@@ -33,10 +40,13 @@ from yowayowa.paperloop import (
     _parse_ts,
     _parse_ts_assume_utc,
     _rows_from_jsonl,
-    _utc_now_text,
+    _sha256,
+    inputs_dir,
+    is_live_schema,
     loop_root,
     prereg_path,
     regime_spec_hash,
+    store_freeze_inputs,
 )
 from yowayowa.paperloop_panel import build_panel
 
@@ -82,12 +92,18 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
         "decisions_judged": 0,
         "R1_match": 0,
         "R1_total": 0,
+        "R1_mismatches": [],
         "R2_match": 0,
         "R2_total": 0,
         "R2_mismatches": [],
+        # t_2202c100: R2's denominator EXCLUDES the decision_ids that R3 found
+        # data_revised (a revision is counted, not failed); the excluded count
+        # is reported alongside.
+        "R2_excluded_revised": 0,
         "R3_revised": 0,
+        "R3_revised_ids": [],
         "commit_before_fill_violations": 0,
-        "schema_live": SCHEMA_V12,
+        "schema_live": SCHEMA_V13,
         "checks": {name: {"ok": True, "failures": []} for name in CHECKS},
         # design §8-1: the pre-v1.2 rows are frozen (never rewritten), so their
         # violations are LISTED here instead of failing L1-L14. Every entry
@@ -96,7 +112,7 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
         "legacy_note": (
             "v1.1 rows are frozen pre-calibration rows (design section 8-1); "
             "their violations are listed under legacy_v11_findings and do not "
-            "fail L1-L14. Recurrence guards (L1/L3/L5/L12) apply to v1.2 rows."
+            "fail L1-L14. Recurrence guards (L1/L3/L5/L12) apply to v1.2+ rows."
         ),
         "exit_code": 0,
     }
@@ -112,15 +128,14 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
     result["rows"] = len(journal)
 
     decisions = [row for row in journal if row.get("event") == "decision"]
-    v12_decisions = [row for row in decisions if row.get("schema") == SCHEMA_V12]
+    live_decisions = [row for row in decisions if is_live_schema(row)]
     result["v12_rows"] = sum(1 for row in journal if row.get("schema") == SCHEMA_V12)
-    result["v12_days"] = len(
-        {str(row.get("decision_date")) for row in v12_decisions}
-    )
-    result["v12_window"] = (
-        [min((str(r.get("decision_date")) for r in v12_decisions), default=None),
-         max((str(r.get("decision_date")) for r in v12_decisions), default=None)]
-    )
+    result["v13_rows"] = sum(1 for row in journal if row.get("schema") == SCHEMA_V13)
+    result["live_days"] = len({str(row.get("decision_date")) for row in live_decisions})
+    result["live_window"] = [
+        min((str(r.get("decision_date")) for r in live_decisions), default=None),
+        max((str(r.get("decision_date")) for r in live_decisions), default=None),
+    ]
 
     fills_by_decision: dict[str, dict[str, Any]] = {}
     marks = {str(row.get("decision_id")) for row in journal if row.get("event") == "mark"}
@@ -133,18 +148,18 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
     # carry a tz-less registered_at written by the pre-B4 code. They are
     # hash-chained, so correcting them in place would break L2; they are
     # REPORTED under legacy_v11_findings instead of failing L1. The exemption
-    # is anchored to the first v1.2 journal row: any registration written at
-    # or after the v1.2 rollout that lacks a tz still fails L1.
-    first_v12_recorded: datetime | None = None
+    # is anchored to the first LIVE (v1.2/v1.3) journal row: any registration
+    # written at or after the live rollout that lacks a tz still fails L1.
+    first_live_recorded: datetime | None = None
     for row in journal:
-        if row.get("schema") != SCHEMA_V12:
+        if not is_live_schema(row):
             continue
         try:
             stamp = _parse_ts_assume_utc(row.get("recorded_at"))
         except (TypeError, ValueError, OverflowError):
             continue
-        if first_v12_recorded is None or stamp < first_v12_recorded:
-            first_v12_recorded = stamp
+        if first_live_recorded is None or stamp < first_live_recorded:
+            first_live_recorded = stamp
     legacy_prereg: list[dict[str, Any]] = []
     for index, row in enumerate(journal, start=1):
         for field in ("recorded_at", "paper_fill_bar_open_ts", "decision_recorded_at"):
@@ -163,7 +178,7 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
                     {"file": field_path.name, "value": line.get("registered_at")}
                 )
                 continue
-            if first_v12_recorded is not None and registered < first_v12_recorded:
+            if first_live_recorded is not None and registered < first_live_recorded:
                 legacy_prereg.append(
                     {
                         "file": field_path.name,
@@ -182,11 +197,14 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
     # ---- L2: seq 1..N and the hash chain (already enforced by the loader) --
     seqs = [int(row.get("seq", -1)) for row in journal]
     if seqs != list(range(1, len(journal) + 1)):
-        result["checks"][L2]["failures"].append({"expected": f"1..{len(journal)}", "got": seqs[:20]})
+        result["checks"][L2]["failures"].append(
+            {"expected": f"1..{len(journal)}", "got": seqs[:20]}
+        )
 
     # ---- L3: exactly one mtm per (book, day) -------------------------------
-    # A group is checked as soon as ONE of its rows is v1.2; a group made of
-    # frozen v1.1 rows only (the known B2 duplicate) is listed as legacy.
+    # A group is checked as soon as ONE of its rows is live (v1.2/v1.3); a
+    # group made of frozen v1.1 rows only (the known B2 duplicate) is listed
+    # as legacy.
     mtm_keys: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for row in journal:
         if row.get("event") == "mtm":
@@ -196,7 +214,7 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
             continue
         seq_list = [int(row.get("seq") or 0) for row in group]
         entry = {"book": book, "mtm_date": day, "seqs": seq_list}
-        if any(row.get("schema") == SCHEMA_V12 for row in group):
+        if any(is_live_schema(row) for row in group):
             result["checks"][L3]["failures"].append(entry)
         else:
             _note_legacy(result, L3, dict(entry, reason="frozen_v1.1_rows"))
@@ -238,9 +256,10 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
             )
 
     # ---- L5: at most one fill/fill_rejected per decision_id (B1) ----------
-    # In scope as soon as the decision OR any of its events is v1.2: a v1.1
-    # decision re-processed by v1.2 code (the original B1 bug) must still be
-    # caught. Groups made entirely of frozen v1.1 rows are listed as legacy.
+    # In scope as soon as the decision OR any of its events is live (v1.2+):
+    # a v1.1 decision re-processed by live code (the original B1 bug) must
+    # still be caught. Groups made entirely of frozen v1.1 rows are listed as
+    # legacy.
     per_decision: dict[str, list[dict[str, Any]]] = {}
     for row in journal:
         if row.get("event") in ("fill", "fill_rejected") and row.get("decision_id"):
@@ -250,8 +269,8 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
         if len(group) < 2:
             continue
         events = [str(row.get("event")) for row in group]
-        in_scope = decision_schema.get(decision_id) == SCHEMA_V12 or any(
-            row.get("schema") == SCHEMA_V12 for row in group
+        in_scope = decision_schema.get(decision_id) in LIVE_SCHEMAS or any(
+            is_live_schema(row) for row in group
         )
         if in_scope:
             result["checks"][L5]["failures"].append({"decision_id": decision_id, "events": events})
@@ -267,7 +286,7 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
         if row.get("event") != "mtm":
             continue
         price_bar = row.get("price_bar_date")
-        if price_bar is None and row.get("schema") == SCHEMA_V12:
+        if price_bar is None and is_live_schema(row):
             result["checks"][L6]["failures"].append(
                 {"seq": row.get("seq"), "problem": "missing_price_bar_date"}
             )
@@ -288,7 +307,9 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
         if fill_row is None:
             continue
         bar_open = _parse_ts(fill_row.get("paper_fill_bar_open_ts", "1970-01-01T00:00:00+00:00"))
-        if not (bar_open > decision_recorded and _parse_ts(fill_row.get("recorded_at")) >= bar_open):
+        if not (
+            bar_open > decision_recorded and _parse_ts(fill_row.get("recorded_at")) >= bar_open
+        ):
             result["commit_before_fill_violations"] += 1
             result["checks"][L7]["failures"].append(
                 {
@@ -299,10 +320,10 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
                 }
             )
 
-    # ---- L8: code_rev on every row; report the days it changed -------------
+    # ---- L8: code_rev on every live row; report the days it changed --------
     revisions: dict[str, list[str]] = {}
     for row in journal:
-        if row.get("schema") != SCHEMA_V12:
+        if not is_live_schema(row):
             continue
         rev = row.get("code_rev")
         if not rev:
@@ -328,9 +349,7 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
                 {"book_id": book_id, "problem": "registered_at_not_parseable"}
             )
     first_decision: dict[str, datetime] = {}
-    for row in decisions:
-        if row.get("schema") != SCHEMA_V12:
-            continue
+    for row in live_decisions:
         book = str(row.get("book"))
         try:
             stamp = _parse_ts_assume_utc(row.get("recorded_at"))
@@ -359,7 +378,7 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
     latest_spec: dict[str, str] = {}
     for line in preregs:
         latest_spec[str(line.get("book_id"))] = str(line.get("spec_hash"))
-    for row in v12_decisions:
+    for row in live_decisions:
         want = latest_spec.get(str(row.get("book")))
         got = row.get("spec_hash")
         if want is None or got != want:
@@ -398,7 +417,7 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
         if row.get("event") == "halt_check"
     }
     for book in BOOKS_ENABLED:
-        for day in sorted({str(r.get("decision_date")) for r in v12_decisions}):
+        for day in sorted({str(r.get("decision_date")) for r in live_decisions}):
             if (book, day) not in expected_halt:
                 result["checks"][L11]["failures"].append(
                     {"book": book, "check_date": day, "problem": "missing_halt_check"}
@@ -419,13 +438,12 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
 
     # ---- L12: fill weight_after - weight_before == decision delta_weight --
     # D2 recurrence guard: in scope as soon as the fill OR its decision is
-    # v1.2; a mismatch between two frozen v1.1 rows is listed as legacy.
+    # live (v1.2+); a mismatch between two frozen v1.1 rows is listed as
+    # legacy.
     decision_by_id = {str(row.get("decision_id")): row for row in decisions}
 
-    def _l12_record(
-        entry: dict[str, Any], row: dict[str, Any], decision: dict[str, Any]
-    ) -> None:
-        if row.get("schema") == SCHEMA_V12 or decision.get("schema") == SCHEMA_V12:
+    def _l12_record(entry: dict[str, Any], row: dict[str, Any], decision: dict[str, Any]) -> None:
+        if is_live_schema(row) or is_live_schema(decision):
             result["checks"][L12]["failures"].append(entry)
         else:
             _note_legacy(result, L12, dict(entry, reason="frozen_v1.1_rows"))
@@ -496,12 +514,22 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
             continue
         if row.get("regime_state") == "not_applicable":
             continue
-        if row.get("schema") == SCHEMA_V12:
+        if is_live_schema(row):
             result["checks"][L14]["failures"].append(
                 {"decision_id": row.get("decision_id"), "regime_state": row.get("regime_state")}
             )
 
-    # ---- R1/R2 recompute (unchanged scope: strategy books) -----------------
+    # ---- R1/R2/R3 (spec §8; R2/R3 split per card t_2202c100) ---------------
+    # R1 — determinism from frozen inputs (spec §8): the frozen file's CURRENT
+    #      content must still hash to decision.input_sha256 (mutation V4:
+    #      editing the file fails R1 with exit 1).
+    # R3 — input revisions (spec §8): rebuilding the same payload from the
+    #      CURRENT store must hash to the frozen value; a mismatch is counted
+    #      as data_revised — it is a fact about the data, not a failure.
+    # R2 — engine reconciliation (spec §8): current-store engine target vs
+    #      journal. Its denominator EXCLUDES the R3-revised decision_ids
+    #      (R2_excluded_revised), because a revision breaks the recomputation
+    #      through no fault of the code (consultant t_69d006ad, 残り1).
     for row in decisions:
         decision_date = str(row.get("decision_date", ""))
         if not (start <= date.fromisoformat(decision_date or "1970-01-01") <= end):
@@ -512,27 +540,48 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
         if book not in STRATEGY_BOOKS:
             continue
         result["decisions_judged"] += 1
+        decision_id = str(row.get("decision_id"))
+        judged_day = date.fromisoformat(decision_date)
+        frozen_hash = row.get("input_sha256")
+        # R1: the frozen file is still byte-identical to what was frozen
+        r1_match = False
+        if frozen_hash:
+            frozen_path = inputs_dir(root) / judged_day.isoformat() / f"{book}.json"
+            if frozen_path.exists():
+                r1_match = _sha256(frozen_path.read_text(encoding="utf-8")) == frozen_hash
+        result["R1_total"] += 1
+        result["R1_match"] += int(r1_match)
+        if not r1_match:
+            result["R1_mismatches"].append({"decision_id": decision_id, "kind": "frozen_file_hash"})
+        # R3: current-store rebuild of the same payload
+        store_hash = store_freeze_inputs(root, book, judged_day)
+        revised = frozen_hash is not None and store_hash != frozen_hash
+        if revised:
+            result["R3_revised"] += 1
+            result["R3_revised_ids"].append(decision_id)
+        if revised:
+            # a revised decision leaves R2's denominator (counted, not failed)
+            result["R2_excluded_revised"] += 1
+            continue
         asset = str(row.get("asset"))
         target_now = _engine_target(
             book,
             {other: _daily_map(root, other) for other in CRYPTO_UNIVERSE},
-            date.fromisoformat(decision_date),
+            judged_day,
         )
         match = abs(target_now.get(asset, 0.0) - float(row.get("target_weight", 0.0))) <= 1e-12
-        result["R1_total"] += 1
-        result["R1_match"] += int(match)
         result["R2_total"] += 1
         result["R2_match"] += int(match)
         if not match:
             result["R2_mismatches"].append(
                 {
-                    "decision_id": row.get("decision_id"),
+                    "decision_id": decision_id,
                     "journal_target": row.get("target_weight"),
                     "engine_target": target_now.get(asset, 0.0),
                 }
             )
-        if str(row.get("decision_id")) not in marks:
-            result.setdefault("unmarked_filled", []).append(str(row.get("decision_id")))
+        if decision_id not in marks:
+            result.setdefault("unmarked_filled", []).append(decision_id)
 
     failing = [name for name in CHECKS if result["checks"][name]["failures"]]
     result["failed_checks"] = failing
@@ -541,6 +590,7 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
     if (
         failing
         or result["R1_match"] < result["R1_total"]
+        or result["R2_match"] < result["R2_total"]
         or result["commit_before_fill_violations"]
     ):
         result["exit_code"] = 1

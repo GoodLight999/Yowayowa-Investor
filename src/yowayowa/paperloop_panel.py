@@ -35,6 +35,7 @@ from yowayowa.paperloop import (
     _daily_map,
     _load_journal,
     _parse_ts,
+    is_live_schema,
     loop_root,
 )
 
@@ -99,7 +100,9 @@ def _block_bootstrap_se(
     return _stdev(means)
 
 
-def build_panel(data_dir: Any, *, start: date | None = None, end: date | None = None) -> dict[str, Any]:
+def build_panel(
+    data_dir: Any, *, start: date | None = None, end: date | None = None
+) -> dict[str, Any]:
     """Build the derived daily panel from the journal alone (design §5).
 
     Returns {"schema": "demo-loop-panel-v1.2", "rows": [...], "hash": ...}.
@@ -145,7 +148,9 @@ def _build_panel_from_journal(
         if row.get("event") == "halt_check":
             halt_by_key[(str(row.get("book")), str(row.get("check_date")))] = row
 
-    panel_dates = sorted({str(row.get("decision_date")) for row in journal if row.get("event") == "decision"})
+    panel_dates = sorted(
+        {str(row.get("decision_date")) for row in journal if row.get("event") == "decision"}
+    )
     rows: list[dict[str, Any]] = []
     for book in BOOKS_ENABLED:
         universe = list(
@@ -248,8 +253,8 @@ def _judgeable(
     """A day is judgeable when the facts the questions need are all present."""
 
     del fill, mark
-    if decision.get("schema") != "demo-loop-v1.2":
-        return False  # v1.1 rows are the pre-calibration era (design §8)
+    if not is_live_schema(decision):
+        return False  # frozen v1.1 rows are the pre-calibration era (design §8)
     if ret_next is None:
         return False
     if decision.get("regime_state") not in ("RISK_ON", "RISK_OFF"):
@@ -260,7 +265,11 @@ def _judgeable(
 def _equity_on(journal: list[Mapping[str, Any]], book: str, day: str) -> float | None:
     latest: Mapping[str, Any] | None = None
     for row in journal:
-        if row.get("event") == "mtm" and row.get("book") == book and str(row.get("mtm_date")) <= day:
+        if (
+            row.get("event") == "mtm"
+            and row.get("book") == book
+            and str(row.get("mtm_date")) <= day
+        ):
             latest = row
     return float(latest["equity"]) if latest is not None else None
 
@@ -268,7 +277,11 @@ def _equity_on(journal: list[Mapping[str, Any]], book: str, day: str) -> float |
 def _equity_gross_on(journal: list[Mapping[str, Any]], book: str, day: str) -> float | None:
     latest: Mapping[str, Any] | None = None
     for row in journal:
-        if row.get("event") == "mtm" and row.get("book") == book and str(row.get("mtm_date")) <= day:
+        if (
+            row.get("event") == "mtm"
+            and row.get("book") == book
+            and str(row.get("mtm_date")) <= day
+        ):
             latest = row
     if latest is None:
         return None
@@ -313,9 +326,7 @@ def eval_q1(rows: list[Mapping[str, Any]], *, book: str = S01_BOOK) -> dict[str,
         for r in rows
         if r.get("book") == book and r.get("judgeable") and r.get("ret_next") is not None
     ]
-    excluded = _excluded_counts(
-        [r for r in rows if r.get("book") == book]
-    )
+    excluded = _excluded_counts([r for r in rows if r.get("book") == book])
     on = [float(r["ret_next"]) for r in scope if r.get("regime_state") == "RISK_ON"]
     off = [float(r["ret_next"]) for r in scope if r.get("regime_state") == "RISK_OFF"]
     n_on, n_off = len(on), len(off)
@@ -349,16 +360,10 @@ def eval_q2(rows: list[Mapping[str, Any]], *, book: str = S01_BOOK) -> dict[str,
     """Q2 fills as designed: signed shortfall mean/t, lag median/max, slow fills."""
 
     scope = [
-        r
-        for r in rows
-        if r.get("book") == book and r.get("judgeable") and not r.get("backfill")
+        r for r in rows if r.get("book") == book and r.get("judgeable") and not r.get("backfill")
     ]
     excluded = _excluded_counts([r for r in rows if r.get("book") == book])
-    fills = [
-        r
-        for r in scope
-        if r.get("filled") and (r.get("turnover") or 0.0) >= 0.01
-    ]
+    fills = [r for r in scope if r.get("filled") and (r.get("turnover") or 0.0) >= 0.01]
     shortfalls = [float(r["shortfall_bps"]) for r in fills if r.get("shortfall_bps") is not None]
     lags = [int(r["fill_lag_sec"]) for r in fills if r.get("fill_lag_sec") is not None]
     if len(fills) < Q2_MIN_FILLS:
@@ -378,9 +383,7 @@ def eval_q2(rows: list[Mapping[str, Any]], *, book: str = S01_BOOK) -> dict[str,
     verdict = "warn" if (t is not None and t > 2.0) else "pass"
     out = _verdict_block("Q2", mean_shortfall, se, len(fills), excluded, verdict)
     out["t"] = t
-    out["fill_lag_sec_median"] = (
-        lags_sorted[len(lags_sorted) // 2] if lags_sorted else None
-    )
+    out["fill_lag_sec_median"] = lags_sorted[len(lags_sorted) // 2] if lags_sorted else None
     out["fill_lag_sec_max"] = max(lags) if lags else None
     out["fills_over_2h"] = sum(1 for lag in lags if lag > Q2_FILL_LAG_WARN_SEC)
     return out
@@ -390,9 +393,7 @@ def eval_q3(rows: list[Mapping[str, Any]], *, book: str = S01_BOOK) -> dict[str,
     """Q3 cost as assumed: turnover-weighted effective cost vs the frozen 15bps."""
 
     scope = [
-        r
-        for r in rows
-        if r.get("book") == book and r.get("judgeable") and not r.get("backfill")
+        r for r in rows if r.get("book") == book and r.get("judgeable") and not r.get("backfill")
     ]
     excluded = _excluded_counts([r for r in rows if r.get("book") == book])
     weighted: list[tuple[float, float]] = []
@@ -482,11 +483,7 @@ def eval_q5(rows: list[Mapping[str, Any]], *, book: str = S01_BOOK) -> dict[str,
 
     scope = [r for r in rows if r.get("book") == book]
     excluded = _excluded_counts(scope)
-    margins = [
-        float(r["halt_margin_min"])
-        for r in scope
-        if r.get("halt_margin_min") is not None
-    ]
+    margins = [float(r["halt_margin_min"]) for r in scope if r.get("halt_margin_min") is not None]
     halted_rows = [r for r in scope if r.get("halted")]
     out = _verdict_block("Q5", len(halted_rows), None, len(scope), excluded, "informational")
     out["halted_days"] = len(halted_rows)
@@ -504,7 +501,9 @@ def eval_q5(rows: list[Mapping[str, Any]], *, book: str = S01_BOOK) -> dict[str,
     return out
 
 
-def eval_q6(rows: list[Mapping[str, Any]], *, book: str = S01_BOOK, journal: Any = None) -> dict[str, Any]:
+def eval_q6(
+    rows: list[Mapping[str, Any]], *, book: str = S01_BOOK, journal: Any = None
+) -> dict[str, Any]:
     """Q6 guard efficacy: rejection classes + per-rejection counterfactual.
 
     Zero guard rejections is the EXPECTED normal state in the daily-bar flow
@@ -513,9 +512,7 @@ def eval_q6(rows: list[Mapping[str, Any]], *, book: str = S01_BOOK, journal: Any
 
     source = journal if journal is not None else []
     rejects = [
-        row
-        for row in source
-        if row.get("event") == "fill_rejected" and row.get("book") == book
+        row for row in source if row.get("event") == "fill_rejected" and row.get("book") == book
     ]
     excluded = _excluded_counts([r for r in rows if r.get("book") == book])
     classes: dict[str, int] = {}
@@ -558,9 +555,7 @@ def eval_q7(rows: list[Mapping[str, Any]], *, book: str = S01_BOOK) -> dict[str,
     cum_diff_pp = (float(equity) - float(bench)) * 100.0
     book_dd = _max_drawdown([float(r["equity"]) for r in scope])
     bench_rows = [
-        r
-        for r in rows
-        if r.get("book") == BENCH_CRYPTO_BOOK and r.get("equity") is not None
+        r for r in rows if r.get("book") == BENCH_CRYPTO_BOOK and r.get("equity") is not None
     ]
     bench_dd = _max_drawdown([float(r["equity"]) for r in bench_rows])
     dd_ratio = (book_dd / bench_dd) if bench_dd else None
@@ -613,7 +608,9 @@ def evaluate(
 
 
 def panel_json(data_dir: Any, **kwargs: Any) -> str:
-    return json.dumps(build_panel(data_dir, **kwargs), ensure_ascii=False, sort_keys=True, default=str)
+    return json.dumps(
+        build_panel(data_dir, **kwargs), ensure_ascii=False, sort_keys=True, default=str
+    )
 
 
 def eval_json(data_dir: Any, **kwargs: Any) -> str:

@@ -47,6 +47,21 @@ v1.2 additions (eval logging, design t_bcb87ad5):
 - new events: halt_check (daily, per book, per-trigger margins) and run
   (start/end per job). loop_run is gone.
 - regime_spec is preregistered before the first v1.2 decision row.
+
+v1.3 additions (reconciliation t_69d006ad / cards t_554c40f6, t_2202c100):
+- new rows carry schema="demo-loop-v1.3"; v1.1/v1.2 rows are never rewritten.
+- the -20% drawdown line (HALT_DRAWDOWN) is DEMOTED from a stop to a
+  WARNING: mtm/halt_check rows record ``drawdown_warning`` and the
+  halt_check action becomes "warn"; nothing stops or halts on it any more
+  (t_554c40f6: 55.9% hit rate over the 26w window). Historical ``stopped``
+  flags on frozen rows stay recorded but no longer propagate a stop.
+- bench-over-DD auto-stop (weekly, max-DD ratio, bench DD >= 10%, multiplier
+  k): HOOK ONLY — ``BENCH_DD_STOP`` config + the pure ``bench_dd_stop_fired``
+  predicate exist but stay disabled until the master freezes k.
+- C6: a newer decision for the same (book, asset) closes older pendings with
+  fill_rejected(reject_reason="superseded") at resolve time.
+- MILESTONE_RULES[26] cost gate replaced by the frozen "signed shortfall_bps
+  mean 95% upper bound <= 15 bps" (shortfall_bps_mean_upper95_max).
 """
 
 from __future__ import annotations
@@ -85,7 +100,10 @@ EQUITY_ANNUALIZATION = 252
 COST_RATE = 0.0015
 COST_RATE_BPS = 15.0
 BOOK_C_TARGET_VOL = 0.15
-HALT_DRAWDOWN = -0.20  # stop line: stopped, not resumable
+# v1.3 (t_2202c100): WARNING line, not a stop — mtm/halt_check rows record
+# drawdown_warning; nothing halts or stops on this any more. The constant
+# keeps its name (frozen v1.1 exports) but only labels the warning threshold.
+HALT_DRAWDOWN = -0.20  # warning line: t_554c40f6 fired it 55.9% of 26w windows
 HALT_FRESHNESS_CRYPTO = timedelta(hours=26)
 HALT_FRESHNESS_EQUITY_DAYS = 2
 HALT_SIGMA_MOVE = 5.0
@@ -95,15 +113,42 @@ GUARD_MAX_FILLS_PER_DAY = 2
 BINANCE_TAPE = {"BTC": "BTCUSDT", "ETH": "ETHUSDT"}
 SCHEMA = "demo-loop-v1.1"
 SCHEMA_V12 = "demo-loop-v1.2"
+SCHEMA_V13 = "demo-loop-v1.3"  # t_2202c100: DD warning, C6 superseded, R2/R3 split
+LIVE_SCHEMAS = (SCHEMA_V12, SCHEMA_V13)  # "current" rows; anything else is frozen legacy
 BOOK_C_ENABLED = False
+# Weekly benchmark-excess-DD auto-stop (t_2202c100): HOOK ONLY. The loop must
+# not consult it until the master freezes the multiplier k — until then the
+# gate below stays disabled and ``bench_dd_stop_fired`` answers False.
+BENCH_DD_STOP: dict[str, Any] = {
+    "enabled": False,  # k is undecided (master's call) — do not flip by hand
+    "bench_dd_min": 0.10,  # the benchmark DD must be at least this deep
+    "k": None,  # fires when book_dd <= -k * |bench_dd|; None = undecided
+}
 MILESTONE_RULES = {  # design §4, frozen numeric gates
     4: {"loop_success_rate": 0.95, "observed_cost_bps_max": 30.0},
     12: {"dd_vs_benchmark": 0.6, "cum_pnl_min": -0.10, "switches_multiple": 2.0},
-    26: {"dd_vs_benchmark": 0.6, "observed_cost_bps_max": 22.5},
+    # 26w cost gate (t_2202c100): the old "observed cost <= 1.5x assumed"
+    # mixed shortfall with the assumed fee (consultant t_69d006ad, F3). The
+    # frozen replacement is the one-sided 95% upper bound of the SIGNED
+    # shortfall_bps mean <= 15 bps.
+    26: {"dd_vs_benchmark": 0.6, "shortfall_bps_mean_upper95_max": 15.0},
 }
+SHORTFALL_UPPER95_Z = 1.6449  # one-sided 95% normal quantile (frozen)
 
 # clock injection point (single, for tests) — D5
 CLOCK = datetime.now
+
+
+def is_live_schema(row: Mapping[str, Any]) -> bool:
+    """True for rows written by live (non-frozen) code: v1.2 or v1.3.
+
+    The verifier treats everything else as frozen legacy (design §8-1): the
+    pre-v1.2 rows are never rewritten, so their violations are listed, not
+    failed. v1.3 (t_2202c100) joins v1.2 on the live side.
+    """
+
+    return row.get("schema") in LIVE_SCHEMAS
+
 
 # --- environment facts (B5: code_rev, host) ----------------------------------
 
@@ -274,9 +319,10 @@ def _load_journal(root: Path) -> list[dict[str, Any]]:
 def _append_row(root: Path, row: Mapping[str, Any]) -> dict[str, Any]:
     """The ONLY journal writer: seq numbering + prev-hash chain + fsync.
 
-    v1.2: every row carries schema="demo-loop-v1.2" and code_rev (B5), and a
-    naive/non-UTC recorded_at is refused (B4/P4). v1.1 rows are appended by
-    the legacy writer below and are never re-stamped.
+    v1.2: every row carries code_rev (B5), and a naive/non-UTC recorded_at is
+    refused (B4/P4). v1.1 rows are appended by the legacy writer below and
+    are never re-stamped. v1.3 (t_2202c100): new rows carry
+    schema="demo-loop-v1.3"; v1.1/v1.2 rows are never re-stamped either.
     """
 
     path = journal_path(root)
@@ -284,7 +330,7 @@ def _append_row(root: Path, row: Mapping[str, Any]) -> dict[str, Any]:
     prior = _load_journal(root) if path.exists() else []
     seq = len(prior) + 1
     out = dict(row)
-    out["schema"] = SCHEMA_V12
+    out["schema"] = SCHEMA_V13
     out["seq"] = seq
     out["code_rev"] = code_rev()
     _require_utc(out.get("recorded_at"), "recorded_at")  # B4/P4: refuse naive
@@ -633,7 +679,9 @@ def _tercile_bucket(value: float, low_cut: float, high_cut: float) -> str:
     return "high"
 
 
-def _regime_tag(symbol: str, daily: Mapping[date, Mapping[str, float]], as_of: date) -> dict[str, Any]:
+def _regime_tag(
+    symbol: str, daily: Mapping[date, Mapping[str, float]], as_of: date
+) -> dict[str, Any]:
     """Market regime label from frozen inputs only (design §3-4).
 
     Three independent buckets (vol / trend / drawdown), none of which is the
@@ -643,7 +691,12 @@ def _regime_tag(symbol: str, daily: Mapping[date, Mapping[str, float]], as_of: d
     days = sorted(day for day in daily if day <= as_of)
     closes = [float(daily[d]["close"]) for d in days if math.isfinite(float(daily[d]["close"]))]
     if len(closes) < 63:
-        return {"vol_bucket": None, "trend_bucket": None, "dd_bucket": None, "why": "insufficient_history"}
+        return {
+            "vol_bucket": None,
+            "trend_bucket": None,
+            "dd_bucket": None,
+            "why": "insufficient_history",
+        }
     window = closes[-(REGIME_VOL_WINDOW + 1) :] if len(closes) > REGIME_VOL_WINDOW else closes
     rets = [b / a - 1.0 for a, b in itertools.pairwise(window) if a > 0]
     if len(rets) >= 21:
@@ -657,7 +710,9 @@ def _regime_tag(symbol: str, daily: Mapping[date, Mapping[str, float]], as_of: d
     else:
         historical: list[float] = []
         for i in range(20, len(window)):
-            block = [b / a - 1.0 for a, b in itertools.pairwise(window[max(0, i - 20) : i + 1]) if a > 0]
+            block = [
+                b / a - 1.0 for a, b in itertools.pairwise(window[max(0, i - 20) : i + 1]) if a > 0
+            ]
             if len(block) == 20:
                 m = sum(block) / 20.0
                 historical.append((sum((x - m) ** 2 for x in block) / 19.0) ** 0.5)
@@ -833,22 +888,25 @@ def _halt_triggers_asset(
 
     latest = max(rows, default=None)
     if is_equity:
-        lag_days = (
-            None if latest is None else float((utc_now.date() - latest).days)
-        )
+        lag_days = None if latest is None else float((utc_now.date() - latest).days)
         add(
             "stale_hours",
             lag_days * 24.0,
             float(HALT_FRESHNESS_EQUITY_DAYS + 1) * 24.0,
-            latest is None or (utc_now.date() - latest) > timedelta(
-                days=HALT_FRESHNESS_EQUITY_DAYS + 1
-            ),
+            latest is None
+            or (utc_now.date() - latest) > timedelta(days=HALT_FRESHNESS_EQUITY_DAYS + 1),
             "" if latest is not None else "unobserved",
         )
     else:
         # crypto freshness: now - (last bar date + 1 day 00:00 UTC) > 26h (H-a)
         if latest is None:
-            add("stale_hours", None, HALT_FRESHNESS_CRYPTO.total_seconds() / 3600.0, True, "unobserved")
+            add(
+                "stale_hours",
+                None,
+                HALT_FRESHNESS_CRYPTO.total_seconds() / 3600.0,
+                True,
+                "unobserved",
+            )
         else:
             last_close_utc = datetime.combine(
                 latest + timedelta(days=1), datetime.min.time(), tzinfo=UTC
@@ -917,9 +975,11 @@ def evaluate_halt(
             rows_by_symbol[symbol], closes_by_symbol[symbol], utc_now, annualization, is_equity
         )
     dd = state["equity"] / state["peak"] - 1.0 if state["peak"] > 0 else 0.0
+    # v1.3 (t_2202c100): the -20% DD line is a WARNING — the trigger name is
+    # recorded for callers but nothing downstream halts or stops on it.
     if dd <= HALT_DRAWDOWN and not state.get("stopped"):
         for symbol in results:
-            results[symbol].append("drawdown_stop")
+            results[symbol].append("drawdown_warning")
     if state.get("halted"):
         for symbol in results:
             results[symbol].append("halt_carryover")
@@ -1041,16 +1101,15 @@ def check_prereg(root: Path, book: str) -> None:
 # --- mocked-network-free core: decision / fill / mtm / mark -------------------
 
 
-def _freeze_inputs(
-    root: Path,
+def _freeze_payload(
     book: str,
     decision_date: date,
     closes_by_symbol: Mapping[str, list[float]],
     last_bar_ts_by_symbol: Mapping[str, date],
-) -> str:
-    """Write frozen decision inputs (per book/date) and return input_sha256."""
+) -> dict[str, Any]:
+    """The frozen-inputs payload (identical bytes for write and recompute)."""
 
-    payload = {
+    return {
         "book": book,
         "decision_date": decision_date.isoformat(),
         "inputs": {
@@ -1061,19 +1120,60 @@ def _freeze_inputs(
             for symbol, closes in closes_by_symbol.items()
         },
     }
+
+
+def _freeze_payload_hash(payload: Mapping[str, Any]) -> str:
+    return _sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+def _freeze_inputs(
+    root: Path,
+    book: str,
+    decision_date: date,
+    closes_by_symbol: Mapping[str, list[float]],
+    last_bar_ts_by_symbol: Mapping[str, date],
+) -> str:
+    """Write frozen decision inputs (per book/date) and return input_sha256."""
+
+    payload = _freeze_payload(book, decision_date, closes_by_symbol, last_bar_ts_by_symbol)
     path = inputs_dir(root) / decision_date.isoformat() / f"{book}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True), encoding="utf-8")
     return _sha256(path.read_text(encoding="utf-8"))
 
 
+def store_freeze_inputs(root: Path, book: str, decision_date: date) -> str:
+    """Rebuild the freeze payload from the CURRENT store and hash it (R3).
+
+    Both the closes and ``last_bar_as_of`` are restricted to days strictly
+    before ``decision_date`` — the window a same-day decide could see. (The
+    unfiltered store max would false-positive every decision once later days
+    land; validated against the live journal before freezing this rule,
+    card t_2202c100.) A hash that differs from the decision's frozen
+    ``input_sha256`` means the store was revised afterwards (data_revised).
+    """
+
+    inputs: dict[str, Any] = {}
+    for symbol in CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE:
+        rows = _daily_map(root, symbol)
+        prior = [day for day in sorted(rows) if day < decision_date]
+        inputs[symbol] = {
+            "closes": [rows[day]["close"] for day in prior][-(SMA_LOOKBACK + 1) :],
+            "last_bar_as_of": prior[-1].isoformat() if prior else None,
+        }
+    payload = {"book": book, "decision_date": decision_date.isoformat(), "inputs": inputs}
+    return _freeze_payload_hash(payload)
+
+
 def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
-    """Write one mtm row per enabled book (D3): equity chain + stop line.
+    """Write one mtm row per enabled book (D3): equity chain + DD warning.
 
     v1.2 (B2): (book, mtm_date) is the primary key — a second run on the same
     date writes nothing. ``mtm_date`` is the date of the close prices actually
     used (``price_bar_date``), not the wall-clock date, and the cumulative
     cost/turnover columns are recorded so the panel can separate cost drag.
+    v1.3 (t_2202c100): a drawdown at or below HALT_DRAWDOWN sets the row's
+    ``drawdown_warning`` and nothing else — it never stops the book.
     """
 
     now = utc_now if utc_now is not None else CLOCK(UTC)
@@ -1105,13 +1205,13 @@ def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
             prices[symbol] = daily[latest]["close"]
             if price_bar_date is None or latest.isoformat() > str(price_bar_date):
                 price_bar_date = latest.isoformat()
-        units_value = sum(
-            units * prices.get(asset, 0.0) for asset, units in state["units"].items()
-        )
+        units_value = sum(units * prices.get(asset, 0.0) for asset, units in state["units"].items())
         equity = state["cash"] + units_value
         peak = max(state["peak"], equity)
         drawdown = equity / peak - 1.0 if peak > 0 else 0.0
-        stopped = bool(state.get("stopped")) or drawdown <= HALT_DRAWDOWN
+        # v1.3 (t_2202c100): the -20% line is a WARNING — the stopped flag is
+        # only carried forward from frozen pre-v1.3 rows, never newly set.
+        stopped = bool(state.get("stopped"))
         cum_cost, cum_turnover, equity_gross = _cost_accumulators(root, book, equity)
         _append_row(
             root,
@@ -1127,6 +1227,7 @@ def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
                 "equity": equity,
                 "peak_equity": peak,
                 "drawdown": drawdown,
+                "drawdown_warning": drawdown <= HALT_DRAWDOWN,
                 "halted": bool(state.get("halted")),
                 "stopped": stopped,
                 "cost_assumed_bps": COST_RATE_BPS,
@@ -1137,7 +1238,6 @@ def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
         )
         written += 1
     return written
-
 
 
 def _cost_accumulators(root: Path, book: str, equity: float) -> tuple[float, float, float]:
@@ -1267,9 +1367,7 @@ def _regime_state_from(
     return regime, switch
 
 
-def _bars_since_switch(
-    root: Path, book: str, symbol: str, decision_date: date
-) -> int | None:
+def _bars_since_switch(root: Path, book: str, symbol: str, decision_date: date) -> int | None:
     """Bars since the regime last flipped (Q1's false-breakout rate input)."""
 
     rows = [
@@ -1339,9 +1437,12 @@ def run_daily_decide(
         halted_by_trigger = bool(state.get("halted")) or bool(
             [e for e in trigger_details if e["tripped"]]
         )
-        book_drawdown_tripped = dd <= HALT_DRAWDOWN and not state.get("stopped")
+        # v1.3 (t_2202c100): the -20% DD line no longer halts decisions — it
+        # is recorded as drawdown_warning on the halt_check row (t_554c40f6:
+        # 55.9% of 26w windows fired it, far too blunt for a stop).
+        drawdown_warning = dd <= HALT_DRAWDOWN
         halted_before = bool(state.get("halted"))
-        halted_after = halted_by_trigger or book_drawdown_tripped
+        halted_after = halted_by_trigger
         # §3-5: one halt_check row per book per day (L11)
         if not any(
             row.get("event") == "halt_check"
@@ -1349,9 +1450,7 @@ def run_daily_decide(
             and str(row.get("check_date")) == decision_date.isoformat()
             for row in _load_journal(root)
         ):
-            margins = [
-                e["margin"] for e in trigger_details if e.get("margin") is not None
-            ]
+            margins = [e["margin"] for e in trigger_details if e.get("margin") is not None]
             _append_row(
                 root,
                 {
@@ -1363,12 +1462,11 @@ def run_daily_decide(
                     "drawdown": dd,
                     "drawdown_threshold": HALT_DRAWDOWN,
                     "drawdown_margin": dd - HALT_DRAWDOWN,
+                    "drawdown_warning": drawdown_warning,
                     "margin_min": min(margins) if margins else None,
                     "halted_before": halted_before,
                     "halted_after": halted_after,
-                    "action": _halt_action(
-                        halted_before, halted_after, dd, state, trigger_details
-                    ),
+                    "action": _halt_action(halted_before, halted_after, dd, state, trigger_details),
                     "regime_spec_hash": regime_hash,
                 },
             )
@@ -1389,9 +1487,7 @@ def run_daily_decide(
                 [first_bar.isoformat(), last_bar.isoformat()] if last_bar is not None else None
             )
             last_bars_by_symbol = {
-                other: max(rows_by_symbol[other])
-                for other in universe
-                if rows_by_symbol[other]
+                other: max(rows_by_symbol[other]) for other in universe if rows_by_symbol[other]
             }
             freshness = _freshness_status(rows_by_symbol[symbol], decision_date)
             prev_regime: str | None = None
@@ -1584,13 +1680,15 @@ def _halt_action(
     trigger_details: list[dict[str, Any]],
 ) -> str:
     if state.get("stopped"):
-        return "stop"
+        return "stop"  # frozen pre-v1.3 history: the old stop stays on record
     if not halted_before and halted_after:
         return "halt"
     if halted_before and not halted_after:
         return "auto_clear"
-    if dd <= HALT_DRAWDOWN and not halted_before:
-        return "stop"
+    if dd <= HALT_DRAWDOWN:
+        # v1.3 (t_2202c100): the -20% line warns in the journal, it does not
+        # stop the book (t_554c40f6).
+        return "warn"
     if any(e["tripped"] for e in trigger_details) and halted_before:
         return "none"
     return "none"
@@ -1634,6 +1732,63 @@ def _finished_decisions(root: Path) -> set[str]:
     }
 
 
+def _supersede_stale_pendings(
+    root: Path,
+    now: datetime,
+    *,
+    trigger: str,
+    run_id: str | None,
+) -> int:
+    """C6 (t_2202c100): close stale pendings when a newer decision exists.
+
+    For each (book, asset): every still-pending decision OLDER than the
+    newest decision written for that key is closed with
+    ``fill_rejected(reject_reason="superseded")``. Decision rows themselves
+    are never rewritten. Without this, a late daily leaves yesterday's
+    pending racing today's decision for the same fill bar and the guard
+    rejects whichever row happens to sort first — the spec (consultant
+    t_69d006ad, reconciliation 残り2) fixes the outcome: the OLD one loses.
+    """
+
+    decisions = _decision_rows(root)
+    finished = _finished_decisions(root)
+    newest: dict[tuple[str, str], tuple[datetime, str]] = {}
+    for decision_id, row in decisions.items():
+        key = (str(row["book"]), str(row["asset"]))
+        stamp = _parse_ts(row["recorded_at"])
+        if key not in newest or stamp > newest[key][0]:
+            newest[key] = (stamp, decision_id)
+    closed = 0
+    for decision_id, row in sorted(decisions.items()):
+        if decision_id in finished or str(row.get("fill_status")) != "pending":
+            continue
+        key = (str(row["book"]), str(row["asset"]))
+        if newest[key][1] == decision_id:
+            continue  # the newest pending per (book, asset) is the one kept
+        _append_row(
+            root,
+            {
+                "event": "fill_rejected",
+                "book": str(row["book"]),
+                "asset": str(row["asset"]),
+                "recorded_at": _utc_now_text(now),
+                "decision_id": decision_id,
+                "reject_reason": "superseded",
+                "reject_class": "superseded",
+                "rejected_delta_weight": float(row.get("delta_weight", 0.0)),
+                "ref_bar_open_ts": None,
+                "ref_bar_open": None,
+                "decision_recorded_at": row.get("recorded_at"),
+                "superseded_by": newest[key][1],
+                "backfill": bool(row.get("backfill")),
+                "trigger": trigger,
+                "run_id": run_id,
+            },
+        )
+        closed += 1
+    return closed
+
+
 def resolve_fills(
     root: Path,
     utc_now: datetime | None = None,
@@ -1649,12 +1804,18 @@ def resolve_fills(
     (decision_recorded_at, fill_bar_close, weight_before/after, turnover,
     guard_applied, equity_at_fill) and rejections carry reject_class,
     rejected_delta_weight and ref_bar_open_ts for the counterfactual P&L.
+
+    v1.3 (C6, t_2202c100): before any fill is attempted, older pendings that
+    a newer decision has superseded are closed (see
+    ``_supersede_stale_pendings``) so only the newest decision per
+    (book, asset) can trade.
     """
 
     now = utc_now if utc_now is not None else CLOCK(UTC)
     ensure_prereg(root)
     if run_id:
         _open_run(root, run_id, job="fill", trigger=trigger)
+    _supersede_stale_pendings(root, now, trigger=trigger, run_id=run_id)
     completed = 0
     decisions = _decision_rows(root)
     finished = _finished_decisions(root)
@@ -1910,6 +2071,44 @@ def mark_up(root: Path, utc_now: datetime | None = None) -> int:
 # --- weekly summary ------------------------------------------------------------
 
 
+def shortfall_bps_mean_upper95(shortfalls: list[float]) -> float | None:
+    """One-sided 95% upper bound of the SIGNED shortfall mean (bps).
+
+    The frozen 26w milestone cost gate (t_2202c100): mean + z * sd / sqrt(n)
+    with the one-sided normal quantile z = SHORTFALL_UPPER95_Z (1.6449).
+    Needs n >= 2; below that the bound is undefined and the answer is None
+    ("insufficient"), which the milestone judgment must treat as not-passed.
+    """
+
+    n = len(shortfalls)
+    if n < 2:
+        return None
+    mean = sum(shortfalls) / n
+    variance = sum((value - mean) ** 2 for value in shortfalls) / (n - 1)
+    return mean + SHORTFALL_UPPER95_Z * math.sqrt(variance / n)
+
+
+def bench_dd_stop_fired(
+    book_dd: float,
+    bench_dd: float,
+    *,
+    k: float | None = None,
+    bench_dd_min: float = 0.10,
+) -> bool:
+    """Weekly benchmark-excess-DD stop criterion — HOOK ONLY (t_2202c100).
+
+    Fires when the benchmark is at least ``bench_dd_min`` under water AND the
+    book's drawdown is at least ``k`` times deeper. The loop does NOT call
+    this while ``BENCH_DD_STOP["k"]`` is undecided (None): the config gate
+    stays disabled until the master freezes k. Pure predicate — no clock, no
+    files, no journal writes.
+    """
+
+    if k is None:
+        return False
+    return bench_dd <= -bench_dd_min and book_dd <= -k * abs(bench_dd)
+
+
 def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     """Weekly summary row (M8/spec §7): per book + milestone judgment.
 
@@ -1998,6 +2197,7 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
             "shortfall_bps_mean_abs": (
                 sum(abs(value) for value in shortfalls) / len(shortfalls) if shortfalls else None
             ),
+            "shortfall_bps_mean_upper95": shortfall_bps_mean_upper95(shortfalls),
             "shortfall_n": len(shortfalls),
             "recompute_R1_rate": (
                 sum(1 for row in marks if row.get("recompute_match")) / len(marks)
@@ -2022,9 +2222,7 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
                 and row.get("phase") == "end"
                 and row.get("job") == "daily"
                 and row.get("ok")
-                and window_start
-                <= date.fromisoformat(str(row.get("recorded_at"))[:10])
-                <= week_end
+                and window_start <= date.fromisoformat(str(row.get("recorded_at"))[:10]) <= week_end
             ),
         }
         out["books"][book] = book_out
@@ -2159,9 +2357,7 @@ def _write_daily_halt_checks(root: Path, utc_now: datetime | None = None) -> int
         }
         is_equity = book in (BOOK_C_BOOK, BENCH_EQUITY_BOOK)
         annualization = (
-            CRYPTO_ANNUALIZATION
-            if book in (S01_BOOK, BENCH_CRYPTO_BOOK)
-            else EQUITY_ANNUALIZATION
+            CRYPTO_ANNUALIZATION if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_ANNUALIZATION
         )
         state = rebuild_state(root, book)
         trigger_details: list[dict[str, Any]] = []
@@ -2178,6 +2374,7 @@ def _write_daily_halt_checks(root: Path, utc_now: datetime | None = None) -> int
         dd = state["equity"] / state["peak"] - 1.0 if state["peak"] > 0 else 0.0
         halted_before = bool(state.get("halted"))
         halted_after = halted_before or bool([e for e in trigger_details if e["tripped"]])
+        drawdown_warning = dd <= HALT_DRAWDOWN  # v1.3 (t_2202c100): warn only
         if any(
             row.get("event") == "halt_check"
             and row.get("book") == book
@@ -2197,12 +2394,11 @@ def _write_daily_halt_checks(root: Path, utc_now: datetime | None = None) -> int
                 "drawdown": dd,
                 "drawdown_threshold": HALT_DRAWDOWN,
                 "drawdown_margin": dd - HALT_DRAWDOWN,
+                "drawdown_warning": drawdown_warning,
                 "margin_min": min(margins) if margins else None,
                 "halted_before": halted_before,
                 "halted_after": halted_after,
-                "action": _halt_action(
-                    halted_before, halted_after, dd, state, trigger_details
-                ),
+                "action": _halt_action(halted_before, halted_after, dd, state, trigger_details),
                 "regime_spec_hash": regime_spec_hash(),
             },
         )

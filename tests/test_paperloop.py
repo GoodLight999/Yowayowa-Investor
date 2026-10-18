@@ -3,7 +3,11 @@
 Covers: G1-G9 synthetic guard violations, D1 5-sigma prior-window firing,
 D2 delta-notional fills, D3 daily mtm, D4 decide idempotency, D5 recorded_at
 internal clock, D7 benchmark buy-once, D8 signed shortfall, D10 ChainError,
-C2 commit-before-fill assert, plus the zero-order-path grep guard (M6)."""
+C2 commit-before-fill assert, plus the zero-order-path grep guard (M6).
+
+v1.3 (t_2202c100): the -20% DD line is a warning (not a stop), C6 superseded
+pendings, R2/R3 split in the verifier, and the disabled bench-DD hook.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from yowayowa import paperloop as pl
+from yowayowa import paperloop_verify as pv
 from yowayowa.backtest_models import BacktestStrategyDefinition
 from yowayowa.paperloop_guard import GuardInput, check_trade
 from yowayowa.services.backtest import _target_weights
@@ -344,3 +349,196 @@ def test_engine_targets_reconcile(tmp_path: Path, monkeypatch) -> None:
     engine_rows = {symbol: pl._daily_map(root, symbol) for symbol in pl.CRYPTO_UNIVERSE}
     target = _target_weights(_s01_strategy(), engine_rows, now.date())
     assert target == {"BTC": 0.5, "ETH": 0.5}
+
+
+# --- v1.3 (t_2202c100): -20% DD is a warning, not a stop -----------------------
+
+
+def _noisy_then_slide_series(
+    n_rise: int = 260, n_slide: int = 10, start: float = 100.0
+) -> list[tuple[str, float, float]]:
+    """Rising alternating-noise phase, then a controlled ~-2.5%/day slide.
+
+    The alternating spread keeps sigma21 near 1% so no single slide day
+    (max -3.2%) trips the 5-sigma trigger — only the DD line is exercised.
+    """
+
+    out: list[tuple[str, float, float]] = []
+    value = start
+    for i in range(n_rise + n_slide):
+        if i < n_rise:
+            drift = 0.008 if i % 2 == 0 else -0.006
+        else:
+            drift = -0.018 if i % 2 == 0 else -0.032
+        value *= 1 + drift
+        day = (date(2026, 1, 1) + timedelta(days=i)).isoformat()
+        out.append((day, value / (1 + drift / 2), value))
+    return out
+
+
+def test_dd20_is_warning_not_stop(tmp_path: Path, monkeypatch) -> None:
+    _stub_networks(monkeypatch)
+    data_dir = tmp_path / "data"
+    days = _noisy_then_slide_series()
+    rising = days[:260]
+    _write_crypto_days(data_dir, "BTC", rising)
+    _write_crypto_days(data_dir, "ETH", [(d, o, c / 2) for d, o, c in rising])
+    root = pl.loop_root(data_dir)
+    buy_day = _now_of(date.fromisoformat(rising[-1][0]) + timedelta(days=1))
+    # buy at the top of the rising phase
+    pl.run_daily_decide(root, buy_day)
+    _inject_bar(root, "BTC", buy_day + timedelta(hours=1), rising[-1][2] * 1.001)
+    _inject_bar(root, "ETH", buy_day + timedelta(hours=1), rising[-1][2] / 2 * 1.001)
+    assert pl.resolve_fills(root, buy_day + timedelta(hours=2)) == 4
+    # append the slide bars, then mark to market: equity falls through -20%
+    _write_crypto_days(data_dir, "BTC", days[260:])
+    _write_crypto_days(data_dir, "ETH", [(d, o, c / 2) for d, o, c in days[260:]])
+    slide_day = _now_of(date.fromisoformat(days[-1][0]) + timedelta(days=1))
+    pl.run_daily_mtm(root, slide_day)
+    mtms = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "mtm" and row["mtm_date"] == slide_day.date().isoformat()
+    ]
+    assert mtms and all(row["drawdown"] <= pl.HALT_DRAWDOWN for row in mtms)
+    assert all(row["drawdown_warning"] is True for row in mtms)
+    assert all(row["stopped"] is False for row in mtms)  # v1.3: no stop
+    assert pl.rebuild_state(root, pl.S01_BOOK)["stopped"] is False
+    # the next decide is NOT halted by the drawdown: halt_check warns instead
+    pl.run_daily_decide(root, slide_day)
+    halt_checks = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "halt_check"
+        and row.get("check_date") == slide_day.date().isoformat()
+    ]
+    assert len(halt_checks) == 2
+    for row in halt_checks:
+        assert row["drawdown_warning"] is True
+        assert row["halted_after"] is False
+        assert row["action"] == "warn"
+    day_decisions = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "decision"
+        and row.get("decision_date") == slide_day.date().isoformat()
+    ]
+    assert len(day_decisions) == 4
+    assert all(row["halt_flag"] is False for row in day_decisions)
+    # the action mapping itself: a frozen stopped state stays "stop" on the
+    # record, but a live v1.3 -20% DD is "warn"
+    assert pl._halt_action(False, False, -0.25, {"stopped": True}, []) == "stop"
+    assert pl._halt_action(False, False, -0.25, {"stopped": False}, []) == "warn"
+
+
+# --- v1.3 (t_2202c100): C6 superseded pendings ---------------------------------
+
+
+def test_C6_superseded_pending(tmp_path: Path, monkeypatch) -> None:
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    # day 1: decisions are written; with no fillable bar they stay pending
+    pl.run_daily_decide(root, now)
+    assert pl.resolve_fills(root, now) == 0
+    day1_ids = {
+        f"{book}:{asset}:{now.date().isoformat()}"
+        for book in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
+        for asset in pl.CRYPTO_UNIVERSE
+    }
+    journal = pl._load_journal(root)
+    assert all(
+        row["fill_status"] == "pending"
+        for row in journal
+        if row.get("event") == "decision" and row["decision_id"] in day1_ids
+    )
+    # day 2: NEW decisions for the same (book, asset) supersede the old ones
+    later = now + timedelta(days=1)
+    pl.run_daily_decide(root, later)
+    _inject_bar(root, "BTC", later + timedelta(hours=1), 102.0)
+    _inject_bar(root, "ETH", later + timedelta(hours=1), 61.0)
+    resolved = pl.resolve_fills(root, later + timedelta(hours=2))
+    assert resolved == 4  # only the NEW decisions fill
+    journal = pl._load_journal(root)
+    superseded = [row for row in journal if row.get("reject_reason") == "superseded"]
+    assert {row["decision_id"] for row in superseded} == day1_ids
+    assert all(row["reject_class"] == "superseded" for row in superseded)
+    assert all(
+        str(row.get("decision_id", "")).endswith(later.date().isoformat())
+        for row in journal
+        if row.get("event") == "fill"
+    )
+    # the decision rows themselves are never rewritten (D4): still "pending"
+    assert all(
+        row["fill_status"] == "pending"
+        for row in journal
+        if row.get("event") == "decision" and row["decision_id"] in day1_ids
+    )
+    # B1/L5: exactly one terminal event per decision_id across the journal
+    terminal: dict[str, int] = {}
+    for row in journal:
+        if row.get("event") in ("fill", "fill_rejected") and row.get("decision_id"):
+            terminal[str(row["decision_id"])] = terminal.get(str(row["decision_id"]), 0) + 1
+    assert set(terminal.values()) == {1}
+    # a second pass resolves nothing new
+    assert pl.resolve_fills(root, later + timedelta(hours=3)) == 0
+
+
+# --- v1.3 (t_2202c100): R3 counts revisions, R2 excludes them ------------------
+
+
+def test_R3_revision_excluded_from_R2(tmp_path: Path, monkeypatch) -> None:
+    data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    pl.run_daily_decide(root, now)
+    _inject_bar(root, "BTC", now + timedelta(hours=1), 101.0)
+    _inject_bar(root, "ETH", now + timedelta(hours=1), 60.0)
+    pl.resolve_fills(root, now + timedelta(hours=2))
+    start = now.date() - timedelta(days=1)
+    end = now.date()
+    clean = pv.verify(data_dir, start, end)
+    assert clean["exit_code"] == 0, json.dumps(clean.get("failed_checks"))
+    assert clean["R1_match"] == clean["R1_total"] > 0
+    assert clean["R3_revised"] == 0 and clean["R2_excluded_revised"] == 0
+    # simulate a store revision: halve one close inside the frozen 201-day
+    # window (rows[10] would be sliced away and change nothing)
+    path = data_dir / "crypto-ohlcv" / "BTC" / "ohlcv.jsonl"
+    rows = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines()]
+    rows[100]["close"] = rows[100]["close"] * 0.5
+    path.write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n", encoding="utf-8"
+    )
+    revised = pv.verify(data_dir, start, end)
+    # R1 (frozen FILE hash) is immune to store revisions
+    assert revised["R1_match"] == revised["R1_total"]
+    # R3 counts the revised decision_ids; R2 excludes exactly those
+    assert revised["R3_revised"] >= 1
+    assert revised["R3_revised"] == len(revised["R3_revised_ids"])
+    assert revised["R2_excluded_revised"] == revised["R3_revised"]
+    assert revised["R2_total"] + revised["R2_excluded_revised"] == clean["R2_total"]
+    assert revised["R2_mismatches"] == []
+    # a revision is counted, not failed: the verifier still exits 0
+    assert revised["exit_code"] == 0, json.dumps(revised.get("failed_checks"))
+
+
+# --- v1.3 (t_2202c100): bench-DD hook disabled; 26w cost gate replaced ---------
+
+
+def test_bench_dd_stop_hook_and_milestone26() -> None:
+    # the hook exists but is disabled until the master freezes k
+    assert pl.BENCH_DD_STOP["enabled"] is False
+    assert pl.BENCH_DD_STOP["k"] is None
+    assert pl.bench_dd_stop_fired(-0.30, -0.15) is False  # disabled: k undecided
+    assert pl.bench_dd_stop_fired(-0.30, -0.15, k=2.0) is True
+    assert pl.bench_dd_stop_fired(-0.25, -0.15, k=2.0) is False  # not k-times deeper
+    assert pl.bench_dd_stop_fired(-0.40, -0.05, k=2.0) is False  # bench DD < 10%
+    assert pl.bench_dd_stop_fired(0.0, -0.20, k=1.0) is False  # book not under water
+    # the 26w milestone cost gate is the frozen shortfall criterion
+    assert "observed_cost_bps_max" not in pl.MILESTONE_RULES[26]
+    assert pl.MILESTONE_RULES[26]["shortfall_bps_mean_upper95_max"] == 15.0
+    # zero-variance shortfalls: the bound equals the mean
+    bound = pl.shortfall_bps_mean_upper95([10.0] * 100)
+    assert bound is not None and abs(bound - 10.0) < 1e-9
+    # spread pushes the bound above the mean (n=2: sd/√n = sd/√2)
+    b2 = pl.shortfall_bps_mean_upper95([0.0, 20.0])
+    assert b2 is not None and b2 > 10.0
+    # n < 2 is "insufficient", not a pass
+    assert pl.shortfall_bps_mean_upper95([]) is None
+    assert pl.shortfall_bps_mean_upper95([5.0]) is None
