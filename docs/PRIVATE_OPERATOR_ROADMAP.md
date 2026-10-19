@@ -534,6 +534,22 @@ Never silently overwrite historical scoring semantics. New calibrated rules beco
   - All 31 paperloop unit and integration tests passing (`tests/test_paperloop*.py`).
   - Weekly report (`loop_cli report`) extended to include Book C in `eval_by_book` alongside Book A and CRYPTO_1N.
 
+#### Book C Deployment Review Round 1 Remediation & Clarifications (Task t_feb3aa55, Round 2)
+
+- State: **REMEDIATED (D1/D2 DEFECTS RESOLVED & ERRATA CLARIFIED)**.
+- Remediation of Blocking Defects (Review Round 1 by `audit-argus`):
+  - **D1 (Equity Data Feed Pipeline Integration)**: Integrated `stock-fetch SPY IWM JNJ PG --days 5` into `ops/demo-loop/daily.sh` preceding `mark` and `decide`. Daily cron `9b64eaec1cb9` (UTC 00:20 / JST 09:20) now continuously refreshes equity bars, preventing Tuesday lag from exceeding the 72h staleness threshold and averting false HALT trips.
+  - **D2 (Book C Weekly Cadence Gate)**: Gated Book C decision and rebalancing execution in `paperloop.py::run_daily_decide` to Mondays (`weekday() == 0`). On non-rebalance days (Tuesday through Sunday), Book C generates zero new trade decisions, preserving the frozen backtest weekly rebalancing design and eliminating 15 bps daily turnover drift. Daily mark-to-market (`run_daily_mtm`) remains active every calendar day.
+  - **Automated Regression Tests**: Added `test_stock_fetch_pipeline_advances_bars` (D1) and `test_book_c_weekly_cadence_gate` (D2) to `tests/test_paperloop.py`, with all 33 paperloop tests passing.
+- Errata N1 Clarification (Parent Task `t_af2b0af6` vs Deployment Clarifications):
+  - The four items previously labeled E1–E4 above were four implementation design points (D-E1 weekend freshness, D-E2 equity universe, D-E3 signal engine, D-E4 milestone schedule).
+  - The actual parent task `t_af2b0af6` review errata are clarified as follows (informational, non-blocking):
+    - **Parent E1**: Fill attribution in demo-loop v1.3 is Book A = 20, CRYPTO_1N = 18 (total 38 fills).
+    - **Parent E2**: Metric key in `aggregate_monetization_metrics.py` is `sharpe_ratio` (value 0.72497 rounded to 0.725; fixed key reference).
+    - **Parent E3**: Cumulative `fill_rejected` count across journal is 6 (2 for Book A, 4 for CRYPTO_1N).
+    - **Parent E4**: `weekly_summary.jsonl` last anchor sequence reference is seq 167 (not 168).
+- Provenance & Author: Round 2 changes committed by `worker-agy` (remediating N2).
+
 ### Exit criteria
 
 The system can answer:

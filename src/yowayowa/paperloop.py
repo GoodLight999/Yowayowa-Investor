@@ -539,6 +539,19 @@ def _first_fill_candidate(root: Path, symbol: str, after: datetime) -> dict[str,
     if forming is not None and _parse_ts(forming["open_time"]) <= after:
         forming = None
     candidates = [bar for bar in (realized, forming) if bar is not None]
+    if not candidates and symbol in EQUITY_UNIVERSE:
+        daily = _daily_map(root, symbol)
+        for session, bar in sorted(daily.items()):
+            session_open = datetime(session.year, session.month, session.day, 13, 30, tzinfo=UTC)
+            if session_open > after:
+                candidates.append(
+                    {
+                        "open_time": session_open.isoformat(),
+                        "open": bar["open"],
+                        "close": bar["close"],
+                    }
+                )
+                break
     if not candidates:
         return None
     return min(candidates, key=lambda bar: _parse_ts(bar["open_time"]))
@@ -1425,6 +1438,11 @@ def run_daily_decide(
     written = 0
     regime_hash = regime_spec_hash()
     for book in BOOKS_ENABLED:
+        # Weekly cadence gate for Book C (S-02 frozen backtest rebalance=weekly;
+        # Friday close judged, Monday open filled per design §2-2). On non-rebalance
+        # days (Tue-Sun), Book C does not generate trade decisions and only MTM runs.
+        if book == BOOK_C_BOOK and decision_date.weekday() != 0:
+            continue
         check_prereg(root, book)
         universe = list(
             CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE

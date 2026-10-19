@@ -110,7 +110,7 @@ def _stub_networks(monkeypatch) -> None:
     monkeypatch.setattr(pl, "_fetch_crypto_1h", lambda symbol, limit=48: [])
 
 
-def _prepare(tmp_path: Path, monkeypatch, *, days: int = 260):
+def _prepare(tmp_path: Path, monkeypatch, *, days: int = 263):
     _stub_networks(monkeypatch)
     data_dir = tmp_path / "data"
     btc = _series(100.0, days, drift=0.0001, rising_after=100)
@@ -476,11 +476,12 @@ def test_C6_superseded_pending(tmp_path: Path, monkeypatch) -> None:
     # day 1: decisions are written; with no fillable bar they stay pending
     pl.run_daily_decide(root, now)
     assert pl.resolve_fills(root, now) == 0
-    day1_ids = {
+    day1_crypto_ids = {
         f"{book}:{asset}:{now.date().isoformat()}"
         for book in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
         for asset in pl.CRYPTO_UNIVERSE
     }
+    day1_ids = set(day1_crypto_ids)
     if pl.BOOK_C_ENABLED:
         day1_ids |= {
             f"{pl.BOOK_C_BOOK}:{asset}:{now.date().isoformat()}"
@@ -492,7 +493,9 @@ def test_C6_superseded_pending(tmp_path: Path, monkeypatch) -> None:
         for row in journal
         if row.get("event") == "decision" and row["decision_id"] in day1_ids
     )
-    # day 2: NEW decisions for the same (book, asset) supersede the old ones
+    # day 2: NEW decisions for the same (book, asset) supersede the old ones.
+    # Crypto decides daily, so Day 1 crypto decisions are superseded on Day 2.
+    # Book C is weekly (Mondays), so Day 1 Book C decisions stay active.
     later = now + timedelta(days=1)
     pl.run_daily_decide(root, later)
     _inject_bar(root, "BTC", later + timedelta(hours=1), 102.0)
@@ -501,7 +504,7 @@ def test_C6_superseded_pending(tmp_path: Path, monkeypatch) -> None:
     assert resolved == 4  # only the NEW decisions fill
     journal = pl._load_journal(root)
     superseded = [row for row in journal if row.get("reject_reason") == "superseded"]
-    assert {row["decision_id"] for row in superseded} == day1_ids
+    assert {row["decision_id"] for row in superseded} == day1_crypto_ids
     assert all(row["reject_class"] == "superseded" for row in superseded)
     assert all(
         str(row.get("decision_id", "")).endswith(later.date().isoformat())
@@ -584,3 +587,89 @@ def test_bench_dd_stop_hook_and_milestone26() -> None:
     # n < 2 is "insufficient", not a pass
     assert pl.shortfall_bps_mean_upper95([]) is None
     assert pl.shortfall_bps_mean_upper95([5.0]) is None
+
+
+# --- t_feb3aa55 Round 2 regression tests (D1 & D2) ---------------------------
+
+
+def test_stock_fetch_pipeline_advances_bars(tmp_path: Path, monkeypatch) -> None:
+    """Regression test for D1 (t_feb3aa55): daily pipeline fetches equity data
+    and stock store bars advance, preventing stale_hours > 72 HALT on Day 2."""
+    from yowayowa.config import get_settings
+    from yowayowa.providers.alpaca import AlpacaMarketDataProvider
+    from yowayowa.stock_acquisition import StockOhlcvStore, fetch_stock_ohlcv
+    import httpx
+
+    # Verify daily.sh contains stock-fetch for EQUITY_UNIVERSE
+    daily_sh_path = Path(__file__).resolve().parent.parent / "ops" / "demo-loop" / "daily.sh"
+    daily_sh_content = daily_sh_path.read_text(encoding="utf-8")
+    assert "stock-fetch" in daily_sh_content
+    for sym in pl.EQUITY_UNIVERSE:
+        assert sym in daily_sh_content
+
+    # Verify stock-fetch persists new bars and store advances
+    store = StockOhlcvStore(tmp_path / "stock-ohlcv")
+    symbols = list(pl.EQUITY_UNIVERSE)
+    canned_bars = {
+        sym: [
+            {"t": "2026-10-16T04:00:00Z", "o": 100.0, "h": 102.0, "l": 99.0, "c": 101.0, "v": 1000, "n": 10, "vw": 100.5},
+            {"t": "2026-10-19T04:00:00Z", "o": 101.0, "h": 103.0, "l": 100.0, "c": 102.0, "v": 1000, "n": 10, "vw": 101.5},
+        ]
+        for sym in symbols
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"bars": canned_bars})
+
+    provider = AlpacaMarketDataProvider(get_settings())
+    provider.client._transport = httpx.MockTransport(handler)
+    summary = fetch_stock_ohlcv({"alpaca": provider}, store, symbols, days=5)
+    for sym in symbols:
+        persisted = summary[sym]["alpaca"]["persisted"]
+        assert persisted == 2
+        rows = store.read(sym, provider="alpaca")
+        assert len(rows) == 2
+        assert rows[0]["as_of"] == "2026-10-19T04:00:00Z"
+
+
+def test_book_c_weekly_cadence_gate(tmp_path: Path, monkeypatch) -> None:
+    """Regression test for D2 (t_feb3aa55): Book C decide is gated to Monday.
+    On non-rebalance days (Tue-Sun), Book C does not generate trade decisions
+    and only MTM runs daily, preventing 15bps daily drift turnover."""
+    _data_dir, root, mon = _prepare(tmp_path, monkeypatch, days=263)
+    assert mon.weekday() == 0  # Monday
+    # Day 1 (Monday): Book C executes weekly decide
+    assert pl.run_daily_decide(root, mon) == 8  # 4 crypto + 4 stock
+    mon_decisions = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "decision" and row.get("book") == pl.BOOK_C_BOOK
+    ]
+    assert len(mon_decisions) == 4
+    assert all(row["side"] == "buy" for row in mon_decisions)
+    assert all(row["fill_status"] == "pending" for row in mon_decisions)
+
+    # Day 2 (Tuesday): Non-rebalance day
+    tue = mon + timedelta(days=1)
+    assert tue.weekday() == 1  # Tuesday
+    pl.run_daily_decide(root, tue)
+    # Crypto may decide, but Book C MUST NOT generate decisions on Tuesday
+    tue_c_decisions = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "decision"
+        and row.get("book") == pl.BOOK_C_BOOK
+        and row.get("decision_date") == tue.date().isoformat()
+    ]
+    assert len(tue_c_decisions) == 0, "Book C must not generate decisions on non-rebalance days"
+
+    # MTM is maintained daily for Book C
+    tue_c_mtm = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "mtm"
+        and row.get("book") == pl.BOOK_C_BOOK
+        and row.get("mtm_date") == tue.date().isoformat()
+    ]
+    assert len(tue_c_mtm) == 1, "Book C must have daily MTM row on Tuesday"
+

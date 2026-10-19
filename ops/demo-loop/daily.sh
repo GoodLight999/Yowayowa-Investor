@@ -16,6 +16,8 @@ export PYTHONPATH="$REPO/src"
 PY="$REPO/.venv/bin/python"
 "$REPO/.venv/bin/yowayowa" crypto-fetch BTC ETH --days 5 \
   || echo "crypto-fetch failed (HALT rows will be recorded)"
+"$REPO/.venv/bin/yowayowa" stock-fetch SPY IWM JNJ PG --days 5 \
+  || echo "stock-fetch failed (HALT rows will be recorded)"
 "$PY" -m yowayowa.loop_cli mark || true
 "$PY" -m yowayowa.loop_cli decide
 "$PY" -c "from yowayowa.paperloop import loop_root, _write_anchor; from pathlib import Path; _write_anchor(loop_root(Path('./data')))" \
