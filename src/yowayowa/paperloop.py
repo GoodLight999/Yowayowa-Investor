@@ -89,8 +89,8 @@ S01_BOOK = "A"
 BOOK_C_BOOK = "C"
 BENCH_CRYPTO_BOOK = "CRYPTO_1N"
 BENCH_EQUITY_BOOK = "EQUITY_EW"
-STRATEGY_BOOKS = (S01_BOOK,)
-BOOKS_ENABLED = (S01_BOOK, BENCH_CRYPTO_BOOK)
+STRATEGY_BOOKS = (S01_BOOK, BOOK_C_BOOK)
+BOOKS_ENABLED = (S01_BOOK, BENCH_CRYPTO_BOOK, BOOK_C_BOOK)
 CRYPTO_UNIVERSE = ("BTC", "ETH")
 EQUITY_UNIVERSE = (VOLATILITY_TARGET_SYMBOL, "IWM", "JNJ", "PG")
 SMA_LOOKBACK = 200
@@ -115,7 +115,7 @@ SCHEMA = "demo-loop-v1.1"
 SCHEMA_V12 = "demo-loop-v1.2"
 SCHEMA_V13 = "demo-loop-v1.3"  # t_2202c100: DD warning, C6 superseded, R2/R3 split
 LIVE_SCHEMAS = (SCHEMA_V12, SCHEMA_V13)  # "current" rows; anything else is frozen legacy
-BOOK_C_ENABLED = False
+BOOK_C_ENABLED = True
 # Weekly benchmark-excess-DD auto-stop (t_2202c100): HOOK ONLY. The loop must
 # not consult it until the master freezes the multiplier k — until then the
 # gate below stays disabled and ``bench_dd_stop_fired`` answers False.
@@ -644,6 +644,8 @@ def _benchmark_weights(book: str) -> dict[str, float]:
 BOOK_SPEC_HASHES: dict[str, str] = {
     S01_BOOK: "primary:s01:crypto_trend_dual_ma:BTCETH:200:daily:0.0015",
     BENCH_CRYPTO_BOOK: "benchmark:crypto_1n:buy_and_hold:BTCETH",
+    BOOK_C_BOOK: "primary:s02:vol_target_defensive:SPY_IWM_JNJ_PG:15:weekly:0.0015",
+    BENCH_EQUITY_BOOK: "benchmark:equity_ew:buy_and_hold:SPY_IWM_JNJ_PG",
 }
 
 # --- regime_spec (§3-4): preregistered market-regime boundaries ---------------
@@ -891,7 +893,7 @@ def _halt_triggers_asset(
         lag_days = None if latest is None else float((utc_now.date() - latest).days)
         add(
             "stale_hours",
-            lag_days * 24.0,
+            None if lag_days is None else lag_days * 24.0,
             float(HALT_FRESHNESS_EQUITY_DAYS + 1) * 24.0,
             latest is None
             or (utc_now.date() - latest) > timedelta(days=HALT_FRESHNESS_EQUITY_DAYS + 1),
@@ -1027,11 +1029,23 @@ def ensure_prereg(
             "hypothesis": (
                 "S-01 (frozen crypto SMA200 daily gate) reduces drawdown vs 1/N"
                 if book == S01_BOOK
-                else "Benchmark: BTC/ETH 1/N buy-and-hold"
+                else (
+                    "S-02 (frozen US equity vol target 15% weekly) controls drawdown vs EW"
+                    if book == BOOK_C_BOOK
+                    else (
+                        "Benchmark: US Equity 4-asset equal weight buy-and-hold"
+                        if book == BENCH_EQUITY_BOOK
+                        else "Benchmark: BTC/ETH 1/N buy-and-hold"
+                    )
+                )
             ),
-            "judgment_rule": "Q1 signal efficacy on the SMA200 state (design §4)",
+            "judgment_rule": (
+                "design §4 milestones at 4/12/26 weeks"
+                if book in (BOOK_C_BOOK, BENCH_EQUITY_BOOK)
+                else "Q1 signal efficacy on the SMA200 state (design §4)"
+            ),
             "registered_at": _utc_now_text(utc_now),
-            "registered_by": "worker-flash:t_d9a25dd2",
+            "registered_by": "worker-agy:t_feb3aa55" if book == BOOK_C_BOOK else "worker-flash:t_d9a25dd2",
         }
         row["prev_hash"] = prev
         row["row_hash"] = _sha256(
@@ -1334,7 +1348,9 @@ def _close_run(
     )
 
 
-def _freshness_status(rows: Mapping[date, Mapping[str, float]], utc_now: date) -> dict[str, Any]:
+def _freshness_status(
+    rows: Mapping[date, Mapping[str, float]], utc_now: date, is_equity: bool = False
+) -> dict[str, Any]:
     """t_022e607d-style judgment on the daily store, frozen per decision.
 
     ``status`` is fresh / stale / unknown; ``lag_days`` is the observed gap
@@ -1345,7 +1361,8 @@ def _freshness_status(rows: Mapping[date, Mapping[str, float]], utc_now: date) -
     if latest is None:
         return {"status": "unknown", "lag_days": None, "why": "unobserved"}
     lag = (utc_now - latest).days
-    return {"status": "fresh" if lag <= 1 else "stale", "lag_days": lag}
+    max_fresh = 3 if (is_equity and utc_now.weekday() == 0) else (1 if not is_equity else 2)
+    return {"status": "fresh" if lag <= max_fresh else "stale", "lag_days": lag}
 
 
 def _regime_state_from(
@@ -1489,7 +1506,7 @@ def run_daily_decide(
             last_bars_by_symbol = {
                 other: max(rows_by_symbol[other]) for other in universe if rows_by_symbol[other]
             }
-            freshness = _freshness_status(rows_by_symbol[symbol], decision_date)
+            freshness = _freshness_status(rows_by_symbol[symbol], decision_date, is_equity)
             prev_regime: str | None = None
             prior_rows = [
                 row
@@ -1553,11 +1570,11 @@ def run_daily_decide(
                 )
                 written += 1
                 continue
-            if book == S01_BOOK:
+            if book in (S01_BOOK, BOOK_C_BOOK):
                 target_map = _engine_target(
                     book, {other: rows_by_symbol[other] for other in universe}, decision_date
                 )
-            elif book == BENCH_CRYPTO_BOOK:
+            elif book in (BENCH_CRYPTO_BOOK, BENCH_EQUITY_BOOK):
                 # D7: buy 1/N on the first decision; afterwards hold only.
                 prior_fills = [
                     row
@@ -1569,11 +1586,11 @@ def run_daily_decide(
                 target_map = _benchmark_weights(book)  # pragma: no cover
             # raw target: the strategy with NO halt and NO guard applied
             # (counterfactual column; target_weight below stays as traded)
-            if book == S01_BOOK:
+            if book in (S01_BOOK, BOOK_C_BOOK):
                 raw_map = _engine_target(
-                    S01_BOOK, {other: rows_by_symbol[other] for other in universe}, decision_date
+                    book, {other: rows_by_symbol[other] for other in universe}, decision_date
                 )
-            elif book == BENCH_CRYPTO_BOOK:
+            elif book in (BENCH_CRYPTO_BOOK, BENCH_EQUITY_BOOK):
                 raw_map = (
                     _benchmark_weights(book)
                     if not any(
@@ -1660,7 +1677,7 @@ def run_daily_decide(
                         symbol, rows_by_symbol[symbol], last_bar or decision_date
                     ),
                     "regime_spec_hash": regime_hash,
-                    "guard_applied": book == S01_BOOK,  # benchmark gets no guard
+                    "guard_applied": book in (S01_BOOK, BOOK_C_BOOK),  # benchmark gets no guard
                     "trigger": trigger,
                     "run_id": run_id,
                 },
@@ -1926,7 +1943,7 @@ def resolve_fills(
                     "units_before": held_units,
                     "units_after": held_units,
                     "cash_after": state["cash"],
-                    "guard_applied": book == S01_BOOK,
+                    "guard_applied": book in (S01_BOOK, BOOK_C_BOOK),
                     "backfill": bool(row.get("backfill")),
                     "trigger": trigger,
                     "run_id": run_id,
@@ -1973,7 +1990,7 @@ def resolve_fills(
                 "units_before": held_units,
                 "units_after": units_after,
                 "cash_after": cash_after,
-                "guard_applied": book == S01_BOOK,
+                "guard_applied": book in (S01_BOOK, BOOK_C_BOOK),
                 "backfill": bool(row.get("backfill")),
                 "trigger": trigger,
                 "run_id": run_id,
@@ -2026,8 +2043,11 @@ def mark_up(root: Path, utc_now: datetime | None = None) -> int:
         if bar is None:
             continue  # the execution day's bar has not landed yet
         frozen_path = inputs_dir(root) / execution_date.isoformat() / f"{book}.json"
+        universe = (
+            CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
+        )
         target_now = _engine_target(
-            book, {other: _daily_map(root, other) for other in CRYPTO_UNIVERSE}, execution_date
+            book, {other: _daily_map(root, other) for other in universe}, execution_date
         )
         match = abs(target_now.get(asset, 0.0) - float(row["target_weight"])) <= 1e-12
         del frozen_path  # kept readable; R1 full sha check runs in paperloop_verify

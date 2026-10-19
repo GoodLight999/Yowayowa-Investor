@@ -73,7 +73,7 @@ def test_B2_mtm_dedupe(tmp_path: Path, monkeypatch) -> None:
     for _ in range(3):
         pl.run_daily_mtm(root, now)
     mtms = [row for row in _journal(root) if row.get("event") == "mtm"]
-    assert len(mtms) == 2  # one per book, not 6
+    assert len(mtms) == len(pl.BOOKS_ENABLED)  # one per book, not 6
     keys = {(row["book"], row["mtm_date"]) for row in mtms}
     assert len(keys) == len(mtms)
     # price_bar_date is recorded
@@ -176,7 +176,7 @@ def test_halt_check_and_run_rows(tmp_path: Path, monkeypatch) -> None:
     pl.run_daily_decide(root, now, run_id="run-a", trigger="cron")
     journal = _journal(root)
     halt_checks = [row for row in journal if row.get("event") == "halt_check"]
-    assert len(halt_checks) == 2  # one per book
+    assert len(halt_checks) == len(pl.BOOKS_ENABLED)  # one per book
     for row in halt_checks:
         assert row.get("triggers"), "halt_check must carry the per-trigger values"
         assert "stale_hours" in [t["name"] for t in row["triggers"]]

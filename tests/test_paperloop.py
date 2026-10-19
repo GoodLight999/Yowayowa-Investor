@@ -49,6 +49,33 @@ def _write_crypto_days(data_dir: Path, symbol: str, days: list[tuple[str, float,
             )
 
 
+def _write_stock_days(data_dir: Path, symbol: str, days: list[tuple[str, float, float]]) -> None:
+    path = data_dir / "stock-ohlcv" / symbol / "ohlcv.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        for as_of, opened, close in days:
+            handle.write(
+                json.dumps(
+                    {
+                        "symbol": symbol,
+                        "interval": "1d",
+                        "currency": "USD",
+                        "provider": "alpaca",
+                        "source_url": "https://example/stocks",
+                        "license_class": "personal_only",
+                        "retrieved_at": "2026-01-01T00:00:00+00:00",
+                        "as_of": as_of + "T04:00:00Z",
+                        "open": opened,
+                        "high": max(opened, close) * 1.001,
+                        "low": min(opened, close) * 0.999,
+                        "close": close,
+                        "volume": 1000.0,
+                    }
+                )
+                + "\n"
+            )
+
+
 def _series(
     start: float, n: int, *, drift: float = 0.0001, rising_after: int | None = None
 ) -> list[tuple[str, float, float]]:
@@ -90,6 +117,10 @@ def _prepare(tmp_path: Path, monkeypatch, *, days: int = 260):
     eth = _series(50.0, days, drift=0.0001, rising_after=100)
     _write_crypto_days(data_dir, "BTC", btc)
     _write_crypto_days(data_dir, "ETH", eth)
+    if pl.BOOK_C_ENABLED:
+        for sym in pl.EQUITY_UNIVERSE:
+            stock_series = _series(100.0, days, drift=0.0001, rising_after=100)
+            _write_stock_days(data_dir, sym, stock_series)
     root = pl.loop_root(data_dir)
     return data_dir, root, _now_of(date.fromisoformat(btc[-1][0]) + timedelta(days=1))
 
@@ -181,9 +212,10 @@ def test_G1_G9_guard() -> None:
 
 def test_decide_fill_idempotency_and_mtm(tmp_path: Path, monkeypatch) -> None:
     _data_dir, root, now = _prepare(tmp_path, monkeypatch)
-    assert pl.run_daily_decide(root, now) == 4  # 2 decisions x 2 books
+    expected_decisions = 8 if pl.BOOK_C_ENABLED else 4
+    assert pl.run_daily_decide(root, now) == expected_decisions
     decisions = [row for row in pl._load_journal(root) if row.get("event") == "decision"]
-    assert len(decisions) == 4
+    assert len(decisions) == expected_decisions
     # D4 idempotent: a second identical decide rewrites no decisions (returns
     # 0) but still writes the D3 daily mtm rows (2 per run)
     assert pl.run_daily_decide(root, now) == 0
@@ -192,7 +224,7 @@ def test_decide_fill_idempotency_and_mtm(tmp_path: Path, monkeypatch) -> None:
     # mtm rows exist for both books (D3) — B2: one pair only; the second run's
     # duplicate mtm for the same date is refused, not re-written
     mtms = [row for row in pl._load_journal(root) if row.get("event") == "mtm"]
-    assert len(mtms) == 2
+    assert len(mtms) == len(pl.BOOKS_ENABLED)
     # fill with no tape bars yet -> 0 resolved
     assert pl.resolve_fills(root, now) == 0
     # inject 1h bars AFTER recorded_at; both books fill 2 assets
@@ -400,8 +432,11 @@ def test_dd20_is_warning_not_stop(tmp_path: Path, monkeypatch) -> None:
         for row in pl._load_journal(root)
         if row.get("event") == "mtm" and row["mtm_date"] == slide_day.date().isoformat()
     ]
-    assert mtms and all(row["drawdown"] <= pl.HALT_DRAWDOWN for row in mtms)
-    assert all(row["drawdown_warning"] is True for row in mtms)
+    crypto_mtms = [
+        row for row in mtms if row.get("book") in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
+    ]
+    assert crypto_mtms and all(row["drawdown"] <= pl.HALT_DRAWDOWN for row in crypto_mtms)
+    assert all(row["drawdown_warning"] is True for row in crypto_mtms)
     assert all(row["stopped"] is False for row in mtms)  # v1.3: no stop
     assert pl.rebuild_state(root, pl.S01_BOOK)["stopped"] is False
     # the next decide is NOT halted by the drawdown: halt_check warns instead
@@ -411,6 +446,7 @@ def test_dd20_is_warning_not_stop(tmp_path: Path, monkeypatch) -> None:
         for row in pl._load_journal(root)
         if row.get("event") == "halt_check"
         and row.get("check_date") == slide_day.date().isoformat()
+        and row.get("book") in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
     ]
     assert len(halt_checks) == 2
     for row in halt_checks:
@@ -422,6 +458,7 @@ def test_dd20_is_warning_not_stop(tmp_path: Path, monkeypatch) -> None:
         for row in pl._load_journal(root)
         if row.get("event") == "decision"
         and row.get("decision_date") == slide_day.date().isoformat()
+        and row.get("book") in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
     ]
     assert len(day_decisions) == 4
     assert all(row["halt_flag"] is False for row in day_decisions)
@@ -444,6 +481,11 @@ def test_C6_superseded_pending(tmp_path: Path, monkeypatch) -> None:
         for book in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
         for asset in pl.CRYPTO_UNIVERSE
     }
+    if pl.BOOK_C_ENABLED:
+        day1_ids |= {
+            f"{pl.BOOK_C_BOOK}:{asset}:{now.date().isoformat()}"
+            for asset in pl.EQUITY_UNIVERSE
+        }
     journal = pl._load_journal(root)
     assert all(
         row["fill_status"] == "pending"

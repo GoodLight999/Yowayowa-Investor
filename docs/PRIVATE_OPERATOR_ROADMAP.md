@@ -493,6 +493,47 @@ append-only and none of them can execute or mutate an order:
 
 Never silently overwrite historical scoring semantics. New calibrated rules become new scoring versions.
 
+#### Profitability & Monetization Evaluation Checkpoint (Task t_af2b0af6, 2026-10-19)
+
+- State: **EVALUATED & RETAINED IN PILOT / FORMAL LIVE ADOPTION PENDING MILESTONES**.
+- Context & Evidence:
+  - Dividend accounting fix (v6, x23-ledger-3) approved by audit-argus R6 (`t_c707cb4c`, TSUKUMO `results_v6`).
+  - Demo forward loop v1.3 canonical flip verified and operational (`t_1c3cd673`, commit `3a48814`).
+  - Full evidence and provenance ledger: `/root/.hermes/kanban/workspaces/t_af2b0af6/EVIDENCE_T_AF2B0AF6.md` and `monetization_summary_20261019.json`.
+- Strategy Adoption & PnL Status (after 15 bps commission + slippage, 1M JPY base):
+  - **S-01 (crypto_trend_dual_ma, SMA200 daily)**: Backtest (2023-2026, 3.75y) CAGR +21.85% (+1,097,400 JPY / 1M JPY base), MaxDD -39.75% (vs Buy&Hold -60.15%, +20.40pp shallower). OOS CAGR +36.33% / MaxDD -5.64%. Deployed as Book A in forward demo loop v1.3: 10 calendar days (14 decision sessions, 40 decisions, 38 fills), cumulative return -2.52% (-25,240 JPY / 1M base) vs Benchmark -2.70% (-27,020 JPY), outperforming by +0.18pp (+1,780 JPY). Drawdown -3.31% vs Benchmark -3.49%. CUSUM edge-lifetime monitor S_w = 0.1308 < 4.8. Retained in demo loop; live adoption deferred until 4w / 12w / 26w design milestones (`SHORT_TERM_STRATEGY_DESIGN.md` §4) are reached (today's decision count does not prove forward profitability).
+  - **S-02 (vol_target_15% weekly, US Equity + Cash)**: Backtest (2021-2026, 5.71y, results_v6) CAGR +8.94% (+631,196 JPY / 1M base), Sharpe 0.839, MaxDD -14.68% (vs EW -18.76%). OOS CAGR +14.75%, OOS Sharpe 1.325, OOS MaxDD -10.28% (vs EW -13.15%). Passed all 4 backtest adoption criteria. Awaiting deployment into demo loop as Book C (paper trading parallel run).
+  - **S-03 (garp_momentum_hybrid)**: REJECTED (Full MaxDD worsened to -36.17% vs baseline -31.00%, failing condition c).
+  - **S-05 (defensive_rotation)**: REJECTED (Full MaxDD -26.30% vs same-universe momentum -24.88%, failing condition b).
+  - **P3 Equity Baselines (Momentum 12-1 etc.)**: REJECTED as standalone (Momentum collapsed in OOS to -6.91%; bootstrap CIs cross zero).
+- Concrete Next Step for Live Operational Decision:
+  - Complete S-01 demo loop milestone 1 (4 weeks: 2026-11-07) with zero HALT incidents and verified cost ratios.
+  - Activate Book C (S-02 equity vol-target) in the forward demo loop for paper parallel tracking.
+
+#### Book C (S-02 US Equity Vol-Target 15% Defensive) Demo-Loop Paper Parallel Deployment Checkpoint (Task t_feb3aa55, 2026-10-19)
+
+- State: **DEPLOYED IN PAPER PARALLEL (DEMO-LOOP v1.3)**.
+- Preconditions Verification (`SHORT_TERM_STRATEGY_DESIGN.md` §4):
+  - **Deployment Timing**: Monday open deployment (2026-10-19 JST / UTC morning), aligned with weekly rebalance cadence.
+  - **Execution & Cost Assumed**: 15 bps one-way fee model (`COST_RATE_BPS = 15.0`) identical to backtest baseline. Zero live broker orders / zero paid APIs.
+  - **Capital Base**: Initialized with virtual 1.0 capital (`cash: 1.0`, `equity: 1.0`, `peak_equity: 1.0`, `drawdown: 0.0`).
+  - **Preregistration**: Preregistered in `prereg.jsonl` with author `worker-agy:t_feb3aa55`, hypothesis `"S-02 (frozen US equity vol target 15% weekly) controls drawdown vs EW"`, judgment rule `"design §4 milestones at 4/12/26 weeks"`, and spec hash `10ba65cac72a7d5d6ed763b0268f6d3f46e97e6339dcf3fff0688733aedbf434`.
+  - **Errata E1-E4 Documentation & Scope Clarity**:
+    - **E1 (Weekend Data Freshness Gap)**: Handled equity market close calendar (`max_fresh = 3` on Mondays to accommodate Friday close -> Monday open).
+    - **E2 (Asset Universe)**: Fixed `EQUITY_UNIVERSE = ("SPY", "IWM", "JNJ", "PG")` per frozen S-02 specification.
+    - **E3 (Strategy & Signal Engine)**: Evaluated through frozen backtest engine `vol_target_defensive` (lookback=21, target_vol=0.15, weekly cadence) with counterfactual raw weights and guard checks.
+    - **E4 (Milestone Schedule Independence)**: S-01 (Book A) 4-week milestone remains fixed at 2026-11-07; Book C paper milestones are independently tracked from deployment date (2026-10-19) at 4 weeks (2026-11-16), 12 weeks (2027-01-11), and 26 weeks (2027-04-19).
+- Live Demo-Loop Ledger Execution:
+  - Run ID: `20261019T045750-602560` (Seq 175-182 in `data/demo-loop/journal.jsonl`).
+  - Seq 176: `halt_check` for Book C recorded (`action: none`, `halted_before: false`, `halted_after: false`, `margin_min: -4.467`).
+  - Seq 177-180: Initial decisions recorded for SPY (target 0.25, RISK_ON), IWM (target 0.25, RISK_OFF), JNJ (target 0.25, RISK_ON), PG (target 0.25, RISK_ON).
+  - Seq 181: Initial `mtm` recorded for Book C (`cash: 1.0`, `equity: 1.0`, `peak: 1.0`, `drawdown: 0.0`, `price_bar_date: 2026-10-16`).
+  - Seq 182: `run` end recorded (`rows_written: 4`, `ok: true`).
+- Verification & Test Results:
+  - `paperloop_verify` exited with code 0 (`chain_ok: true`, `anchors_ok: true`, rows: 182, failed_checks: 0, L1-L14 all green).
+  - All 31 paperloop unit and integration tests passing (`tests/test_paperloop*.py`).
+  - Weekly report (`loop_cli report`) extended to include Book C in `eval_by_book` alongside Book A and CRYPTO_1N.
+
 ### Exit criteria
 
 The system can answer:

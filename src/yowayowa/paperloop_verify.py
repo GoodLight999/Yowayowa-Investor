@@ -26,9 +26,12 @@ from pathlib import Path
 from typing import Any
 
 from yowayowa.paperloop import (
+    BENCH_CRYPTO_BOOK,
     BOOKS_ENABLED,
     CRYPTO_UNIVERSE,
+    EQUITY_UNIVERSE,
     LIVE_SCHEMAS,
+    S01_BOOK,
     SCHEMA_V12,
     SCHEMA_V13,
     STRATEGY_BOOKS,
@@ -417,7 +420,8 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
         if row.get("event") == "halt_check"
     }
     for book in BOOKS_ENABLED:
-        for day in sorted({str(r.get("decision_date")) for r in live_decisions}):
+        book_decisions = [r for r in live_decisions if str(r.get("book")) == book]
+        for day in sorted({str(r.get("decision_date")) for r in book_decisions}):
             if (book, day) not in expected_halt:
                 result["checks"][L11]["failures"].append(
                     {"book": book, "check_date": day, "problem": "missing_halt_check"}
@@ -564,9 +568,12 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
             result["R2_excluded_revised"] += 1
             continue
         asset = str(row.get("asset"))
+        universe = (
+            CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
+        )
         target_now = _engine_target(
             book,
-            {other: _daily_map(root, other) for other in CRYPTO_UNIVERSE},
+            {other: _daily_map(root, other) for other in universe},
             judged_day,
         )
         match = abs(target_now.get(asset, 0.0) - float(row.get("target_weight", 0.0))) <= 1e-12
