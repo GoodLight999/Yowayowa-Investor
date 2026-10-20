@@ -2285,16 +2285,34 @@ def _milestone_judgment(
     window_days = weeks * 7
     rules = MILESTONE_RULES[weeks]
 
-    run_ok_dates = {
+    # distinct dates, not row counts: a same-day re-run is one ok day.
+    days_with_runs: set[str] = set()
+    run_ok_dates: set[str] = set()
+    for row in rows:
+        if row.get("event") == "run" and row.get("phase") == "end" and row.get("job") == "daily":
+            day = str(row["recorded_at"])[:10]
+            if start <= date.fromisoformat(day) < window_end:
+                days_with_runs.add(day)
+                if row.get("ok"):
+                    run_ok_dates.add(day)
+    # A day with NO run rows at all: a non-backfill decision row for this
+    # book that day is evidence the loop itself ran. The real journal has
+    # such days — the run-row writer only came online 2026-10-12 while the
+    # loop has been running since day one — so counting them as missing
+    # would make the §4 verdict a recording artifact, not an operational
+    # fact. A day that HAS run rows is judged on its daily-end ok alone (a
+    # failed run is never overridden by a decision row); a day with neither
+    # record counts as missing (fail-closed: never back-filled with success).
+    decision_days = {
         str(row["recorded_at"])[:10]
         for row in rows
-        if row.get("event") == "run"
-        and row.get("phase") == "end"
-        and row.get("job") == "daily"
-        and row.get("ok")
+        if row.get("event") == "decision"
+        and row.get("book") == book
+        and not row.get("backfill")
         and start <= date.fromisoformat(str(row["recorded_at"])[:10]) < window_end
     }
-    # distinct dates, not row counts: a same-day re-run is one ok day
+    fallback_dates = sorted(decision_days - days_with_runs)
+    run_ok_dates.update(fallback_dates)
     loop_success_rate = len(run_ok_dates) / window_days
 
     marks = [
@@ -2311,7 +2329,23 @@ def _milestone_judgment(
     recompute_rate = (
         sum(1 for row in marks if row.get("recompute_match")) / len(marks) if marks else None
     )
-    unknown_events = sum(1 for row in rows if str(row.get("event")) not in _KNOWN_JOURNAL_EVENTS)
+    # Zero-order paper (M6): the demo-loop schema has no order-bearing
+    # events; any event type outside the frozen set counts here (fail-closed).
+    # Scoped to this book and the window so a future schema addition in
+    # another book or period cannot flip this judgment; rows without a
+    # parseable recorded_at still count (fail-closed).
+    unknown_events = 0
+    for row in rows:
+        if str(row.get("event")) in _KNOWN_JOURNAL_EVENTS:
+            continue
+        if row.get("book") is not None and row.get("book") != book:
+            continue
+        try:
+            in_window = start <= date.fromisoformat(str(row.get("recorded_at"))[:10]) < window_end
+        except (TypeError, ValueError):
+            in_window = True
+        if in_window:
+            unknown_events += 1
     guard = _milestone_guard_replay(rows, book, window_end)
 
     cost_max = float(rules["observed_cost_bps_max"])
@@ -2335,8 +2369,6 @@ def _milestone_judgment(
             "pass": None if recompute_rate is None else recompute_rate == 1.0,
         },
         "orders": {
-            # zero-order paper (M6): the demo-loop schema has no order-bearing
-            # events; any event type outside the frozen set counts here.
             "value": unknown_events,
             "comparison": "==",
             "threshold": 0,
@@ -2362,6 +2394,7 @@ def _milestone_judgment(
         "milestone_date": milestone_date.isoformat(),
         "judged_at_week_end": week_end.isoformat(),
         "run_ok_dates": len(run_ok_dates),
+        "run_ok_dates_by_decision_fallback": fallback_dates,
         "rules_source": "MILESTONE_RULES[4] + DEMO_LOOP_V1_OPS.md §4 (frozen)",
         "criteria": criteria,
         "verdict": verdict,
@@ -2375,7 +2408,11 @@ def _milestone_judgment(
             "adoption stays a separate human decision. Guard mechanism "
             "evidence remains the synthetic-violation UT suite (F7); the "
             "replay above only checks accepted fills for slipped-through "
-            "violations."
+            "violations. Loop-run days whose only record is a non-backfill "
+            "decision row count via the decision fallback and are listed in "
+            "run_ok_dates_by_decision_fallback; days with a failed run or "
+            "neither record are never back-filled. orders counts unknown "
+            "event types only within this book and the window (fail-closed)."
         ),
     }
 

@@ -761,6 +761,8 @@ def test_milestone_judgment_fires_once_at_deadline(tmp_path: Path, monkeypatch) 
     )
     assert a["criteria"]["recompute_match_rate"]["value"] == 1.0
     assert a["criteria"]["orders"]["value"] == 0
+    # every day has run rows here: the fallback list is empty and present
+    assert a["run_ok_dates_by_decision_fallback"] == []
     assert a["criteria"]["guard_violations"]["value"] == 0
     assert a["promotion"] == "none"
 
@@ -809,6 +811,114 @@ def test_milestone_judgment_fails_on_missing_run_days(tmp_path: Path, monkeypatc
     assert a["verdict"] == "FAIL"
     assert a["failed_criteria"] == ["loop_success_rate"]
     assert abs(a["criteria"]["loop_success_rate"]["value"] - 26 / 28) < 1e-12
+    # neither run rows nor decision rows on the missing days: fail-closed,
+    # never back-filled with the fallback
+    assert a["run_ok_dates_by_decision_fallback"] == []
+
+
+def test_milestone_judgment_counts_decision_only_days_as_loop_run(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Real-journal shape (S-01 10-10/10-11): the first two days have
+    non-backfill decisions and fills but NO run rows — the run-row writer
+    only came online later, while the loop itself ran from day one. Those
+    days count via the decision fallback (26 ok-run days + 2 = 28/28 PASS),
+    and the fallback dates are recorded explicitly in the output."""
+
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    first_day = now.date()
+    values = {s: _milestone_last_close(_data_dir, s) for s in ("BTC", "ETH")}
+    for offset in range(28):
+        day = first_day + timedelta(days=offset)
+        opens: dict[str, float] = {}
+        for symbol, value in values.items():
+            opened = value * 1.0001
+            values[symbol] = value * 1.0002
+            _write_crypto_days(_data_dir, symbol, [(day.isoformat(), opened, values[symbol])])
+            opens[symbol] = opened
+        stamp = _now_of(day, minute=20)
+        # first two days: the loop runs end-to-end but writes no run rows
+        # (run_id omitted) — exactly the real 10-10/10-11 recording gap
+        run_id = None if offset < 2 else f"test-daily-{day.isoformat()}"
+        pl.run_daily_decide(root, stamp, run_id=run_id)
+        _inject_bar(root, "BTC", stamp + timedelta(hours=1), opens["BTC"])
+        _inject_bar(root, "ETH", stamp + timedelta(hours=1), opens["ETH"])
+        pl.resolve_fills(
+            root,
+            stamp + timedelta(hours=2),
+            run_id=None if offset < 2 else f"test-fill-{day.isoformat()}",
+        )
+        pl.mark_up(root, stamp + timedelta(hours=2))
+    deadline = _milestone_start(root, pl.S01_BOOK) + timedelta(days=28)
+    out = pl.weekly_summary(_data_dir, deadline)
+    a = out["milestone"][pl.S01_BOOK]
+    assert a["verdict"] == "PASS"
+    assert a["criteria"]["loop_success_rate"]["value"] == 1.0
+    assert a["run_ok_dates"] == 28
+    assert a["run_ok_dates_by_decision_fallback"] == [
+        first_day.isoformat(),
+        (first_day + timedelta(days=1)).isoformat(),
+    ]
+
+
+def test_milestone_judgment_never_falls_back_on_failed_run_days(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A day that HAS run rows is judged on its daily-end ok alone: a failed
+    run is never overridden by the decision fallback, even when the same day
+    also carries decision evidence. That day stays missing (26 ok runs + 1
+    fallback day = 27/28, within the §4 one-missing-day allowance)."""
+
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    first_day = now.date()
+    values = {s: _milestone_last_close(_data_dir, s) for s in ("BTC", "ETH")}
+    for offset in range(28):
+        day = first_day + timedelta(days=offset)
+        opens: dict[str, float] = {}
+        for symbol, value in values.items():
+            opened = value * 1.0001
+            values[symbol] = value * 1.0002
+            _write_crypto_days(_data_dir, symbol, [(day.isoformat(), opened, values[symbol])])
+            opens[symbol] = opened
+        stamp = _now_of(day, minute=20)
+        if offset == 0:
+            # day0: loop ran but no run rows written -> decision-fallback day
+            run_id: str | None = None
+        elif offset == 1:
+            # day1: a FAILED daily run end row, plus decision evidence on the
+            # same day (run_id omitted) — the fallback must not count this day
+            pl._append_row(
+                root,
+                {
+                    "event": "run",
+                    "phase": "end",
+                    "job": "daily",
+                    "ok": False,
+                    "error_class": "ValueError",
+                    "run_id": "failed-daily",
+                    "recorded_at": stamp.isoformat(),
+                    "host": "test",
+                },
+            )
+            run_id = None
+        else:
+            run_id = f"test-daily-{day.isoformat()}"
+        pl.run_daily_decide(root, stamp, run_id=run_id)
+        _inject_bar(root, "BTC", stamp + timedelta(hours=1), opens["BTC"])
+        _inject_bar(root, "ETH", stamp + timedelta(hours=1), opens["ETH"])
+        pl.resolve_fills(
+            root,
+            stamp + timedelta(hours=2),
+            run_id=None if offset < 2 else f"test-fill-{day.isoformat()}",
+        )
+        pl.mark_up(root, stamp + timedelta(hours=2))
+    deadline = _milestone_start(root, pl.S01_BOOK) + timedelta(days=28)
+    out = pl.weekly_summary(_data_dir, deadline)
+    a = out["milestone"][pl.S01_BOOK]
+    assert a["run_ok_dates"] == 27
+    assert abs(a["criteria"]["loop_success_rate"]["value"] - 27 / 28) < 1e-12
+    assert a["run_ok_dates_by_decision_fallback"] == [first_day.isoformat()]
+    assert a["verdict"] == "PASS"
 
 
 def test_milestone_guard_replay_counts_slipped_through_violations(
