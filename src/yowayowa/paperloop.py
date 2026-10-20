@@ -2288,21 +2288,30 @@ def _milestone_judgment(
     # distinct dates, not row counts: a same-day re-run is one ok day.
     days_with_runs: set[str] = set()
     run_ok_dates: set[str] = set()
+    days_with_any_run: set[str] = set()
     for row in rows:
-        if row.get("event") == "run" and row.get("phase") == "end" and row.get("job") == "daily":
+        if row.get("event") == "run":
             day = str(row["recorded_at"])[:10]
             if start <= date.fromisoformat(day) < window_end:
-                days_with_runs.add(day)
-                if row.get("ok"):
-                    run_ok_dates.add(day)
+                # ANY run row that day (any phase/job — a daily start whose
+                # end never arrived is a crashed run, L4) blocks the
+                # decision fallback: only days whose loop evidence is a
+                # bare non-backfill decision may use it.
+                days_with_any_run.add(day)
+                if row.get("phase") == "end" and row.get("job") == "daily":
+                    days_with_runs.add(day)
+                    if row.get("ok"):
+                        run_ok_dates.add(day)
     # A day with NO run rows at all: a non-backfill decision row for this
     # book that day is evidence the loop itself ran. The real journal has
     # such days — the run-row writer only came online 2026-10-12 while the
     # loop has been running since day one — so counting them as missing
     # would make the §4 verdict a recording artifact, not an operational
-    # fact. A day that HAS run rows is judged on its daily-end ok alone (a
-    # failed run is never overridden by a decision row); a day with neither
-    # record counts as missing (fail-closed: never back-filled with success).
+    # fact. A day that HAS any run row is judged on its daily-end ok alone
+    # and is never overridden by a decision row: a failed run (ok=false)
+    # and a crashed run (start row, no end row) both stay missing. A day
+    # with neither record counts as missing too (fail-closed: never
+    # back-filled with success).
     decision_days = {
         str(row["recorded_at"])[:10]
         for row in rows
@@ -2311,7 +2320,7 @@ def _milestone_judgment(
         and not row.get("backfill")
         and start <= date.fromisoformat(str(row["recorded_at"])[:10]) < window_end
     }
-    fallback_dates = sorted(decision_days - days_with_runs)
+    fallback_dates = sorted(decision_days - days_with_any_run)
     run_ok_dates.update(fallback_dates)
     loop_success_rate = len(run_ok_dates) / window_days
 
@@ -2410,8 +2419,9 @@ def _milestone_judgment(
             "replay above only checks accepted fills for slipped-through "
             "violations. Loop-run days whose only record is a non-backfill "
             "decision row count via the decision fallback and are listed in "
-            "run_ok_dates_by_decision_fallback; days with a failed run or "
-            "neither record are never back-filled. orders counts unknown "
+            "run_ok_dates_by_decision_fallback; days with a failed run, a "
+            "crashed run (start row without an end row), or neither record "
+            "are never back-filled. orders counts unknown "
             "event types only within this book and the window (fail-closed)."
         ),
     }

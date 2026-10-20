@@ -921,6 +921,65 @@ def test_milestone_judgment_never_falls_back_on_failed_run_days(
     assert a["verdict"] == "PASS"
 
 
+def test_milestone_judgment_never_falls_back_on_crashed_run_days(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A daily run that crashed after writing its start row (start row only,
+    no end row) HAS a run row that day: the decision fallback must not count
+    it, even when the same day also carries decision evidence — a start
+    without an end is a crashed run (L4), never a success. Both crashed days
+    stay missing (26 ok runs = 26/28, below 95%: FAIL with fallback empty)."""
+
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    first_day = now.date()
+    values = {s: _milestone_last_close(_data_dir, s) for s in ("BTC", "ETH")}
+    for offset in range(28):
+        day = first_day + timedelta(days=offset)
+        opens: dict[str, float] = {}
+        for symbol, value in values.items():
+            opened = value * 1.0001
+            values[symbol] = value * 1.0002
+            _write_crypto_days(_data_dir, symbol, [(day.isoformat(), opened, values[symbol])])
+            opens[symbol] = opened
+        stamp = _now_of(day, minute=20)
+        if offset < 2:
+            # days 0-1: crashed daily run — the start row is written, the
+            # end row never arrives; decisions are still recorded that day
+            # (run_id omitted), but the fallback must not count the day
+            pl._append_row(
+                root,
+                {
+                    "event": "run",
+                    "phase": "start",
+                    "job": "daily",
+                    "run_id": f"crashed-daily-{day.isoformat()}",
+                    "recorded_at": stamp.isoformat(),
+                    "host": "test",
+                },
+            )
+            run_id: str | None = None
+        else:
+            run_id = f"test-daily-{day.isoformat()}"
+        pl.run_daily_decide(root, stamp, run_id=run_id)
+        _inject_bar(root, "BTC", stamp + timedelta(hours=1), opens["BTC"])
+        _inject_bar(root, "ETH", stamp + timedelta(hours=1), opens["ETH"])
+        pl.resolve_fills(
+            root,
+            stamp + timedelta(hours=2),
+            run_id=None if offset < 2 else f"test-fill-{day.isoformat()}",
+        )
+        pl.mark_up(root, stamp + timedelta(hours=2))
+    deadline = _milestone_start(root, pl.S01_BOOK) + timedelta(days=28)
+    out = pl.weekly_summary(_data_dir, deadline)
+    a = out["milestone"][pl.S01_BOOK]
+    assert a["run_ok_dates"] == 26
+    assert abs(a["criteria"]["loop_success_rate"]["value"] - 26 / 28) < 1e-12
+    # the crashed days carry decisions, yet are never back-filled
+    assert a["run_ok_dates_by_decision_fallback"] == []
+    assert a["verdict"] == "FAIL"
+    assert a["failed_criteria"] == ["loop_success_rate"]
+
+
 def test_milestone_guard_replay_counts_slipped_through_violations(
     tmp_path: Path, monkeypatch
 ) -> None:
