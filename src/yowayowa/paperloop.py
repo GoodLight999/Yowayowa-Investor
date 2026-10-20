@@ -2147,6 +2147,252 @@ def bench_dd_stop_fired(
     return bench_dd <= -bench_dd_min and book_dd <= -k * abs(bench_dd)
 
 
+# --- milestone judgment wiring (t_d33aef07) -----------------------------------
+# MILESTONE_RULES was a passive constant: nothing evaluated it, so the design §4
+# 4-week judgment lived only in humans reading weekly_summary.jsonl (t_44edd7a0
+# gap analysis). The existing weekly path (ops/demo-loop/weekly.sh ->
+# loop_cli report -> weekly_summary) now evaluates MILESTONE_RULES[4] once per
+# strategy book once its 28-day window is complete. Record-only: the judgment
+# adds one block to the summary row — no orders, no journal rows, no state
+# transitions, no live promotion. Design §4 is the evaluation standard; it is
+# not proof of benefit and not an adoption decision (the human gate stays).
+
+MILESTONE_WEEKS_CONNECTED = (4,)  # 12/26 stay unwired (t_d33aef07 scope)
+_KNOWN_JOURNAL_EVENTS = frozenset(
+    {"decision", "fill", "fill_rejected", "mark", "mtm", "run", "halt_check"}
+)
+
+
+def _milestone_start_date(rows: list[dict[str, Any]], book: str) -> date | None:
+    """Demo start for a book: first non-backfill decision date.
+
+    The journal is the origin of record (S-01 2026-10-10, S-02 2026-10-19 —
+    matches prereg and the t_44edd7a0 evidence). Backfill rows are excluded
+    (design §4 keeps backfill out of judgment denominators).
+    """
+
+    starts = [
+        date.fromisoformat(str(row["decision_date"]))
+        for row in rows
+        if row.get("event") == "decision" and row.get("book") == book and not row.get("backfill")
+    ]
+    return min(starts) if starts else None
+
+
+def _milestone_already_judged(root: Path, book: str, weeks: int) -> bool:
+    """True once a prior summary row carries the (book, weeks) judgment.
+
+    The deadline can fall between weekly runs; whichever run fires first
+    writes the record and every later run dedupes against it — exactly one
+    judgment record per (book, weeks), ever.
+    """
+
+    for row in _rows_from_jsonl(summary_path(root), strict=True):
+        block = row.get("milestone")
+        entry = block.get(book) if isinstance(block, Mapping) else None
+        if isinstance(entry, Mapping) and entry.get("weeks") == weeks:
+            return True
+    return False
+
+
+def _milestone_guard_replay(
+    rows: list[dict[str, Any]], book: str, window_end: date
+) -> dict[str, Any]:
+    """Replay check_trade over accepted fills with journal-only state (D6).
+
+    §4 "guard違反 0": a violation is an ACCEPTED fill that check_trade would
+    have rejected (a slipped-through rejection). fill_rejected rows are the
+    guard working and are reported as facts, never counted as violations
+    (F7: operational counts are no evidence for the guard itself — that proof
+    stays with the synthetic-violation UT suite).
+
+    The replay mirrors the operational fill path: now = the fill bar's open
+    time, guard state = prior accepted fills of the same book+asset (last
+    fill ts/side, position open ts, same-day fill count by recorded_at date
+    — the rebuild_guard_input rules).
+    """
+
+    state: dict[str, dict[str, Any]] = {}
+    violations: list[dict[str, Any]] = []
+    rejections: dict[str, int] = {}
+    for row in rows:
+        if (
+            row.get("event") == "fill_rejected"
+            and row.get("book") == book
+            and date.fromisoformat(str(row["recorded_at"])[:10]) < window_end
+        ):
+            reason = str(row.get("reject_reason"))
+            rejections[reason] = rejections.get(reason, 0) + 1
+    fills = sorted(
+        (row for row in rows if row.get("event") == "fill" and row.get("book") == book),
+        key=lambda row: (str(row["recorded_at"]), int(row.get("seq", 0))),
+    )
+    for row in fills:
+        asset = str(row["asset"])
+        book_state = state.setdefault(
+            asset, {"last_ts": None, "last_side": None, "opened_ts": None, "dates": []}
+        )
+        recorded = _parse_ts(row["recorded_at"])
+        now = _parse_ts(row.get("paper_fill_bar_open_ts") or row["recorded_at"])
+        inputs = GuardInput(
+            asset_class="crypto" if asset in BINANCE_TAPE else "equity",
+            side=str(row.get("side")),  # type: ignore[arg-type]
+            now=now,
+            last_fill_ts=book_state["last_ts"],
+            last_fill_side=book_state["last_side"],
+            position_opened_ts=book_state["opened_ts"],
+            fills_today=sum(1 for day in book_state["dates"] if day == now.date()),
+            decision_bar_seconds=86400,
+        )
+        allowed, reject = check_trade(inputs)
+        if recorded.date() < window_end and not allowed:
+            violations.append(
+                {
+                    "decision_id": row.get("decision_id"),
+                    "asset": asset,
+                    "recorded_at": row["recorded_at"],
+                    "reject_reason": reject,
+                }
+            )
+        book_state["last_ts"] = recorded
+        book_state["last_side"] = str(row.get("side"))
+        if float(row.get("units_before", 0.0)) == 0.0:
+            book_state["opened_ts"] = recorded
+        book_state["dates"].append(recorded.date())
+    return {"violations": violations, "rejections_by_reason": rejections}
+
+
+def _milestone_judgment(
+    root: Path, rows: list[dict[str, Any]], book: str, weeks: int, week_end: date
+) -> dict[str, Any] | None:
+    """One design §4 milestone judgment for (book, weeks) — or None.
+
+    Fires on the first weekly run whose week_end reached start + weeks*7
+    days, and only if no prior summary row already carries the judgment:
+    no early judgment, no duplicate records. Fail-closed on missing facts:
+    a criterion without its data is None -> INSUFFICIENT, never back-filled.
+    """
+
+    if weeks not in MILESTONE_WEEKS_CONNECTED or _milestone_already_judged(root, book, weeks):
+        return None
+    start = _milestone_start_date(rows, book)
+    if start is None:
+        return None
+    milestone_date = start + timedelta(days=weeks * 7)
+    if week_end < milestone_date:
+        return None  # deadline not reached: never judge early
+    window_end = milestone_date  # [start, milestone_date): exactly weeks*7 days
+    window_days = weeks * 7
+    rules = MILESTONE_RULES[weeks]
+
+    run_ok_dates = {
+        str(row["recorded_at"])[:10]
+        for row in rows
+        if row.get("event") == "run"
+        and row.get("phase") == "end"
+        and row.get("job") == "daily"
+        and row.get("ok")
+        and start <= date.fromisoformat(str(row["recorded_at"])[:10]) < window_end
+    }
+    # distinct dates, not row counts: a same-day re-run is one ok day
+    loop_success_rate = len(run_ok_dates) / window_days
+
+    marks = [
+        row
+        for row in rows
+        if row.get("event") == "mark"
+        and row.get("book") == book
+        and start <= date.fromisoformat(str(row["recorded_at"])[:10]) < window_end
+    ]
+    shortfalls = [
+        abs(float(row["shortfall_bps"])) for row in marks if row.get("shortfall_bps") is not None
+    ]
+    observed_cost_bps_mean = sum(shortfalls) / len(shortfalls) if shortfalls else None
+    recompute_rate = (
+        sum(1 for row in marks if row.get("recompute_match")) / len(marks) if marks else None
+    )
+    unknown_events = sum(1 for row in rows if str(row.get("event")) not in _KNOWN_JOURNAL_EVENTS)
+    guard = _milestone_guard_replay(rows, book, window_end)
+
+    cost_max = float(rules["observed_cost_bps_max"])
+    criteria: dict[str, dict[str, Any]] = {
+        "loop_success_rate": {
+            "value": loop_success_rate,
+            "comparison": ">=",
+            "threshold": float(rules["loop_success_rate"]),
+            "pass": loop_success_rate >= float(rules["loop_success_rate"]),
+        },
+        "observed_cost_bps_mean": {
+            "value": observed_cost_bps_mean,
+            "comparison": "<=",
+            "threshold": cost_max,
+            "pass": None if observed_cost_bps_mean is None else observed_cost_bps_mean <= cost_max,
+        },
+        "recompute_match_rate": {
+            "value": recompute_rate,
+            "comparison": "==",
+            "threshold": 1.0,
+            "pass": None if recompute_rate is None else recompute_rate == 1.0,
+        },
+        "orders": {
+            # zero-order paper (M6): the demo-loop schema has no order-bearing
+            # events; any event type outside the frozen set counts here.
+            "value": unknown_events,
+            "comparison": "==",
+            "threshold": 0,
+            "pass": unknown_events == 0,
+        },
+        "guard_violations": {
+            "value": len(guard["violations"]),
+            "comparison": "==",
+            "threshold": 0,
+            "pass": len(guard["violations"]) == 0,
+        },
+    }
+    failed = sorted(name for name, check in criteria.items() if check["pass"] is False)
+    insufficient = sorted(name for name, check in criteria.items() if check["pass"] is None)
+    verdict = "FAIL" if failed else ("INSUFFICIENT" if insufficient else "PASS")
+    return {
+        "weeks": weeks,
+        "book": book,
+        "start_date": start.isoformat(),
+        "window_start": start.isoformat(),
+        "window_end": window_end.isoformat(),
+        "window_days": window_days,
+        "milestone_date": milestone_date.isoformat(),
+        "judged_at_week_end": week_end.isoformat(),
+        "run_ok_dates": len(run_ok_dates),
+        "rules_source": "MILESTONE_RULES[4] + DEMO_LOOP_V1_OPS.md §4 (frozen)",
+        "criteria": criteria,
+        "verdict": verdict,
+        "failed_criteria": failed,
+        "insufficient_criteria": insufficient,
+        "guard_rejections_by_reason": guard["rejections_by_reason"],
+        "promotion": "none",
+        "notes": (
+            "record-only: no orders, no journal rows, no live promotion. "
+            "Design §4 is the evaluation standard, not proof of benefit; "
+            "adoption stays a separate human decision. Guard mechanism "
+            "evidence remains the synthetic-violation UT suite (F7); the "
+            "replay above only checks accepted fills for slipped-through "
+            "violations."
+        ),
+    }
+
+
+def _collect_milestone_judgments(root: Path, week_end: date) -> dict[str, Any]:
+    """Milestone blocks for the weekly summary row (empty = judge nothing)."""
+
+    rows = _load_journal(root)
+    out: dict[str, Any] = {}
+    for book in STRATEGY_BOOKS:
+        for weeks in MILESTONE_WEEKS_CONNECTED:
+            judgment = _milestone_judgment(root, rows, book, weeks, week_end)
+            if judgment is not None:
+                out[book] = judgment
+    return out
+
+
 def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     """Weekly summary row (M8/spec §7): per book + milestone judgment.
 
@@ -2274,6 +2520,11 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     out["eval_by_book"] = {
         book: _eval_blocks(data_dir, book=book, week_end=week_end) for book in BOOKS_ENABLED
     }
+    # t_d33aef07: the frozen §4 milestone judgment rides the same weekly row
+    # (absent on every week where nothing is due — no early/duplicate records).
+    milestone = _collect_milestone_judgments(root, week_end)
+    if milestone:
+        out["milestone"] = milestone
     with summary_path(root).open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(out, ensure_ascii=False, default=str) + "\n")
     return out

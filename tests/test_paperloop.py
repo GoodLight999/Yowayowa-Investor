@@ -673,3 +673,229 @@ def test_book_c_weekly_cadence_gate(tmp_path: Path, monkeypatch) -> None:
     ]
     assert len(tue_c_mtm) == 1, "Book C must have daily MTM row on Tuesday"
 
+
+# --- milestone judgment wiring (t_d33aef07) -----------------------------------
+
+
+def _milestone_last_close(data_dir: Path, symbol: str) -> float:
+    """Last close of the seeded daily series (to continue its drift family)."""
+
+    path = data_dir / "crypto-ohlcv" / symbol / "ohlcv.jsonl"
+    last = json.loads(path.read_text(encoding="utf-8").strip().splitlines()[-1])
+    return float(last["close"])
+
+
+def _milestone_drive_days(root: Path, data_dir: Path, first_day: date, days: int) -> None:
+    """Drive the real decide->fill->mark path once a day via the CLI-equivalent
+    entry points (run_id passed so the daily/fill run rows are written).
+
+    The appended daily bars continue the seeded series' drift family (a flat
+    continuation degenerates the 21-day sigma window and fires the 5-sigma
+    HALT, which would suppress decisions). Crypto tape bars are injected at
+    exactly the daily bar open, so every Book A fill marks with zero shortfall
+    and a matching recompute. Book C gets Monday decisions but no equity tape:
+    its fills never resolve, so its judgment comes out INSUFFICIENT — the
+    missing-data path, on facts.
+    """
+
+    values = {symbol: _milestone_last_close(data_dir, symbol) for symbol in ("BTC", "ETH")}
+    for offset in range(days):
+        day = first_day + timedelta(days=offset)
+        opens: dict[str, float] = {}
+        for symbol, value in values.items():
+            opened = value * 1.0001  # _series tail drift: 0.0002/day
+            values[symbol] = value * 1.0002
+            _write_crypto_days(data_dir, symbol, [(day.isoformat(), opened, values[symbol])])
+            opens[symbol] = opened
+        now = _now_of(day, minute=20)
+        run_id = f"test-daily-{day.isoformat()}"
+        pl.run_daily_decide(root, now, run_id=run_id)
+        _inject_bar(root, "BTC", now + timedelta(hours=1), opens["BTC"])
+        _inject_bar(root, "ETH", now + timedelta(hours=1), opens["ETH"])
+        pl.resolve_fills(root, now + timedelta(hours=2), run_id=f"test-fill-{day.isoformat()}")
+        pl.mark_up(root, now + timedelta(hours=2))
+
+
+def _milestone_start(root: Path, book: str) -> date:
+    start = pl._milestone_start_date(pl._load_journal(root), book)
+    assert start is not None
+    return start
+
+
+def test_milestone_judgment_fires_once_at_deadline(tmp_path: Path, monkeypatch) -> None:
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    first_day = now.date()  # 2026-09-21, a Monday: Book C decides on day one
+    _milestone_drive_days(root, _data_dir, first_day, 28)
+
+    start = _milestone_start(root, pl.S01_BOOK)
+    deadline = start + timedelta(days=28)
+    assert deadline.isoformat() == (first_day + timedelta(days=28)).isoformat()
+
+    journal_rows = len(pl._load_journal(root))
+    summary_rows = len(pl._rows_from_jsonl(pl.summary_path(root)))
+
+    # deadline - 1 day: no early judgment, ever
+    out_early = pl.weekly_summary(_data_dir, deadline - timedelta(days=1))
+    assert "milestone" not in out_early
+    assert len(pl._rows_from_jsonl(pl.summary_path(root))) == summary_rows + 1
+
+    # at the deadline: one judgment per strategy book, on the frozen gates
+    out = pl.weekly_summary(_data_dir, deadline)
+    assert len(pl._load_journal(root)) == journal_rows  # record-only: journal untouched
+    assert set(out["milestone"]) == {pl.S01_BOOK, pl.BOOK_C_BOOK}
+    a = out["milestone"][pl.S01_BOOK]
+    assert a["weeks"] == 4
+    assert a["start_date"] == first_day.isoformat()
+    assert a["milestone_date"] == deadline.isoformat()
+    assert a["judged_at_week_end"] == deadline.isoformat()
+    assert a["verdict"] == "PASS"
+    assert a["criteria"]["loop_success_rate"]["value"] == 1.0
+    assert (
+        a["criteria"]["loop_success_rate"]["threshold"]
+        == pl.MILESTONE_RULES[4]["loop_success_rate"]
+    )
+    assert a["criteria"]["observed_cost_bps_mean"]["value"] == 0.0
+    assert (
+        a["criteria"]["observed_cost_bps_mean"]["threshold"]
+        == pl.MILESTONE_RULES[4]["observed_cost_bps_max"]
+    )
+    assert a["criteria"]["recompute_match_rate"]["value"] == 1.0
+    assert a["criteria"]["orders"]["value"] == 0
+    assert a["criteria"]["guard_violations"]["value"] == 0
+    assert a["promotion"] == "none"
+
+    # Book C never filled (no equity tape): missing facts -> INSUFFICIENT,
+    # never back-filled; the global daily runs still pass its loop criterion.
+    c = out["milestone"][pl.BOOK_C_BOOK]
+    assert c["verdict"] == "INSUFFICIENT"
+    assert set(c["insufficient_criteria"]) == {"observed_cost_bps_mean", "recompute_match_rate"}
+    assert c["criteria"]["loop_success_rate"]["pass"] is True
+
+    assert len(pl._rows_from_jsonl(pl.summary_path(root))) == summary_rows + 2
+
+    # dedupe: the next weekly run writes no second judgment record
+    out_again = pl.weekly_summary(_data_dir, deadline + timedelta(days=7))
+    assert "milestone" not in out_again
+    all_rows = pl._rows_from_jsonl(pl.summary_path(root))
+    assert len(all_rows) == summary_rows + 3
+    judged = [
+        row["milestone"][pl.S01_BOOK]
+        for row in all_rows
+        if isinstance(row.get("milestone"), dict) and pl.S01_BOOK in row["milestone"]
+    ]
+    assert len(judged) == 1, "exactly one 4-week judgment record per book, ever"
+
+
+def test_milestone_judgment_boundary_27_of_28_days(tmp_path: Path, monkeypatch) -> None:
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    first_day = now.date()
+    _milestone_drive_days(root, _data_dir, first_day, 27)  # design §4: 1 missing day allowed
+    deadline = _milestone_start(root, pl.S01_BOOK) + timedelta(days=28)
+    out = pl.weekly_summary(_data_dir, deadline)
+    a = out["milestone"][pl.S01_BOOK]
+    assert a["run_ok_dates"] == 27
+    assert abs(a["criteria"]["loop_success_rate"]["value"] - 27 / 28) < 1e-12
+    assert a["criteria"]["loop_success_rate"]["pass"] is True
+    assert a["verdict"] == "PASS"
+
+
+def test_milestone_judgment_fails_on_missing_run_days(tmp_path: Path, monkeypatch) -> None:
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    first_day = now.date()
+    _milestone_drive_days(root, _data_dir, first_day, 26)  # 2 missing days: below 95%
+    deadline = _milestone_start(root, pl.S01_BOOK) + timedelta(days=28)
+    out = pl.weekly_summary(_data_dir, deadline)
+    a = out["milestone"][pl.S01_BOOK]
+    assert a["verdict"] == "FAIL"
+    assert a["failed_criteria"] == ["loop_success_rate"]
+    assert abs(a["criteria"]["loop_success_rate"]["value"] - 26 / 28) < 1e-12
+
+
+def test_milestone_guard_replay_counts_slipped_through_violations(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _data_dir, root, _now = _prepare(tmp_path, monkeypatch)
+    day0 = _now.date()
+    # Book A start + a clean 28-day run/decision/mark panel (zero shortfall)
+    opens = {s: _milestone_last_close(_data_dir, s) * 1.0001 for s in ("BTC", "ETH")}
+    for symbol, opened in opens.items():
+        _write_crypto_days(_data_dir, symbol, [(day0.isoformat(), opened, opened * 1.0001)])
+    first_now = _now_of(day0, minute=20)
+    pl.run_daily_decide(root, first_now, run_id="seed-daily")
+    _inject_bar(root, "BTC", first_now + timedelta(hours=1), opens["BTC"])
+    _inject_bar(root, "ETH", first_now + timedelta(hours=1), opens["ETH"])
+    pl.resolve_fills(root, first_now + timedelta(hours=2), run_id="seed-fill")
+    start = _milestone_start(root, pl.S01_BOOK)
+    assert start == day0
+    for offset in range(28):
+        stamp = datetime(start.year, start.month, start.day, tzinfo=UTC) + timedelta(
+            days=offset, minutes=30
+        )
+        pl._append_row(
+            root,
+            {
+                "event": "run",
+                "phase": "end",
+                "job": "daily",
+                "ok": True,
+                "run_id": f"mk-{offset}",
+                "recorded_at": stamp.isoformat(),
+                "host": "test",
+            },
+        )
+        for asset, shortfall in (("BTC", 5.0), ("ETH", -5.0)):
+            pl._append_row(
+                root,
+                {
+                    "event": "mark",
+                    "book": pl.S01_BOOK,
+                    "asset": asset,
+                    "decision_id": f"{pl.S01_BOOK}:{asset}:{start.isoformat()}",
+                    "shortfall_bps": shortfall,
+                    "recompute_match": True,
+                    "recorded_at": stamp.isoformat(),
+                },
+            )
+    # a slipped-through violation: a second BTC fill 30 minutes after the
+    # first accepted one — check_trade would have rejected (min_fill_interval)
+    fills = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "fill"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("asset") == "BTC"
+    ]
+    assert fills, "seeded journal must contain a BTC fill"
+    first_fill = fills[0]
+    violation_fill = dict(first_fill)
+    violation_fill["decision_id"] = f"{pl.S01_BOOK}:BTC:viol"
+    violation_fill["recorded_at"] = (
+        pl._parse_ts(first_fill["recorded_at"]) + timedelta(minutes=30)
+    ).isoformat()
+    stripped = {
+        k: v
+        for k, v in violation_fill.items()
+        if k not in ("seq", "prev_hash", "row_hash", "schema", "code_rev")
+    }
+    pl._append_row(root, stripped)
+
+    rows = pl._load_journal(root)
+    replay = pl._milestone_guard_replay(rows, pl.S01_BOOK, start + timedelta(days=28))
+    assert len(replay["violations"]) == 1
+    assert replay["violations"][0]["reject_reason"] == "min_fill_interval"
+
+    judgment = pl._milestone_judgment(root, rows, pl.S01_BOOK, 4, start + timedelta(days=28))
+    assert judgment is not None
+    assert judgment["verdict"] == "FAIL"
+    assert judgment["failed_criteria"] == ["guard_violations"]
+    # the other criteria still evaluate clean on this journal
+    assert judgment["criteria"]["guard_violations"]["value"] == 1
+    assert judgment["criteria"]["loop_success_rate"]["pass"] is True
+
+
+def test_milestone_no_judgment_without_decisions(tmp_path: Path, monkeypatch) -> None:
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    root.mkdir(parents=True, exist_ok=True)  # no pipeline driven: bare data dir
+    # no start date -> nothing to judge, no crash
+    out = pl.weekly_summary(_data_dir, now.date() + timedelta(days=28))
+    assert "milestone" not in out
