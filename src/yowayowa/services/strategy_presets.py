@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 from __future__ import annotations
 
 import math
@@ -16,6 +17,7 @@ from yowayowa.strategy_models import (
 )
 
 KIYOHARA_GLOBAL_ID = "kiyohara_global_value_growth"
+JAPAN_VALUE_QUALITY_ID = "japan_value_quality_repricing"
 
 _KIYOHARA_GLOBAL = StrategyPresetDefinition(
     id=KIYOHARA_GLOBAL_ID,
@@ -99,7 +101,84 @@ _KIYOHARA_GLOBAL = StrategyPresetDefinition(
     ],
 )
 
-BUILTIN_STRATEGIES = (_KIYOHARA_GLOBAL,)
+_JAPAN_VALUE_QUALITY = StrategyPresetDefinition(
+    id=JAPAN_VALUE_QUALITY_ID,
+    name_ja="日本株バリュー×クオリティ（慢性割安の再評価）",
+    name_en="Japan value x quality (chronic-undervaluation repricing)",
+    description_ja=(
+        "東証プライム・スタンダード（金融業を除く）を対象に、割安度（B/M・ネットキャッシュ比率）、"
+        "本業の収益力（厳密OP・簡易OP・営業利益成長率）、財務安全性（自己資本比率）を"
+        "クロスセクションのパーセンタイル順位で合成して候補を並べる調査プリセット。"
+        "固定閾値で足切りせず、判断日に開示済みの決算のみを使います。"
+        "資本コスト開示などのカタリストはデータが揃わない限り欠損として扱い、加点しません。"
+    ),
+    description_en=(
+        "A research preset that ranks Japanese Prime/Standard non-financial issuers by a "
+        "cross-sectional percentile composite of value (B/M, net-cash ratio), quality "
+        "(strict and simplified operating profitability, operating-income growth) and "
+        "financial safety (equity ratio) instead of fixed screening thresholds. Only "
+        "statements already disclosed at the decision date are used, and unavailable "
+        "catalyst data is treated as missing rather than imputed."
+    ),
+    default_region="jp",
+    region_required=True,
+    discovery=MarketScreenRequest(
+        filters=[
+            MarketScreenFilter(field="intradaymarketcap", operator="gt", value=0),
+        ],
+        sort_field="intradaymarketcap",
+        sort_ascending=False,
+        size=100,
+    ),
+    research_metrics=[
+        "yowayowa_conservative_net_cash_ratio",
+        "net_cash_ratio",
+        "return_on_equity",
+        "operating_income_growth_yoy",
+        "equity_to_assets",
+        "operating_margin",
+    ],
+    qualitative_review_ja=[
+        "割安の理由が一時的な評価不足か、構造的な収益力低下かを区別する",
+        "OP_strict と OP_simple の差が支払利息や特別要因で説明できるか確認する",
+        "自己資本比率とネットキャッシュが同時に厚いかを確認する",
+        "資本コスト開示・総還元性向・自社株買い枠の有無を開示資料で確認する（データ欠損は加点しない）",
+    ],
+    qualitative_review_en=[
+        "Separate temporary neglect from a structural decline in profitability",
+        "Explain any gap between strict and simplified operating profitability",
+        "Check that a high equity ratio comes with genuine net cash",
+        "Read filings for capital-cost disclosure, payout policy and buyback authorisation "
+        "(missing data earns no points)",
+    ],
+    sources=[
+        StrategySource(
+            label="Chou, Ko & Rhee (2023) — Comparing competing factor and characteristics "
+            "models: Evidence in Japan",
+            url="https://doi.org/10.1016/j.pacfin.2023.102179",
+            note=(
+                "Characteristics beat factor loadings for Japanese equities; book-to-market "
+                "and operating profitability carry the significant explanatory power."
+            ),
+        ),
+        StrategySource(
+            label="D'Ercole, Wagner & Yamada (2026) — Investor repricing of chronic "
+            "undervaluation: Evidence from the Tokyo Stock Exchange capital efficiency initiative",
+            url="https://doi.org/10.1016/j.jcorpfin.2026.103009",
+            note=(
+                "Low-PBR x high-ROE issuers repriced after the TSE capital-efficiency push; "
+                "disclosure of capital-efficiency plans was rewarded and non-disclosure penalised."
+            ),
+        ),
+        StrategySource(
+            label="Tokyo Stock Exchange — 資本コストや株価を意識した経営の実現に向けた対応",
+            url="https://www.jpx.co.jp/equities/improvements/follow-up/",
+            note="Official list of issuers disclosing capital-cost/share-price initiatives.",
+        ),
+    ],
+)
+
+BUILTIN_STRATEGIES = (_KIYOHARA_GLOBAL, _JAPAN_VALUE_QUALITY)
 
 
 def list_builtin_strategies() -> list[StrategyPresetDefinition]:

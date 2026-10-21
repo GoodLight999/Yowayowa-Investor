@@ -1,3 +1,4 @@
+# ruff: noqa: RUF001
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -12,6 +13,7 @@ from yowayowa.domain import (
     Provenance,
 )
 from yowayowa.services.strategy_presets import (
+    JAPAN_VALUE_QUALITY_ID,
     KIYOHARA_GLOBAL_ID,
     evaluate_kiyohara_candidate,
     get_builtin_strategy,
@@ -63,6 +65,47 @@ def _fundamentals(symbol: str = "TEST") -> Fundamentals:
         },
         provenance=provenance,
     )
+
+
+def test_japan_value_quality_preset_is_listed_and_fetchable_by_api() -> None:
+    from yowayowa.api.app import app
+
+    with TestClient(app) as client:
+        catalog = client.get("/v1/strategy-presets")
+        assert catalog.status_code == 200
+        ids = [item["id"] for item in catalog.json()]
+        assert ids[0] == KIYOHARA_GLOBAL_ID
+        assert JAPAN_VALUE_QUALITY_ID in ids
+
+        detail = client.get(f"/v1/strategy-presets/{JAPAN_VALUE_QUALITY_ID}")
+        assert detail.status_code == 200
+        payload = detail.json()
+
+    assert payload["name_ja"] == "日本株バリュー×クオリティ（慢性割安の再評価）"
+    assert payload["name_en"] == "Japan value x quality (chronic-undervaluation repricing)"
+    assert payload["default_region"] == "jp"
+    assert payload["region_required"] is True
+    assert payload["description_ja"]
+    assert payload["description_en"]
+    assert "yowayowa_conservative_net_cash_ratio" in payload["research_metrics"]
+    assert len(payload["sources"]) >= 2
+    # Kiyohara preset is untouched by the addition.
+    kiyohara = get_builtin_strategy(KIYOHARA_GLOBAL_ID)
+    assert kiyohara.name_ja == "清原達郎モード"
+    assert kiyohara.discovery.sort_ascending is True
+
+
+def test_japan_value_quality_preset_rejects_evaluation_until_evaluator_exists() -> None:
+    from yowayowa.api.app import app
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/v1/strategy-presets/{JAPAN_VALUE_QUALITY_ID}/evaluate",
+            json={"candidates": [{"symbol": "7203.T", "market_cap": 100, "pe_ratio": 10}]},
+        )
+
+    assert response.status_code == 501
+    assert JAPAN_VALUE_QUALITY_ID in response.json()["detail"]
 
 
 def test_kiyohara_builtin_is_global_regional_workflow_not_fixed_jpy_cap() -> None:
