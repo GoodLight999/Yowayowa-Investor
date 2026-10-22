@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     sec_requests_per_second: float = Field(default=8.0, gt=0, le=10)
     fred_api_key: str | None = None
     edinet_api_key: str | None = None
+    # Alpha Vantage (P4系): US stock quotes, personal-only source. Free tier is
+    # 25 requests/day; providers/alpha_vantage.py enforces that budget in code.
+    alpha_vantage_api_key: str | None = None
     edinet_index_lookback_days: int = Field(default=550, ge=31, le=3660)
     edinet_index_backfill_days_per_run: int = Field(default=31, ge=1, le=31)
     bls_api_key: str | None = None

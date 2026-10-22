@@ -235,6 +235,31 @@ SOURCE_POLICIES: tuple[SourceLicensePolicy, ...] = (
         ],
     ),
     SourceLicensePolicy(
+        key="alpha-vantage",
+        source="Alpha Vantage (US stock quotes, GLOBAL_QUOTE)",
+        provider_patterns=["alpha-vantage"],
+        license_class=LicenseClass.PERSONAL_ONLY,
+        access=SourceAccess.REGISTERED_KEY,
+        commercial_use=False,
+        public_display=False,
+        public_api=False,
+        derived_analysis_public=False,
+        attribution_required=True,
+        attribution="Source: Alpha Vantage",
+        terms_url="https://www.alphavantage.co/terms_of_service/",
+        reviewed_on=date(2026, 10, 22),
+        notes=[
+            "Terms of Service (PDF, read 2026-10-22) grant a personal, "
+            "non-commercial license that takes effect when the free API key is "
+            "issued; corporate use, financial-industry affiliation, or making "
+            "the data accessible to anyone other than the user counts as "
+            "commercial use and needs a written agreement with Alpha Vantage.",
+            "The license is revocable and the free tier is rate-limited to 25 "
+            "requests/day; providers/alpha_vantage.py enforces that daily "
+            "budget fail-closed instead of retrying into the limit.",
+        ],
+    ),
+    SourceLicensePolicy(
         key="fred",
         source="Federal Reserve Economic Data (FRED)",
         provider_patterns=["fred"],
