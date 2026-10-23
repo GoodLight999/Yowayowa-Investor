@@ -385,6 +385,176 @@ def test_assemble_edinet_summary_missing_file_records_coverage(tmp_path: Path) -
     assert summary["coverage"]["reason"] == "file_missing"
 
 
+# R6 (docs/P5_DEADEND_AUDIT_20261023.md §3): the daily JSONL is append-only, so
+# its head holds the *oldest* submissions. Selection must be by submitDateTime,
+# not by line order, or the brief reprints September filings every morning.
+
+
+def _edinet_row(
+    doc_id: str,
+    submit_date_time: str | None,
+    *,
+    doc_type_code: str = "180",
+    description: str = "訂正有価証券報告書",
+    filer_name: str = "テスト株式会社",
+    sec_code: str | None = "11115",
+) -> dict[str, Any]:
+    """One EDINET v2 daily-list row (same shape as ``data/edinet-daily.jsonl``)."""
+
+    day = (submit_date_time or "2026-09-24")[:10]
+    return {
+        "docID": doc_id,
+        "filerName": filer_name,
+        "docDescription": description,
+        "docTypeCode": doc_type_code,
+        "submitDateTime": submit_date_time,
+        "secCode": sec_code,
+        "source_url": f"https://api.edinet-fsa.go.jp/api/v2/documents.json?date={day}&type=2",
+        "retrieved_at": "2026-10-23T00:00:00+00:00",
+        "license_class": "official_public",
+    }
+
+
+def _write_edinet_jsonl(path: Path, rows: list[dict[str, Any]]) -> Path:
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_assemble_edinet_summary_selects_newest_submissions_not_file_head(
+    tmp_path: Path,
+) -> None:
+    """Old rows sit at the head of the file; the newest ones must still win."""
+
+    old_rows = [
+        _edinet_row(f"S100OLD{index:02d}", f"2026-10-{index + 1:02d} 09:00") for index in range(13)
+    ]
+    newest = _edinet_row("S100NEW2", "2026-10-22 15:30")
+    second_newest = _edinet_row("S100NEW1", "2026-10-22 09:00")
+    edinet_path = _write_edinet_jsonl(tmp_path / "edinet.jsonl", [*old_rows, second_newest, newest])
+    engine = _memory_engine()
+    try:
+        service = _service(engine, tmp_path, edinet_path=edinet_path)
+        summary = service.assemble_edinet_summary(RUN_DATE)
+        citations = service.collect_citations(summary, {"candidates": []}, {"series": []})
+    finally:
+        engine.dispose()
+
+    filings = summary["filings"]
+    assert len(filings) == 12  # cap unchanged
+    assert [entry["doc_id"] for entry in filings[:2]] == ["S100NEW2", "S100NEW1"]
+    stamps = [entry["submit_date_time"] for entry in filings]
+    assert stamps == sorted(stamps, reverse=True)
+    # The head-of-file rows are the ones that must be dropped by the cap.
+    assert "S100OLD00" not in {entry["doc_id"] for entry in filings}
+    assert summary["coverage"]["selection_order"] == "submit_date_time_desc"
+    assert summary["coverage"]["undated_rows"] == 0
+    # The brief's first citation follows the same selection (audit symptom).
+    assert citations[0].as_of == "2026-10-22"
+    assert citations[0].source_url.endswith("date=2026-10-22&type=2")
+
+
+def test_assemble_edinet_summary_ties_are_stable_across_file_order(tmp_path: Path) -> None:
+    """Same timestamp -> doc_id order, independent of the collector's append order."""
+
+    rows = [
+        _edinet_row("S100TIE3", "2026-10-22 09:00"),
+        _edinet_row("S100TIE1", "2026-10-22 09:00"),
+        _edinet_row("S100TIE2", "2026-10-22 09:00"),
+    ]
+    forward = _write_edinet_jsonl(tmp_path / "forward.jsonl", rows)
+    backward = _write_edinet_jsonl(tmp_path / "backward.jsonl", list(reversed(rows)))
+
+    orders = []
+    engine = _memory_engine()
+    try:
+        for path in (forward, backward):
+            service = _service(engine, tmp_path, edinet_path=path)
+            summary = service.assemble_edinet_summary(RUN_DATE)
+            orders.append([entry["doc_id"] for entry in summary["filings"]])
+    finally:
+        engine.dispose()
+
+    assert orders[0] == orders[1] == ["S100TIE1", "S100TIE2", "S100TIE3"]
+
+
+def test_assemble_edinet_summary_skips_blank_and_broken_lines_and_ranks_undated_last(
+    tmp_path: Path,
+) -> None:
+    """Blank lines, unparsable JSON, non-object rows and undated rows fail soft."""
+
+    lines = [
+        _edinet_row("S100DATED_OLD", "2026-09-24 09:00"),
+        _edinet_row("S100UNDATED", None),
+        _edinet_row("S100DATED_NEW", "2026-10-22 16:00"),
+        _edinet_row(
+            "S100DATED_MID",
+            "2026-10-21 10:00",
+            description="上場廃止に伴う臨時報告書",
+        ),
+    ]
+    path = tmp_path / "edinet.jsonl"
+    body = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in lines)
+    # Interleave junk: blank line, truncated JSON, a JSON array (not an object).
+    path.write_text(
+        "\n"
+        + body.splitlines()[0]
+        + "\n{not json\n[1, 2, 3]\n"
+        + "\n".join(body.splitlines()[1:])
+        + "\n",
+        encoding="utf-8",
+    )
+    engine = _memory_engine()
+    try:
+        service = _service(engine, tmp_path, edinet_path=path)
+        summary = service.assemble_edinet_summary(RUN_DATE)
+    finally:
+        engine.dispose()
+
+    coverage = summary["coverage"]
+    assert coverage["row_count"] == 4  # blank line / bad JSON / array are not rows
+    assert coverage["undated_rows"] == 1
+    order = [entry["doc_id"] for entry in summary["filings"]]
+    assert order == ["S100DATED_NEW", "S100DATED_MID", "S100DATED_OLD", "S100UNDATED"]
+    assert summary["filings"][-1]["submit_date_time"] is None
+
+
+def test_assemble_edinet_summary_large_filings_follow_the_same_recency_order(
+    tmp_path: Path,
+) -> None:
+    """The 大口提出 list is capped too, so it needs the same ordering."""
+
+    rows = [
+        _edinet_row(
+            "S100LARGE_OLD",
+            "2026-09-24 09:00",
+            doc_type_code="030",
+            description="有価証券届出書（組込方式）",
+        ),
+        _edinet_row(
+            "S100LARGE_NEW",
+            "2026-10-22 09:00",
+            doc_type_code="030",
+            description="有価証券届出書（組込方式）",
+        ),
+    ]
+    edinet_path = _write_edinet_jsonl(tmp_path / "edinet.jsonl", rows)
+    engine = _memory_engine()
+    try:
+        service = _service(engine, tmp_path, edinet_path=edinet_path)
+        summary = service.assemble_edinet_summary(RUN_DATE)
+    finally:
+        engine.dispose()
+
+    assert [entry["doc_id"] for entry in summary["large_filings"]] == [
+        "S100LARGE_NEW",
+        "S100LARGE_OLD",
+    ]
+    assert all(entry["note"] == "大口提出（有価証券届出書）" for entry in summary["large_filings"])
+
+
 # --------------------------------------------------------------------- macro
 
 

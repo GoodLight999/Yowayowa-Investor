@@ -131,6 +131,11 @@
 - 目的: 認可済み private 情報源（オペレーター自身のGmailメールボックス・read-only）コネクタ（P1D）の受け入れ証跡。
 - 主要セクション: 1. Acceptance criteria（gog read-only メールボックスコネクタ・+123テストで633全Green）、2. 実データ end-to-end 検証（楽天証券「銘柄情報通知サービス」メール10通から決算イベント11件抽出・40通スキャンでtimeline 70件追加・再実行冪等・provenance完全・鍵無し時は AUTH_EXPIRED の fail-closed）、3. Static checks / full suite、4. Frozen-contract check（P1A〜P1C凍結ファイルへの非交叉）、5. Secrets（keyringパスワードは実行時のみ・実メール内容はテストに含めない）。
 
+### P5_R6_BRIEF_EDINET_RECENCY_20261023.md
+- タイトル: P5 R6 — 朝ブリーフが最古のEDINET提出を掲載する（選択順の修正と実測）
+- 目的: カード t_3320c1ae。P5_DEADEND_AUDIT_20261023.md §3 R6（P0）の修正。brief の EDINET 選択が jsonl 追記順＝最古固定だった問題を、`submitDateTime` 降順の選択に変えて塞ぎ、同一入力（sha256 `fc71256a…3cb2719`・6,176行）で修正前後を実測比較した記録。
+- 主要セクション: 結論（`filings[0]` 2026-09-24 → 2026-10-22、10-13〜10-22 の分類対象488件が1件も選ばれていなかった）、入力の sha256/行数/coverage、修正前の再現（永続化 brief も同症状）、原因（並べ替え不在）、修正（**並び順の仕様変更を明記**・大口提出リストも同順・時刻欠落は最下位・同一時刻は docID 安定順・`coverage` 2キー追加）、前後の選択行12+12と citation/coverage の実測、追加回帰4件と rc=0、未実施（brief 再生成なし・データは最大1日遅れ）と限界。
+
 ### P5_DEADEND_AUDIT_20261023.md
 - タイトル: P5 Dead-end Audit — 主要導線（research → screening → valuation → portfolio → morning brief）
 - 目的: カード t_64253b31。主要5導線をローカル API/CLI で実走し、行き止まりを実測で列挙、1件を最小修正して同一入力で回帰させた記録。2026-09-28 の全工程監査（WORKFLOW_DEADEND_AUDIT.md・23件）の再制作はせず、差分確認に留める。

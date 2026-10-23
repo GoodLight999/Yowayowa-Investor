@@ -92,6 +92,41 @@ def _default_sender(message: str) -> None:
     )
 
 
+_DEFAULT_EDINET_SELECTION_ORDER = "submit_date_time_desc"
+
+
+def _normalized_submit_date_time(entry: dict[str, Any]) -> str:
+    """``submitDateTime`` as a comparable string (``""`` when absent/unusable)."""
+
+    raw = entry.get("submit_date_time")
+    return raw.strip() if isinstance(raw, str) else ""
+
+
+def _sort_edinet_rows_by_recency(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Order EDINET rows newest-submission-first, deterministically.
+
+    ``submitDateTime`` from the EDINET v2 daily list is ``"YYYY-MM-DD HH:MM"``,
+    so a string comparison is a chronological one. Rows without a usable
+    timestamp sort *below* every dated row — an unknown date is not evidence of
+    recency, so it must never displace a dated filing under the list caps.
+
+    The ``doc_id`` pre-pass (Python's sort is stable, and ``reverse=True``
+    keeps equal keys in their pre-sorted order) makes rows that share one
+    timestamp independent of the JSONL append order, which is an accident of
+    collection, not information.
+    """
+
+    entries.sort(key=lambda entry: str(entry.get("doc_id") or ""))
+    entries.sort(
+        key=lambda entry: (
+            _normalized_submit_date_time(entry) != "",
+            _normalized_submit_date_time(entry),
+        ),
+        reverse=True,
+    )
+    return entries
+
+
 class MorningBriefService:
     """Assembles deterministic evidence and composes one LLM morning brief."""
 
@@ -135,6 +170,12 @@ class MorningBriefService:
         Returns ``{"filings": [...], "large_filings": [...], "coverage": {...}}``.
         A missing file yields empty lists plus ``file_missing`` coverage —
         never an error, never fabricated rows.
+
+        Selection order: both lists are ordered by ``submitDateTime``
+        descending *before* the ``_MAX_EDINET_*`` caps are applied, so the
+        brief shows the most recent submissions instead of whichever rows the
+        collector appended first. Rows without a timestamp sort last and are
+        counted in ``coverage["undated_rows"]``.
         """
 
         coverage: dict[str, Any] = {
@@ -149,6 +190,7 @@ class MorningBriefService:
         filings: list[dict[str, Any]] = []
         large_filings: list[dict[str, Any]] = []
         classified = 0
+        undated = 0
         with self.edinet_path.open("r", encoding="utf-8") as handle:
             for line in handle:
                 stripped = line.strip()
@@ -168,12 +210,15 @@ class MorningBriefService:
                 if signal is None and not is_large:
                     continue
                 classified += 1
+                submit_date_time = row.get("submitDateTime")
+                if not (isinstance(submit_date_time, str) and submit_date_time.strip()):
+                    undated += 1
                 entry: dict[str, Any] = {
                     "doc_id": row.get("docID"),
                     "filer_name": row.get("filerName"),
                     "doc_description": description,
                     "doc_type_code": row.get("docTypeCode"),
-                    "submit_date_time": row.get("submitDateTime"),
+                    "submit_date_time": submit_date_time,
                     "sec_code": row.get("secCode") or None,
                     "signal": signal.value if signal is not None else None,
                     "source_url": row.get("source_url"),
@@ -187,6 +232,10 @@ class MorningBriefService:
                     large_filings.append(large_entry)
         coverage["classified"] = classified
         coverage["large_filing_count"] = len(large_filings)
+        coverage["undated_rows"] = undated
+        coverage["selection_order"] = _DEFAULT_EDINET_SELECTION_ORDER
+        _sort_edinet_rows_by_recency(filings)
+        _sort_edinet_rows_by_recency(large_filings)
         return {
             "filings": filings[:_MAX_EDINET_SIGNALS],
             "large_filings": large_filings[:_MAX_EDINET_LARGE_FILINGS],
