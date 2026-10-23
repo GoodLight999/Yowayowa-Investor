@@ -592,6 +592,62 @@ Never silently overwrite historical scoring semantics. New calibrated rules beco
   `docs/MONETIZATION_READING_20261023.md`.
 - Evidence: `docs/MONETIZATION_READING_20261023.md`.
 
+#### Edge-Lifetime Verdict Wired Into the Next Decision (Task t_e2c98d2b, 2026-10-23)
+
+- State: **JUDGMENT → NEXT SIGNAL CONNECTED (recorded verdict now gates the next
+  decision; no strategy/parameter/cost change, no orders).**
+- Open link closed: the preregistered weekly CUSUM monitor
+  (`ops/demo-loop/weekly.sh` → `yowayowa.cusum_watch`) appended
+  `action: "PAUSE" | "continue"` to `data/demo-loop/cusum_A.jsonl`, and **nothing
+  read it** — `run_daily_decide` never consulted the verdict. The judgment was
+  recorded but never reached the next signal.
+- Changes (one link, additive):
+  - `paperloop.cusum_edge_verdict(root)` reads the monitor's log and answers
+    `continue` / `pause` / `unreadable` / `absent`. A recorded alarm is
+    **latched** (prereg: "S is never reset after an alarm" — a later lower S_w
+    does not reopen the gate). It recomputes nothing and never writes to the
+    monitor's log.
+  - For the monitored book only (`CUSUM_GATED_BOOK = "A"`) a `pause` (or an
+    untrusted verdict — `unreadable` is never read as alive) adds a book-scope
+    HALT trigger, so the existing machinery writes `halt_check.action="halt"` and
+    `regime_state=HALT` / `halt_flag=true` / `fill_status=skipped` decision rows
+    with `halt_reason=cusum_pause` (or `cusum_verdict_unreadable`).
+  - `halt_check` rows carry `edge_lifetime` (`status`/`week`/`S`/`h_star`/`alarm`/
+    `action`/`row_hash`/`why`) so which verdict held the gate is auditable; books
+    without a registered monitor carry `null`. No schema bump: the change adds one
+    key and one trigger name; existing key semantics are unchanged.
+  - `absent` (the monitor has not written yet) records the fact and does not gate,
+    so pre-monitor journals and fresh environments are not bricked.
+- Measured on the real journal (copy, production untouched: journal sha256
+  `ed12c32a…` and monitor-log sha256 `1185d9f0…` unchanged before/after):
+  - gate-open run at 2026-10-23T00:20Z with the real verdict (2026-W42,
+    S=0.1307876, h*=4.8) wrote 4 decisions **identical to the 4 production wrote
+    that morning (13 fields compared, 0 mismatches)**;
+  - the same run with one synthetic PAUSE row appended to the copy changed only
+    Book A's 2 decisions to HALT/skipped and left CRYPTO_1N untouched;
+  - `paperloop_verify` on the 261-row copy: exit 0, chain/anchors ok, L1–L14
+    clean, R1 26/26, R2 26/26.
+- After-cost reading as of the 2026-10-23 mtm (virtual capital 1.0 = ¥1,000,000,
+  assumed 15 bps/side): Book A −3.3447% (−¥33,446.80), max DD −4.1269%, vs
+  CRYPTO_1N +0.1995 pp; Book C +0.6344% (+¥6,344.19), max DD −0.3480%, benchmark
+  difference still null (`EQUITY_EW` has no fill). Not evidence of profitability.
+- Not established: the real monitor has never alarmed (S=0.131 vs 4.8 over 2
+  complete weeks) — the closed-gate evidence uses a synthetic verdict on real
+  inputs; 4-week milestones are still ahead (A 2026-11-07, C 2026-11-16);
+  12/26-week milestones stay unwired (`MILESTONE_WEEKS_CONNECTED=(4,)`).
+- Evidence: `docs/P3_LOOP_20261023.md`,
+  `docs/evidence/20261023/p3_edge_gate_real_data.json`,
+  `docs/evidence/20261023/p3_edge_gate_probe.py`,
+  `docs/evidence/20261023/p3_loop_verify_new_code.json`.
+- Attribution: the gate implementation landed in commit
+  `94d9e0f` ("fix(demo-loop): measure comparison drawdown from the shared
+  baseline (t_dddae39e)") because both cards shared one working tree — the
+  cusum hunks in that commit are this card's scope and need their own review;
+  the docs/evidence of this card are committed separately. It is already live
+  in the real loop (the 2026-10-23 02:05Z fill job ran on
+  `b6d5d664fc52+dirty`; the 2026-W42 verdict is `continue`, so nothing was
+  blocked).
+
 ### Exit criteria
 
 The system can answer:

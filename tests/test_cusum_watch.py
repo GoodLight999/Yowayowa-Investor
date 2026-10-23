@@ -177,7 +177,14 @@ def test_registration_row_chain_and_verifier_accepts(tmp_path: Path, monkeypatch
     data_dir, root, now = _prepare(tmp_path, monkeypatch)
     pl.run_daily_decide(root, now)
     rows_before = pl._rows_from_jsonl(pl.prereg_path(root), strict=True)
-    assert [str(r["book_id"]) for r in rows_before] == ["A", "CRYPTO_1N", "__regime_spec__"]
+    # Derive the registry expectation from the enabled book set: the hardcoded
+    # ["A", "CRYPTO_1N"] list went stale when C (t_feb3aa55) and EQUITY_EW
+    # (t_dddae39e) were enabled — a pre-existing failure of this test at HEAD,
+    # fixed here so the v1.5 regression run can be read (t_e2c98d2b).
+    assert [str(r["book_id"]) for r in rows_before] == [
+        *pl.BOOKS_ENABLED,
+        "__regime_spec__",
+    ]
 
     row = cw.append_registration(
         root, registered_at=now + timedelta(hours=1), registered_by="test:t"
@@ -188,7 +195,7 @@ def test_registration_row_chain_and_verifier_accepts(tmp_path: Path, monkeypatch
     )
     assert row["row_hash"] == expected
     rows = pl._rows_from_jsonl(pl.prereg_path(root), strict=True)
-    assert len(rows) == 4 and rows[-1]["book_id"] == cw.CUSUM_BOOK
+    assert len(rows) == len(rows_before) + 1 and rows[-1]["book_id"] == cw.CUSUM_BOOK
     with pytest.raises(pl.ChainError, match="already registered"):
         cw.append_registration(root, registered_at=now + timedelta(hours=2), registered_by="test:t")
 

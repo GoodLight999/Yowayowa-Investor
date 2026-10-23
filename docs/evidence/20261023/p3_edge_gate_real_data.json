@@ -1,0 +1,457 @@
+{
+  "card": "t_e2c98d2b",
+  "generated_at": "2026-10-23T01:56:43.272383+00:00",
+  "code_sha256": {
+    "src/yowayowa/paperloop.py": "1379c2d571d8bfecf645b4b74db3a069f6519a6cca8d82be9d89dedafc7c8a2d",
+    "tests/test_paperloop.py": "b98bbf25c1840e20f6de7b8c0e13162c0f181f8c9f2e3b3d5a4b998819d7003b",
+    "probe": "9a23d326f08383cd419ae76143c50dc9c33871278d3d7628394fc08bbdf22d7d"
+  },
+  "inputs": {
+    "production_journal_sha256_before": "ed12c32a717d730a6fccc983620cd6c70a4423216499585ad7605b57179c2428",
+    "production_cusum_sha256_before": "1185d9f0454b9b0c66c7317f6ab33126572cf49e71b5561b5f43d3d33ef5cb73",
+    "production_journal_rows": 261,
+    "rewound_prefix_rows": 247,
+    "rewind_before": "2026-10-23",
+    "decision_now": "2026-10-23T00:20:00+00:00",
+    "production_2026_10_23_decisions": 4
+  },
+  "verdict_read": {
+    "run_a": {
+      "status": "continue",
+      "source": "cusum_A.jsonl",
+      "week": "2026-W42",
+      "weeks_observed": 2,
+      "S": 0.1307875935134487,
+      "h_star": 4.8,
+      "alarm": false,
+      "action": "continue",
+      "row_hash": "16e98a19c34d2913f6c6b0aa367329e3f5103d5ff62e286d12dddb3887528bc9",
+      "alarm_week": null,
+      "alarm_S": null,
+      "alarm_row_hash": null,
+      "why": null
+    },
+    "run_b": {
+      "status": "pause",
+      "source": "cusum_A.jsonl",
+      "week": "2026-W43",
+      "weeks_observed": 3,
+      "S": 5.13,
+      "h_star": 4.8,
+      "alarm": true,
+      "action": "PAUSE",
+      "row_hash": "18d742053cd3da05be97b1b49c7c134ef4c958d21b7bc4b9b635761513214ecf",
+      "alarm_week": "2026-W43",
+      "alarm_S": 5.13,
+      "alarm_row_hash": "18d742053cd3da05be97b1b49c7c134ef4c958d21b7bc4b9b635761513214ecf",
+      "why": null
+    },
+    "synthetic_row": {
+      "schema": "cusum-watch-v1",
+      "book_id": "A",
+      "computed_at": "2026-10-19T00:50:53.558848+00:00",
+      "prereg_row_hash": "29c6b47cbfde042eae26d89d2069861f92981aa5228cc92bd012256a01a8a448",
+      "baseline_ref_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "baseline_sha_match": true,
+      "constants": {
+        "kappa0": 0.5,
+        "k": 0.5,
+        "mean": 0.004933,
+        "sigma_hat": 0.048186,
+        "h_star": 4.8
+      },
+      "week": "2026-W43",
+      "weeks_observed": 3,
+      "z": -1.0,
+      "S": 5.13,
+      "alarm": true,
+      "action": "PAUSE",
+      "note": "SYNTHETIC probe row (t_e2c98d2b) — not a monitor computation",
+      "prev_hash": "16e98a19c34d2913f6c6b0aa367329e3f5103d5ff62e286d12dddb3887528bc9",
+      "row_hash": "18d742053cd3da05be97b1b49c7c134ef4c958d21b7bc4b9b635761513214ecf"
+    }
+  },
+  "run_a_gate_open": {
+    "rows_written": 4,
+    "journal_rows": 259,
+    "journal_sha256": "804eb8dd902e3a73aee804232b6fff64a8b9f67a7b9f619ba45c488dd1702ad2",
+    "decisions": [
+      {
+        "book": "A",
+        "asset": "BTC",
+        "decision_id": "A:BTC:2026-10-23",
+        "decision_date": "2026-10-23",
+        "regime_state": "RISK_ON",
+        "halt_flag": false,
+        "halt_reason": "",
+        "target_weight": 0.5,
+        "side": "buy",
+        "delta_weight": 0.02129081345975431,
+        "fill_status": "pending",
+        "input_sha256": "17e4a868d36d5db151c1d9f9ee2e40e306d5eeb29fb2e29741c3776561d43ae7",
+        "close": 81416.09,
+        "sma200": 72405.90435,
+        "regime_tag": {
+          "vol_bucket": "low",
+          "trend_bucket": "up",
+          "dd_bucket": "deep",
+          "sigma21": 0.015181089049043011,
+          "ret63": 0.2943734499205086,
+          "drawdown_365d": -0.28931113466027236
+        }
+      },
+      {
+        "book": "A",
+        "asset": "ETH",
+        "decision_id": "A:ETH:2026-10-23",
+        "decision_date": "2026-10-23",
+        "regime_state": "RISK_ON",
+        "halt_flag": false,
+        "halt_reason": "",
+        "target_weight": 0.5,
+        "side": "buy",
+        "delta_weight": 0.022447887199689764,
+        "fill_status": "pending",
+        "input_sha256": "17e4a868d36d5db151c1d9f9ee2e40e306d5eeb29fb2e29741c3776561d43ae7",
+        "close": 2389.14,
+        "sma200": 2140.55805,
+        "regime_tag": {
+          "vol_bucket": "low",
+          "trend_bucket": "up",
+          "dd_bucket": "deep",
+          "sigma21": 0.01967854787692343,
+          "ret63": 0.27352878464818753,
+          "drawdown_365d": -0.42547481519601005
+        }
+      },
+      {
+        "book": "CRYPTO_1N",
+        "asset": "BTC",
+        "decision_id": "CRYPTO_1N:BTC:2026-10-23",
+        "decision_date": "2026-10-23",
+        "regime_state": "not_applicable",
+        "halt_flag": false,
+        "halt_reason": "",
+        "target_weight": 0.0,
+        "side": "hold",
+        "delta_weight": 0.0,
+        "fill_status": "skipped",
+        "input_sha256": "caf8d458d9ba138b0a0ed1889a5d1bbfea8642bded63c3fdeea85dea8d624a8a",
+        "close": 81416.09,
+        "sma200": 72405.90435,
+        "regime_tag": {
+          "vol_bucket": "low",
+          "trend_bucket": "up",
+          "dd_bucket": "deep",
+          "sigma21": 0.015181089049043011,
+          "ret63": 0.2943734499205086,
+          "drawdown_365d": -0.28931113466027236
+        }
+      },
+      {
+        "book": "CRYPTO_1N",
+        "asset": "ETH",
+        "decision_id": "CRYPTO_1N:ETH:2026-10-23",
+        "decision_date": "2026-10-23",
+        "regime_state": "not_applicable",
+        "halt_flag": false,
+        "halt_reason": "",
+        "target_weight": 0.0,
+        "side": "hold",
+        "delta_weight": 0.0,
+        "fill_status": "skipped",
+        "input_sha256": "caf8d458d9ba138b0a0ed1889a5d1bbfea8642bded63c3fdeea85dea8d624a8a",
+        "close": 2389.14,
+        "sma200": 2140.55805,
+        "regime_tag": {
+          "vol_bucket": "low",
+          "trend_bucket": "up",
+          "dd_bucket": "deep",
+          "sigma21": 0.01967854787692343,
+          "ret63": 0.27352878464818753,
+          "drawdown_365d": -0.42547481519601005
+        }
+      }
+    ],
+    "halt_checks": [
+      {
+        "book": "A",
+        "check_date": "2026-10-23",
+        "action": "none",
+        "halted_before": false,
+        "halted_after": false,
+        "drawdown": -0.008895185263325112,
+        "edge_lifetime": {
+          "status": "continue",
+          "source": "cusum_A.jsonl",
+          "week": "2026-W42",
+          "weeks_observed": 2,
+          "S": 0.1307875935134487,
+          "h_star": 4.8,
+          "alarm": false,
+          "action": "continue",
+          "row_hash": "16e98a19c34d2913f6c6b0aa367329e3f5103d5ff62e286d12dddb3887528bc9",
+          "alarm_week": null,
+          "alarm_S": null,
+          "alarm_row_hash": null,
+          "why": null
+        },
+        "margin_min": -25.666666666666668,
+        "tripped": []
+      },
+      {
+        "book": "CRYPTO_1N",
+        "check_date": "2026-10-23",
+        "action": "none",
+        "halted_before": false,
+        "halted_after": false,
+        "drawdown": -0.010565423789727357,
+        "edge_lifetime": null,
+        "margin_min": -25.666666666666668,
+        "tripped": []
+      }
+    ]
+  },
+  "run_b_gate_closed": {
+    "rows_written": 4,
+    "journal_rows": 259,
+    "journal_sha256": "dc393522667a2042abd8ec5b336858faf371873932b7f7430b8b08ddfa3eaa2d",
+    "decisions": [
+      {
+        "book": "A",
+        "asset": "BTC",
+        "decision_id": "A:BTC:2026-10-23",
+        "decision_date": "2026-10-23",
+        "regime_state": "HALT",
+        "halt_flag": true,
+        "halt_reason": "cusum_pause",
+        "target_weight": 0.0,
+        "side": "hold",
+        "delta_weight": 0.0,
+        "fill_status": "skipped",
+        "input_sha256": "17e4a868d36d5db151c1d9f9ee2e40e306d5eeb29fb2e29741c3776561d43ae7",
+        "close": 81416.09,
+        "sma200": 72405.90435,
+        "regime_tag": {
+          "vol_bucket": "low",
+          "trend_bucket": "up",
+          "dd_bucket": "deep",
+          "sigma21": 0.015181089049043011,
+          "ret63": 0.2943734499205086,
+          "drawdown_365d": -0.28931113466027236
+        }
+      },
+      {
+        "book": "A",
+        "asset": "ETH",
+        "decision_id": "A:ETH:2026-10-23",
+        "decision_date": "2026-10-23",
+        "regime_state": "HALT",
+        "halt_flag": true,
+        "halt_reason": "cusum_pause",
+        "target_weight": 0.0,
+        "side": "hold",
+        "delta_weight": 0.0,
+        "fill_status": "skipped",
+        "input_sha256": "17e4a868d36d5db151c1d9f9ee2e40e306d5eeb29fb2e29741c3776561d43ae7",
+        "close": 2389.14,
+        "sma200": 2140.55805,
+        "regime_tag": {
+          "vol_bucket": "low",
+          "trend_bucket": "up",
+          "dd_bucket": "deep",
+          "sigma21": 0.01967854787692343,
+          "ret63": 0.27352878464818753,
+          "drawdown_365d": -0.42547481519601005
+        }
+      },
+      {
+        "book": "CRYPTO_1N",
+        "asset": "BTC",
+        "decision_id": "CRYPTO_1N:BTC:2026-10-23",
+        "decision_date": "2026-10-23",
+        "regime_state": "not_applicable",
+        "halt_flag": false,
+        "halt_reason": "",
+        "target_weight": 0.0,
+        "side": "hold",
+        "delta_weight": 0.0,
+        "fill_status": "skipped",
+        "input_sha256": "caf8d458d9ba138b0a0ed1889a5d1bbfea8642bded63c3fdeea85dea8d624a8a",
+        "close": 81416.09,
+        "sma200": 72405.90435,
+        "regime_tag": {
+          "vol_bucket": "low",
+          "trend_bucket": "up",
+          "dd_bucket": "deep",
+          "sigma21": 0.015181089049043011,
+          "ret63": 0.2943734499205086,
+          "drawdown_365d": -0.28931113466027236
+        }
+      },
+      {
+        "book": "CRYPTO_1N",
+        "asset": "ETH",
+        "decision_id": "CRYPTO_1N:ETH:2026-10-23",
+        "decision_date": "2026-10-23",
+        "regime_state": "not_applicable",
+        "halt_flag": false,
+        "halt_reason": "",
+        "target_weight": 0.0,
+        "side": "hold",
+        "delta_weight": 0.0,
+        "fill_status": "skipped",
+        "input_sha256": "caf8d458d9ba138b0a0ed1889a5d1bbfea8642bded63c3fdeea85dea8d624a8a",
+        "close": 2389.14,
+        "sma200": 2140.55805,
+        "regime_tag": {
+          "vol_bucket": "low",
+          "trend_bucket": "up",
+          "dd_bucket": "deep",
+          "sigma21": 0.01967854787692343,
+          "ret63": 0.27352878464818753,
+          "drawdown_365d": -0.42547481519601005
+        }
+      }
+    ],
+    "halt_checks": [
+      {
+        "book": "A",
+        "check_date": "2026-10-23",
+        "action": "halt",
+        "halted_before": false,
+        "halted_after": true,
+        "drawdown": -0.008895185263325112,
+        "edge_lifetime": {
+          "status": "pause",
+          "source": "cusum_A.jsonl",
+          "week": "2026-W43",
+          "weeks_observed": 3,
+          "S": 5.13,
+          "h_star": 4.8,
+          "alarm": true,
+          "action": "PAUSE",
+          "row_hash": "18d742053cd3da05be97b1b49c7c134ef4c958d21b7bc4b9b635761513214ecf",
+          "alarm_week": "2026-W43",
+          "alarm_S": 5.13,
+          "alarm_row_hash": "18d742053cd3da05be97b1b49c7c134ef4c958d21b7bc4b9b635761513214ecf",
+          "why": null
+        },
+        "margin_min": -25.666666666666668,
+        "tripped": [
+          "cusum_pause"
+        ]
+      },
+      {
+        "book": "CRYPTO_1N",
+        "check_date": "2026-10-23",
+        "action": "none",
+        "halted_before": false,
+        "halted_after": false,
+        "drawdown": -0.010565423789727357,
+        "edge_lifetime": null,
+        "margin_min": -25.666666666666668,
+        "tripped": []
+      }
+    ]
+  },
+  "reproduction": {
+    "compared": 4,
+    "mismatches": []
+  },
+  "a_vs_b": {
+    "changed_decision_fields": [
+      [
+        "A:BTC:2026-10-23",
+        "regime_state",
+        "RISK_ON",
+        "HALT"
+      ],
+      [
+        "A:BTC:2026-10-23",
+        "halt_flag",
+        false,
+        true
+      ],
+      [
+        "A:BTC:2026-10-23",
+        "halt_reason",
+        "",
+        "cusum_pause"
+      ],
+      [
+        "A:BTC:2026-10-23",
+        "target_weight",
+        0.5,
+        0.0
+      ],
+      [
+        "A:BTC:2026-10-23",
+        "side",
+        "buy",
+        "hold"
+      ],
+      [
+        "A:BTC:2026-10-23",
+        "delta_weight",
+        0.02129081345975431,
+        0.0
+      ],
+      [
+        "A:BTC:2026-10-23",
+        "fill_status",
+        "pending",
+        "skipped"
+      ],
+      [
+        "A:ETH:2026-10-23",
+        "regime_state",
+        "RISK_ON",
+        "HALT"
+      ],
+      [
+        "A:ETH:2026-10-23",
+        "halt_flag",
+        false,
+        true
+      ],
+      [
+        "A:ETH:2026-10-23",
+        "halt_reason",
+        "",
+        "cusum_pause"
+      ],
+      [
+        "A:ETH:2026-10-23",
+        "target_weight",
+        0.5,
+        0.0
+      ],
+      [
+        "A:ETH:2026-10-23",
+        "side",
+        "buy",
+        "hold"
+      ],
+      [
+        "A:ETH:2026-10-23",
+        "delta_weight",
+        0.022447887199689764,
+        0.0
+      ],
+      [
+        "A:ETH:2026-10-23",
+        "fill_status",
+        "pending",
+        "skipped"
+      ]
+    ],
+    "changed_books": [
+      "A"
+    ]
+  },
+  "production_untouched": {
+    "journal_sha256_after": "ed12c32a717d730a6fccc983620cd6c70a4423216499585ad7605b57179c2428",
+    "cusum_sha256_after": "1185d9f0454b9b0c66c7317f6ab33126572cf49e71b5561b5f43d3d33ef5cb73"
+  }
+}
