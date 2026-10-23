@@ -25,7 +25,8 @@
      `benchmark_max_drawdown` / `vs_benchmark_pp_cum` / `dd_vs_benchmark_ratio`）を追加。
      欠測は 0 で埋めず null のまま返す。比較は**共有の起点日**（`comparison_start`）
      から測り、ベンチマークが未約定の間は数値を出さず `comparison_reason` に理由を
-     入れる（§8-1/§8-2 のレビュー対応で確定した定義）。
+     入れる（§8-1/§8-2 のレビュー対応で確定した定義）。最大DDも起点日の equity を
+     初期のピークとして測り直す（§8-6）。
 
 ## 2. 入力とコードの固定
 
@@ -35,10 +36,10 @@
 | journal（実行後） | 261 行 / sha256 `ed12c32a717d730a6fccc983620cd6c70a4423216499585ad7605b57179c2428` |
 | anchors（実行後） | sha256 `3f7e09e6ff984f35ff04184f6479f38008eb73b2045d2d98f3b7ff05ac872ef3` |
 | prereg（実行後） | sha256 `d18a1dd0be26ec7a86f375d21e396f8c3d0d3183e54e3a24ba6e7b0fc4e57083` |
-| 実行コード | `src/yowayowa/paperloop.py` sha256 `5572700777926e48e155ac2f370ca93c427815ac44361e9a16620ae5f728129f`（round 1。round 2 は `7f5e6589…`、§8） |
-| 試験コード | `tests/test_paperloop.py` sha256 `b29cd35aaeed1f8dea055af4995afe7f4e461b55275d791f4d2df39744ee45fe`（round 1。round 2 は `82a36649…`） |
-| リポジトリ | `agent/commercial-foundation` 変更前 HEAD `8450e80e32627852eac2dab23b81bdb9fc868745`、round 1 のコミット `d94514d`・`13cbc6c`、round 2 のコミットは本 doc §8 を含む「shared baseline」のコミット |
-| 生データ（恒久） | `docs/evidence/20261023/{monetization_reading,paperloop_verify,old_vs_new_weekly_summary,comparison_line_review_r2}.json` |
+| 実行コード | `src/yowayowa/paperloop.py` sha256 `5572700777926e48e155ac2f370ca93c427815ac44361e9a16620ae5f728129f`（round 1。round 2 は `7f5e6589…`、round 3 は `1379c2d5…`、§8） |
+| 試験コード | `tests/test_paperloop.py` sha256 `b29cd35aaeed1f8dea055af4995afe7f4e461b55275d791f4d2df39744ee45fe`（round 1。round 2 は `82a36649…`、round 3 は `b98bbf25…`） |
+| リポジトリ | `agent/commercial-foundation` 変更前 HEAD `8450e80e32627852eac2dab23b81bdb9fc868745`、round 1 のコミット `d94514d`・`13cbc6c`、round 2 のコミットは本 doc §8 を含む「shared baseline」のコミット（`d7404bf`）、round 3 は `94d9e0f` |
+| 生データ（恒久） | `docs/evidence/20261023/{monetization_reading,paperloop_verify,old_vs_new_weekly_summary,comparison_line_review_r2,comparison_line_review_r3}.json` |
 | 実走時刻 | 2026-10-23 09:20 JST（cron `demo-loop-decide`、`run` 行 seq 261 `ok:true rows_written:4`） |
 | 評価バー | 帳簿A/CRYPTO_1N: 2026-10-22、帳簿C/EQUITY_EW: 2026-10-21 |
 
@@ -199,3 +200,53 @@
 - 証拠: `docs/evidence/20261023/comparison_line_review_r2.json`
   （journal sha256 不変、旧コード `5572700…`／新コード `7f5e6589…`、A の比較行一致、
   C の round 1 値と修正後の null）。
+
+### 8-6 最大DDを起点日から測り直す（round 3・必須）
+
+- 指摘: `_cumulative_max_drawdown(since=base_day)` は行を `mtm_date >= since` で
+  絞るだけで、各行の `drawdown` 列（inception 起点の高値からの値）をそのまま使って
+  いた。起点日より前に高値がある戦略帳簿は、その高値からの下落を起点後の DD として
+  数えてしまい、ベンチマークは自分の起点値から測るので、DD比（§4 の「DD <= ベンチの
+  0.6倍」）が片側だけ悪く出る。
+- 修正: `_max_drawdown_since(marks, base_day)` を追加し、**起点日以降の mtm 行の
+  equity** から、**起点日の equity を初期のピークとして**更新しながら DD を計算する。
+  比較行はこれを使う。ジャーナルの `drawdown` 列と -20% 警告（`drawdown_warning`）は
+  一切変えていない（`mark_up` の計算も既存行もそのまま）。
+- 実データ（同一ジャーナル・読み取りのみ、`data/` へ書き込みなし。journal/anchor/
+  prereg の sha256 は実行前後で不変）:
+  - 帳簿A: 起点 `2026-10-10` は A の inception 日（equity 1.0）なので、新方式と
+    旧方式の DD が一致し、比較行は round 2 と全フィールド同値
+    （`cum_pnl=-0.03344680388173804` / `max_drawdown=-0.041268668233111594` /
+    ベンチ `-0.04322386519071719` / `vs=0.19951597133428534` / DD比 `0.9547658001204044`）。
+    つまり起点=inception の場合は挙動が変わらないことの実測。
+  - 帳簿C: `EQUITY_EW` が未約定なので比較行は全 None＋`benchmark_has_no_fill`
+    （round 2 から不変）。
+  - 旧方式の漏れの実証（C の実データ、候補起点日ごと）:
+
+    | 起点日 | その日の equity | 旧（journal列） | 新（marks再計算） |
+    |---|---|---|---|
+    | 2026-10-22（高値） | 1.009858 | -0.3480% | -0.3480% |
+    | 2026-10-23 | 1.006344 | -0.3480% | 0.0% |
+
+    10/23 を起点にすると、その日の窓には 10/23 の1点しかない（まだ何も動いていない）
+    のに、旧方式は 10/22 の高値からの下落 -0.348% を DD として出していた。新方式は 0。
+    これが指摘の再現と修正の効果である。
+- 試験: `tests/test_paperloop.py::test_comparison_max_drawdown_starts_its_peak_at_the_baseline`
+  を追加（起点前 1.10 / 起点 1.05 / 翌日 1.00 → DD `1.00/1.05-1 = -4.7619%`。
+  ジャーナルの `drawdown` 列 `1.00/1.10-1 = -9.09%` とは違う値になること、フラットな
+  ベンチでは DD比を捏造せず `dd_ratio_reason=benchmark_drawdown_not_negative` に
+  なること、ジャーナルの `drawdown` 列は不変であることを確認）。既存の比較試験2本と
+  `test_book_c_weekly_cadence_gate` も rc=0。
+- 実行結果: `test_paperloop.py` 25本すべて rc=0（VPS で1本ずつ・終了コードで判定）、
+  `test_paperloop_v12.py` 19本 rc=0。`paperloop_verify` は exit 0 / 261行 /
+  L1–L14 failed 0 / R1 32/32 / R2 32/32 / R3 0 / `panel_hash`
+  `1a275d0948bad6f07b2e40a1f16b84869f0c16b05f0891be03fc182b19304ed3`。
+- コード: `src/yowayowa/paperloop.py` sha256
+  `1379c2d571d8bfecf645b4b74db3a069f6519a6cca8d82be9d89dedafc7c8a2d`（round 3）。
+  試験: `tests/test_paperloop.py` sha256
+  `b98bbf25c1840e20f6de7b8c0e13162c0f181f8c9f2e3b3d5a4b998819d7003b`。
+- 証拠: `docs/evidence/20261023/comparison_line_review_r3.json`。
+- 未成立: C の比較行は実データでは依然として出ない（起点は早くても 2026-10-27 の
+  約定後）。起点が成立したときの DD・DD比の値は、上記の合成ジャーナル試験でしか
+  検証していない。重い試験の一括実行を TSUKUMO へ移す件は未実施のまま（VPS では
+  1本ずつ実行した）。
