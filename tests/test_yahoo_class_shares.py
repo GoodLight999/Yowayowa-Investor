@@ -29,7 +29,18 @@ def test_quotes_use_yahoo_class_share_symbol_but_preserve_public_symbol(monkeypa
         captured["kwargs"] = kwargs
         return frame
 
+    class FakeTicker:
+        """Price-currency lookup stub: no network from the quote path."""
+
+        def __init__(self, symbol: str) -> None:
+            self.symbol = symbol
+
+        @property
+        def fast_info(self) -> dict[str, str]:
+            return {"currency": "USD"}
+
     monkeypatch.setattr(yahoo_module.yf, "download", fake_download)
+    monkeypatch.setattr(yahoo_module.yf, "Ticker", FakeTicker)
     provider = YahooMarketProvider(Settings(database_url="sqlite:///:memory:"))
 
     result = provider.quotes(["BRK.B"])
@@ -39,6 +50,7 @@ def test_quotes_use_yahoo_class_share_symbol_but_preserve_public_symbol(monkeypa
     assert result.quotes["BRK.B"].symbol == "BRK.B"
     assert result.quotes["BRK.B"].price == 510.0
     assert result.quotes["BRK.B"].previous_close == 500.0
+    assert result.quotes["BRK.B"].currency == "USD"
 
 
 def test_history_uses_yahoo_class_share_symbol_but_preserves_public_symbol(monkeypatch) -> None:

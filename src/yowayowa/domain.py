@@ -64,7 +64,13 @@ class MarketQuote(BaseModel):
     symbol: str
     price: float
     previous_close: float | None = None
+    # Price currency contract (P5 R4): ``currency`` holds the ISO-4217 code the
+    # provider returned for this listing. When the provider cannot supply one,
+    # ``currency`` stays None and ``currency_reason`` carries a machine-readable
+    # code — the field is never silently omitted or guessed from a ticker suffix.
     currency: str | None = None
+    currency_source: str | None = None
+    currency_reason: str | None = None
     as_of: datetime
 
 
@@ -125,6 +131,11 @@ class ValuationSnapshot(BaseModel):
     symbol: str
     company_name: str
     price: float
+    # Copied verbatim from the single market-quote source (P5 R4); valuation
+    # never re-derives or guesses the price currency.
+    currency: str | None = None
+    currency_source: str | None = None
+    currency_reason: str | None = None
     shares_diluted: float | None = None
     market_cap: float | None = None
     annual_period_end: date | None = None

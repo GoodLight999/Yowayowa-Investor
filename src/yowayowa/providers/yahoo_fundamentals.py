@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, ClassVar
@@ -182,7 +183,11 @@ class YahooFundamentalsProvider:
             value = ticker.get_history_metadata()
         except Exception:
             return {}
-        return value if isinstance(value, dict) else {}
+        # yfinance 1.7 returns a ``HistoryMetadata`` Mapping, not a dict; testing
+        # ``isinstance(value, dict)`` discarded a perfectly good payload, which
+        # silently degraded company_name to the symbol and the statement
+        # currency to a suffix guess (P5 R4).
+        return dict(value) if isinstance(value, Mapping) else {}
 
     @staticmethod
     def _safe_frame(loader: Any, frequency: str) -> pd.DataFrame:
@@ -410,6 +415,11 @@ class YahooFundamentalsProvider:
             fiscal_period=fiscal_period,
             value=Decimal(str(number)),
             unit=unit,
+            # ``currency`` stays None on purpose: the provider gives the
+            # listing's *price* currency here, not the statement's reporting
+            # currency (Yahoo's ``financialCurrency``), and stamping the former
+            # would let the valuation currency gate compare the wrong thing.
+            # Follow-up recorded in docs/P5_R4_QUOTE_CURRENCY_20261023.md.
             accession=None,
             filed=None,
             form="Yahoo normalized statement",

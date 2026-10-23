@@ -726,6 +726,9 @@ main lines — research → screening → valuation → portfolio → morning br
 the first one's 23 findings, closed one dead-end (screening candidate lookup by
 code across CLI/API/agent), and records 10 still open (P0 3 / P1 6 / P2 1) plus
 one non-dead-end usability friction item.
+Closed since that pass: R4 — quote/valuation price currency and the
+company-name degeneration it exposed (2026-10-23,
+`docs/P5_R4_QUOTE_CURRENCY_20261023.md`).
 P5 is not complete while any P0 dead-end stands.**
 
 Shipped under P5-A:

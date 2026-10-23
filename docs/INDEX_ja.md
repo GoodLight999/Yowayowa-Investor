@@ -136,6 +136,11 @@
 - 目的: カード t_3320c1ae。P5_DEADEND_AUDIT_20261023.md §3 R6（P0）の修正。brief の EDINET 選択が jsonl 追記順＝最古固定だった問題を、`submitDateTime` 降順の選択に変えて塞ぎ、同一入力（sha256 `fc71256a…3cb2719`・6,176行）で修正前後を実測比較した記録。
 - 主要セクション: 結論（`filings[0]` 2026-09-24 → 2026-10-22、10-13〜10-22 の分類対象488件が1件も選ばれていなかった）、入力の sha256/行数/coverage、修正前の再現（永続化 brief も同症状）、原因（並べ替え不在）、修正（**並び順の仕様変更を明記**・大口提出リストも同順・時刻欠落は最下位・同一時刻は docID 安定順・`coverage` 2キー追加）、前後の選択行12+12と citation/coverage の実測、追加回帰4件と rc=0、未実施（brief 再生成なし・データは最大1日遅れ）と限界。
 
+### P5_R4_QUOTE_CURRENCY_20261023.md
+- タイトル: P5 R4 — quotes/valuation の通貨欠落を直す（応答契約と重複ルートの実測）
+- 目的: カード t_2355c8b3。P5_DEADEND_AUDIT_20261023.md §3 R4（P1）の修正。`/v1/markets/quotes` の `currency` が全銘柄 `null`、`/v1/valuation/{symbol}` に通貨が無く `company_name` がシンボルに退化していた問題を、provider 実値（`fast_info`）と metadata 型判定の修正で塞ぎ、実 API で 4 銘柄の通貨確定を実測した記録。
+- 主要セクション: 結論（原因は2つ＝quote 組立時に通貨を未設定／yfinance 1.7 の `HistoryMetadata` を `isinstance(dict)` で捨てていた）、修正前後の実測（quotes 4件・valuation 4件・未知名404）、応答契約（`currency`/`currency_source`/`currency_reason` と理由コード3種）、通貨の出所を quote 1箇所に寄せる設計、`/v1/valuation/{symbol}` 二重定義の実測確定（fundamentals 側が応答・`routes.py` は未編集で削除/改名の提案のみ）、新規17件＋21モジュール267件 rc=0、残件（決算側 `MetricPoint.currency` 未設定＝Y04ゲートが常に互換に倒れる・CLI通貨列・ISO membership）。
+
 ### P5_DEADEND_AUDIT_20261023.md
 - タイトル: P5 Dead-end Audit — 主要導線（research → screening → valuation → portfolio → morning brief）
 - 目的: カード t_64253b31。主要5導線をローカル API/CLI で実走し、行き止まりを実測で列挙、1件を最小修正して同一入力で回帰させた記録。2026-09-28 の全工程監査（WORKFLOW_DEADEND_AUDIT.md・23件）の再制作はせず、差分確認に留める。
