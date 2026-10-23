@@ -212,7 +212,12 @@ def test_G1_G9_guard() -> None:
 
 def test_decide_fill_idempotency_and_mtm(tmp_path: Path, monkeypatch) -> None:
     _data_dir, root, now = _prepare(tmp_path, monkeypatch)
-    expected_decisions = 8 if pl.BOOK_C_ENABLED else 4
+    # v1.4 (t_dddae39e): count from the enabled book set, so a book that is
+    # enabled later cannot silently drift this expectation again.
+    expected_decisions = sum(
+        len(pl.CRYPTO_UNIVERSE) if book in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK) else len(pl.EQUITY_UNIVERSE)
+        for book in pl.BOOKS_ENABLED
+    )
     assert pl.run_daily_decide(root, now) == expected_decisions
     decisions = [row for row in pl._load_journal(root) if row.get("event") == "decision"]
     assert len(decisions) == expected_decisions
@@ -483,8 +488,11 @@ def test_C6_superseded_pending(tmp_path: Path, monkeypatch) -> None:
     }
     day1_ids = set(day1_crypto_ids)
     if pl.BOOK_C_ENABLED:
+        # v1.4 (t_dddae39e): the equity EW benchmark rides the same Monday
+        # cadence, so its day-1 decisions also stay pending on day 2.
         day1_ids |= {
-            f"{pl.BOOK_C_BOOK}:{asset}:{now.date().isoformat()}"
+            f"{book}:{asset}:{now.date().isoformat()}"
+            for book in (pl.BOOK_C_BOOK, pl.BENCH_EQUITY_BOOK)
             for asset in pl.EQUITY_UNIVERSE
         }
     journal = pl._load_journal(root)
@@ -639,7 +647,15 @@ def test_book_c_weekly_cadence_gate(tmp_path: Path, monkeypatch) -> None:
     _data_dir, root, mon = _prepare(tmp_path, monkeypatch, days=263)
     assert mon.weekday() == 0  # Monday
     # Day 1 (Monday): Book C executes weekly decide
-    assert pl.run_daily_decide(root, mon) == 8  # 4 crypto + 4 stock
+    # v1.4 (t_dddae39e): the equity EW benchmark book decides on the same
+    # Monday cadence, so the expected count comes from the enabled book set.
+    expected = sum(
+        len(pl.CRYPTO_UNIVERSE)
+        if book in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
+        else len(pl.EQUITY_UNIVERSE)
+        for book in pl.BOOKS_ENABLED
+    )
+    assert pl.run_daily_decide(root, mon) == expected  # 4 crypto + 4 stock + 4 EW
     mon_decisions = [
         row
         for row in pl._load_journal(root)
@@ -648,6 +664,14 @@ def test_book_c_weekly_cadence_gate(tmp_path: Path, monkeypatch) -> None:
     assert len(mon_decisions) == 4
     assert all(row["side"] == "buy" for row in mon_decisions)
     assert all(row["fill_status"] == "pending" for row in mon_decisions)
+    # the benchmark book buys the same 1/N target on the same day
+    mon_bench = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "decision" and row.get("book") == pl.BENCH_EQUITY_BOOK
+    ]
+    assert len(mon_bench) == 4
+    assert all(abs(float(row["target_weight"]) - 0.25) < 1e-9 for row in mon_bench)
 
     # Day 2 (Tuesday): Non-rebalance day
     tue = mon + timedelta(days=1)
@@ -662,6 +686,15 @@ def test_book_c_weekly_cadence_gate(tmp_path: Path, monkeypatch) -> None:
         and row.get("decision_date") == tue.date().isoformat()
     ]
     assert len(tue_c_decisions) == 0, "Book C must not generate decisions on non-rebalance days"
+    # v1.4: the equity benchmark book is gated identically (same cadence).
+    tue_bench = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "decision"
+        and row.get("book") == pl.BENCH_EQUITY_BOOK
+        and row.get("decision_date") == tue.date().isoformat()
+    ]
+    assert len(tue_bench) == 0, "EQUITY_EW must ride the same Monday cadence"
 
     # MTM is maintained daily for Book C
     tue_c_mtm = [

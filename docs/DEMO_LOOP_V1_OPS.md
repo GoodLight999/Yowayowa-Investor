@@ -33,9 +33,14 @@ v1.0 からの変更点（2026-10-11）:
 - crypto: `data/crypto-ohlcv/{BTC,ETH}/ohlcv.jsonl`（Binance rows）。daily 冒頭で
   `yowayowa crypto-fetch BTC ETH --days 5` を冪等追記（D12）。確定日足が26時間より
   古いと HALT(stale_data)+skipped 行のみを書いて止まる（fail-closed・後追い取得なし）。
-- equity (book C): `data/stock-ohlcv/{SPY,IWM,JNJ,PG}/ohlcv.jsonl`。v1 では
-  未稼働（反証レビュー「帳簿Cは記録列だけ用意し行を書くのは2週目以降」採用）。
-  有効化は paperloop.py 修正。
+- equity (book C): `data/stock-ohlcv/{SPY,IWM,JNJ,PG}/ohlcv.jsonl`。v1.3 で月曜
+  リバランスとして稼働（2026-10-19 投入）。**v1.4（t_dddae39e, 2026-10-23）で
+  等金額ベンチマーク `EQUITY_EW` を同じ月曜ゲートで稼働開始**。それ以前は
+  帳簿Cの比較対象が存在せず、比較対象差・DD対ベンチが null のままだった。
+  `EQUITY_EW` は 1/N を一度買って保有し、以後は取引しない。
+- 週次サマリーの各戦略帳簿には、自分の比較行（`benchmark_book` / `cum_pnl` /
+  `max_drawdown` / `benchmark_cum_pnl` / `benchmark_max_drawdown` /
+  `vs_benchmark_pp_cum` / `dd_vs_benchmark_ratio`）が付く。欠測は null。
 - 1時間tape: `data/demo-loop/tape/1h/{SYM}.jsonl`。fill 実行時に冪等追記。
   約定価格はこの tape の「recorded_at 以降に始まった最初の1時間足の始値」
   （commit-before-fill、F2/D5採択）。recorded_at より前の足での約定は assert で拒否。

@@ -33,7 +33,18 @@ Key contracts:
   cache may skip bad rows.
 - Zero order path: no broker/MT5/order-endpoint references (M6, grep test).
 
-Note: equity books (C, EQUITY_EW) remain schema-silent v1 (BOOK_C_ENABLED).
+Note: equity books (C, EQUITY_EW) carry the same schema as the crypto books
+(v1.3 rows; BOOK_C_ENABLED gates the book C set).
+
+v1.4 additions (t_dddae39e, revenue verification):
+- EQUITY_EW is ENABLED: the equity 1/N benchmark book was preregistered and
+  coded when Book C shipped but never added to BOOKS_ENABLED, so Book C had
+  no comparison book and its own hypothesis ("controls drawdown vs EW") was
+  unreadable forward. It buys 1/N once and holds (D7, same as CRYPTO_1N).
+- each strategy book's weekly row carries its own comparison line
+  (benchmark_book / cum_pnl / max_drawdown / benchmark_cum_pnl /
+  benchmark_max_drawdown / vs_benchmark_pp_cum / dd_vs_benchmark_ratio).
+  Missing data stays None; nothing is zero-filled and no gate is auto-passed.
 
 v1.2 additions (eval logging, design t_bcb87ad5):
 - new rows carry schema="demo-loop-v1.2"; v1.1 rows are never rewritten.
@@ -90,7 +101,16 @@ BOOK_C_BOOK = "C"
 BENCH_CRYPTO_BOOK = "CRYPTO_1N"
 BENCH_EQUITY_BOOK = "EQUITY_EW"
 STRATEGY_BOOKS = (S01_BOOK, BOOK_C_BOOK)
-BOOKS_ENABLED = (S01_BOOK, BENCH_CRYPTO_BOOK, BOOK_C_BOOK)
+# v1.4 (t_dddae39e): the equity benchmark book was preregistered and coded
+# (BOOK_SPEC_HASHES / _benchmark_weights / the equity branches below) when
+# Book C was deployed, but it was never added here — so Book C had no
+# comparison book and its own frozen hypothesis ("S-02 controls drawdown vs
+# EW") could not be read forward. Enabled from the next decision date; it buys
+# 1/N once and never trades again, exactly like CRYPTO_1N (D7).
+BOOKS_ENABLED = (S01_BOOK, BENCH_CRYPTO_BOOK, BOOK_C_BOOK, BENCH_EQUITY_BOOK)
+# Each strategy book's own comparison book (read by weekly_summary). A uses the
+# crypto 1/N book, C uses the equity EW book it was adopted against.
+BOOK_BENCHMARK = {S01_BOOK: BENCH_CRYPTO_BOOK, BOOK_C_BOOK: BENCH_EQUITY_BOOK}
 CRYPTO_UNIVERSE = ("BTC", "ETH")
 EQUITY_UNIVERSE = (VOLATILITY_TARGET_SYMBOL, "IWM", "JNJ", "PG")
 SMA_LOOKBACK = 200
@@ -1058,7 +1078,18 @@ def ensure_prereg(
                 else "Q1 signal efficacy on the SMA200 state (design §4)"
             ),
             "registered_at": _utc_now_text(utc_now),
-            "registered_by": "worker-agy:t_feb3aa55" if book == BOOK_C_BOOK else "worker-flash:t_d9a25dd2",
+            # v1.4 (t_dddae39e): EQUITY_EW belongs to the Book C deployment
+            # (t_feb3aa55), not to the v1.1 crypto books — register it under
+            # the task that actually enabled the equity side.
+            "registered_by": (
+                "worker-agy:t_feb3aa55"
+                if book == BOOK_C_BOOK
+                else (
+                    "worker-go:t_dddae39e"
+                    if book == BENCH_EQUITY_BOOK
+                    else "worker-flash:t_d9a25dd2"
+                )
+            ),
         }
         row["prev_hash"] = prev
         row["row_hash"] = _sha256(
@@ -1441,7 +1472,10 @@ def run_daily_decide(
         # Weekly cadence gate for Book C (S-02 frozen backtest rebalance=weekly;
         # Friday close judged, Monday open filled per design §2-2). On non-rebalance
         # days (Tue-Sun), Book C does not generate trade decisions and only MTM runs.
-        if book == BOOK_C_BOOK and decision_date.weekday() != 0:
+        # v1.4 (t_dddae39e): the equity EW benchmark book rides the SAME weekly
+        # cadence, otherwise its comparison line would be a different strategy
+        # (daily decisions) than the book it is measuring.
+        if book in (BOOK_C_BOOK, BENCH_EQUITY_BOOK) and decision_date.weekday() != 0:
             continue
         check_prereg(root, book)
         universe = list(
@@ -2440,6 +2474,35 @@ def _collect_milestone_judgments(root: Path, week_end: date) -> dict[str, Any]:
     return out
 
 
+def _cumulative_max_drawdown(root: Path, book: str) -> float | None:
+    """Deepest mtm drawdown recorded for a book (None when it has no mtm row).
+
+    Read only from the journal's own mtm rows — the same facts the -20%
+    warning line uses — so the weekly row and the daggers never disagree.
+    """
+
+    drawdowns = [
+        float(row["drawdown"])
+        for row in _load_journal(root)
+        if row.get("event") == "mtm"
+        and row.get("book") == book
+        and row.get("drawdown") is not None
+    ]
+    return min(drawdowns) if drawdowns else None
+
+
+def _dd_vs_benchmark_ratio(book_dd: float | None, bench_dd: float | None) -> float | None:
+    """§4 gate ratio: book max DD / benchmark max DD (both negative → >0).
+
+    None when either side has no drawdown yet, or when the benchmark has no
+    drawdown to divide by (a ratio against 0 would be a fabricated number).
+    """
+
+    if book_dd is None or bench_dd is None or bench_dd >= 0:
+        return None
+    return book_dd / bench_dd
+
+
 def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     """Weekly summary row (M8/spec §7): per book + milestone judgment.
 
@@ -2561,6 +2624,31 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     book_a, book_bench = state_by_book.get(S01_BOOK), state_by_book.get(BENCH_CRYPTO_BOOK)
     if book_a is not None and book_bench is not None:
         out["vs_benchmark_pp_cum"] = (book_a["equity"] - book_bench["equity"]) * 100.0
+    # v1.4 (t_dddae39e): every strategy book carries its OWN comparison line so
+    # the frozen §4 gates (cum pnl vs benchmark, DD <= benchmark DD x 0.6) are
+    # readable from the weekly row instead of being recomputed by hand. Book C
+    # had no benchmark book until EQUITY_EW was enabled, so its fields are
+    # None on any row written before that book's first mtm — a missing
+    # benchmark is reported as None with its own name, never as 0.
+    for book, bench in BOOK_BENCHMARK.items():
+        book_out = out["books"].get(book)
+        if not isinstance(book_out, dict):
+            continue
+        book_state = state_by_book.get(book)
+        bench_state = state_by_book.get(bench)
+        book_out["benchmark_book"] = bench
+        book_out["cum_pnl"] = book_state["equity"] - 1.0 if book_state else None
+        book_out["max_drawdown"] = _cumulative_max_drawdown(root, book)
+        book_out["benchmark_cum_pnl"] = bench_state["equity"] - 1.0 if bench_state else None
+        book_out["benchmark_max_drawdown"] = _cumulative_max_drawdown(root, bench)
+        book_out["vs_benchmark_pp_cum"] = (
+            (book_state["equity"] - bench_state["equity"]) * 100.0
+            if book_state is not None and bench_state is not None
+            else None
+        )
+        book_out["dd_vs_benchmark_ratio"] = _dd_vs_benchmark_ratio(
+            book_out["max_drawdown"], book_out["benchmark_max_drawdown"]
+        )
     # Q1-Q7 eval per book (design §4/§5: from the derived panel, insufficient
     # is a first-class answer with a numeric reason)
     out["eval"] = _eval_blocks(data_dir, book=S01_BOOK, week_end=week_end)
