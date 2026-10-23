@@ -14,7 +14,10 @@ from yowayowa.news_models import SavedNewsFeed
 from yowayowa.preset_models import PresetKind, ResearchPreset, ResearchPresetCreate
 from yowayowa.providers.base import ProviderPolicyError
 from yowayowa.providers.fred import FredClient
-from yowayowa.providers.yahoo_deep_research import YahooDeepResearchProvider
+from yowayowa.providers.yahoo_deep_research import (
+    ResearchUnavailable,
+    YahooDeepResearchProvider,
+)
 from yowayowa.providers.yahoo_research import YahooResearchProvider
 from yowayowa.providers.yahoo_screener import YahooScreenerProvider
 from yowayowa.research_models import (
@@ -152,6 +155,8 @@ def company_research(
         requested = [ResearchSection(token) for token in dict.fromkeys(raw)]
     try:
         return YahooDeepResearchProvider(settings).research(symbol, requested)
+    except ResearchUnavailable as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.as_detail()) from exc
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LookupError as exc:
