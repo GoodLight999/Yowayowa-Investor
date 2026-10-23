@@ -1669,18 +1669,18 @@ def run_daily_decide(
                 )
                 written += 1
                 continue
+            benchmark_bought = False
             if book in (S01_BOOK, BOOK_C_BOOK):
                 target_map = _engine_target(
                     book, {other: rows_by_symbol[other] for other in universe}, decision_date
                 )
             elif book in (BENCH_CRYPTO_BOOK, BENCH_EQUITY_BOOK):
                 # D7: buy 1/N on the first decision; afterwards hold only.
-                prior_fills = [
-                    row
+                benchmark_bought = any(
+                    row.get("event") == "fill" and row.get("book") == book
                     for row in _load_journal(root)
-                    if row.get("event") == "fill" and row.get("book") == book
-                ]
-                target_map = _benchmark_weights(book) if not prior_fills else {}
+                )
+                target_map = _benchmark_weights(book) if not benchmark_bought else {}
             else:
                 target_map = _benchmark_weights(book)  # pragma: no cover
             # raw target: the strategy with NO halt and NO guard applied
@@ -1690,14 +1690,7 @@ def run_daily_decide(
                     book, {other: rows_by_symbol[other] for other in universe}, decision_date
                 )
             elif book in (BENCH_CRYPTO_BOOK, BENCH_EQUITY_BOOK):
-                raw_map = (
-                    _benchmark_weights(book)
-                    if not any(
-                        row.get("event") == "fill" and row.get("book") == book
-                        for row in _load_journal(root)
-                    )
-                    else {}
-                )
+                raw_map = _benchmark_weights(book) if not benchmark_bought else {}
             else:
                 raw_map = _benchmark_weights(book)  # pragma: no cover
             target = float(target_map.get(symbol, 0.0))
@@ -1706,11 +1699,12 @@ def run_daily_decide(
             gate_price = closes[-1]
             held_weight = (held_units * gate_price / equity) if equity > 0 else 0.0
             delta = target - held_weight
-            if book == BENCH_CRYPTO_BOOK and any(
-                row.get("event") == "fill" and row.get("book") == book
-                for row in _load_journal(root)
-            ):
-                delta = 0.0  # D7: the benchmark never trades again after buy-in
+            if benchmark_bought:
+                # D7 (C-01, t_cad2ff49): the benchmark never trades again after
+                # buy-in. The exemption named CRYPTO_1N only, so EQUITY_EW read
+                # its post-buy-in empty target_map as "target 0%" and liquidated
+                # the whole 1/N position on the 2nd Monday.
+                delta = 0.0
             side = "hold" if abs(delta) < 1e-6 else ("buy" if delta > 0 else "sell")
             regime, switch = _regime_state_from(
                 book=book,
