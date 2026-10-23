@@ -6,6 +6,11 @@
   "fix": "Max drawdown in the comparison line is now recomputed from the mtm equity marks on/after the shared baseline (paperloop._max_drawdown_since); the running peak starts at the baseline day's equity. The journal's drawdown column and the -20% warning are untouched.",
   "generated_at": "2026-10-23T02:01:47.481898+00:00",
   "repo_head": "f360d48821df265f0d418ac788990f1a4fc2d9db docs(p5): executed dead-end audit of the five main lines (t_64253b31)",
+  "repo_head_note": "HEAD when this probe ran; the fix and docs were committed afterwards",
+  "round3_commits": {
+    "code_tests_docs": "94d9e0f",
+    "docs_and_evidence": "ecc694e"
+  },
   "code_sha256": {
     "paperloop_py_round3": "1379c2d571d8bfecf645b4b74db3a069f6519a6cca8d82be9d89dedafc7c8a2d",
     "test_paperloop_py_round3": "b98bbf25c1840e20f6de7b8c0e13162c0f181f8c9f2e3b3d5a4b998819d7003b",
