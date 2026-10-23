@@ -150,6 +150,17 @@ BENCH_DD_STOP: dict[str, Any] = {
     "bench_dd_min": 0.10,  # the benchmark DD must be at least this deep
     "k": None,  # fires when book_dd <= -k * |bench_dd|; None = undecided
 }
+# v1.5 (t_e2c98d2b): the registered edge-lifetime monitor (yowayowa.cusum_watch,
+# the weekly vital in ops/demo-loop/weekly.sh) appends its verdict to
+# cusum_A.jsonl with ``action: "PAUSE" | "continue"``. Until this card nothing
+# read that file: the preregistered PAUSE action was recorded and had no effect
+# on the next decision, so the loop was open between judgment and next signal.
+# The gate below makes the recorded verdict an INPUT to run_daily_decide for the
+# monitored book only. It never recomputes z_w/S_w and never writes to the
+# monitor's log (the monitor stays the single source of truth).
+CUSUM_LOG_NAME = "cusum_A.jsonl"
+CUSUM_GATED_BOOK = S01_BOOK  # the monitor is registered for book A only
+CUSUM_ACTIONS = ("continue", "PAUSE")
 MILESTONE_RULES = {  # design §4, frozen numeric gates
     4: {"loop_success_rate": 0.95, "observed_cost_bps_max": 30.0},
     12: {"dd_vs_benchmark": 0.6, "cum_pnl_min": -0.10, "switches_multiple": 2.0},
@@ -1509,6 +1520,16 @@ def run_daily_decide(
                     is_equity,
                 )
             )
+        # v1.5 (t_e2c98d2b): the recorded edge-lifetime verdict gates the next
+        # decision for the monitored book. A PAUSE (or an untrusted verdict,
+        # fail-closed) joins the trigger list, so the existing machinery writes
+        # a halted halt_check action and skipped HALT-regime decision rows with
+        # the reason in halt_reason. Nothing else changes for other books.
+        cusum_verdict: dict[str, Any] | None = (
+            cusum_edge_verdict(root) if book == CUSUM_GATED_BOOK else None
+        )
+        if cusum_verdict is not None and cusum_verdict["status"] in ("pause", "unreadable"):
+            trigger_details.append(_cusum_gate_trigger(cusum_verdict))
         halted_by_trigger = bool(state.get("halted")) or bool(
             [e for e in trigger_details if e["tripped"]]
         )
@@ -1542,6 +1563,9 @@ def run_daily_decide(
                     "halted_before": halted_before,
                     "halted_after": halted_after,
                     "action": _halt_action(halted_before, halted_after, dd, state, trigger_details),
+                    # v1.5 (t_e2c98d2b): which edge-lifetime verdict was read
+                    # for this decision (None = the book has no monitor gate).
+                    "edge_lifetime": cusum_verdict,
                     "regime_spec_hash": regime_hash,
                 },
             )
@@ -2187,6 +2211,134 @@ def bench_dd_stop_fired(
     return bench_dd <= -bench_dd_min and book_dd <= -k * abs(bench_dd)
 
 
+# --- edge-lifetime verdict gate (t_e2c98d2b) ----------------------------------
+# The monitor's verdict is a recorded FACT (cusum_A.jsonl, hash-chained,
+# written weekly). This reader only interprets the latest row; it never
+# recomputes the statistic and never appends to the monitor's log.
+
+
+def cusum_edge_verdict(root: Path) -> dict[str, Any]:
+    """Latest registered edge-lifetime verdict for book A, as a gate input.
+
+    ``status`` is exactly one of:
+
+    - ``continue``   every recorded verdict is trustworthy and none alarmed;
+    - ``pause``      a recorded alarm is in force (S_w > h*). The alarm is
+      LATCHED: the prereg says S is never reset after an alarm, so a later
+      ``continue`` row does not reopen the gate — it reports the latest state
+      of a monitor whose alarm history still stands. Reopening is a registered
+      change (the log is append-only), never an implicit side effect;
+    - ``unreadable`` the monitor has run but its log cannot be trusted
+      (unparseable/partial row, unknown action, another book, missing h*).
+      Fail-closed: an unknown verdict is never read as alive;
+    - ``absent``     the monitor has never written a verdict, so there is no
+      gate. This is the documented pre-monitor state (the journal predates
+      cusum_A.jsonl); the monitor runs inside weekly.sh with ``set -e``, so a
+      missing log after its first run is a loud failure, not a silent pass.
+
+    The returned provenance fields (``week``/``S``/``h_star``/``row_hash`` plus
+    ``alarm_week``/``alarm_S`` when latched) are carried into the halt_check row
+    so a reader can tell *which* verdict held the gate. Missing numbers stay
+    ``None``; nothing is filled with 0.
+    """
+
+    verdict: dict[str, Any] = {
+        "status": "absent",
+        "source": CUSUM_LOG_NAME,
+        "week": None,
+        "weeks_observed": None,
+        "S": None,
+        "h_star": None,
+        "alarm": None,
+        "action": None,
+        "row_hash": None,
+        "alarm_week": None,
+        "alarm_S": None,
+        "alarm_row_hash": None,
+        "why": "monitor_has_not_run",
+    }
+    path = root / CUSUM_LOG_NAME
+    if not path.exists():
+        return verdict
+    try:
+        rows = _rows_from_jsonl(path, strict=True)
+    except ChainError:
+        verdict.update(status="unreadable", why="log_unreadable")
+        return verdict
+    if not rows:
+        verdict.update(status="unreadable", why="log_empty")
+        return verdict
+
+    def trusted(row: Mapping[str, Any]) -> bool:
+        constants = row.get("constants")
+        h_star = constants.get("h_star") if isinstance(constants, Mapping) else None
+        return (
+            str(row.get("book_id")) == CUSUM_GATED_BOOK
+            and row.get("action") in CUSUM_ACTIONS
+            and isinstance(h_star, (int, float))
+        )
+
+    latest = rows[-1]
+    constants = latest.get("constants")
+    verdict.update(
+        week=latest.get("week"),
+        weeks_observed=latest.get("weeks_observed"),
+        S=latest.get("S"),
+        h_star=constants.get("h_star") if isinstance(constants, Mapping) else None,
+        alarm=latest.get("alarm"),
+        action=latest.get("action"),
+        row_hash=latest.get("row_hash"),
+        why=None,
+    )
+    if not all(trusted(row) for row in rows):
+        verdict.update(status="unreadable", why="malformed_row_in_log")
+        return verdict
+    alarms = [row for row in rows if row.get("action") == "PAUSE" or row.get("alarm") is True]
+    if alarms:
+        first = alarms[0]
+        verdict.update(
+            status="pause",
+            alarm_week=first.get("week"),
+            alarm_S=first.get("S"),
+            alarm_row_hash=first.get("row_hash"),
+        )
+        return verdict
+    verdict["status"] = "continue"
+    return verdict
+
+
+def _cusum_gate_trigger(verdict: Mapping[str, Any]) -> dict[str, Any]:
+    """Book-scope HALT trigger dict for a pause / untrusted verdict.
+
+    Shaped like the per-asset triggers from ``_halt_triggers_asset`` so the
+    existing halt machinery (halt_check action, ``halt_flag`` + skipped
+    HALT-regime decision rows) carries it with no second control path.
+    ``margin`` follows the design convention (value - threshold, positive =
+    slack), so a latched PAUSE reports the ALARM's S_w - h* (the number that
+    crossed the line), not a later, lower S_w.
+    """
+
+    if verdict["status"] == "pause":
+        value = verdict.get("alarm_S")
+        if value is None:
+            value = verdict.get("S")
+    else:
+        value = verdict.get("S")
+    threshold = verdict.get("h_star")
+    margin: float | None = None
+    if isinstance(value, (int, float)) and isinstance(threshold, (int, float)):
+        margin = float(value) - float(threshold)
+    return {
+        "name": "cusum_pause" if verdict["status"] == "pause" else "cusum_verdict_unreadable",
+        "value": value,
+        "threshold": threshold,
+        "margin": margin,
+        "tripped": True,
+        "why": str(verdict.get("why") or verdict["status"]),
+        "source": f"{CUSUM_LOG_NAME}:{verdict.get('row_hash')}",
+    }
+
+
 # --- milestone judgment wiring (t_d33aef07) -----------------------------------
 # MILESTONE_RULES was a passive constant: nothing evaluated it, so the design §4
 # 4-week judgment lived only in humans reading weekly_summary.jsonl (t_44edd7a0
@@ -2480,23 +2632,29 @@ def _collect_milestone_judgments(root: Path, week_end: date) -> dict[str, Any]:
     return out
 
 
-def _cumulative_max_drawdown(root: Path, book: str, *, since: date | None = None) -> float | None:
-    """Deepest mtm drawdown recorded for a book (None when it has no mtm row).
+def _max_drawdown_since(marks: Mapping[date, float], base_day: date) -> float | None:
+    """Deepest drawdown measured INSIDE the comparison window (None if no mark).
 
-    Read only from the journal's own mtm rows — the same facts the -20%
-    warning line uses — so the weekly row and the daggers never disagree.
-    ``since`` restricts the window (the comparison baseline; None = inception).
+    The running peak starts at the baseline day's equity, not at the book's
+    high-water mark since inception. A book that topped out BEFORE the shared
+    baseline therefore does not carry that earlier peak's drawdown into the
+    window — the benchmark starts at its own baseline value, so both sides must
+    be measured from the same footing (review round 3, t_dddae39e).
+
+    The journal's own ``drawdown`` column is untouched: it is still
+    ``equity/peak-1`` from inception and still drives the -20% warning.
     """
 
-    drawdowns = [
-        float(row["drawdown"])
-        for row in _load_journal(root)
-        if row.get("event") == "mtm"
-        and row.get("book") == book
-        and row.get("drawdown") is not None
-        and (since is None or date.fromisoformat(str(row["mtm_date"])) >= since)
-    ]
-    return min(drawdowns) if drawdowns else None
+    window = sorted((day, marks[day]) for day in marks if day >= base_day)
+    if not window:
+        return None
+    peak = window[0][1]
+    worst = 0.0
+    for _day, equity in window:
+        peak = max(peak, equity)
+        if peak > 0:
+            worst = min(worst, equity / peak - 1.0)
+    return worst
 
 
 def _first_fill_date(root: Path, book: str) -> date | None:
@@ -2545,6 +2703,10 @@ def _comparison_line(
     Every numeric field is None while the comparison cannot be made, with
     ``comparison_reason`` saying why. Nothing is zero-filled and no gate is
     auto-passed: a benchmark in cash reports None, never "0%".
+
+    Drawdowns are recomputed from the mtm equity marks on/after ``base_day``
+    with the running peak started at the baseline value, so a pre-baseline
+    high-water mark does not leak a one-sided drawdown into the window.
     """
 
     book_state = state_by_book.get(book)
@@ -2578,8 +2740,8 @@ def _comparison_line(
         return out
     book_cum = float(book_state["equity"]) / base_book - 1.0
     bench_cum = float(bench_state["equity"]) / base_bench - 1.0
-    book_dd = _cumulative_max_drawdown(root, book, since=base_day)
-    bench_dd = _cumulative_max_drawdown(root, bench, since=base_day)
+    book_dd = _max_drawdown_since(book_marks, base_day)
+    bench_dd = _max_drawdown_since(bench_marks, base_day)
     out.update(
         {
             "cum_pnl": book_cum,

@@ -15,6 +15,8 @@ import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from yowayowa import paperloop as pl
 from yowayowa import paperloop_verify as pv
 from yowayowa.backtest_models import BacktestStrategyDefinition
@@ -828,7 +830,62 @@ def test_comparison_line_starts_at_the_shared_baseline_after_benchmark_fill(
     assert abs(book_c["dd_vs_benchmark_ratio"] - 5.0) < 1e-9
     assert book_c["dd_ratio_reason"] is None
     # the pre-fill mark (10/23) is outside the comparison window
-    assert pl._cumulative_max_drawdown(root, pl.BOOK_C_BOOK, since=date(2026, 10, 26)) == -0.05
+    window_dd = pl._max_drawdown_since(pl._mtm_marks(root, pl.BOOK_C_BOOK), date(2026, 10, 26))
+    assert window_dd is not None and abs(window_dd - (-0.05)) < 1e-12
+
+
+def test_comparison_max_drawdown_starts_its_peak_at_the_baseline(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A pre-baseline high must not leak a one-sided drawdown into the window.
+
+    Review round 3 (t_dddae39e): the journal's ``drawdown`` column is measured
+    from the peak since inception, so filtering those rows by ``mtm_date``
+    still carried the pre-baseline high into the comparison window, while the
+    benchmark started from its own baseline value (real data: Book C peaked at
+    1.00986 on 10/22 and was -0.348% on 10/23). Here C tops at 1.10 BEFORE the
+    shared baseline of 1.05, so the window drawdown must be 1.00/1.05-1, not
+    the journal's 1.00/1.10-1.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    data_dir = tmp_path / "data"
+    root = pl.loop_root(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    # pre-baseline: C at 1.10 (its high-water mark), benchmark still in cash
+    _mtm(root, pl.BOOK_C_BOOK, "2026-10-23", 1.10, 0.0)
+    _mtm(root, pl.BENCH_EQUITY_BOOK, "2026-10-23", 1.0, 0.0)
+    # baseline day: the benchmark fills, both books carry a mark; C has given
+    # back 5% from its pre-baseline high (journal drawdown = -0.04545...)
+    _fill(root, pl.BENCH_EQUITY_BOOK, "2026-10-26")
+    _mtm(root, pl.BOOK_C_BOOK, "2026-10-26", 1.05, 1.05 / 1.10 - 1.0)
+    _mtm(root, pl.BENCH_EQUITY_BOOK, "2026-10-26", 1.0, 0.0)
+    # 10/27: C falls to 1.00 (journal drawdown = 1.00/1.10-1 = -9.09%),
+    # the benchmark stays flat at its baseline
+    _mtm(root, pl.BOOK_C_BOOK, "2026-10-27", 1.00, 1.00 / 1.10 - 1.0)
+    _mtm(root, pl.BENCH_EQUITY_BOOK, "2026-10-27", 1.0, 0.0)
+
+    book_a, book_c = _comparison_books(data_dir)
+    assert book_c["comparison_start"] == "2026-10-26"
+    # measured from the baseline (1.05), not from the 1.10 high-water mark
+    assert abs(book_c["cum_pnl"] - (1.00 / 1.05 - 1.0)) < 1e-12
+    assert abs(book_c["max_drawdown"] - (1.00 / 1.05 - 1.0)) < 1e-12
+    # the journal's inception-based drawdown is NOT what the comparison uses
+    assert abs(book_c["max_drawdown"] - (1.00 / 1.10 - 1.0)) > 1e-3
+    assert abs(book_c["benchmark_cum_pnl"]) < 1e-12
+    assert abs(book_c["benchmark_max_drawdown"]) < 1e-12
+    assert abs(book_c["vs_benchmark_pp_cum"] - (1.00 / 1.05 - 1.0) * 100.0) < 1e-9
+    # a flat benchmark gives nothing to divide by -> no fabricated ratio
+    assert book_c["dd_vs_benchmark_ratio"] is None
+    assert book_c["dd_ratio_reason"] == "benchmark_drawdown_not_negative"
+    # the journal's own drawdown column keeps its inception peak (unchanged)
+    last = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "mtm" and row.get("book") == pl.BOOK_C_BOOK
+    ][-1]
+    assert abs(float(last["drawdown"]) - (1.00 / 1.10 - 1.0)) < 1e-12
+    assert book_a["benchmark_book"] == pl.BENCH_CRYPTO_BOOK
 
 
 # --- milestone judgment wiring (t_d33aef07) -----------------------------------
@@ -1225,3 +1282,201 @@ def test_milestone_no_judgment_without_decisions(tmp_path: Path, monkeypatch) ->
     # no start date -> nothing to judge, no crash
     out = pl.weekly_summary(_data_dir, now.date() + timedelta(days=28))
     assert "milestone" not in out
+
+
+# --- v1.5 (t_e2c98d2b): the recorded edge-lifetime verdict gates the next -----
+# mono-verify: cusum_watch writes cusum_A.jsonl with action PAUSE/continue and,
+# until this card, nothing read it. These tests pin the consumption side only;
+# the monitor's own arithmetic stays covered by tests/test_cusum_watch.py.
+
+
+def _append_cusum_verdict(
+    root: Path,
+    *,
+    action: object = "PAUSE",
+    S: float | None = 5.13,
+    h_star: object = 4.8,
+    book_id: str = "A",
+) -> dict:
+    """Append one hash-chained monitor row, shaped like cusum_watch.run_weekly."""
+
+    path = root / pl.CUSUM_LOG_NAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    prior = pl._rows_from_jsonl(path, strict=True) if path.exists() else []
+    row: dict = {
+        "schema": "cusum-watch-v1",
+        "book_id": book_id,
+        "computed_at": "2026-10-19T00:50:53.558848+00:00",
+        "prereg_row_hash": "0" * 64,
+        "baseline_ref_sha256": "1" * 64,
+        "baseline_sha_match": True,
+        "constants": {
+            "kappa0": 0.5,
+            "k": 0.5,
+            "mean": 0.004933,
+            "sigma_hat": 0.048186,
+            "h_star": h_star,
+        },
+        "week": "2026-W42",
+        "weeks_observed": 2,
+        "z": -0.63,
+        "S": S,
+        "alarm": action == "PAUSE",
+        "action": action,
+        "note": None,
+    }
+    row["prev_hash"] = str(prior[-1]["row_hash"]) if prior else ""
+    row["row_hash"] = pl._sha256(json.dumps(row, sort_keys=True, default=str))
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    return row
+
+
+def _decision_rows(root: Path, book: str, day: date) -> list[dict]:
+    return [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "decision"
+        and row.get("book") == book
+        and row.get("decision_date") == day.isoformat()
+    ]
+
+
+def test_cusum_pause_gates_the_next_decision(tmp_path: Path, monkeypatch) -> None:
+    """A recorded PAUSE must reach the next decision — not just the log."""
+
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    logged = _append_cusum_verdict(root, action="PAUSE", S=5.13)
+    assert pl.run_daily_decide(root, now) > 0
+
+    gated = _decision_rows(root, pl.S01_BOOK, now.date())
+    assert len(gated) == len(pl.CRYPTO_UNIVERSE)
+    for row in gated:
+        assert row["regime_state"] == "HALT"
+        assert row["halt_flag"] is True
+        assert row["fill_status"] == "skipped"
+        assert "cusum_pause" in row["halt_reason"]
+        assert row["target_weight"] == 0.0
+
+    # the verdict read is recorded with its provenance on the halt_check row
+    check = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "halt_check"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("check_date") == now.date().isoformat()
+    ]
+    assert len(check) == 1
+    assert check[0]["action"] == "halt"
+    assert check[0]["halted_after"] is True
+    assert check[0]["edge_lifetime"]["status"] == "pause"
+    assert check[0]["edge_lifetime"]["S"] == 5.13
+    assert check[0]["edge_lifetime"]["h_star"] == 4.8
+    assert check[0]["edge_lifetime"]["row_hash"] == logged["row_hash"]
+    tripped = [e for e in check[0]["triggers"] if e["tripped"]]
+    assert [e["name"] for e in tripped] == ["cusum_pause"]
+    assert tripped[0]["margin"] == pytest.approx(5.13 - 4.8)
+
+    # the gate is scoped to the monitored book: the crypto benchmark trades on
+    assert all(
+        row["halt_flag"] is False for row in _decision_rows(root, pl.BENCH_CRYPTO_BOOK, now.date())
+    )
+    # a re-decision is still idempotent while paused
+    assert pl.run_daily_decide(root, now) == 0
+
+
+def test_cusum_continue_verdict_leaves_decisions_unchanged(tmp_path: Path, monkeypatch) -> None:
+    """The live 2026-W42 verdict is `continue`: the gate stays open."""
+
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    _append_cusum_verdict(root, action="continue", S=0.1307875935134487)
+    pl.run_daily_decide(root, now)
+
+    rows = _decision_rows(root, pl.S01_BOOK, now.date())
+    assert rows and all(row["halt_flag"] is False for row in rows)
+    assert all(row["regime_state"] in ("RISK_ON", "RISK_OFF") for row in rows)
+    check = next(
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "halt_check"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("check_date") == now.date().isoformat()
+    )
+    assert check["action"] == "none"
+    assert check["edge_lifetime"]["status"] == "continue"
+    assert check["edge_lifetime"]["S"] == 0.1307875935134487
+    assert all(e["name"] != "cusum_pause" for e in check["triggers"])
+
+
+def test_cusum_alarm_latches_after_a_later_continue_row(tmp_path: Path, monkeypatch) -> None:
+    """'S is never reset after an alarm' — a later lower S does not reopen the gate."""
+
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    _append_cusum_verdict(root, action="PAUSE", S=5.13)
+    _append_cusum_verdict(root, action="continue", S=2.0)  # later week below h*
+    verdict = pl.cusum_edge_verdict(root)
+    assert verdict["status"] == "pause"
+    assert verdict["alarm_S"] == 5.13 and verdict["S"] == 2.0
+
+    pl.run_daily_decide(root, now)
+    rows = _decision_rows(root, pl.S01_BOOK, now.date())
+    assert rows and all(row["halt_flag"] is True for row in rows)
+    check = next(
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "halt_check"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("check_date") == now.date().isoformat()
+    )
+    trigger = next(e for e in check["triggers"] if e["name"] == "cusum_pause")
+    # the margin reports the ALARM's S_w - h*, not the later, lower S_w
+    assert trigger["value"] == pytest.approx(5.13)
+    assert trigger["margin"] == pytest.approx(5.13 - 4.8)
+    assert check["edge_lifetime"]["alarm_week"] == "2026-W42"
+
+
+def test_cusum_untrusted_verdict_halts_fail_closed(tmp_path: Path, monkeypatch) -> None:
+    """An untrustworthy verdict is never read as 'the edge is alive'."""
+
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    _append_cusum_verdict(root, action="banana")
+    assert pl.cusum_edge_verdict(root)["status"] == "unreadable"
+    pl.run_daily_decide(root, now)
+    rows = _decision_rows(root, pl.S01_BOOK, now.date())
+    assert rows and all(row["halt_flag"] is True for row in rows)
+    assert all("cusum_verdict_unreadable" in row["halt_reason"] for row in rows)
+
+    # a partially written / corrupt log line is unreadable too
+    (root / pl.CUSUM_LOG_NAME).write_text("{not json\n", encoding="utf-8")
+    verdict = pl.cusum_edge_verdict(root)
+    assert verdict["status"] == "unreadable"
+    assert verdict["why"] == "log_unreadable"
+
+
+def test_cusum_absent_log_does_not_gate(tmp_path: Path, monkeypatch) -> None:
+    """No monitor log yet (pre-monitor journals): no gate, no fabricated pass."""
+
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    assert not (root / pl.CUSUM_LOG_NAME).exists()
+    assert pl.cusum_edge_verdict(root)["status"] == "absent"
+    pl.run_daily_decide(root, now)
+    rows = _decision_rows(root, pl.S01_BOOK, now.date())
+    assert rows and all(row["halt_flag"] is False for row in rows)
+    check = next(
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "halt_check"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("check_date") == now.date().isoformat()
+    )
+    # the gate is recorded as "absent" (a fact), never as a silent pass
+    assert check["edge_lifetime"]["status"] == "absent"
+    assert check["edge_lifetime"]["why"] == "monitor_has_not_run"
+    assert all(e["name"] != "cusum_pause" for e in check["triggers"])
+    # books without a registered monitor carry no verdict at all
+    other = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "halt_check" and row.get("book") == pl.BENCH_CRYPTO_BOOK
+    ]
+    assert other and all(row["edge_lifetime"] is None for row in other)

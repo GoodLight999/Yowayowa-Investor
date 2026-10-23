@@ -154,7 +154,10 @@
 - 起点 = 「ベンチマークの初回約定日以降で、戦略帳簿とベンチマークが同じ `mtm_date` を
   持つ最初の日」。その日の評価額を両帳簿の基準にし、`comparison_start` に記録する。
   `cum_pnl` / `benchmark_cum_pnl` / `vs_benchmark_pp_cum` はこの起点からのリターン、
-  `max_drawdown` / `benchmark_max_drawdown` も起点以降の mtm 行だけで測る。
+  `max_drawdown` / `benchmark_max_drawdown` も起点以降の mtm 行だけで測る。DD は
+  起点日以降の mtm 行の **equity** から、**起点日の equity を初期のピークとして**
+  更新しながら再計算する（ジャーナルの `drawdown` 列は inception 起点の値なので
+  使わない。§8-6）。
 - 理由: C は 10/21 に建玉済み、`EQUITY_EW` の約定は 10/27 以降。inception equity の
   差を取ると C の 10/21〜10/26 の損益だけが一方的に乗り、12週/26週ゲートまで残る。
 - 実測: A は起点 `2026-10-10`（両帳簿 equity 1.0）なので round 1 と全フィールド同値

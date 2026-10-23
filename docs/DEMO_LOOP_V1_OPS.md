@@ -49,6 +49,11 @@ v1.0 からの変更点（2026-10-11）:
   （`benchmark_has_no_fill` / `no_shared_mark_since_benchmark_first_fill` /
   `baseline_unusable`）に理由が入る。0 で埋めない。DD 比だけが算出できない
   ときは `dd_ratio_reason`（`benchmark_drawdown_missing` など）が付く。
+  `max_drawdown` / `benchmark_max_drawdown` は、起点日以降の mtm 行の **equity**
+  から、**起点日の equity を初期のピークとして**再計算する（t_dddae39e round 3）。
+  ジャーナルの `drawdown` 列は inception 起点の高値からの値なので比較には使わない
+  （起点日より前の高値が、まだ何も動いていない起点日の DD として混ざるため）。
+  `drawdown` 列自体と -20% 警告の判定は従来どおり。
 - 週次サマリーは追記専用（`weekly_summary.jsonl`）。書き込んだ行は消さないため、
   比較行の意味を変えたときは本節のように定義を先に固定する。
 - 1時間tape: `data/demo-loop/tape/1h/{SYM}.jsonl`。fill 実行時に冪等追記。
@@ -56,6 +61,8 @@ v1.0 からの変更点（2026-10-11）:
   （commit-before-fill、F2/D5採択）。recorded_at より前の足での約定は assert で拒否。
 - 状態: ジャーナル `data/demo-loop/journal.jsonl`（前値ハッシュ連鎖・追記のみ）から
   毎回 rebuild（state.json 非依存・D4冪等）。book別内訳は `{book}/journal.jsonl`。
+- エッジ寿命: `data/demo-loop/cusum_A.jsonl`（`weekly.sh` が `yowayowa.cusum_watch` で
+  追記、前値ハッシュ連鎖・追記のみ）。最新行の `action` が次回決定のゲート入力（§3）。
 - 凍結入力: `data/demo-loop/inputs/{date}/{book}.json`（終値+as_of+input_sha256、D9）。
 - アンカー: `data/demo-loop/anchors.jsonl`（追記のたびに seq/row_hash を固定、改竄検出用）。
 
@@ -73,6 +80,16 @@ v1.0 からの変更点（2026-10-11）:
   合成違反注文を使ったユニットテスト（test_guard_rejects_synthetic_violations 系）が
   「拒否してログに残る」ことの証拠になる（F7採択・違反0件を根拠にしない）。
 - 5σ HALT は直前21日リターンの σ（当日を含まない、D1）で判定。当日込み窓では理論上発火しない。
+- **エッジ寿命の判定は次回決定の入力**（v1.5, t_e2c98d2b）: `cusum_A.jsonl` の
+  `action` を `run_daily_decide` が読み、帳簿A で `PAUSE` があれば決定は
+  `regime_state=HALT` / `halt_flag=true` / `fill_status=skipped` /
+  `halt_reason=cusum_pause` になる（判定が読めない `unreadable` も HALT＝不明を生存と読まない）。
+  警報は**ラッチ**する（登録仕様「S is never reset after an alarm」: 後週の S が
+  h* を下回ってもゲートは開かない）。読んだ判定は
+  `halt_check.edge_lifetime`（`status`/`week`/`S`/`h_star`/`row_hash`、警報時は
+  `alarm_week`/`alarm_S`）に残る。モニタがまだ 1 度も書いていない期間は
+  ゲート無しで `status="absent"` を記録する
+  （モニタ導入前のジャーナルを壊さないため。モニタは `weekly.sh` の `set -e` 内で走る）。
 
 ## 4. 継続・中止の機械基準（設計 §4。数値固定、評価期間中の変更禁止）
 
