@@ -1,7 +1,7 @@
 # docs/INDEX_ja.md — ドキュメント日本語インデックス
 
 対象: `docs/` 配下の全 Markdown 21 ファイル。各ファイルのタイトル/目的/主要セクションを3行で要約。
-最終更新: 2026-09-28（JST）。内容の正本は各英語原文ドキュメント。食い違いがあれば原文を優先。
+最終更新: 2026-10-23（JST）。内容の正本は各英語原文ドキュメント。食い違いがあれば原文を優先。
 
 ## 目次（カテゴリ別）
 
@@ -130,3 +130,8 @@
 - タイトル: P1D Evidence — Authorized private information sources (mailbox)
 - 目的: 認可済み private 情報源（オペレーター自身のGmailメールボックス・read-only）コネクタ（P1D）の受け入れ証跡。
 - 主要セクション: 1. Acceptance criteria（gog read-only メールボックスコネクタ・+123テストで633全Green）、2. 実データ end-to-end 検証（楽天証券「銘柄情報通知サービス」メール10通から決算イベント11件抽出・40通スキャンでtimeline 70件追加・再実行冪等・provenance完全・鍵無し時は AUTH_EXPIRED の fail-closed）、3. Static checks / full suite、4. Frozen-contract check（P1A〜P1C凍結ファイルへの非交叉）、5. Secrets（keyringパスワードは実行時のみ・実メール内容はテストに含めない）。
+
+### P5_DEADEND_AUDIT_20261023.md
+- タイトル: P5 Dead-end Audit — 主要導線（research → screening → valuation → portfolio → morning brief）
+- 目的: カード t_64253b31。主要5導線をローカル API/CLI で実走し、行き止まりを実測で列挙、1件を最小修正して同一入力で回帰させた記録。2026-09-28 の全工程監査（WORKFLOW_DEADEND_AUDIT.md・23件）の再制作はせず、差分確認に留める。
+- 主要セクション: 方法と限界（内蔵LLMは呼ばない・実ブラウザ/楽天セッションは NEED-HUMAN）、実走ログ（入力の sha256 と時刻つき・各コマンドの exit 実測）、行き止まり10件（P0 3 = 5桁EDINETコードが下流で404/空200・research の空200・brief が最古の提出を毎日掲載／P1 6／P2 1）＋ 運用摩擦1件、塞いだ1件＝screening 候補のコード絞り込みをクエリへ移動（CLI/API/AI の3面・RED→GREEN・表ダンプ sha256 不変）、前回監査との差分表（S1/F1/I1/I2/E1/O1/O2/S2/G2 は解消、G1/D1/B1/B4/R1 は未解消）。

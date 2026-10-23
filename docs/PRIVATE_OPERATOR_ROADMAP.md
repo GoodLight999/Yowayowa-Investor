@@ -41,7 +41,7 @@ stacked paragraphs.
 | Broker / execution plane | 20% | CODE-COMPLETE / REAL-SESSION BLOCKED (20%) | Order domain, interlocks, audited submission transport, order-status inquiry, cancel design all code-complete; every write-side and selector step awaits the first real authenticated Rakuten session (see docs/BROKER_ACCEPTANCE_MATRIX.md) |
 | Private data advantage / Japan edge | 15% | DONE-equivalent for code paths (65%) | P1A acquisition toolkit, P1B Rakuten read connector (selectors unverified), P1C IR pipeline, P1D mailbox, JPX margin, credit-margin weekly, machine screening, crypto/US OHLCV, MS2 RSS bridge; Rakuten read URLs remain real-session blocked |
 | Reliability / API / agent parity | 15% | DONE-equivalent (80%) | FastAPI/OpenAPI with CI-pinned core machine paths + agent tool catalog (CG-003), CLI parity, contract tests, real-Chrome E2E in CI |
-| Product closure / UX audit | 5% | IN PROGRESS (50%) | P5-A research surfaces shipped; full workflow dead-end audit not started |
+| Product closure / UX audit | 5% | IN PROGRESS (60%) | P5-A research surfaces shipped; workflow dead-end audit done twice — full static pass (2026-09-28, `docs/WORKFLOW_DEADEND_AUDIT.md`) and an executed API/CLI pass over the five main lines (2026-10-23, `docs/P5_DEADEND_AUDIT_20261023.md`, 10 dead-ends open: P0 3 / P1 6 / P2 1, plus one usability friction item; one closed) |
 
 Human-blocked items (explicit, not counted as complete):
 - ChatGPT hosted Codex: one real device-code authorization + one tool-calling
@@ -661,8 +661,16 @@ Japanese equities have a meaningful information advantage over the generic Yahoo
 
 ## P5 — Product-completion audit
 
-**Status (2026-09-26): IN PROGRESS — P5-A (AI-led research surfaces) is
-shipped; the workflow-dead-end audit itself is NOT STARTED.**
+**Status (2026-10-23): IN PROGRESS — P5-A (AI-led research surfaces) is
+shipped and the workflow-dead-end audit now exists in two recorded passes:
+a full static walk of all nine workflow steps (2026-09-28,
+`docs/WORKFLOW_DEADEND_AUDIT.md`) and an executed API/CLI pass over the five
+main lines — research → screening → valuation → portfolio → morning brief
+(2026-10-23, `docs/P5_DEADEND_AUDIT_20261023.md`). That second pass re-measured
+the first one's 23 findings, closed one dead-end (screening candidate lookup by
+code across CLI/API/agent), and records 10 still open (P0 3 / P1 6 / P2 1) plus
+one non-dead-end usability friction item.
+P5 is not complete while any P0 dead-end stands.**
 
 Shipped under P5-A:
 - cited research Q&A (`research_ask`): deterministic evidence packet +
