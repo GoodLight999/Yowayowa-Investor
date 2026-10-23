@@ -36,6 +36,22 @@ Key contracts:
 Note: equity books (C, EQUITY_EW) carry the same schema as the crypto books
 (v1.3 rows; BOOK_C_ENABLED gates the book C set).
 
+v1.8 addition (C-04, docs/PAPERLOOP_MONEY_REVIEW_20261023.md): a mark-to-market
+day that cannot price every OPEN position no longer crashes and no longer
+values a holding at 0. ``run_daily_mtm`` prices each holding from the local
+daily store (a holding that dropped out of the book's universe is still priced
+from the store, instead of the old ``prices.get(asset, 0.0)`` default), and when
+any holding has no finalized bar it writes ONE ``mtm_unpriced`` row for that
+(book, mtm_date) — ``reason``, ``unpriced_assets``, ``prices``, ``units``,
+``cash`` — and writes NO ``mtm`` row for that book/day: an unvaluable equity is
+never stored, and 0 is never substituted. Other books still mark, so a single
+dead tape can no longer leave the run half-written (the old ``float * None``
+TypeError aborted the loop after the earlier books had already been appended).
+Re-running the same day after the tape comes back writes the real ``mtm`` row;
+the ``mtm_unpriced`` row is idempotent per (book, mtm_date). Consumers that
+only read ``event == "mtm"`` are unchanged (a skipped day is a gap in the
+equity chain, not a fabricated point).
+
 v1.7 addition (C-03, docs/PAPERLOOP_MONEY_REVIEW_20261023.md): the weekly
 row's per-book ``shortfall_*`` statistics are measured over
 ``window_start..week_end`` only (they used to cover every mark the book ever
@@ -1260,6 +1276,37 @@ def store_freeze_inputs(root: Path, book: str, decision_date: date) -> str:
     return _freeze_payload_hash(payload)
 
 
+def _latest_finalized_close(root: Path, symbol: str, mtm_day: date) -> tuple[date, float] | None:
+    """Newest finalized bar for one symbol: ``(bar_date, close)`` or None.
+
+    v1.8 (C-04): ``run_daily_mtm`` used to price only the book's current
+    universe, so a holding that left the universe hit ``prices.get(asset, 0.0)``
+    and vanished from equity. The same store lookup now prices ANY holding.
+    """
+
+    daily = _daily_map(root, symbol)
+    latest = max((bar_day for bar_day in daily if bar_day < mtm_day), default=None)
+    if latest is None:
+        return None
+    return latest, daily[latest]["close"]
+
+
+def _unpriced_mtm_books(root: Path, mtm_day: date) -> list[str]:
+    """Books whose mtm for ``mtm_day`` was recorded as valuation-unavailable."""
+
+    rows = _load_journal(root)
+    return [
+        book
+        for book in BOOKS_ENABLED
+        if any(
+            row.get("event") == "mtm_unpriced"
+            and row.get("book") == book
+            and str(row.get("mtm_date")) == mtm_day.isoformat()
+            for row in rows
+        )
+    ]
+
+
 def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
     """Write one mtm row per enabled book (D3): equity chain + DD warning.
 
@@ -1269,19 +1316,30 @@ def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
     cost/turnover columns are recorded so the panel can separate cost drag.
     v1.3 (t_2202c100): a drawdown at or below HALT_DRAWDOWN sets the row's
     ``drawdown_warning`` and nothing else — it never stops the book.
+    v1.8 (C-04): a book whose open positions cannot ALL be priced gets an
+    explicit ``mtm_unpriced`` row (reason + the missing assets) and NO ``mtm``
+    row — 0 is never substituted for a missing price, and one dead tape no
+    longer aborts the whole pass (the other books still mark).
     """
 
     now = utc_now if utc_now is not None else CLOCK(UTC)
     mtm_day = now.date()
     written = 0
     for book in BOOKS_ENABLED:
+        rows = _load_journal(root)
         if any(
             row.get("event") == "mtm"
             and row.get("book") == book
             and str(row.get("mtm_date")) == mtm_day.isoformat()
-            for row in _load_journal(root)
+            for row in rows
         ):
             continue  # B2: one mtm per (book, date)
+        unpriced_recorded = any(
+            row.get("event") == "mtm_unpriced"
+            and row.get("book") == book
+            and str(row.get("mtm_date")) == mtm_day.isoformat()
+            for row in rows
+        )
         state = rebuild_state(root, book)
         universe = list(
             CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
@@ -1289,18 +1347,51 @@ def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
         prices: dict[str, float | None] = {}
         price_bar_date: str | None = None
         for symbol in universe:
-            daily = _daily_map(root, symbol)
             # L6: the mtms price_bar_date must be strictly BEFORE the mtms
             # recorded day, so only FINALIZED bars (as_of < today) price it.
-            finalized_days = [day for day in daily if day < mtm_day]
-            latest = max(finalized_days, default=None)
-            if latest is None:
+            bar = _latest_finalized_close(root, symbol, mtm_day)
+            if bar is None:
                 prices[symbol] = None
                 continue  # no price yet for this asset: state is carried as-is
-            prices[symbol] = daily[latest]["close"]
-            if price_bar_date is None or latest.isoformat() > str(price_bar_date):
+            latest, close = bar
+            prices[symbol] = close
+            if price_bar_date is None or latest.isoformat() > price_bar_date:
                 price_bar_date = latest.isoformat()
-        units_value = sum(units * prices.get(asset, 0.0) for asset, units in state["units"].items())
+        held = {asset: units for asset, units in state["units"].items() if units}
+        valued: dict[str, float] = {}
+        unpriced: list[str] = []
+        for asset in sorted(held):
+            if asset in prices:
+                price = prices[asset]
+            else:
+                # v1.8 (C-04): a holding the universe no longer lists is still
+                # a position — price it, never default it to 0.
+                bar = _latest_finalized_close(root, asset, mtm_day)
+                price = bar[1] if bar is not None else None
+            if price is None:
+                unpriced.append(asset)
+            else:
+                valued[asset] = price
+        if unpriced:
+            # v1.8 (C-04): unvaluable equity is recorded as such, not stored.
+            if not unpriced_recorded:
+                _append_row(
+                    root,
+                    {
+                        "event": "mtm_unpriced",
+                        "book": book,
+                        "mtm_date": mtm_day.isoformat(),
+                        "recorded_at": _utc_now_text(now),
+                        "reason": "unpriced_positions",
+                        "unpriced_assets": unpriced,
+                        "price_bar_date": price_bar_date,
+                        "prices": {asset: prices.get(asset) for asset in universe},
+                        "units": dict(state["units"]),
+                        "cash": state["cash"],
+                    },
+                )
+            continue  # no fabricated equity for this book/day
+        units_value = sum(units * valued[asset] for asset, units in held.items())
         equity = state["cash"] + units_value
         peak = max(state["peak"], equity)
         drawdown = equity / peak - 1.0 if peak > 0 else 0.0
@@ -2382,7 +2473,19 @@ def _cusum_gate_trigger(verdict: Mapping[str, Any]) -> dict[str, Any]:
 
 MILESTONE_WEEKS_CONNECTED = (4,)  # 12/26 stay unwired (t_d33aef07 scope)
 _KNOWN_JOURNAL_EVENTS = frozenset(
-    {"decision", "fill", "fill_rejected", "mark", "mtm", "run", "halt_check"}
+    {
+        "decision",
+        "fill",
+        "fill_rejected",
+        "mark",
+        "mtm",
+        # v1.8 (C-04): an mtm day that could not price every open position.
+        # It carries no order and no equity — only the reason and the missing
+        # assets — so it belongs to the frozen set (M6 is about order paths).
+        "mtm_unpriced",
+        "run",
+        "halt_check",
+    }
 )
 
 
@@ -3166,7 +3269,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "mtm":
             result = run_daily_mtm(root)
-            print(json.dumps({"ok": True, "mtm_rows": result}))
+            # v1.8 (C-04): books that could not be valued are reported, never
+            # silently replaced by a 0 equity row. Exit stays 0: the daily job
+            # must still anchor/close its run (the skip is recorded in the
+            # journal and surfaced here).
+            unpriced = _unpriced_mtm_books(root, CLOCK(UTC).date())
+            print(json.dumps({"ok": True, "mtm_rows": result, "mtm_unpriced": unpriced}))
             return 0
         if args.command == "halt_check":
             result = _write_daily_halt_checks(root)

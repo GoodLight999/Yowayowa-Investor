@@ -1787,3 +1787,121 @@ def test_weekly_shortfall_is_scoped_to_the_week_and_survives_bad_rows(
     assert bad["shortfall_errors"][0]["reason"] == "missing_shortfall_bps"
 
 
+# --- C-04: an unpriceable mtm day is recorded, never zero-filled ---------------
+
+
+def test_C04_unpriced_mtm_is_recorded_and_never_zero_filled(tmp_path: Path, monkeypatch) -> None:
+    """C-04 (docs/PAPERLOOP_MONEY_REVIEW_20261023.md): no crash, no 0 valuation.
+
+    Pre-fix behaviour, both measured in the review: a held symbol with no
+    finalized bar left ``None`` in ``prices`` and ``units * None`` raised
+    TypeError, aborting the pass after the earlier books had already been
+    appended; a held symbol outside the book's universe fell through
+    ``prices.get(asset, 0.0)`` and was valued at 0, so equity dropped by the
+    whole position (w=25% -> a fake -25% drawdown).
+
+    Pins: the missing-price day is recorded as ``mtm_unpriced`` with the
+    missing assets and NO ``mtm`` row (0 is never substituted), the other books
+    still mark, consecutive missing days are each recorded, the same day is not
+    re-recorded, and the equity written after recovery includes every holding —
+    universe member or not.
+    """
+
+    data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    pl.run_daily_decide(root, now)
+    _inject_bar(root, "BTC", now + timedelta(hours=1), 101.0)
+    _inject_bar(root, "ETH", now + timedelta(hours=1), 60.0)
+    assert pl.resolve_fills(root, now + timedelta(hours=2)) == 4
+    state_a = pl.rebuild_state(root, pl.S01_BOOK)
+    assert {asset for asset, units in state_a["units"].items() if units} == {"BTC", "ETH"}
+
+    missing_day = now.date() + timedelta(days=1)
+    next_day = missing_day + timedelta(days=1)
+    (data_dir / "crypto-ohlcv" / "BTC" / "ohlcv.jsonl").unlink()
+
+    # --- one missing day: the books that hold BTC record "cannot value" ------
+    assert pl.run_daily_mtm(root, _now_of(missing_day)) == 2  # only the equity books
+    journal = pl._load_journal(root)
+    mtm_books = {
+        row["book"]
+        for row in journal
+        if row.get("event") == "mtm" and row["mtm_date"] == missing_day.isoformat()
+    }
+    assert mtm_books == {pl.BOOK_C_BOOK, pl.BENCH_EQUITY_BOOK}
+    unpriced = [
+        row
+        for row in journal
+        if row.get("event") == "mtm_unpriced" and row["mtm_date"] == missing_day.isoformat()
+    ]
+    assert {row["book"] for row in unpriced} == {pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK}
+    assert all(row["reason"] == "unpriced_positions" for row in unpriced)
+    assert all(row["unpriced_assets"] == ["BTC"] for row in unpriced)
+    assert all("equity" not in row for row in unpriced)
+    # the 0 the old code stored: no mtm row anywhere carries a 0 equity
+    assert not [row for row in journal if row.get("event") == "mtm" and not row.get("equity")]
+
+    # --- consecutive missing days: each day is recorded on its own ------------
+    assert pl.run_daily_mtm(root, _now_of(next_day)) == 2
+    journal = pl._load_journal(root)
+    assert [
+        row["book"]
+        for row in journal
+        if row.get("event") == "mtm_unpriced" and row["mtm_date"] == next_day.isoformat()
+    ] == [pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK]
+    assert not [
+        row
+        for row in journal
+        if row.get("event") == "mtm"
+        and row["mtm_date"] == next_day.isoformat()
+        and row["book"] in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
+    ]
+
+    # --- the same day is never recorded twice (B2 idempotency) ---------------
+    assert pl.run_daily_mtm(root, _now_of(missing_day)) == 0
+    journal = pl._load_journal(root)
+    same_day = [
+        row
+        for row in journal
+        if row.get("event") == "mtm_unpriced" and row["mtm_date"] == missing_day.isoformat()
+    ]
+    assert len(same_day) == 2
+
+    # --- tape comes back: the real mtm is written, with every holding priced --
+    _write_crypto_days(data_dir, "BTC", [(now.date().isoformat(), 101.0, 101.0)])
+    assert pl.run_daily_mtm(root, _now_of(missing_day)) == 2  # the crypto books resume
+    journal = pl._load_journal(root)
+    recovered = [
+        row
+        for row in journal
+        if row.get("event") == "mtm"
+        and row["book"] == pl.S01_BOOK
+        and row["mtm_date"] == missing_day.isoformat()
+    ]
+    assert len(recovered) == 1
+    row = recovered[0]
+    eth_close = pl._latest_finalized_close(root, "ETH", missing_day)[1]
+    units = row["units"]
+    assert row["equity"] == pytest.approx(
+        row["cash"] + units["BTC"] * row["prices"]["BTC"] + units["ETH"] * eth_close, rel=1e-12
+    )
+    assert row["equity"] > 0
+
+    # --- a holding the universe no longer lists is priced, not zeroed --------
+    eth_next = pl._latest_finalized_close(root, "ETH", next_day)[1]
+    monkeypatch.setattr(pl, "CRYPTO_UNIVERSE", ("BTC",))
+    assert pl.run_daily_mtm(root, _now_of(next_day)) == 2
+    journal = pl._load_journal(root)
+    shrunk = [
+        row
+        for row in journal
+        if row.get("event") == "mtm"
+        and row["book"] == pl.S01_BOOK
+        and row["mtm_date"] == next_day.isoformat()
+    ]
+    assert len(shrunk) == 1
+    row2 = shrunk[0]
+    assert "ETH" not in row2["prices"]  # the row's universe field keeps its shape
+    zero_filled = row2["cash"] + row2["units"]["BTC"] * row2["prices"]["BTC"]
+    # the pre-fix equity: ETH valued at 0 (which is also how 0 got into equity)
+    assert row2["equity"] == pytest.approx(zero_filled + row2["units"]["ETH"] * eth_next, rel=1e-12)
+    assert row2["equity"] - zero_filled == pytest.approx(row2["units"]["ETH"] * eth_next, rel=1e-12)

@@ -109,6 +109,14 @@ v1.0 からの変更点（2026-10-11）:
   修正前の行（〜2026-10-23 の frozen 値）はコスト率の複利で市場損益を含まないため、
   過去行の `equity_gross` / `cost_drag_pp` は読まない。過去行は書き換えない
   （ジャーナル追記のみ・§5）。
+- **欠測価格は 0 でも流用でもなく「評価不能」として記録**（v1.8, C-04, 2026-10-23）:
+  保有ポジションのどれか 1 つでも確定足が無い日は、そのブックの `mtm` 行を書かず
+  `mtm_unpriced` 行（`reason="unpriced_positions"` / `unpriced_assets` / `prices` /
+  `units` / `cash`。`equity` は持たない）を 1 日 1 行だけ書く。`0` を equity に入れない。
+  universe から外れた保有もストアの価格で評価する（`prices.get(asset, 0.0)` の既定値は廃止）。
+  同じ日を再実行すると、テープが復旧していれば本物の `mtm` 行が書ける（skip 行は冪等）。
+  `mtm` 行が無い日は panel/weekly が最新行で代替する（既存挙動）。詳細:
+  `docs/PAPERLOOP_C04_MTM_UNPRICED_20261023.md`。
 - anti-scalp guard（paperloop_guard.check_trade）は純粋関数で、ジャーナルから復元した
   last_fill_ts/side/opened_ts/fills_today を受ける（D6）。v1 の通常フローでは発火しない前提のため、
   合成違反注文を使ったユニットテスト（test_guard_rejects_synthetic_violations 系）が
