@@ -25,7 +25,7 @@
 
 ## データソース — 実機・認証系 / スクレイピング
 
-- [JPX_DAILY_MARGIN.md](JPX_DAILY_MARGIN.md) — JPX 銘柄別信用取引残高（日次・P4-A）。形式は現行仕様書で確認済み（2026-10-23）。有償CSVは未取得（契約待ち）、無料公開の日次PDFあり。証跡は P1D_JPX_MARGIN_DAILY_EVIDENCE.md。
+- [JPX_DAILY_MARGIN.md](JPX_DAILY_MARGIN.md) — JPX 銘柄別信用取引残高（日次・P4-A）。形式は現行仕様書で確認済み（2026-10-23）。有償CSVは未取得（契約待ち）、無料公開の日次PDFあり。証跡は P1D_JPX_MARGIN_DAILY_EVIDENCE.md、取込の回帰確認は P1D_JPX_REGRESSION_20261023.md。
 - [CREDIT_MARGIN.md](CREDIT_MARGIN.md) — 週次信用残（P4-C・稼働中）。Yahoo!ファイナンス + 株探の観測フォーマットと取り込み契約。JPX 日次の週次コンパニオン。
 - [MS2_RSS.md](MS2_RSS.md) — MARKET SPEED II RSS バッチ quote パイプライン。オペレーター自身の楽天口座フィード。VPS→Windows は非通信の片方向経路。
 - [RAKUTEN_WEB_SESSION.md](RAKUTEN_WEB_SESSION.md) — 楽天証券 Web セッション実機検証手順書（P1B read-side の Definition of Done）。URL/セレクタは実機未検証の初期仮定。
