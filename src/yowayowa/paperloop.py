@@ -36,6 +36,17 @@ Key contracts:
 Note: equity books (C, EQUITY_EW) carry the same schema as the crypto books
 (v1.3 rows; BOOK_C_ENABLED gates the book C set).
 
+v1.7 addition (C-03, docs/PAPERLOOP_MONEY_REVIEW_20261023.md): the weekly
+row's per-book ``shortfall_*`` statistics are measured over
+``window_start..week_end`` only (they used to cover every mark the book ever
+wrote, while the neighbouring columns were weekly — the 26-week cost gate was
+reading an all-period number). A mark row whose ``shortfall_bps`` is missing /
+null / non-numeric is excluded from the statistics and REPORTED in
+``shortfall_errors`` (``shortfall_n_excluded``) instead of raising KeyError and
+losing the whole weekly row, milestone judgment included. The summary row is
+``demo-loop-summary-v1.7``: rows already in the append-only weekly file
+(``...-v1.6`` and older) carry the all-period meaning of those four columns.
+
 v1.6 addition (C-02, docs/PAPERLOOP_MONEY_REVIEW_20261023.md): the weekly row's
 ``week_return`` is the 7-day window's change rate (last mark before
 ``window_start`` → last mark on/before ``week_end``), not the cumulative return
@@ -101,7 +112,7 @@ import os
 import subprocess
 import sys
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -2841,18 +2852,100 @@ def _dd_vs_benchmark_ratio(book_dd: float | None, bench_dd: float | None) -> flo
     return book_dd / bench_dd
 
 
+def _shortfall_row_error(row: Mapping[str, Any], reason: str) -> dict[str, Any]:
+    """Name one anomalous mark row so a human can find it in the journal.
+
+    v1.7 (C-03): an unusable ``shortfall_bps`` must never disappear quietly —
+    the value is dropped from the week's statistics but the row itself is
+    reported on the weekly row with the reason it was dropped.
+    """
+
+    return {
+        "reason": reason,
+        "decision_id": row.get("decision_id"),
+        "asset": row.get("asset"),
+        "recorded_at": row.get("recorded_at"),
+    }
+
+
+def _week_shortfalls(
+    marks: Sequence[Mapping[str, Any]], window_start: date, week_end: date
+) -> tuple[list[float], list[dict[str, Any]]]:
+    """Usable ``shortfall_bps`` values for ONE week + the excluded rows.
+
+    v1.7 (C-03, docs/PAPERLOOP_MONEY_REVIEW_20261023.md): the weekly row's
+    shortfall statistics used to be computed over EVERY mark the book ever
+    wrote, while the rest of the row was scoped to
+    ``window_start..week_end`` — the same column name carried two definitions
+    in this module (``_milestone_judgment`` scopes its window). They are now
+    measured over the week only, so the 26-week cost gate reads a weekly
+    number.
+
+    The week a mark belongs to is decided by its own ``recorded_at`` date —
+    the same rule ``_milestone_judgment`` uses — because a mark states when
+    its execution was measured, and rows without a parseable date cannot be
+    placed in any week.
+
+    The second half of the defect: ``row["shortfall_bps"]`` was a direct dict
+    lookup, so ONE mark row without the column (older schema, hand-written
+    row, null value, non-numeric text) raised KeyError and killed
+    ``weekly_summary`` before it wrote the row — the whole weekly report
+    (milestone judgment included) was lost. Such rows are now excluded from
+    the statistics and returned as ``{reason, decision_id, asset,
+    recorded_at}`` records instead; the row is still in the journal and the
+    weekly row says how many were dropped and why. Missing data stays
+    missing: with no usable value the means are None, never 0.
+    """
+
+    values: list[float] = []
+    errors: list[dict[str, Any]] = []
+    for row in marks:
+        try:
+            day = date.fromisoformat(str(row.get("recorded_at"))[:10])
+        except (TypeError, ValueError):
+            # cannot be attributed to a week -> out of the statistics, but
+            # recorded (never silently dropped)
+            errors.append(_shortfall_row_error(row, "unparseable_recorded_at"))
+            continue
+        if not window_start <= day <= week_end:
+            continue
+        raw = row.get("shortfall_bps")
+        if raw is None:
+            errors.append(_shortfall_row_error(row, "missing_shortfall_bps"))
+            continue
+        if isinstance(raw, bool):
+            errors.append(_shortfall_row_error(row, "non_numeric_shortfall_bps"))
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            errors.append(_shortfall_row_error(row, "non_numeric_shortfall_bps"))
+            continue
+        if not math.isfinite(value):
+            errors.append(_shortfall_row_error(row, "non_finite_shortfall_bps"))
+            continue
+        values.append(value)
+    return values, errors
+
+
 def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     """Weekly summary row (M8/spec §7): per book + milestone judgment.
 
     v1.2: every book also gets an ``eval`` block (Q1-Q7, design §4) built from
     the derived panel. The journal keeps facts only; the eval numbers live
     here (design §7: never in the journal).
+
+    v1.7 (C-03): the per-book ``shortfall_*`` statistics are scoped to this
+    week (``shortfall_scope`` / ``shortfall_window_start`` say so), and mark
+    rows with an unusable ``shortfall_bps`` are reported in
+    ``shortfall_errors`` (with ``shortfall_n_excluded``) instead of aborting
+    the whole weekly row.
     """
 
     root = loop_root(data_dir)
     window_start = week_end - timedelta(days=6)
     out: dict[str, Any] = {
-        "schema": "demo-loop-summary-v1.6",
+        "schema": "demo-loop-summary-v1.7",
         "week_end": week_end.isoformat(),
         "generated_at": _utc_now_text(),
         "books": {},
@@ -2894,7 +2987,7 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
             for row in _load_journal(root)
             if row.get("event") == "mark" and row.get("book") == book
         ]
-        shortfalls = [float(row["shortfall_bps"]) for row in marks]
+        week_shortfalls, shortfall_errors = _week_shortfalls(marks, window_start, week_end)
         switches = 0  # D11: regime flips RISK_ON <-> RISK_OFF, HALT excluded
         prev_regime: str | None = None
         for row in judged:
@@ -2934,14 +3027,23 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
             "week_return_reason": week_reason,
             "cum_return": state["equity"] - 1.0,
             "drawdown_now": drawdown,
+            # v1.7 (C-03): these four statistics are THIS WEEK's marks only
+            # (was: every mark the book ever wrote). Rows excluded for an
+            # unusable shortfall_bps are listed, not swallowed.
+            "shortfall_scope": "week",
+            "shortfall_window_start": window_start.isoformat(),
             "shortfall_bps_mean_signed": (
-                sum(shortfalls) / len(shortfalls) if shortfalls else None
+                sum(week_shortfalls) / len(week_shortfalls) if week_shortfalls else None
             ),
             "shortfall_bps_mean_abs": (
-                sum(abs(value) for value in shortfalls) / len(shortfalls) if shortfalls else None
+                sum(abs(value) for value in week_shortfalls) / len(week_shortfalls)
+                if week_shortfalls
+                else None
             ),
-            "shortfall_bps_mean_upper95": shortfall_bps_mean_upper95(shortfalls),
-            "shortfall_n": len(shortfalls),
+            "shortfall_bps_mean_upper95": shortfall_bps_mean_upper95(week_shortfalls),
+            "shortfall_n": len(week_shortfalls),
+            "shortfall_n_excluded": len(shortfall_errors),
+            "shortfall_errors": shortfall_errors,
             "recompute_R1_rate": (
                 sum(1 for row in marks if row.get("recompute_match")) / len(marks)
                 if marks

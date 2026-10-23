@@ -69,6 +69,19 @@ v1.0 からの変更点（2026-10-11）:
   実ファイルには 1 行も書かれていない。実在する旧行は `...-v1.2` と `schema` 無し）。
   実測（実ジャーナル, week_end=2026-10-26）: A は旧 -3.3447% → 新 -0.8421%
   （差 2.5026pp）、CRYPTO_1N は旧 -3.5442% → 新 -0.8651%。
+- **`shortfall_*` は「その週の mark」の集計（v1.7, C-03）**: `shortfall_bps_mean_signed` /
+  `shortfall_bps_mean_abs` / `shortfall_bps_mean_upper95` / `shortfall_n` は
+  `week_end-6日..week_end` の mark 行だけを対象にする（`shortfall_scope="week"`、
+  窓の起点は `shortfall_window_start`）。以前は**帳簿の全期間**の mark を集計して
+  いたため、同じ行の他の列（週次）と意味が違い、26週コストゲートが全期間値を見て
+  いた。mark が属する週は mark 自身の `recorded_at` の日付で決める（`_milestone_judgment`
+  と同じ規則）。`shortfall_bps` が欠落・null・非数値の mark 行は集計から外し、
+  `shortfall_errors`（`{reason, decision_id, asset, recorded_at}`）と
+  `shortfall_n_excluded` に**記録する**（無言で捨てない）。以前は 1 行の欠落で
+  `KeyError` になり週次行が書かれず、milestone 判定ごと失われていた。
+  使用可能な mark が 0 件の週は平均が null（0 で埋めない）。
+  実測（実ジャーナル, A, week_end=2026-10-26）: 旧 n=26 / -10.2291bps →
+  新 n=8 / -11.2105bps。
 - 1時間tape: `data/demo-loop/tape/1h/{SYM}.jsonl`。fill 実行時に冪等追記。
   約定価格はこの tape の「recorded_at 以降に始まった最初の1時間足の始値」
   （commit-before-fill、F2/D5採択）。recorded_at より前の足での約定は assert で拒否。

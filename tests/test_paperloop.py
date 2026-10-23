@@ -1670,3 +1670,120 @@ def test_week_return_is_the_weeks_change_not_the_cumulative_return(
     assert book["week_return_as_of"] is None
 
 
+# --- C-03: weekly shortfall is the week's, and one bad row cannot stop the week ----
+
+
+def _mark(
+    root: Path,
+    day: str,
+    *,
+    book: str = pl.S01_BOOK,
+    asset: str = "BTC",
+    shortfall: float | None = 0.0,
+    with_key: bool = True,
+) -> None:
+    """One mark row; ``with_key=False`` writes a row with NO shortfall_bps key."""
+
+    row: dict[str, object] = {
+        "event": "mark",
+        "book": book,
+        "recorded_at": f"{day}T00:20:00+00:00",
+        "decision_id": f"{book}:{asset}:{day}",
+        "asset": asset,
+        "bt_fill_price": 100.0,
+        "recompute_match": True,
+        "turnover": 0.0,
+    }
+    if with_key:
+        row["shortfall_bps"] = shortfall
+    _append_row(root, **row)
+
+
+def test_weekly_shortfall_is_scoped_to_the_week_and_survives_bad_rows(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """C-03 (docs/PAPERLOOP_MONEY_REVIEW_20261023.md): weekly cost, not all-period.
+
+    Two defects in one place: (a) the four ``shortfall_*`` columns were
+    computed over EVERY mark the book ever wrote while the neighbouring
+    columns were weekly, and (b) ``row["shortfall_bps"]`` was a direct dict
+    lookup, so one mark row without the column raised KeyError and
+    ``weekly_summary`` died before writing the row — the whole weekly report,
+    milestone judgment included. On the real journal (week 2026-10-20..26)
+    the pre-fix row printed -10.2291 bps / n=26 for a week that had 8 marks
+    (-11.2105 bps).
+
+    Pins: the week's values only, an explicit record of the excluded rows
+    (no silent drop), the row still being written when the week contains
+    anomalies, and None — never 0 — when no usable value exists.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    data_dir = tmp_path / "data"
+    root = pl.loop_root(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+
+    # week_end 2026-10-25 -> window 2026-10-19..2026-10-25
+    _mark(root, "2026-10-05", asset="BTC", shortfall=100.0)  # older week
+    _mark(root, "2026-10-12", asset="ETH", shortfall=-50.0)  # older week
+    _mark(root, "2026-10-20", asset="BTC", shortfall=10.0)
+    _mark(root, "2026-10-22", asset="ETH", shortfall=20.0)
+    _mark(root, "2026-10-25", asset="BTC", shortfall=30.0)
+
+    book = pl.weekly_summary(data_dir, date(2026, 10, 25))["books"][pl.S01_BOOK]
+    assert book["shortfall_scope"] == "week"
+    assert book["shortfall_window_start"] == "2026-10-19"
+    assert book["shortfall_n"] == 3
+    assert book["shortfall_bps_mean_signed"] == pytest.approx(20.0, rel=1e-12)
+    assert book["shortfall_bps_mean_abs"] == pytest.approx(20.0, rel=1e-12)
+    assert book["shortfall_n_excluded"] == 0
+    assert book["shortfall_errors"] == []
+    # the number the pre-fix code wrote for this same journal: (100-50+10+20+30)/5
+    old_all_period_mean = (100.0 - 50.0 + 10.0 + 20.0 + 30.0) / 5
+    assert old_all_period_mean == pytest.approx(22.0)
+    assert book["shortfall_bps_mean_signed"] != pytest.approx(22.0)
+
+    # --- mixed anomalies in the same week: the week still gets its row --------
+    mixed_dir = tmp_path / "mixed" / "data"
+    mixed_root = pl.loop_root(mixed_dir)
+    mixed_root.mkdir(parents=True, exist_ok=True)
+    _mark(mixed_root, "2026-10-20", asset="BTC", shortfall=10.0)
+    _mark(mixed_root, "2026-10-22", asset="ETH", shortfall=30.0)
+    _mark(mixed_root, "2026-10-21", asset="BTC", with_key=False)
+    _mark(mixed_root, "2026-10-23", asset="ETH", shortfall=None)
+    _mark(mixed_root, "2026-10-24", asset="BTC", shortfall="n/a")  # type: ignore[arg-type]
+    mixed = pl.weekly_summary(mixed_dir, date(2026, 10, 25))["books"][pl.S01_BOOK]
+    assert mixed["shortfall_n"] == 2  # only the two usable marks
+    assert mixed["shortfall_bps_mean_signed"] == pytest.approx(20.0, rel=1e-12)
+    assert mixed["shortfall_n_excluded"] == 3
+    assert [error["reason"] for error in mixed["shortfall_errors"]] == [
+        "missing_shortfall_bps",  # 2026-10-21, key absent
+        "missing_shortfall_bps",  # 2026-10-23, value null
+        "non_numeric_shortfall_bps",  # 2026-10-24, "n/a"
+    ]
+    # each excluded row is named, so the journal row can be found again
+    assert [error["asset"] for error in mixed["shortfall_errors"]] == ["BTC", "ETH", "BTC"]
+    assert all(error["decision_id"] and error["recorded_at"] for error in mixed["shortfall_errors"])
+    # ... and the weekly row was actually appended (the pre-fix KeyError killed
+    # the function before this file could be written)
+    written = [
+        json.loads(line)
+        for line in pl.summary_path(mixed_root).read_text(encoding="utf-8").splitlines()
+    ]
+    assert written[-1]["books"][pl.S01_BOOK]["shortfall_n"] == 2
+    assert written[-1]["schema"] == "demo-loop-summary-v1.7"
+
+    # --- a week with only unusable values: None, never 0 ----------------------
+    empty = tmp_path / "all_bad" / "data"
+    empty_root = pl.loop_root(empty)
+    empty_root.mkdir(parents=True, exist_ok=True)
+    _mark(empty_root, "2026-10-20", asset="BTC", with_key=False)
+    bad = pl.weekly_summary(empty, date(2026, 10, 25))["books"][pl.S01_BOOK]
+    assert bad["shortfall_n"] == 0
+    assert bad["shortfall_bps_mean_signed"] is None
+    assert bad["shortfall_bps_mean_abs"] is None
+    assert bad["shortfall_bps_mean_upper95"] is None
+    assert bad["shortfall_n_excluded"] == 1
+    assert bad["shortfall_errors"][0]["reason"] == "missing_shortfall_bps"
+
+
