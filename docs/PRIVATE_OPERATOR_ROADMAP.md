@@ -49,7 +49,11 @@ Human-blocked items (explicit, not counted as complete):
 - Rakuten Web: catalog URL/selector confirmation, first authenticated read,
   preview, submit, status, cancel, fill reconciliation
   (CG-004 matrix, NEED-HUMAN for every real-write row);
-- JPX daily margin: live production format inspection (starts 2026-09-28).
+- JPX daily margin: live machine-readable daily file — format contract now
+  verified (2026-10-23) and the ingest path proven on the official package; the
+  remaining block is an **operator cost/contract decision** (paid TMI / J-Quants
+  Pro feed vs. a reader for the free public daily PDF). See
+  `docs/P1D_JPX_MARGIN_DAILY_EVIDENCE.md`.
 
 ---
 
@@ -550,6 +554,32 @@ Never silently overwrite historical scoring semantics. New calibrated rules beco
     - **Parent E4**: `weekly_summary.jsonl` last anchor sequence reference is seq 167 (not 168).
 - Provenance & Author: Round 2 changes committed by `worker-agy` (remediating N2).
 
+#### Book C Comparison Wiring — EQUITY_EW Benchmark Enabled (Task t_dddae39e, 2026-10-23)
+
+- State: **COMPARISON BASE WIRED (no strategy/parameter change, no orders).**
+- Defect closed: `EQUITY_EW` (4-asset equal-weight buy-and-hold) was preregistered
+  (`BOOK_SPEC_HASHES`), had weights and equity branches, but was missing from
+  `BOOKS_ENABLED` — so Book C's frozen hypothesis ("controls drawdown vs EW") had no
+  comparison book and `vs_benchmark_pp_cum` / `dd_vs_benchmark_ratio` stayed null.
+- Changes (4 points):
+  - `BOOKS_ENABLED` now includes `BENCH_EQUITY_BOOK`; it buys 1/N once and holds (D7).
+  - The Book C Monday cadence gate now covers `EQUITY_EW` as well (same strategy, so
+    the comparison line is not a different regime).
+  - `EQUITY_EW`'s prereg row is attributed to `worker-agy:t_feb3aa55` (the Book C
+    deployment), not to the v1.1 crypto task.
+  - `weekly_summary` adds per-strategy comparison fields (`benchmark_book`, `cum_pnl`,
+    `max_drawdown`, `benchmark_cum_pnl`, `benchmark_max_drawdown`,
+    `vs_benchmark_pp_cum`, `dd_vs_benchmark_ratio`); missing data stays null.
+- Measured: old-vs-new `weekly_summary` on the same journal copy is byte-identical for
+  every pre-existing field of A / CRYPTO_1N / C (only the `EQUITY_EW` entry and the
+  additive comparison fields differ). `paperloop_verify` 247 rows, L1–L14 clean,
+  R1 30/30. Paperloop tests pass individually (23 + 19; the full file exceeds 400 s on
+  this host, so tests were run one by one and judged by exit code).
+- Not established: Book C's benchmark difference cannot exist before `EQUITY_EW`'s
+  first decision (2026-10-26) and first fill (2026-10-27); equity mtm marks are one
+  session stale (newest SPY bar 2026-10-20 at the 2026-10-22 run) — recorded, not fixed.
+- Evidence: `docs/MONETIZATION_READING_20261023.md`.
+
 ### Exit criteria
 
 The system can answer:
@@ -575,16 +605,33 @@ The system can answer:
 
 JPX announced daily all-issue margin-balance publication beginning 2026-09-28 if migration proceeds.
 
-**Status: weekly credit-margin scraping DONE (parser/persistence/API/CLI +
-`yowayowa-alpaca`-style weekly cron); the NEW daily all-issue feed is NOT
-STARTED until the live production format exists (from 2026-09-28).**
+**Status (2026-10-23): weekly credit-margin scraping DONE
+(parser/persistence/API/CLI + `yowayowa-alpaca`-style weekly cron); the daily
+all-issue ingestion code (parser/persistence/API/CLI) is DONE and verified
+against the current official specification and the unchanged official sample
+package; the live machine-readable feed is contract-gated (TMI / J-Quants Pro,
+401 without a token, no credential configured), so no real business day has been
+ingested yet. Evidence: `docs/P1D_JPX_MARGIN_DAILY_EVIDENCE.md`.**
 
-When the live production format exists:
-- inspect actual format and semantics;
-- ingest daily history with provenance;
-- persist sell/buy balances and changes;
-- capture negotiable/general vs standardized/system-margin breakdowns;
-- capture balance values and listed-share ratios where provided;
+Two ways forward, both requiring an operator decision:
+1. contract the paid feed (from 100,000円/month 税抜 for 総合取引参加者向け,
+   250,000円 for その他法人向け) and keep the existing ingest path;
+2. read the free public daily PDF (all issues, ~1 week of dates, 修正版は `_01`)
+   — same business data, needs its own parser/fixtures/tests.
+
+Already done:
+- actual format and semantics inspected (spec §3.2.3 verified, real-value
+  identity confirmed on the free public daily table: 4,249 issues, 2026-10-21);
+- ingest path (parse → persist → CLI → API) verified end-to-end on the official
+  distribution bytes with provenance and per-date replacement semantics.
+
+Still open:
+- ingest real daily history (needs 1 or 2 above);
+- persist sell/buy balances and changes (implemented, waiting for real data);
+- capture negotiable/general vs standardized/system-margin breakdowns
+  (implemented, waiting for real data);
+- capture balance values and listed-share ratios where provided (values
+  implemented; listed-share ratios are not in this dataset's issue file);
 - add instrument-page supply/demand history;
 - add screener/comparison fields;
 - add abrupt-change alerts;

@@ -71,7 +71,7 @@
 ### JPX_DAILY_MARGIN.md
 - タイトル: JPX daily margin balances（銘柄別信用取引残高・日次）
 - 目的: JPX総研の新日次銘柄別信用残サービス（2026-09-28開始・有償契約）の公開事実と取り込み契約を記録する（P4-A）。
-- 主要セクション: Publication facts（全TSE上場銘柄・前営業日適用・16:00頃公表・金額列は2026-09-25以降）、Official URLs（TMI参照ページ・仕様PDF・サンプルZIP・J-Quants Pro API）、「日々公表信用取引残高」との混同禁止、Observed CSV format（公式サンプルから実測: 18列・英語CSVはUTF-8無BOM/日本語はCP932・CRLF・一般/制度の売買別株数・金額）。
+- 主要セクション: Publication facts（全TSE上場銘柄・前営業日適用・16:00頃公表・金額列は2026-09-25以降）、Official URLs（現行の仕様PDF・サンプルZIP・料金表・J-Quants Pro API・無料公開の日次PDF）、Specification verification（2026-10-23: 1行目がヘッダ・全項目ダブルクォート・NULLは空文字・列長・市場コード0111/0112/0113/0109/0105・銘柄種別1/2/3の正確な意味・合計レコード廃止・エンコーディングは仕様書に記載なし）、Live data availability（有償CSVは401／無料PDFは全銘柄・約1週間保持・修正版は_01）、「日々公表信用取引残高」との混同禁止、Observed CSV format（公式サンプルから実測: 18列・英語CSVはUTF-8無BOM/日本語はCP932・CRLF）。証跡は P1D_JPX_MARGIN_DAILY_EVIDENCE.md。
 
 ### CREDIT_MARGIN.md
 - タイトル: Weekly credit margin（信用残・週次）— Yahoo!ファイナンス + 株探
