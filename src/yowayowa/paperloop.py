@@ -1318,28 +1318,45 @@ def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
 def _cost_accumulators(root: Path, book: str, equity: float) -> tuple[float, float, float]:
     """(cum cost in equity units, cum turnover, equity_gross) for one book.
 
-    Deterministic from the journal (panel rule P2): each fill's
-    ``cost_assumed`` is replayed as a compounding drag on the equity that was
-    live at that fill (``equity_at_fill``), so ``equity_gross`` is the equity
-    the book would show with the assumed cost never charged (Q3's cost
-    isolation). The cost share is stated against the CURRENT equity.
+    Deterministic from the journal (panel rule P2). ``equity_gross`` is the
+    equity the book would show at this moment had the assumed cost never been
+    charged (Q3's cost isolation): the daily chain replays the SAME
+    day-over-day equity changes observed on the net ``equity`` series, and on
+    each step adds back the costs charged between the two mtm rows (journal
+    order), so market returns compound identically on both sides and only the
+    cost leg differs. The chain starts at the inception capital of 1.0; costs
+    charged before the first mtm row are added back at face value on the first
+    step (daily resolution cannot reconstruct their intra-day growth).
+    Algebraically ``gross/equity == product(1 + cost_t / equity_t)`` over the
+    steps, so ``cost_drag_pp`` reads the actually incurred cost share. The
+    cost share is stated against the CURRENT equity.
     """
 
     cum_cost = 0.0
     cum_turnover = 0.0
     equity_gross = 1.0
+    prev_equity = 1.0  # inception capital anchor
+    cost_since_prev_mtm = 0.0
     for row in _load_journal(root):
         if row.get("book") != book:
             continue
-        if row.get("event") != "fill":
-            continue
-        cost = float(row.get("cost_assumed") or 0.0)
-        base = float(row.get("equity_at_fill") or 0.0)
-        cum_turnover += abs(float(row.get("traded_notional") or 0.0))
-        cum_cost += cost
-        if base > 0:
-            equity_gross *= 1.0 + cost / base
-    del equity
+        if row.get("event") == "fill":
+            cost = float(row.get("cost_assumed") or 0.0)
+            cum_cost += cost
+            cum_turnover += abs(float(row.get("traded_notional") or 0.0))
+            cost_since_prev_mtm += cost
+        elif row.get("event") == "mtm":
+            mtm_equity = float(row.get("equity") or 0.0)
+            if prev_equity > 0:
+                equity_gross *= (mtm_equity + cost_since_prev_mtm) / prev_equity
+            prev_equity = mtm_equity
+            cost_since_prev_mtm = 0.0
+    # The step for the mtm row now being written (its equity is the argument):
+    # fills recorded after the last existing mtm row (the daily fill pass runs
+    # after the daily mtm) are added back here, so tomorrow's row chains from
+    # a gross that already carries today's costs.
+    if prev_equity > 0:
+        equity_gross *= (float(equity) + cost_since_prev_mtm) / prev_equity
     return cum_cost, cum_turnover, equity_gross
 
 

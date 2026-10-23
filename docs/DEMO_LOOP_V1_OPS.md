@@ -75,6 +75,14 @@ v1.0 からの変更点（2026-10-11）:
 - 観測コスト = ペーパー約定価格とバックテスト約定価格（実行日の日足始値）との差の
   符号付きbps（buy:+ / sell:−、D8）。1時間足の O-C はボラティリティでありコストではない（F3採択）。
 - 想定コストは 15 bps/売買（凍結。評価期間中の変更禁止）。
+- mtm 行の `equity_gross` は「市場リターンは同じで、想定コストだけを払わなかった場合の
+  equity」である（t_a2d67004、2026-10-23 修正）。日次チェーンで equity の前日比を gross 側にも
+  適用し、前回 mtm 行との間に記録された `cost_assumed` をそのステップで足し戻す
+  （恒等式: `gross/equity = Π(1 + cost_t / equity_t)`）。したがって Q3 の `cost_drag_pp`
+  （`(gross - equity)/gross`、正の値 = 実際に引かれたコストの割合）は相場の上下を含まない。
+  修正前の行（〜2026-10-23 の frozen 値）はコスト率の複利で市場損益を含まないため、
+  過去行の `equity_gross` / `cost_drag_pp` は読まない。過去行は書き換えない
+  （ジャーナル追記のみ・§5）。
 - anti-scalp guard（paperloop_guard.check_trade）は純粋関数で、ジャーナルから復元した
   last_fill_ts/side/opened_ts/fills_today を受ける（D6）。v1 の通常フローでは発火しない前提のため、
   合成違反注文を使ったユニットテスト（test_guard_rejects_synthetic_violations 系）が

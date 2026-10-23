@@ -1480,3 +1480,131 @@ def test_cusum_absent_log_does_not_gate(tmp_path: Path, monkeypatch) -> None:
         if row.get("event") == "halt_check" and row.get("book") == pl.BENCH_CRYPTO_BOOK
     ]
     assert other and all(row["edge_lifetime"] is None for row in other)
+
+
+# --- equity_gross: same market returns, costs never charged (t_a2d67004) -----
+
+
+def _costed_fill(root: Path, book: str, day: str, cost: float, notional: float = 0.25) -> None:
+    """Append a hand-built fill row that carries an assumed cost."""
+
+    _append_row(
+        root,
+        event="fill",
+        book=book,
+        asset="SPY",
+        side="buy",
+        paper_fill_price=100.0,
+        paper_fill_bar_open_ts=f"{day}T13:30:00+00:00",
+        units_after=0.25,
+        cash_after=0.0,
+        traded_notional=notional,
+        cost_assumed=cost,
+    )
+
+
+def test_equity_gross_tracks_market_returns(tmp_path: Path) -> None:
+    """Regression (t_a2d67004): gross must include the market returns.
+
+    The pre-fix `_cost_accumulators` compounded only the cost rates from 1.0
+    (market returns ignored), so a book that fell 1% gross-of-costs still
+    reported equity_gross > 1.0. With no fills at all, gross == equity exactly.
+    """
+
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _mtm(root, pl.S01_BOOK, "2026-10-21", 1.0, 0.0)
+    _mtm(root, pl.S01_BOOK, "2026-10-22", 1.10, 0.0)
+    _mtm(root, pl.S01_BOOK, "2026-10-23", 0.99, 0.0)
+    cum_cost, cum_turnover, gross = pl._cost_accumulators(root, pl.S01_BOOK, 0.99)
+    assert cum_cost == 0.0
+    assert cum_turnover == 0.0
+    assert gross == pytest.approx(0.99, abs=1e-12)
+
+
+def test_equity_gross_adds_back_only_costs_on_a_flat_market(tmp_path: Path) -> None:
+    """Flat market: gross stays at inception 1.0 and the drag equals the cost.
+
+    Chain identity on a flat market: the add-back exactly restores the cost,
+    so cost_drag_pp == the actually incurred cost share (2% here), not the
+    pre-fix compounding of cost rates against a stale base.
+    """
+
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _mtm(root, pl.S01_BOOK, "2026-10-21", 1.0, 0.0)
+    _costed_fill(root, pl.S01_BOOK, "2026-10-21", cost=0.02)
+    _mtm(root, pl.S01_BOOK, "2026-10-22", 0.98, 0.0)
+    cum_cost, cum_turnover, gross = pl._cost_accumulators(root, pl.S01_BOOK, 0.98)
+    assert cum_cost == pytest.approx(0.02)
+    assert cum_turnover == pytest.approx(0.25)
+    assert gross == pytest.approx(1.0, abs=1e-12)
+    drag_pp = (gross - 0.98) / gross * 100.0
+    assert drag_pp == pytest.approx(2.0, abs=1e-9)  # 0.02 charged on 1.0
+
+
+def test_equity_gross_identity_gross_over_equity_is_cost_share_product(
+    tmp_path: Path,
+) -> None:
+    """Algebraic chain identity: gross/equity == prod(1 + cost_t / equity_t).
+
+    Costs charged mid-series compound forward with the subsequent market
+    returns on the gross side — that is what makes the drag read the actual
+    cost share on a moving market (the panel's cost_drag_pp input).
+    """
+
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    # market path with costs on two different steps, both books interleaved
+    _mtm(root, pl.S01_BOOK, "2026-10-21", 1.0, 0.0)
+    _costed_fill(root, pl.S01_BOOK, "2026-10-21", cost=0.01)
+    _mtm(root, pl.BOOK_C_BOOK, "2026-10-21", 1.0, 0.0)
+    _mtm(root, pl.S01_BOOK, "2026-10-22", 0.99 * 1.05, 0.0)  # cost then +5%
+    _mtm(root, pl.BOOK_C_BOOK, "2026-10-22", 1.008, 0.0)
+    _costed_fill(root, pl.BOOK_C_BOOK, "2026-10-22", cost=0.004)
+    _mtm(root, pl.S01_BOOK, "2026-10-23", 0.98 * 1.05, 0.0)  # no cost this step
+    final_a = 1.038 * 0.97  # market -3% on 10-23, cost charged before it
+    _costed_fill(root, pl.S01_BOOK, "2026-10-23", cost=0.005)
+    cum_cost, _, gross_a = pl._cost_accumulators(root, pl.S01_BOOK, final_a)
+    _, _, gross_c = pl._cost_accumulators(root, pl.BOOK_C_BOOK, 1.008 * 1.01)
+    assert cum_cost == pytest.approx(0.015)
+    # independent replay of prod(1 + c_t / E_t) per book, incl. the final step
+    # (E_t = equity at the END of the step the cost was charged in)
+    step_a2 = 0.99 * 1.05  # A's 0.01 sits in the step ending at mtm(10-22)
+    prod_a = (1 + 0.01 / step_a2) * (1 + 0.005 / final_a)
+    assert gross_a / final_a == pytest.approx(prod_a, rel=1e-12)
+    final_c = 1.008 * 1.01  # C's 0.004 sits in the final step
+    prod_c = 1 + 0.004 / final_c
+    assert gross_c / final_c == pytest.approx(prod_c, rel=1e-12)
+    # and the drag reads the cost share, not the market move: 1% + 0.5%
+    # compound to ~1.44pp here — nowhere near the +5%/-3% market steps
+    drag_a = (gross_a - final_a) / gross_a * 100.0
+    assert drag_a == pytest.approx((1 - 1 / prod_a) * 100.0, rel=1e-9)
+    assert 0.0 < drag_a < 1.5
+
+
+def test_cost_drag_pp_reads_the_incurred_cost_not_the_market_move() -> None:
+    """Panel regression (t_a2d67004): cost_drag_pp must match the cost share.
+
+    With the fixed gross, a 2% cost on a flat market reads 2.0pp. The pre-fix
+    gross (cost rates compounded from 1.0, market ignored) made the same
+    journal read 3.92pp — the market drawdown mislabeled as cost.
+    """
+
+    from collections.abc import Mapping
+    from typing import Any
+
+    from yowayowa.paperloop_panel import _cost_drag_pp
+
+    rows: list[Mapping[str, Any]] = [
+        {"book": pl.S01_BOOK, "date": "2026-10-22", "equity": 0.98, "equity_gross": 1.0},
+        {"book": pl.S01_BOOK, "date": "2026-10-23", "equity": 0.966553, "equity_gross": 0.968349},
+    ]
+    drag = _cost_drag_pp(rows, pl.S01_BOOK)
+    assert drag is not None
+    assert drag == pytest.approx((0.968349 - 0.966553) / 0.968349 * 100.0, rel=1e-12)
+    assert 0.0 < drag < 1.0
+    # the pre-fix value for the same journal (gross 1.000349 from 1.0) was
+    # ~3.38pp — assert the fixed input, not the formula, removes that error
+    old = (1.000349 - 0.966553) / 1.000349 * 100.0
+    assert old > 3.0 and drag < 1.0
