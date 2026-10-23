@@ -68,14 +68,20 @@ def screening_candidates(
 ) -> None:
     """Show persisted screening candidates (``ALL`` lists every code)."""
 
+    wanted = code.strip().upper()
     session = get_session()
     try:
-        rows = read_screening_candidates(session, limit=limit)
+        # The code filter belongs in the query, not in a slice of the first
+        # ``limit`` rows: filtering after the limit reported a persisted
+        # candidate as absent whenever it fell outside the first page
+        # (workflow dead-end audit 2026-10-23, doc P5_DEADEND_AUDIT_20261023).
+        rows = read_screening_candidates(
+            session,
+            code=None if wanted == "ALL" else wanted,
+            limit=limit,
+        )
     finally:
         session.close()
-    wanted = code.strip().upper()
-    if wanted != "ALL":
-        rows = [row for row in rows if row["code"] == wanted]
     if not rows:
         print(f"No screening candidates persisted for {code}")
         raise typer.Exit(code=1)

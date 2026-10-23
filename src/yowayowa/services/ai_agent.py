@@ -1044,6 +1044,12 @@ class InvestmentResearchAgent:
                 self._object_schema(
                     {
                         "run_date": {"type": "string"},
+                        "code": {
+                            "type": "string",
+                            "description": (
+                                "JPX code as persisted (4 or 5 digits); omit for every code."
+                            ),
+                        },
                         "limit": {"type": "integer"},
                     },
                 ),
@@ -1527,11 +1533,14 @@ class InvestmentResearchAgent:
 
     def _tool_screening_candidates(self, args: dict[str, Any]) -> Any:
         run_date = self._date_arg(args.get("run_date"))
+        raw_code = args.get("code")
+        code = raw_code.strip() if isinstance(raw_code, str) and raw_code.strip() else None
         raw_limit = args.get("limit")
         limit = min(max(int(raw_limit), 1), 100) if raw_limit is not None else 50
         return read_screening_candidates(
             self.session,
             run_date=run_date,
+            code=code,
             limit=limit,
         )
 
