@@ -36,6 +36,15 @@ Key contracts:
 Note: equity books (C, EQUITY_EW) carry the same schema as the crypto books
 (v1.3 rows; BOOK_C_ENABLED gates the book C set).
 
+v1.6 addition (C-02, docs/PAPERLOOP_MONEY_REVIEW_20261023.md): the weekly row's
+``week_return`` is the 7-day window's change rate (last mark before
+``window_start`` → last mark on/before ``week_end``), not the cumulative return
+from inception. The cumulative figure keeps its value under ``cum_return``.
+``week_return_base`` / ``week_return_as_of`` / ``week_return_reason`` make the
+window audit-able, and the summary row is now ``demo-loop-summary-v1.6`` because
+rows already written to the append-only weekly file carry the old meaning of
+that key (they are not rewritten).
+
 v1.4 additions (t_dddae39e, revenue verification):
 - EQUITY_EW is ENABLED: the equity 1/N benchmark book was preregistered and
   coded when Book C shipped but never added to BOOKS_ENABLED, so Book C had
@@ -2700,6 +2709,52 @@ def _mtm_marks(root: Path, book: str) -> dict[date, float]:
     return marks
 
 
+def _week_return(
+    marks: Mapping[date, float], window_start: date, week_end: date
+) -> tuple[float | None, str | None, str | None, str | None]:
+    """Return of the 7-day week (``window_start..week_end``), not since inception.
+
+    v1.6 (C-02, docs/PAPERLOOP_MONEY_REVIEW_20261023.md): the weekly row's
+    ``week_return`` used to be ``state["equity"] - 1.0`` — the book's CUMULATIVE
+    return from the 1.0 inception, while every neighbouring window column
+    (decisions/fills-in-window/mtm_days/…) was scoped to the week. The same key
+    therefore meant two different things in one row, and the error grew with the
+    book's age. A weekly return is chained from the last mark BEFORE the window
+    to the last mark inside it, so the move between the previous report's close
+    and this one is what gets reported.
+
+    Returns ``(week_return, base_label, as_of, reason)``:
+    - ``week_return``: ``end/base - 1``, or None when the week cannot be priced.
+    - ``base_label``: ISO date of the base mark, or ``"inception"`` when the book
+      has no mark before the window (its equity chain starts at 1.0, so the
+      whole history is the week — the only defensible base in that case).
+    - ``as_of``: ISO date of the mark the return is measured to.
+    - ``reason``: why ``week_return`` is None (missing data is not zero).
+
+    Marks dated after ``week_end`` are ignored: a row generated for week_end must
+    never carry a later mark's move (the append-only weekly file cannot take a
+    correction back).
+    """
+
+    dated = sorted((day, equity) for day, equity in marks.items() if day <= week_end)
+    in_window = [(day, equity) for day, equity in dated if day >= window_start]
+    if not dated:
+        return None, None, None, "no_mark_at_or_before_week_end"
+    if not in_window:
+        return None, None, None, "no_mark_in_window"
+    end_day, end = in_window[-1]
+    prior = [(day, equity) for day, equity in dated if day < window_start]
+    if prior:
+        base_day, base = prior[-1]
+        base_label: str | None = base_day.isoformat()
+    else:
+        base = 1.0
+        base_label = "inception"
+    if base <= 0:
+        return None, base_label, end_day.isoformat(), "base_unusable"
+    return end / base - 1.0, base_label, end_day.isoformat(), None
+
+
 def _comparison_line(
     root: Path, book: str, bench: str, state_by_book: Mapping[str, dict[str, Any]]
 ) -> dict[str, Any]:
@@ -2797,7 +2852,7 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     root = loop_root(data_dir)
     window_start = week_end - timedelta(days=6)
     out: dict[str, Any] = {
-        "schema": "demo-loop-summary-v1.2",
+        "schema": "demo-loop-summary-v1.6",
         "week_end": week_end.isoformat(),
         "generated_at": _utc_now_text(),
         "books": {},
@@ -2859,6 +2914,9 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
             and row.get("book") == book
             and window_start <= date.fromisoformat(str(row["mtm_date"])) <= week_end
         ]
+        week_return, week_base, week_as_of, week_reason = _week_return(
+            _mtm_marks(root, book), window_start, week_end
+        )
         drawdown = state["equity"] / state["peak"] - 1.0 if state["peak"] > 0 else None
         book_out = {
             "decisions": len(judged),
@@ -2866,7 +2924,15 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
             "fills": len(fills),
             "fills_rejected": len(rejects),
             "backfill_days": len(decisions) - len(judged),
-            "week_return": state["equity"] - 1.0,
+            # v1.6 (C-02): the week's change rate, chained from the last mark
+            # before the window. The cumulative figure that this key used to
+            # carry (and that older append-only rows still hold) is now
+            # ``cum_return`` so neither meaning is lost or renamed silently.
+            "week_return": week_return,
+            "week_return_base": week_base,
+            "week_return_as_of": week_as_of,
+            "week_return_reason": week_reason,
+            "cum_return": state["equity"] - 1.0,
             "drawdown_now": drawdown,
             "shortfall_bps_mean_signed": (
                 sum(shortfalls) / len(shortfalls) if shortfalls else None

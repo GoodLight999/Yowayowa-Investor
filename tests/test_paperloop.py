@@ -1608,3 +1608,65 @@ def test_cost_drag_pp_reads_the_incurred_cost_not_the_market_move() -> None:
     # ~3.38pp — assert the fixed input, not the formula, removes that error
     old = (1.000349 - 0.966553) / 1.000349 * 100.0
     assert old > 3.0 and drag < 1.0
+
+
+# --- C-02: week_return is the week's change, not the cumulative return -------------
+
+
+def test_week_return_is_the_weeks_change_not_the_cumulative_return(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """C-02 (docs/PAPERLOOP_MONEY_REVIEW_20261023.md): week_return is per-week.
+
+    The field used to be ``state["equity"] - 1.0`` (cumulative from the 1.0
+    inception) while every neighbouring window column was scoped to
+    ``week_start..week_end``. On the real journal that printed -3.3447% for a
+    week whose actual move was -0.8421%. The regression below pins the chained
+    window definition, the ignored mark after week_end (the weekly file is
+    append-only, so a later mark must never leak into an older row), and the
+    honest None when the week cannot be priced.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+
+    def build(name: str, marks: list[tuple[str, float]]) -> Path:
+        data_dir = tmp_path / name
+        root = pl.loop_root(data_dir)
+        root.mkdir(parents=True, exist_ok=True)
+        for day, equity in marks:
+            _mtm(root, pl.S01_BOOK, day, equity, 0.0)
+        return data_dir
+
+    # week_end 2026-10-25 -> window 2026-10-19..2026-10-25
+    data_dir = build(
+        "chained",
+        [
+            ("2026-10-12", 1.10),  # base: last mark BEFORE the window
+            ("2026-10-22", 1.144),
+            ("2026-10-24", 1.155),  # last mark inside the window
+            ("2026-10-27", 1.20),  # after week_end -> must be ignored
+        ],
+    )
+    book = pl.weekly_summary(data_dir, date(2026, 10, 25))["books"][pl.S01_BOOK]
+    assert book["week_return"] == pytest.approx(1.155 / 1.10 - 1.0, rel=1e-12)
+    assert book["week_return_base"] == "2026-10-12"
+    assert book["week_return_as_of"] == "2026-10-24"
+    assert book["week_return_reason"] is None
+    # the number the pre-fix code wrote for this same journal (20%, not 5%)
+    assert book["cum_return"] == pytest.approx(0.20, rel=1e-12)
+    assert abs(book["week_return"] - book["cum_return"]) > 0.14
+
+    # a book whose whole life is inside the window: inception (1.0) is the base
+    only_window = build("inception", [("2026-10-20", 1.10), ("2026-10-23", 1.21)])
+    book = pl.weekly_summary(only_window, date(2026, 10, 25))["books"][pl.S01_BOOK]
+    assert book["week_return_base"] == "inception"
+    assert book["week_return"] == pytest.approx(0.21, rel=1e-12)
+
+    # no mark inside the window -> None + reason (missing data is not zero)
+    stale = build("stale", [("2026-10-05", 1.05)])
+    book = pl.weekly_summary(stale, date(2026, 10, 25))["books"][pl.S01_BOOK]
+    assert book["week_return"] is None
+    assert book["week_return_reason"] == "no_mark_in_window"
+    assert book["week_return_as_of"] is None
+
+

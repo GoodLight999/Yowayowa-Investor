@@ -56,6 +56,19 @@ v1.0 からの変更点（2026-10-11）:
   `drawdown` 列自体と -20% 警告の判定は従来どおり。
 - 週次サマリーは追記専用（`weekly_summary.jsonl`）。書き込んだ行は消さないため、
   比較行の意味を変えたときは本節のように定義を先に固定する。
+- **`week_return` は「その週の変化率」（v1.6, C-02）**: 各行の `week_return` は
+  `week_end-6日..week_end` の7日窓の騰落率で、基準は**窓より前の最後の mark**、
+  終点は**窓内の最後の mark**（`week_end` より後の mark は使わない）。したがって
+  前回レポートの終値から今回の終値までの変化が載る。同日の `week_return_base`
+  （基準 mark の日付。窓より前に mark が無い帳簿は `inception` = 起点1.0）、
+  `week_return_as_of`（終点に使った mark の日付）、`week_return_reason`
+  （算出できない理由。0 で埋めない）で窓を検証できる。
+  **v1.2〜v1.5 の行の `week_return` は inception からの累積**であり、同じ列名で
+  意味が違う。修正後の行には累積が `cum_return` として併記される（旧行には無い）。
+  行の `schema` は `demo-loop-summary-v1.7`（v1.6 は C-03 修正前の作業ツリー版で、
+  実ファイルには 1 行も書かれていない。実在する旧行は `...-v1.2` と `schema` 無し）。
+  実測（実ジャーナル, week_end=2026-10-26）: A は旧 -3.3447% → 新 -0.8421%
+  （差 2.5026pp）、CRYPTO_1N は旧 -3.5442% → 新 -0.8651%。
 - 1時間tape: `data/demo-loop/tape/1h/{SYM}.jsonl`。fill 実行時に冪等追記。
   約定価格はこの tape の「recorded_at 以降に始まった最初の1時間足の始値」
   （commit-before-fill、F2/D5採択）。recorded_at より前の足での約定は assert で拒否。
