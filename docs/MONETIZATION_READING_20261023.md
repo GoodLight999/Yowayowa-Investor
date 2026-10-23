@@ -34,7 +34,8 @@
 | prereg（実行後） | sha256 `d18a1dd0be26ec7a86f375d21e396f8c3d0d3183e54e3a24ba6e7b0fc4e57083` |
 | 実行コード | `src/yowayowa/paperloop.py` sha256 `5572700777926e48e155ac2f370ca93c427815ac44361e9a16620ae5f728129f` |
 | 試験コード | `tests/test_paperloop.py` sha256 `b29cd35aaeed1f8dea055af4995afe7f4e461b55275d791f4d2df39744ee45fe` |
-| リポジトリ | `agent/commercial-foundation` @ `8450e80e32627852eac2dab23b81bdb9fc868745`（未コミット変更あり） |
+| リポジトリ | `agent/commercial-foundation` 変更前 HEAD `8450e80e32627852eac2dab23b81bdb9fc868745`、本カードのコミット `d94514d` |
+| 生データ（恒久） | `docs/evidence/20261023/{monetization_reading,paperloop_verify,old_vs_new_weekly_summary}.json` |
 | 実走時刻 | 2026-10-23 09:20 JST（cron `demo-loop-decide`、`run` 行 seq 261 `ok:true rows_written:4`） |
 | 評価バー | 帳簿A/CRYPTO_1N: 2026-10-22、帳簿C/EQUITY_EW: 2026-10-21 |
 
