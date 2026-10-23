@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from yowayowa.stock_models import StockOhlcvRecord, normalize_stock_symbol
+from yowayowa.trading_sessions import session_lag
 
 
 class StockOhlcvProvider(Protocol):
@@ -173,6 +174,35 @@ def default_store(data_dir: str | Path = "./data") -> StockOhlcvStore:
     """The CTO-fixed JSONL store root: ``{data_dir}/stock-ohlcv``."""
 
     return StockOhlcvStore(Path(data_dir) / "stock-ohlcv")
+
+
+def persisted_freshness(
+    store: StockOhlcvStore,
+    symbol: str,
+    *,
+    now: datetime,
+    provider: str | None = None,
+) -> dict[str, Any] | None:
+    """Newest persisted bar for ``symbol`` plus its session lag against ``now``.
+
+    ``session_lag == 0`` means the newest persisted bar is the most recent
+    finalized NYSE session; ``1`` is the "one business day behind" case that
+    the demo-loop mtm is priced on (``price_bar_date``). Read-only: nothing is
+    repaired or synthesized here.
+    """
+
+    rows = store.read(symbol, provider=provider, limit=1)
+    if not rows:
+        return None
+    newest = rows[0]
+    as_of = datetime.fromisoformat(str(newest["as_of"]).replace("Z", "+00:00"))
+    bar_date = as_of.astimezone(UTC).date()
+    return {
+        "as_of": as_of,
+        "bar_date": bar_date,
+        "retrieved_at": newest.get("retrieved_at"),
+        "session_lag": session_lag(bar_date, now=now),
+    }
 
 
 def utc_now() -> datetime:

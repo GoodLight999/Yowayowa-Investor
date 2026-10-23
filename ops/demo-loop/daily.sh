@@ -16,7 +16,11 @@ export PYTHONPATH="$REPO/src"
 PY="$REPO/.venv/bin/python"
 "$REPO/.venv/bin/yowayowa" crypto-fetch BTC ETH --days 5 \
   || echo "crypto-fetch failed (HALT rows will be recorded)"
-"$REPO/.venv/bin/yowayowa" stock-fetch SPY IWM JNJ PG --days 5 \
+# 10 calendar days (not 5): the window must still contain the previous session
+# after a long weekend plus a market holiday.  The provider sends one request
+# per symbol regardless of the width, and re-appends are idempotent per
+# (provider, currency, as_of), so the wider window costs nothing.
+"$REPO/.venv/bin/yowayowa" stock-fetch SPY IWM JNJ PG --days 10 \
   || echo "stock-fetch failed (HALT rows will be recorded)"
 "$PY" -m yowayowa.loop_cli mark || true
 "$PY" -m yowayowa.loop_cli decide
