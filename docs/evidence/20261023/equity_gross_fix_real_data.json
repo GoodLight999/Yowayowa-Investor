@@ -391,7 +391,8 @@
    },
    {
     "scope": "TSUKUMO full tests/test_paperloop.py and tests/test_paperloop_v12.py (heavy suites, isolated clone of wt/t_a2d67004)",
-    "exit_code": "recorded after the TSUKUMO run"
+    "exit_code": 0,
+    "result": "test_paperloop.py: 34 passed (rc=0); test_paperloop_v12.py: 19 passed (rc=0); isolated clone of wt/t_a2d67004 (ec06a91) on TSUKUMO, shared TSUKUMO venv, PYTHONPATH=<clone>/src TZ=UTC"
    }
   ]
  },
@@ -408,5 +409,7 @@
   "R1_match": "32/32",
   "R2_match": "32/32",
   "L1_L14": "all ok (legacy_v11_findings are the known frozen v1.1 rows)"
- }
+ },
+ "commit": "ec06a91c14dc18d40dc51a0ff1b964528c7b670d",
+ "branch": "wt/t_a2d67004"
 }
