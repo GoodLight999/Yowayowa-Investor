@@ -707,6 +707,130 @@ def test_book_c_weekly_cadence_gate(tmp_path: Path, monkeypatch) -> None:
     assert len(tue_c_mtm) == 1, "Book C must have daily MTM row on Tuesday"
 
 
+# --- per-book comparison line against the book's own benchmark (t_dddae39e) ---
+
+
+def _append_row(root: Path, **row: object) -> None:
+    """Append one hand-built journal row (chain/seq handled by _append_row)."""
+
+    payload: dict[str, object] = {
+        "recorded_at": datetime(2026, 10, 27, 0, 20, tzinfo=UTC).isoformat()
+    }
+    payload.update(row)
+    pl._append_row(root, payload)  # type: ignore[arg-type]
+
+
+def _mtm(root: Path, book: str, day: str, equity: float, drawdown: float) -> None:
+    _append_row(
+        root,
+        event="mtm",
+        book=book,
+        mtm_date=day,
+        equity=equity,
+        cash=0.0,
+        drawdown=drawdown,
+        peak_equity=1.0,
+    )
+
+
+def _fill(root: Path, book: str, day: str) -> None:
+    _append_row(
+        root,
+        event="fill",
+        book=book,
+        asset="SPY",
+        side="buy",
+        paper_fill_price=100.0,
+        paper_fill_bar_open_ts=f"{day}T13:30:00+00:00",
+        units_after=0.25,
+        cash_after=0.0,
+        traded_notional=0.25,
+    )
+
+
+def _comparison_books(data_dir: Path) -> tuple[dict, dict]:
+    """weekly_summary on a hand-built journal, without the Q1-Q7 panel."""
+
+    out = pl.weekly_summary(data_dir, date(2026, 10, 27))
+    return out["books"][pl.S01_BOOK], out["books"][pl.BOOK_C_BOOK]
+
+
+def test_comparison_line_is_null_while_benchmark_has_no_fill(tmp_path: Path, monkeypatch) -> None:
+    """A benchmark sitting in cash must never be reported as a 0% comparison.
+
+    Review round 2 (t_dddae39e) item 1: before EQUITY_EW fills, Book C's
+    vs_benchmark_pp_cum / benchmark_cum_pnl must be None (the weekly_summary
+    row is append-only, so a wrong 0 would be永久に残る), with a reason field.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    data_dir = tmp_path / "data"
+    root = pl.loop_root(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    for day in ("2026-10-21", "2026-10-22", "2026-10-23"):
+        _mtm(root, pl.BOOK_C_BOOK, day, 1.01, 0.0)
+        _mtm(root, pl.BENCH_EQUITY_BOOK, day, 1.0, 0.0)  # cash, never filled
+    book_a, book_c = _comparison_books(data_dir)
+    assert book_c["fills"] == 0
+    assert book_c["benchmark_book"] == pl.BENCH_EQUITY_BOOK
+    for key in (
+        "cum_pnl",
+        "max_drawdown",
+        "benchmark_cum_pnl",
+        "benchmark_max_drawdown",
+        "vs_benchmark_pp_cum",
+        "dd_vs_benchmark_ratio",
+    ):
+        assert book_c[key] is None, f"{key} must be None while the benchmark is in cash"
+    assert book_c["comparison_start"] is None
+    assert book_c["comparison_reason"] == "benchmark_has_no_fill"
+    # the crypto book has no fills either -> same honest None
+    assert book_a["benchmark_book"] == pl.BENCH_CRYPTO_BOOK
+    assert book_a["vs_benchmark_pp_cum"] is None
+    assert book_a["comparison_reason"] == "benchmark_has_no_fill"
+
+
+def test_comparison_line_starts_at_the_shared_baseline_after_benchmark_fill(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Once the benchmark fills, both books are measured from one baseline day.
+
+    Review round 2 (t_dddae39e) item 2: Book C gained 10% BEFORE EQUITY_EW was
+    invested. Subtracting inception equity would book that gain as a
+    comparison win it never traded for, so the line must start at the first
+    mtm date both books carry on/after the benchmark's first fill.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    data_dir = tmp_path / "data"
+    root = pl.loop_root(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    # pre-fill: C is up 10%, the benchmark is still 100% cash (no fill yet)
+    _mtm(root, pl.BOOK_C_BOOK, "2026-10-23", 1.10, 0.0)
+    _mtm(root, pl.BENCH_EQUITY_BOOK, "2026-10-23", 1.0, 0.0)
+    # 2026-10-26: the benchmark buys 1/N; both books carry a mark that day
+    _fill(root, pl.BENCH_EQUITY_BOOK, "2026-10-26")
+    _mtm(root, pl.BOOK_C_BOOK, "2026-10-26", 1.10, 0.0)
+    _mtm(root, pl.BENCH_EQUITY_BOOK, "2026-10-26", 1.0, 0.0)
+    # 2026-10-27: C -5% from its 10/26 mark, benchmark -1%
+    _mtm(root, pl.BOOK_C_BOOK, "2026-10-27", 1.045, -0.05)
+    _mtm(root, pl.BENCH_EQUITY_BOOK, "2026-10-27", 0.99, -0.01)
+
+    _book_a, book_c = _comparison_books(data_dir)
+    assert book_c["comparison_start"] == "2026-10-26"
+    assert book_c["comparison_reason"] is None
+    # measured from the shared baseline, not from inception (that would be +4.5%)
+    assert abs(book_c["cum_pnl"] - (-0.05)) < 1e-9
+    assert abs(book_c["benchmark_cum_pnl"] - (-0.01)) < 1e-9
+    assert abs(book_c["vs_benchmark_pp_cum"] - (-4.0)) < 1e-9
+    assert abs(book_c["max_drawdown"] - (-0.05)) < 1e-9
+    assert abs(book_c["benchmark_max_drawdown"] - (-0.01)) < 1e-9
+    assert abs(book_c["dd_vs_benchmark_ratio"] - 5.0) < 1e-9
+    assert book_c["dd_ratio_reason"] is None
+    # the pre-fill mark (10/23) is outside the comparison window
+    assert pl._cumulative_max_drawdown(root, pl.BOOK_C_BOOK, since=date(2026, 10, 26)) == -0.05
+
+
 # --- milestone judgment wiring (t_d33aef07) -----------------------------------
 
 

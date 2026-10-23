@@ -165,12 +165,14 @@
  },
  "new_C_block_new_fields": {
   "benchmark_book": "EQUITY_EW",
-  "benchmark_cum_pnl": 0.0,
+  "cum_pnl": null,
+  "max_drawdown": null,
+  "benchmark_cum_pnl": null,
   "benchmark_max_drawdown": null,
-  "cum_pnl": 0.009858449869285302,
+  "vs_benchmark_pp_cum": null,
   "dd_vs_benchmark_ratio": null,
-  "max_drawdown": 0.0,
-  "vs_benchmark_pp_cum": 0.9858449869285302
+  "comparison_start": null,
+  "comparison_reason": "benchmark_has_no_fill"
  },
  "new_A_block_new_fields": {
   "benchmark_book": "CRYPTO_1N",
@@ -191,5 +193,27 @@
   "C",
   "CRYPTO_1N",
   "EQUITY_EW"
+ ],
+ "_round1_new_C_block_new_fields": {
+  "benchmark_book": "EQUITY_EW",
+  "benchmark_cum_pnl": 0.0,
+  "benchmark_max_drawdown": null,
+  "cum_pnl": 0.009858449869285302,
+  "dd_vs_benchmark_ratio": null,
+  "max_drawdown": 0.0,
+  "vs_benchmark_pp_cum": 0.9858449869285302
+ },
+ "_superseded_by": "docs/evidence/20261023/comparison_line_review_r2.json",
+ "_review_corrections": [
+  {
+   "round": 2,
+   "reviewer": "audit-cld",
+   "at": "2026-10-23T01:24:08.096048+00:00",
+   "why": "new_C_block_new_fields reported a comparison while EQUITY_EW had no fill; the field is rewritten with the fixed code's output and the round-1 values are preserved under _round1_new_C_block_new_fields. Every other field in this file is left untouched as the historical old-vs-new record of that moment.",
+   "code": {
+    "round2_paperloop_sha256": "7f5e6589a294aa69d6a0129371ca3caa1e71b3d3ff0379e38ed086f70a92eace",
+    "note": "The code hash of the run that produced this file is not recorded here (round-1 artifact); the corrected block was produced by the round-2 code above, whose old/new comparison is in comparison_line_review_r2.json."
+   }
+  }
  ]
 }

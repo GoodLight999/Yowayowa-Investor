@@ -41,6 +41,16 @@ v1.0 からの変更点（2026-10-11）:
 - 週次サマリーの各戦略帳簿には、自分の比較行（`benchmark_book` / `cum_pnl` /
   `max_drawdown` / `benchmark_cum_pnl` / `benchmark_max_drawdown` /
   `vs_benchmark_pp_cum` / `dd_vs_benchmark_ratio`）が付く。欠測は null。
+  比較は**共有の起点日**（`comparison_start`）から測る。起点は「ベンチマークの
+  初回約定日以降で、両方の帳簿が同じ日に mtm を持つ最初の日」であり、その日の
+  評価額を両帳簿の基準にする（片方だけが現金の期間の損益を一方的に計上しない）。
+  ベンチマークに fill が1件も無い間、および共有の起点がまだ無い間は、比較の
+  数値フィールドはすべて null で、`comparison_reason`
+  （`benchmark_has_no_fill` / `no_shared_mark_since_benchmark_first_fill` /
+  `baseline_unusable`）に理由が入る。0 で埋めない。DD 比だけが算出できない
+  ときは `dd_ratio_reason`（`benchmark_drawdown_missing` など）が付く。
+- 週次サマリーは追記専用（`weekly_summary.jsonl`）。書き込んだ行は消さないため、
+  比較行の意味を変えたときは本節のように定義を先に固定する。
 - 1時間tape: `data/demo-loop/tape/1h/{SYM}.jsonl`。fill 実行時に冪等追記。
   約定価格はこの tape の「recorded_at 以降に始まった最初の1時間足の始値」
   （commit-before-fill、F2/D5採択）。recorded_at より前の足での約定は assert で拒否。

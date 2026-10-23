@@ -18,11 +18,14 @@
 - 直したのは次の4点だけ。戦略パラメータ・コスト・閾値・凍結値は触っていない。
   1. `BOOKS_ENABLED` に `EQUITY_EW` を追加（1/N を一度買って保有、CRYPTO_1N と同規則）。
   2. `EQUITY_EW` を帳簿Cと同じ週次（月曜）ゲートに載せる（別戦略にならないように）。
-  3. `EQUITY_EW` の prereg 著者を t_feb3aa55（帳簿C 導入タスク）に修正。
+  3. `EQUITY_EW` の prereg 行の著者は、実際に登録された行のとおり
+     `worker-go:t_dddae39e`（登録済み行は書き換えない。§8-4 に同じ説明を残す）。
   4. `weekly_summary` の各戦略帳簿に自分の比較行
      （`benchmark_book` / `cum_pnl` / `max_drawdown` / `benchmark_cum_pnl` /
      `benchmark_max_drawdown` / `vs_benchmark_pp_cum` / `dd_vs_benchmark_ratio`）を追加。
-     欠測は 0 で埋めず null のまま返す。
+     欠測は 0 で埋めず null のまま返す。比較は**共有の起点日**（`comparison_start`）
+     から測り、ベンチマークが未約定の間は数値を出さず `comparison_reason` に理由を
+     入れる（§8-1/§8-2 のレビュー対応で確定した定義）。
 
 ## 2. 入力とコードの固定
 
@@ -32,10 +35,10 @@
 | journal（実行後） | 261 行 / sha256 `ed12c32a717d730a6fccc983620cd6c70a4423216499585ad7605b57179c2428` |
 | anchors（実行後） | sha256 `3f7e09e6ff984f35ff04184f6479f38008eb73b2045d2d98f3b7ff05ac872ef3` |
 | prereg（実行後） | sha256 `d18a1dd0be26ec7a86f375d21e396f8c3d0d3183e54e3a24ba6e7b0fc4e57083` |
-| 実行コード | `src/yowayowa/paperloop.py` sha256 `5572700777926e48e155ac2f370ca93c427815ac44361e9a16620ae5f728129f` |
-| 試験コード | `tests/test_paperloop.py` sha256 `b29cd35aaeed1f8dea055af4995afe7f4e461b55275d791f4d2df39744ee45fe` |
-| リポジトリ | `agent/commercial-foundation` 変更前 HEAD `8450e80e32627852eac2dab23b81bdb9fc868745`、本カードのコミット `d94514d` |
-| 生データ（恒久） | `docs/evidence/20261023/{monetization_reading,paperloop_verify,old_vs_new_weekly_summary}.json` |
+| 実行コード | `src/yowayowa/paperloop.py` sha256 `5572700777926e48e155ac2f370ca93c427815ac44361e9a16620ae5f728129f`（round 1。round 2 は `7f5e6589…`、§8） |
+| 試験コード | `tests/test_paperloop.py` sha256 `b29cd35aaeed1f8dea055af4995afe7f4e461b55275d791f4d2df39744ee45fe`（round 1。round 2 は `82a36649…`） |
+| リポジトリ | `agent/commercial-foundation` 変更前 HEAD `8450e80e32627852eac2dab23b81bdb9fc868745`、round 1 のコミット `d94514d`・`13cbc6c`、round 2 のコミットは本 doc §8 を含む「shared baseline」のコミット |
+| 生データ（恒久） | `docs/evidence/20261023/{monetization_reading,paperloop_verify,old_vs_new_weekly_summary,comparison_line_review_r2}.json` |
 | 実走時刻 | 2026-10-23 09:20 JST（cron `demo-loop-decide`、`run` 行 seq 261 `ok:true rows_written:4`） |
 | 評価バー | 帳簿A/CRYPTO_1N: 2026-10-22、帳簿C/EQUITY_EW: 2026-10-21 |
 
@@ -69,7 +72,7 @@
 - 費用後損益: `+0.634%` / `+6,344 円`（equity 1.006344）
 - 想定コスト: `1,500 円`（4銘柄×0.25、turnover 1.0）
 - 最大DD / 現在DD: `-0.348%` / `-0.348%`
-- 比較対象差: **未成立**（§6-1。`EQUITY_EW` は 10/23 から稼働、初回判断 2026-10-26・初回約定 2026-10-27）
+- 比較対象差: **未成立**（§6-1・§8-1。`EQUITY_EW` は 10/23 から稼働、初回判断 2026-10-26・初回約定 2026-10-27。未約定の間は比較行を null で返す）
 - 注意: 10/22 時点では評価バーが 10/20 で `+0.986%` と出ていた。10/21 の
   バーが入った今回の再評価では `+0.634%`。バー遅延で数字が動くので、
   確定は週次サマリーで行う。
@@ -85,9 +88,10 @@
   - `vs_benchmark_pp_cum`（A 対 CRYPTO_1N）は `0.17086960258662076` で新旧同値。
 - テスト（VPS・1本ずつ実行。重い suite 一括実行はしない）:
   - `tests/test_paperloop_v12.py` 19本 全pass（最長 `test_eval_Q1_passes_with_enough_observations` 90秒）
-  - `tests/test_paperloop.py` 23本 全pass（個別実測: `..._never_falls_back_on_failed_run_days` 123秒、
+  - `tests/test_paperloop.py` 22本 全pass（個別実測: `..._never_falls_back_on_failed_run_days` 123秒、
     `..._never_falls_back_on_crashed_run_days` 83秒、他は 5–8秒。
     一括実行は 400 秒を超えて未完走になるため、個別実行の終了コードで判定した）
+  - round 2 で比較行の試験を2本追加し、現在 24本（§8-3）。
   - 追加/更新した試験: 決定件数を `BOOKS_ENABLED` から数える形に変更、
     `EQUITY_EW` が月曜ゲートに乗ること・1/4 ずつ買うことの検証を追加。
 
@@ -95,8 +99,11 @@
 
 1. **帳簿Cの比較対象差はまだ存在しない。** `EQUITY_EW` は 10/23 09:20 JST から
    稼働し、月曜ゲートなので最初の判断は 2026-10-26、約定は 2026-10-27。
-   帳簿Cは 10/21 に建玉済みなので、比較期間の起点は完全には揃わない
-   （週次リバランス日以降で比較する）。
+   比較は共有の起点日から測る仕様にした（§8-2）。起点は「`EQUITY_EW` の初回
+   約定日以降で、C と `EQUITY_EW` が同じ日に mtm を持つ最初の日」で、両帳簿の
+   その日の評価額を基準にする。したがって C の 10/21〜10/26 の損益は比較に
+   入らない。起点が成立するまでは比較の数値フィールドはすべて null で
+   `comparison_reason=benchmark_has_no_fill` になる（実測: 2026-10-23 時点）。
 2. **equity の評価バーが1営業日古いことがある。** 10/22 00:21 UTC の実行では
    最新 SPY バーが 2026-10-20 で、帳簿Cの評価が1日遅れた。原因は既存の
    `stock-fetch --days 5` 経路の取得遅延で、本カードでは変更していない。
@@ -119,3 +126,73 @@
 - equity バーの1営業日遅れ（§6-2）を、既存 `stock-fetch` の取得時刻/期間の
   見直しとして別カードで扱う（データ源追加ではなく既存経路の調整）。
 - 12週/26週ゲートの接続は、マイルストーン日が来る前に別カードで扱う。
+
+## 8. レビュー第2ラウンド対応（2026-10-23 / audit-cld 差し戻し）
+
+監査の指摘4点に対し、比較行の意味を先に固定してから最小修正した。戦略パラメータ・
+コスト・閾値・凍結値、および既存のジャーナル行は触っていない。
+
+### 8-1 ベンチマーク未約定のときは数値を出さない（必須）
+
+- 修正前: `weekly_summary` は `EQUITY_EW` の mtm 行が1件あれば比較を計算していた。
+  2026-10-23 の実データでは C に `vs_benchmark_pp_cum=0.6344pp`、
+  `benchmark_cum_pnl=0.0`、`benchmark_max_drawdown=0.0` が入り、**現金のままの
+  ベンチマークとの差**を収益として書く状態だった（weekly_summary は追記専用なので
+  10/26 の週次でそのまま残る所だった）。
+- 修正後: ベンチマークに fill が1件も無い間は比較の数値フィールドをすべて None にし、
+  `comparison_reason="benchmark_has_no_fill"` を付ける。実測（同一ジャーナル・
+  2026-10-23 の状態）: C の比較行は全 None＋理由。A は CRYPTO_1N が 10/10 に約定済み
+  なので従来どおり数値が出る。
+- evidence JSON も同じ扱いに直した:
+  `docs/evidence/20261023/monetization_reading.json` の C ブロックと、
+  `old_vs_new_weekly_summary.json` の `new_C_block_*`。round 1 の値は
+  `comparison_correction.removed_round1_values` / `_round1_new_C_block_new_fields` に
+  残した（消していない）。
+
+### 8-2 比較の起点を共有日にする（必須）
+
+- 起点 = 「ベンチマークの初回約定日以降で、戦略帳簿とベンチマークが同じ `mtm_date` を
+  持つ最初の日」。その日の評価額を両帳簿の基準にし、`comparison_start` に記録する。
+  `cum_pnl` / `benchmark_cum_pnl` / `vs_benchmark_pp_cum` はこの起点からのリターン、
+  `max_drawdown` / `benchmark_max_drawdown` も起点以降の mtm 行だけで測る。
+- 理由: C は 10/21 に建玉済み、`EQUITY_EW` の約定は 10/27 以降。inception equity の
+  差を取ると C の 10/21〜10/26 の損益だけが一方的に乗り、12週/26週ゲートまで残る。
+- 実測: A は起点 `2026-10-10`（両帳簿 equity 1.0）なので round 1 と全フィールド同値
+  （`vs_benchmark_pp_cum=0.19951597133428534` / DD比 `0.9547658001204044`）。C は共有
+  起点が未成立なので全 None。
+- docs と実装を一致させた: `docs/DEMO_LOOP_V1_OPS.md` §2、本 doc §1-4 / §6-1。
+- DD 比だけが算出できないときは `dd_ratio_reason`（`book_drawdown_missing` /
+  `benchmark_drawdown_missing` / `benchmark_drawdown_not_negative`）を付ける。
+
+### 8-3 比較フィールドの試験を追加（必須）
+
+- `tests/test_paperloop.py::test_comparison_line_is_null_while_benchmark_has_no_fill`
+  — ベンチマーク未約定なら比較の6フィールドがすべて None＋理由。CRYPTO_1N 側も
+  未約定なら同じ。
+- `tests/test_paperloop.py::test_comparison_line_starts_at_the_shared_baseline_after_benchmark_fill`
+  — 10/23 に C が +10%（ベンチ未約定）、10/26 にベンチ約定・両帳簿 mtm、10/27 に
+  C -5% / ベンチ -1% の合成ジャーナルで、起点 `2026-10-26`・`cum_pnl=-0.05`・
+  `benchmark_cum_pnl=-0.01`・`vs_benchmark_pp_cum=-4.0pp`・DD比 `5.0` を確認した。
+  inception 差なら +4.5% になるので、起点が効いていることを判別できる。
+- 実行結果: `test_paperloop.py` 24本すべて rc=0（1本ずつ実行）、
+  `test_paperloop_v12.py` 19本 rc=0（`grep -c '^def test_'` = 24 と一致）。
+
+### 8-4 prereg 著者の記述を実データに合わせた（軽微）
+
+- 実際に登録された `EQUITY_EW` の行は `registered_by = worker-go:t_dddae39e`
+  （`registered_at 2026-10-23T00:21:06Z`、`row_hash 167df9ed…`）。コードも同じ。
+  round 1 の docs と commit message が「t_feb3aa55 に修正」と書いていたのを、実データ
+  どおりに直した。登録済み行は書き換えていない（prereg sha256 は `d18a1dd0…` のまま）。
+  `docs/PRIVATE_OPERATOR_ROADMAP.md` の同じ記述も直した。
+
+### 8-5 参考（差し戻し理由ではない）: rebuild_state は week_end で区切らない
+
+- `rebuild_state` はジャーナル全体を畳むため、過去の `week_end` で再計算しても最新の
+  状態が返る（既存の A の比較も同じ性質）。新しい比較行もこの性質を引き継ぐ。
+  仕様変更はせず、ここに注記するに留めた（必要になるのは「過去週の断面」を要求された
+  時点）。
+- 未成立（実データ）: 10/26 の decision と 10/27 の fill が入るまで、C の比較行は実
+  データでは出ない。起点と値は合成ジャーナルの試験でのみ検証した（§8-3）。
+- 証拠: `docs/evidence/20261023/comparison_line_review_r2.json`
+  （journal sha256 不変、旧コード `5572700…`／新コード `7f5e6589…`、A の比較行一致、
+  C の round 1 値と修正後の null）。

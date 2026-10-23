@@ -565,11 +565,15 @@ Never silently overwrite historical scoring semantics. New calibrated rules beco
   - `BOOKS_ENABLED` now includes `BENCH_EQUITY_BOOK`; it buys 1/N once and holds (D7).
   - The Book C Monday cadence gate now covers `EQUITY_EW` as well (same strategy, so
     the comparison line is not a different regime).
-  - `EQUITY_EW`'s prereg row is attributed to `worker-agy:t_feb3aa55` (the Book C
-    deployment), not to the v1.1 crypto task.
+  - `EQUITY_EW`'s prereg row is attributed to `worker-go:t_dddae39e` (the task that
+    enabled the equity side); the registered row is not rewritten.
   - `weekly_summary` adds per-strategy comparison fields (`benchmark_book`, `cum_pnl`,
     `max_drawdown`, `benchmark_cum_pnl`, `benchmark_max_drawdown`,
     `vs_benchmark_pp_cum`, `dd_vs_benchmark_ratio`); missing data stays null.
+    Review round 2: the line is measured from the first mtm date both books share
+    on/after the benchmark's first fill (`comparison_start`), and every number is null
+    with `comparison_reason` until then — a benchmark still in cash is never reported
+    as a 0% comparison.
 - Measured: old-vs-new `weekly_summary` on the same journal copy is byte-identical for
   every pre-existing field of A / CRYPTO_1N / C (only the `EQUITY_EW` entry and the
   additive comparison fields differ). `paperloop_verify` 247 rows, L1–L14 clean,
@@ -578,6 +582,14 @@ Never silently overwrite historical scoring semantics. New calibrated rules beco
 - Not established: Book C's benchmark difference cannot exist before `EQUITY_EW`'s
   first decision (2026-10-26) and first fill (2026-10-27); equity mtm marks are one
   session stale (newest SPY bar 2026-10-20 at the 2026-10-22 run) — recorded, not fixed.
+- Review round 2 (audit-cld, 2026-10-23): the round-1 line compared Book C against a
+  benchmark that held only cash (vs_benchmark_pp_cum 0.634pp, benchmark_cum_pnl 0.0).
+  Fixed by the shared-baseline rule above; with the same journal the fixed code returns
+  null + `benchmark_has_no_fill` for C, Book A's comparison is bit-identical (baseline
+  2026-10-10, both books at equity 1.0) and every pre-existing field is unchanged.
+  Two tests cover the null case and the aligned case (`test_comparison_line_*`).
+  Evidence: `docs/evidence/20261023/comparison_line_review_r2.json`, §8 of
+  `docs/MONETIZATION_READING_20261023.md`.
 - Evidence: `docs/MONETIZATION_READING_20261023.md`.
 
 ### Exit criteria

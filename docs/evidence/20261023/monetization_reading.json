@@ -29,7 +29,11 @@
    "benchmark_book": "CRYPTO_1N",
    "benchmark_equity": 0.9645580364049191,
    "vs_benchmark_pp_cum": 0.19951597133428534,
-   "benchmark_max_drawdown": -0.04322386519071719
+   "benchmark_max_drawdown": -0.04322386519071719,
+   "benchmark_cum_pnl": -0.035441963595080894,
+   "dd_vs_benchmark_ratio": 0.9547658001204044,
+   "comparison_start": "2026-10-10",
+   "comparison_reason": null
   },
   "CRYPTO_1N": {
    "decisions": 28,
@@ -86,8 +90,25 @@
    "halted": false,
    "benchmark_book": "EQUITY_EW",
    "benchmark_equity": 1.0,
-   "vs_benchmark_pp_cum": 0.6344189779700082,
-   "benchmark_max_drawdown": 0.0
+   "benchmark_fills": 0,
+   "benchmark_cum_pnl": null,
+   "benchmark_max_drawdown": null,
+   "vs_benchmark_pp_cum": null,
+   "dd_vs_benchmark_ratio": null,
+   "comparison_start": null,
+   "comparison_reason": "benchmark_has_no_fill",
+   "comparison_correction": {
+    "round": 2,
+    "at": "2026-10-23T01:24:08.015669+00:00",
+    "removed_round1_values": {
+     "benchmark_equity": 1.0,
+     "vs_benchmark_pp_cum": 0.6344189779700082,
+     "benchmark_max_drawdown": 0.0,
+     "benchmark_cum_pnl": 0.0
+    },
+    "why": "EQUITY_EW had no fill on 2026-10-23 (0 fills, still cash), so there was no comparison to report. The round-1 values were a difference against a cash benchmark and are not P&L.",
+    "evidence": "docs/evidence/20261023/comparison_line_review_r2.json"
+   }
   },
   "EQUITY_EW": {
    "decisions": 0,
@@ -112,5 +133,22 @@
    "units": {},
    "halted": false
   }
- }
+ },
+ "_review_corrections": [
+  {
+   "round": 2,
+   "reviewer": "audit-cld",
+   "at": "2026-10-23T01:24:08.015700+00:00",
+   "items": [
+    "C comparison fields nulled while EQUITY_EW has no fill (comparison_reason added)",
+    "comparison measured from a shared baseline date (comparison_start)",
+    "Book C's own cum_pnl kept as its book P&L from inception at 2026-10-19 (not a comparison)"
+   ],
+   "code": {
+    "old_sha256": "5572700777926e48e155ac2f370ca93c427815ac44361e9a16620ae5f728129f",
+    "new_sha256": "7f5e6589a294aa69d6a0129371ca3caa1e71b3d3ff0379e38ed086f70a92eace"
+   },
+   "journal_sha256": "ed12c32a717d730a6fccc983620cd6c70a4423216499585ad7605b57179c2428"
+  }
+ ]
 }

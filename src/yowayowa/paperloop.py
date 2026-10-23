@@ -45,6 +45,12 @@ v1.4 additions (t_dddae39e, revenue verification):
   (benchmark_book / cum_pnl / max_drawdown / benchmark_cum_pnl /
   benchmark_max_drawdown / vs_benchmark_pp_cum / dd_vs_benchmark_ratio).
   Missing data stays None; nothing is zero-filled and no gate is auto-passed.
+- v1.4 review round 2 (t_dddae39e): the comparison line is measured from a
+  SHARED baseline date — the first mtm date that both books carry on/after the
+  benchmark's first fill day (comparison_start). Until the benchmark has a fill
+  and such a shared mark exists, every comparison number is None with
+  comparison_reason set. A benchmark sitting in cash is never reported as a
+  0% comparison.
 
 v1.2 additions (eval logging, design t_bcb87ad5):
 - new rows carry schema="demo-loop-v1.2"; v1.1 rows are never rewritten.
@@ -2474,11 +2480,12 @@ def _collect_milestone_judgments(root: Path, week_end: date) -> dict[str, Any]:
     return out
 
 
-def _cumulative_max_drawdown(root: Path, book: str) -> float | None:
+def _cumulative_max_drawdown(root: Path, book: str, *, since: date | None = None) -> float | None:
     """Deepest mtm drawdown recorded for a book (None when it has no mtm row).
 
     Read only from the journal's own mtm rows — the same facts the -20%
     warning line uses — so the weekly row and the daggers never disagree.
+    ``since`` restricts the window (the comparison baseline; None = inception).
     """
 
     drawdowns = [
@@ -2487,8 +2494,111 @@ def _cumulative_max_drawdown(root: Path, book: str) -> float | None:
         if row.get("event") == "mtm"
         and row.get("book") == book
         and row.get("drawdown") is not None
+        and (since is None or date.fromisoformat(str(row["mtm_date"])) >= since)
     ]
     return min(drawdowns) if drawdowns else None
+
+
+def _first_fill_date(root: Path, book: str) -> date | None:
+    """Date of a book's first fill (the bar that filled it), None if never.
+
+    The fill row itself carries no date; the bar open timestamp does, and for
+    both crypto (18:00Z) and US equity (13:30Z) bars it falls on the session
+    date the mtm rows use, so it is directly comparable to ``mtm_date``.
+    """
+
+    days: list[date] = []
+    for row in _load_journal(root):
+        if row.get("event") != "fill" or row.get("book") != book:
+            continue
+        stamp = row.get("paper_fill_bar_open_ts") or row.get("recorded_at")
+        if not stamp:
+            continue
+        days.append(date.fromisoformat(str(stamp)[:10]))
+    return min(days) if days else None
+
+
+def _mtm_marks(root: Path, book: str) -> dict[date, float]:
+    """Last mtm equity per mtm_date for a book (journal facts only)."""
+
+    marks: dict[date, float] = {}
+    for row in _load_journal(root):
+        if row.get("event") != "mtm" or row.get("book") != book:
+            continue
+        if row.get("equity") is None or row.get("mtm_date") is None:
+            continue
+        marks[date.fromisoformat(str(row["mtm_date"]))] = float(row["equity"])
+    return marks
+
+
+def _comparison_line(
+    root: Path, book: str, bench: str, state_by_book: Mapping[str, dict[str, Any]]
+) -> dict[str, Any]:
+    """One strategy book's comparison line against its own benchmark (§4 gates).
+
+    Both sides are measured from ONE shared baseline date: the earliest mtm
+    date that the book and its benchmark both carry on/after the benchmark's
+    first fill day. Before that, the two books were in different regimes (one
+    still in cash / not started), so subtracting their inception equity would
+    credit one side with P&L the other never had the chance to earn.
+
+    Every numeric field is None while the comparison cannot be made, with
+    ``comparison_reason`` saying why. Nothing is zero-filled and no gate is
+    auto-passed: a benchmark in cash reports None, never "0%".
+    """
+
+    book_state = state_by_book.get(book)
+    bench_state = state_by_book.get(bench)
+    out: dict[str, Any] = {
+        "benchmark_book": bench,
+        "cum_pnl": None,
+        "max_drawdown": None,
+        "benchmark_cum_pnl": None,
+        "benchmark_max_drawdown": None,
+        "vs_benchmark_pp_cum": None,
+        "dd_vs_benchmark_ratio": None,
+        "dd_ratio_reason": None,
+        "comparison_start": None,
+        "comparison_reason": None,
+    }
+    start = _first_fill_date(root, bench)
+    if start is None:
+        out["comparison_reason"] = "benchmark_has_no_fill"
+        return out
+    book_marks = _mtm_marks(root, book)
+    bench_marks = _mtm_marks(root, bench)
+    shared = sorted(day for day in book_marks.keys() & bench_marks.keys() if day >= start)
+    if not shared:
+        out["comparison_reason"] = "no_shared_mark_since_benchmark_first_fill"
+        return out
+    base_day = shared[0]
+    base_book, base_bench = book_marks[base_day], bench_marks[base_day]
+    if base_book <= 0 or base_bench <= 0 or book_state is None or bench_state is None:
+        out["comparison_reason"] = "baseline_unusable"
+        return out
+    book_cum = float(book_state["equity"]) / base_book - 1.0
+    bench_cum = float(bench_state["equity"]) / base_bench - 1.0
+    book_dd = _cumulative_max_drawdown(root, book, since=base_day)
+    bench_dd = _cumulative_max_drawdown(root, bench, since=base_day)
+    out.update(
+        {
+            "cum_pnl": book_cum,
+            "max_drawdown": book_dd,
+            "benchmark_cum_pnl": bench_cum,
+            "benchmark_max_drawdown": bench_dd,
+            "vs_benchmark_pp_cum": (book_cum - bench_cum) * 100.0,
+            "comparison_start": base_day.isoformat(),
+        }
+    )
+    out["dd_vs_benchmark_ratio"] = _dd_vs_benchmark_ratio(book_dd, bench_dd)
+    if out["dd_vs_benchmark_ratio"] is None:
+        if book_dd is None:
+            out["dd_ratio_reason"] = "book_drawdown_missing"
+        elif bench_dd is None:
+            out["dd_ratio_reason"] = "benchmark_drawdown_missing"
+        else:
+            out["dd_ratio_reason"] = "benchmark_drawdown_not_negative"
+    return out
 
 
 def _dd_vs_benchmark_ratio(book_dd: float | None, bench_dd: float | None) -> float | None:
@@ -2626,29 +2736,15 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
         out["vs_benchmark_pp_cum"] = (book_a["equity"] - book_bench["equity"]) * 100.0
     # v1.4 (t_dddae39e): every strategy book carries its OWN comparison line so
     # the frozen §4 gates (cum pnl vs benchmark, DD <= benchmark DD x 0.6) are
-    # readable from the weekly row instead of being recomputed by hand. Book C
-    # had no benchmark book until EQUITY_EW was enabled, so its fields are
-    # None on any row written before that book's first mtm — a missing
-    # benchmark is reported as None with its own name, never as 0.
+    # readable from the weekly row instead of being recomputed by hand.
+    # Review round 2: the line is measured from a shared baseline date and is
+    # None (with a reason) until the benchmark has actually filled — a
+    # benchmark still in cash is never reported as a 0% comparison.
     for book, bench in BOOK_BENCHMARK.items():
         book_out = out["books"].get(book)
         if not isinstance(book_out, dict):
             continue
-        book_state = state_by_book.get(book)
-        bench_state = state_by_book.get(bench)
-        book_out["benchmark_book"] = bench
-        book_out["cum_pnl"] = book_state["equity"] - 1.0 if book_state else None
-        book_out["max_drawdown"] = _cumulative_max_drawdown(root, book)
-        book_out["benchmark_cum_pnl"] = bench_state["equity"] - 1.0 if bench_state else None
-        book_out["benchmark_max_drawdown"] = _cumulative_max_drawdown(root, bench)
-        book_out["vs_benchmark_pp_cum"] = (
-            (book_state["equity"] - bench_state["equity"]) * 100.0
-            if book_state is not None and bench_state is not None
-            else None
-        )
-        book_out["dd_vs_benchmark_ratio"] = _dd_vs_benchmark_ratio(
-            book_out["max_drawdown"], book_out["benchmark_max_drawdown"]
-        )
+        book_out.update(_comparison_line(root, book, bench, state_by_book))
     # Q1-Q7 eval per book (design §4/§5: from the derived panel, insufficient
     # is a first-class answer with a numeric reason)
     out["eval"] = _eval_blocks(data_dir, book=S01_BOOK, week_end=week_end)
