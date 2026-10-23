@@ -13,6 +13,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from starlette.responses import PlainTextResponse
 
 _ARCHIVE_SHA = re.compile(r"/archive/([0-9a-fA-F]{7,40})\.zip(?:$|[?#])")
 _LOGGER = logging.getLogger("yowayowa.vercel")
@@ -157,6 +158,19 @@ def install_vercel_observability(app: FastAPI) -> None:
                 },
                 error=status_code >= 500,
             )
+        return response
+
+    @app.exception_handler(Exception)
+    async def vercel_unhandled_exception(request: Request, exc: Exception) -> PlainTextResponse:
+        """Keep request correlation on the generic 500 built by ServerErrorMiddleware.
+
+        The http middleware above logs the exception and re-raises, so the 500
+        response is assembled outside it; the header must be set here or a
+        failing request cannot be matched with its structured log line.
+        """
+
+        response = PlainTextResponse("Internal Server Error", status_code=500)
+        response.headers["x-yowayowa-request-id"] = _request_id(request)
         return response
 
     @app.get("/internal/debug/runtime", include_in_schema=False)
