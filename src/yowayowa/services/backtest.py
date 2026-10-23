@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import math
 import random
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from itertools import pairwise
+from pathlib import Path
 from statistics import fmean, stdev
 from typing import Any, Literal
 
@@ -34,7 +36,97 @@ GROWTH_SELECT = 5
 DEFENSIVE_SELECT = 3
 GARP_MOMENTUM_CANDIDATE_SELECT = 8
 GARP_PBR_SELECT = 5
+_SPLIT_FACTORS = tuple(
+    [1 / divisor for divisor in (2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 100)]
+    + [float(divisor) for divisor in (2, 3, 4, 5, 10, 20)]
+)
+_SPLIT_TOLERANCE = 0.08
 __all__ = ["get_strategy", "list_strategies", "run_backtest"]
+
+
+def _load_split_calendar(
+    split_calendar: Mapping[str, Any] | None = None,
+    calendar_path: Path | None = None,
+) -> tuple[dict[str, dict[date, float]], list[str]]:
+    """Load or normalize the corroborated split calendar.
+
+    Returns a mapping of uppercase symbol -> {effective_date: ratio} and any warnings.
+    """
+    cal_warnings: list[str] = []
+    raw_cal: Any = None
+
+    if split_calendar is not None:
+        raw_cal = split_calendar
+    else:
+        pkg_path = (
+            Path(__file__).resolve().parents[3]
+            / "data"
+            / "fundamentals"
+            / "pbr"
+            / "split-calendar.json"
+        )
+        cwd_path = Path("data/fundamentals/pbr/split-calendar.json")
+        candidates = [calendar_path] if calendar_path is not None else [pkg_path, cwd_path]
+        target_path: Path | None = None
+        for p in candidates:
+            if p is not None and p.is_file():
+                target_path = p
+                break
+
+        if target_path is None:
+            searched = str(calendar_path) if calendar_path is not None else str(pkg_path)
+            cal_warnings.append(
+                f"split calendar unavailable: file not found at {searched}; splits not adjusted"
+            )
+        else:
+            try:
+                raw_cal = json.loads(target_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                cal_warnings.append(
+                    f"split calendar unavailable: failed to read {target_path} ({exc}); "
+                    "splits not adjusted"
+                )
+
+    normalized: dict[str, dict[date, float]] = {}
+    if isinstance(raw_cal, Mapping):
+        for sym, events in raw_cal.items():
+            sym_key = str(sym).strip().upper()
+            sym_dict: dict[date, float] = {}
+            if isinstance(events, Mapping):
+                for d_str, r in events.items():
+                    try:
+                        sym_dict[_date(d_str)] = float(r)
+                    except Exception as exc:
+                        cal_warnings.append(
+                            f"split calendar: skipped invalid entry for {sym_key} "
+                            f"({d_str}={r}): {exc}"
+                        )
+            elif isinstance(events, Sequence):
+                for item in events:
+                    if isinstance(item, Mapping) and "effective_date" in item and "ratio" in item:
+                        try:
+                            sym_dict[_date(item["effective_date"])] = float(item["ratio"])
+                        except Exception as exc:
+                            cal_warnings.append(
+                                f"split calendar: skipped invalid entry for {sym_key} "
+                                f"({item}): {exc}"
+                            )
+                    else:
+                        cal_warnings.append(
+                            f"split calendar: skipped invalid entry structure for {sym_key}: {item}"
+                        )
+            else:
+                cal_warnings.append(
+                    f"split calendar: skipped invalid events collection for {sym_key}: "
+                    f"{type(events).__name__}"
+                )
+            normalized[sym_key] = sym_dict
+    elif raw_cal is not None:
+        cal_warnings.append(
+            f"split calendar unavailable: expected mapping but got {type(raw_cal).__name__}; "
+            "splits not adjusted"
+        )
+    return normalized, cal_warnings
 
 
 def _metric(value: float | None, count: int, *, undefined: bool = False) -> BacktestMetric:
@@ -478,27 +570,151 @@ def run_backtest(
     histories: Mapping[str, Sequence[Mapping[str, Any]]],
     *,
     _include_oos: bool = True,
+    split_calendar: Mapping[str, Any] | None = None,
+    split_calendar_path: Path | None = None,
 ) -> BacktestRunResponse:
     if request.strategy_id != strategy.id:
         raise ValueError("request strategy_id does not match strategy definition")
     rows_by_symbol: dict[str, dict[date, Mapping[str, Any]]] = {}
     provenance: list[BacktestProvenance] = []
     warnings: list[str] = []
+    cal_by_symbol, cal_warnings = _load_split_calendar(
+        split_calendar=split_calendar, calendar_path=split_calendar_path
+    )
+    warnings.extend(cal_warnings)
     for symbol in strategy.universe:
-        rows: dict[date, Mapping[str, Any]] = {}
+        raw_rows: list[dict[str, Any]] = []
+        sessions_seen: set[date] = set()
         for row in histories.get(symbol, ()):
             if str(row.get("provider", request.provider)) != request.provider:
                 continue
             session = _date(row["as_of"])
             if session > request.end:
                 continue
-            close = float(row["close"])
-            opening = float(row.get("open", close))
+            close = float(row.get("adj_close", row.get("adjusted_close", row["close"])))
+            opening = float(row.get("adj_open", row.get("adjusted_open", row.get("open", close))))
             if not all(math.isfinite(price) and price > 0 for price in (close, opening)):
                 continue
-            if session in rows:
+            if session in sessions_seen:
                 raise ValueError(f"duplicate OHLCV session for {symbol} on {session}")
-            rows[session] = row
+            sessions_seen.add(session)
+            raw_rows.append(dict(row))
+
+        raw_rows.sort(key=lambda r: _date(r["as_of"]))
+        for r in raw_rows:
+            r["raw_open"] = float(r.get("open", r.get("close", 0.0)))
+        has_adj = any("adj_close" in r or "adjusted_close" in r for r in raw_rows)
+        if has_adj:
+            for r in raw_rows:
+                v_close = r.get("adj_close")
+                if v_close is None:
+                    v_close = r.get("adjusted_close")
+                if v_close is not None:
+                    r["close"] = float(v_close)
+
+                v_open = r.get("adj_open")
+                if v_open is None:
+                    v_open = r.get("adjusted_open")
+                if v_open is not None:
+                    r["open"] = float(v_open)
+
+                v_high = r.get("adj_high")
+                if v_high is None:
+                    v_high = r.get("adjusted_high")
+                if v_high is not None:
+                    r["high"] = float(v_high)
+
+                v_low = r.get("adj_low")
+                if v_low is None:
+                    v_low = r.get("adjusted_low")
+                if v_low is not None:
+                    r["low"] = float(v_low)
+        else:
+            sym_cal = cal_by_symbol.get(symbol.strip().upper(), {})
+            for i in range(1, len(raw_rows)):
+                prev = raw_rows[i - 1]
+                curr = raw_rows[i]
+                session_date = _date(curr["as_of"])
+                prev_close = float(prev["close"])
+                curr_open = float(curr.get("open", curr["close"]))
+                curr_close = float(curr["close"])
+                if prev_close <= 0 or curr_open <= 0 or curr_close <= 0:
+                    continue
+                ratio_open = curr_open / prev_close
+                ratio_close = curr_close / prev_close
+
+                factor = None
+                basis = None
+                ratio_val = None
+
+                # Source 1: SEC-confirmed split calendar
+                if session_date in sym_cal:
+                    cal_ratio = sym_cal[session_date]
+                    if cal_ratio > 0:
+                        expected_factor = 1.0 / cal_ratio
+                        if (
+                            abs(ratio_open - expected_factor) / expected_factor <= 0.15
+                            and abs(ratio_close - expected_factor) / expected_factor <= 0.15
+                        ):
+                            factor = expected_factor
+                            basis = "sec_calendar"
+                            ratio_val = cal_ratio
+
+                # Source 2: Explicit provider metadata (split_factor / split_ratio)
+                if factor is None and ("split_factor" in curr or "split_ratio" in curr):
+                    v_sf = curr.get("split_factor")
+                    if v_sf is None:
+                        v_sf = curr.get("split_ratio")
+                    if v_sf is not None:
+                        raw_sf = float(v_sf)
+                        if raw_sf > 1.0:
+                            exp_factor = 1.0 / raw_sf
+                            exp_ratio = raw_sf
+                        elif 0 < raw_sf < 1.0:
+                            exp_factor = raw_sf
+                            exp_ratio = 1.0 / raw_sf
+                        else:
+                            exp_factor = None
+                            exp_ratio = None
+
+                        if exp_factor is not None:
+                            if (
+                                abs(ratio_open - exp_factor) / exp_factor <= 0.15
+                                and abs(ratio_close - exp_factor) / exp_factor <= 0.15
+                            ):
+                                factor = exp_factor
+                                basis = "explicit_metadata"
+                                ratio_val = exp_ratio
+                            else:
+                                warnings.append(
+                                    f"Skipped uncorroborated split_factor={raw_sf:g} for "
+                                    f"{symbol} on {session_date}: observed ratio "
+                                    f"open={ratio_open:.4f}, close={ratio_close:.4f} did not "
+                                    f"match expected factor {exp_factor:.4f}"
+                                )
+
+                if factor is not None and abs(factor - 1.0) > 1e-4:
+                    for j in range(i):
+                        raw_rows[j]["close"] = float(raw_rows[j]["close"]) * factor
+                        if "open" in raw_rows[j]:
+                            raw_rows[j]["open"] = float(raw_rows[j]["open"]) * factor
+                        if "high" in raw_rows[j]:
+                            raw_rows[j]["high"] = float(raw_rows[j]["high"]) * factor
+                        if "low" in raw_rows[j]:
+                            raw_rows[j]["low"] = float(raw_rows[j]["low"]) * factor
+                    warnings.append(
+                        f"Split adjustment applied for {symbol} on {session_date}: "
+                        f"ratio={ratio_val:g}, basis={basis}"
+                    )
+                else:
+                    if abs(ratio_open - 1.0) > 0.15:
+                        warnings.append(
+                            f"Uncorroborated price discontinuity on {symbol} at {session_date}: "
+                            f"overnight open ratio {ratio_open:.4f}, close ratio "
+                            f"{ratio_close:.4f} (no adjustment applied)"
+                        )
+
+        rows: dict[date, Mapping[str, Any]] = {_date(r["as_of"]): r for r in raw_rows}
         rows_by_symbol[symbol] = rows
         for source in sorted({str(row.get("provider", request.provider)) for row in rows.values()}):
             source_rows = [
@@ -680,7 +896,10 @@ def run_backtest(
                                 transaction_cost=traded * cost_rate,
                                 execution_price=float(
                                     rows_by_symbol[symbol][day].get(
-                                        "open", rows_by_symbol[symbol][day]["close"]
+                                        "raw_open",
+                                        rows_by_symbol[symbol][day].get(
+                                            "open", rows_by_symbol[symbol][day]["close"]
+                                        ),
                                     )
                                 ),
                             )
@@ -755,7 +974,8 @@ def run_backtest(
         f"Costs: {request.commission_bps:g} bps commission + "
         f"{request.slippage_bps:g} bps slippage, "
         "charged on one-way traded notional.",
-        "Raw OHLCV is used; dividends, split adjustments, taxes, market impact, borrow costs, "
+        "Raw OHLCV is adjusted for stock splits when corroborated by SEC split calendar "
+        "or explicit provider metadata; dividends, taxes, market impact, borrow costs, "
         "and delisting returns are not modeled.",
         "The configured universe is fixed, not point-in-time; survivorship bias may remain.",
         f"Bootstrap: IID daily-return resampling, 95% percentile interval, seed "

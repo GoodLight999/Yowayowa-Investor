@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -236,3 +237,233 @@ def test_incomplete_provenance_is_rejected() -> None:
     request = BacktestRunRequest(strategy_id=strategy.id, start=start, end=date(2025, 2, 7))
     with pytest.raises(ValueError, match="Incomplete OHLCV provenance"):
         run_backtest(request, strategy, histories)
+
+
+def test_stock_split_preserves_price_series_continuity_and_avoids_spurious_losses() -> None:
+    """Characterized regression C2: stock splits corroborated by SEC split calendar
+
+    scale pre-split prices so overnight return reflects the true economic performance
+    (flat / continuous), preserving terminal equity and avoiding spurious momentum/drawdown
+    corruption.
+    """
+    start = date(2025, 1, 6)
+    strategy = _small_strategy().model_copy(
+        update={"rebalance": "monthly", "signal": "equal_weight"}
+    )
+    histories = {symbol: _rows(start, 20, growth=0.0) for symbol in strategy.universe}
+
+    # Introduce a 2:1 split on symbol 'AAA' on session index 5 (2025-01-13):
+    # From index 5 onwards, raw price is 50.0 instead of 100.0.
+    for i in range(5, len(histories["AAA"])):
+        histories["AAA"][i]["open"] = 50.0
+        histories["AAA"][i]["high"] = 50.0
+        histories["AAA"][i]["low"] = 50.0
+        histories["AAA"][i]["close"] = 50.0
+
+    request = BacktestRunRequest(
+        strategy_id=strategy.id,
+        start=start,
+        end=date(2025, 1, 31),
+        commission_bps=0,
+        slippage_bps=0,
+        bootstrap_samples=0,
+    )
+    split_calendar = {"AAA": [{"effective_date": "2025-01-13", "ratio": 2.0}]}
+    result = run_backtest(
+        request, strategy, histories, _include_oos=False, split_calendar=split_calendar
+    )
+
+    split_day = date(2025, 1, 13)
+    point = next(item for item in result.equity_curve if item.date == split_day)
+    assert point.daily_return == pytest.approx(0.0, abs=1e-6)
+    assert point.equity == pytest.approx(1.0, abs=1e-6)
+    assert result.equity_curve[-1].equity == pytest.approx(1.0, abs=1e-6)
+    assert result.metrics.max_drawdown.value == pytest.approx(0.0, abs=1e-6)
+
+    # Check disclosure assumption
+    assert any("Raw OHLCV is adjusted for stock splits" in item for item in result.assumptions)
+    # Check warning provenance
+    assert any(
+        "Split adjustment applied for AAA on 2025-01-13: ratio=2, basis=sec_calendar" in item
+        for item in result.warnings
+    )
+
+
+def test_stock_split_execution_price_stays_nominal_raw_open() -> None:
+    """Check that execution_price records the nominal raw open before (100) and after (50) split."""
+    start = date(2025, 1, 6)
+    strategy = _small_strategy().model_copy(update={"rebalance": "daily", "signal": "equal_weight"})
+    histories = {
+        "AAA": _rows(start, 20, growth=0.01),
+        "BBB": _rows(start, 20, growth=0.0),
+    }
+    # 2:1 split on AAA on day 5 (2025-01-13)
+    for i in range(5, len(histories["AAA"])):
+        histories["AAA"][i]["open"] = round(histories["AAA"][i]["open"] / 2.0, 2)
+        histories["AAA"][i]["close"] = round(histories["AAA"][i]["close"] / 2.0, 2)
+
+    request = BacktestRunRequest(
+        strategy_id=strategy.id,
+        start=start,
+        end=date(2025, 1, 31),
+        commission_bps=0,
+        slippage_bps=0,
+        bootstrap_samples=0,
+    )
+    split_calendar = {"AAA": [{"effective_date": "2025-01-13", "ratio": 2.0}]}
+    result = run_backtest(
+        request, strategy, histories, _include_oos=False, split_calendar=split_calendar
+    )
+
+    aaa_trades = [t for t in result.trades if t.symbol == "AAA"]
+    assert len(aaa_trades) >= 2
+    pre_split_trade = next(t for t in aaa_trades if t.date == date(2025, 1, 10))
+    split_trade = next(t for t in aaa_trades if t.date == date(2025, 1, 13))
+    # Before split raw open was ~104; after split raw open was ~52.55
+    assert pre_split_trade.execution_price > 100.0
+    assert split_trade.execution_price < 60.0
+
+
+def test_stock_split_genuine_crash_is_not_adjusted_negative_test() -> None:
+    """Negative test 1: Persistent -50% crash (no split corroboration) must remain a loss."""
+    start = date(2025, 1, 6)
+    strategy = _small_strategy().model_copy(
+        update={"rebalance": "monthly", "signal": "equal_weight"}
+    )
+    histories = {symbol: _rows(start, 20, growth=0.0) for symbol in strategy.universe}
+
+    # Genuine uncorroborated -50% crash on AAA at index 5 (2025-01-13)
+    for i in range(5, len(histories["AAA"])):
+        for k in ("open", "high", "low", "close"):
+            histories["AAA"][i][k] = 50.0
+
+    request = BacktestRunRequest(
+        strategy_id=strategy.id,
+        start=start,
+        end=date(2025, 1, 31),
+        commission_bps=0,
+        slippage_bps=0,
+        bootstrap_samples=0,
+    )
+    result = run_backtest(request, strategy, histories, _include_oos=False)
+
+    # AAA was 50% of the portfolio and dropped 50% -> portfolio equity should drop 25% (0.75)
+    assert result.equity_curve[-1].equity == pytest.approx(0.75, abs=1e-4)
+    assert result.metrics.max_drawdown.value == pytest.approx(-0.25, abs=1e-4)
+    assert any(
+        "Uncorroborated price discontinuity on AAA at 2025-01-13" in w for w in result.warnings
+    )
+    assert not any("Split adjustment applied for AAA" in w for w in result.warnings)
+
+
+def test_stock_split_continuous_factor_is_not_applied_twice_negative_test() -> None:
+    """Negative test 2: split_factor on continuous raw prices must NOT be applied twice."""
+    start = date(2025, 1, 6)
+    strategy = _small_strategy().model_copy(
+        update={"rebalance": "monthly", "signal": "equal_weight"}
+    )
+    histories = {symbol: _rows(start, 20, growth=0.0) for symbol in strategy.universe}
+
+    # Row carries split_factor=2.0 metadata, but raw prices are completely continuous at 100.0
+    histories["AAA"][5]["split_factor"] = 2.0
+
+    request = BacktestRunRequest(
+        strategy_id=strategy.id,
+        start=start,
+        end=date(2025, 1, 31),
+        commission_bps=0,
+        slippage_bps=0,
+        bootstrap_samples=0,
+    )
+    result = run_backtest(request, strategy, histories, _include_oos=False)
+
+    # Must stay 1.0 (no fake +50% gain)
+    assert result.equity_curve[-1].equity == pytest.approx(1.0, abs=1e-6)
+    assert result.metrics.max_drawdown.value == pytest.approx(0.0, abs=1e-6)
+    assert any(
+        "Skipped uncorroborated split_factor=2 for AAA on 2025-01-13" in w for w in result.warnings
+    )
+    assert not any("Split adjustment applied for AAA" in w for w in result.warnings)
+
+
+def test_stock_split_explicit_factor_and_adj_close_support() -> None:
+    """Verify that explicit split_factor (corroborated) and adj_close are respected."""
+    start = date(2025, 1, 6)
+    strategy = _small_strategy().model_copy(
+        update={"rebalance": "monthly", "signal": "equal_weight"}
+    )
+
+    # 1. Test explicit split_factor corroborated by 100 -> 50 price step
+    histories_factor = {symbol: _rows(start, 20, growth=0.0) for symbol in strategy.universe}
+    histories_factor["AAA"][5]["split_factor"] = 2.0
+    for i in range(5, len(histories_factor["AAA"])):
+        histories_factor["AAA"][i]["open"] = 50.0
+        histories_factor["AAA"][i]["close"] = 50.0
+
+    request = BacktestRunRequest(
+        strategy_id=strategy.id,
+        start=start,
+        end=date(2025, 1, 31),
+        commission_bps=0,
+        slippage_bps=0,
+        bootstrap_samples=0,
+    )
+    result_factor = run_backtest(request, strategy, histories_factor, _include_oos=False)
+    assert result_factor.equity_curve[-1].equity == pytest.approx(1.0, abs=1e-6)
+    assert any(
+        "Split adjustment applied for AAA on 2025-01-13: ratio=2, basis=explicit_metadata" in w
+        for w in result_factor.warnings
+    )
+
+    # 2. Test explicit adj_close
+    histories_adj = {symbol: _rows(start, 20, growth=0.0) for symbol in strategy.universe}
+    for row in histories_adj["AAA"]:
+        row["adj_close"] = 50.0
+        row["adj_open"] = 50.0
+    result_adj = run_backtest(request, strategy, histories_adj, _include_oos=False)
+    assert result_adj.equity_curve[-1].equity == pytest.approx(1.0, abs=1e-6)
+
+
+def test_stock_split_missing_or_corrupt_calendar_warns(tmp_path: Path) -> None:
+    """Missing or corrupt split calendar must emit an explicit warning instead of silent ignore."""
+    start = date(2025, 1, 6)
+    strategy = _small_strategy().model_copy(
+        update={"rebalance": "monthly", "signal": "equal_weight"}
+    )
+    histories = {symbol: _rows(start, 20, growth=0.0) for symbol in strategy.universe}
+    request = BacktestRunRequest(
+        strategy_id=strategy.id,
+        start=start,
+        end=date(2025, 1, 31),
+        commission_bps=0,
+        slippage_bps=0,
+        bootstrap_samples=0,
+    )
+
+    # 1. Missing calendar file
+    missing_path = tmp_path / "nonexistent-split-calendar.json"
+    res_missing = run_backtest(
+        request, strategy, histories, _include_oos=False, split_calendar_path=missing_path
+    )
+    assert any(
+        "split calendar unavailable:" in w and "splits not adjusted" in w
+        for w in res_missing.warnings
+    )
+
+    # 2. Corrupt calendar file
+    corrupt_path = tmp_path / "corrupt-split-calendar.json"
+    corrupt_path.write_text("{invalid_json: true", encoding="utf-8")
+    res_corrupt = run_backtest(
+        request, strategy, histories, _include_oos=False, split_calendar_path=corrupt_path
+    )
+    assert any(
+        "split calendar unavailable:" in w and "splits not adjusted" in w
+        for w in res_corrupt.warnings
+    )
+
+    # 3. Calendar with skipped invalid entry
+    bad_entry_calendar = {"AAA": [{"effective_date": "not-a-date", "ratio": "invalid"}]}
+    res_bad_entry = run_backtest(
+        request, strategy, histories, _include_oos=False, split_calendar=bad_entry_calendar
+    )
+    assert any("split calendar: skipped invalid entry" in w for w in res_bad_entry.warnings)
