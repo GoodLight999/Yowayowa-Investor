@@ -26,13 +26,14 @@ from fastapi.testclient import TestClient
 
 from yowayowa.config import get_settings
 from yowayowa.domain import LicenseClass
+from yowayowa.providers import alpaca
 from yowayowa.providers.alpaca import (
     AlpacaMarketDataProvider,
     AlpacaTransportError,
 )
 from yowayowa.services.licensing import source_policy
 from yowayowa.stock_acquisition import StockOhlcvStore, default_store, fetch_stock_ohlcv
-from yowayowa.stock_models import StockOhlcvRecord, normalize_stock_symbol
+from yowayowa.stock_models import StockOhlcvPoint, StockOhlcvRecord, normalize_stock_symbol
 
 # ------------------------------------------------------------------- fixtures
 
@@ -87,6 +88,19 @@ def _stub_provider(provider_cls: type, responses: list[httpx.Response] | httpx.R
 
     provider.client._transport = httpx.MockTransport(handler)  # type: ignore[attr-defined]
     return provider
+
+
+def _point(as_of: datetime, close: float = 101.0) -> StockOhlcvPoint:
+    return StockOhlcvPoint(
+        as_of=as_of,
+        open=close - 1,
+        high=close + 1,
+        low=close - 2,
+        close=close,
+        volume=1000.0,
+        vwap=close - 0.5,
+        trade_count=10,
+    )
 
 
 def _record(symbol: str, provider: str, as_of: datetime, close: float) -> StockOhlcvRecord:
@@ -160,19 +174,22 @@ def test_alpaca_ohlcv_returns_records_with_provenance() -> None:
     assert first.trade_count == 600_000
 
 
-def test_alpaca_days_are_inclusive_and_end_two_days_ago() -> None:
+def test_alpaca_days_are_inclusive_and_end_inside_the_freshness_margin(monkeypatch) -> None:
+    fixed_now = datetime(2026, 10, 23, 0, 20, tzinfo=UTC)  # daily.sh run time
+    monkeypatch.setattr(alpaca, "_utc_now", lambda: fixed_now)
     provider = _stub_provider(AlpacaMarketDataProvider, _canned(b'{"bars":{"AAPL":[]}}'))
     request_dates: dict[str, str] = {}
 
     def capture(symbol: str, *, start: str, end: str) -> list:
         request_dates.update(start=start, end=end)
-        return []
+        return [_point(datetime(2026, 9, 15, 4, 0, tzinfo=UTC))]
 
     provider._fetch = capture  # type: ignore[method-assign]
-    assert provider.ohlcv("AAPL", days=3650) == []
-    end_date = datetime.now(UTC).date() - timedelta(days=2)
-    assert request_dates["end"] == end_date.isoformat()
-    assert request_dates["start"] == (end_date - timedelta(days=3649)).isoformat()
+    records = provider.ohlcv("AAPL", days=3650)
+    assert len(records) == 1  # a finalized bar survives the window change
+    end_dt = fixed_now - alpaca._FRESHNESS_MARGIN
+    assert request_dates["end"] == end_dt.isoformat(timespec="seconds").replace("+00:00", "Z")
+    assert request_dates["start"] == (end_dt - timedelta(days=3649)).date().isoformat()
 
 
 def test_alpaca_skips_malformed_and_zero_bars() -> None:
@@ -221,8 +238,8 @@ def test_alpaca_http_401_is_transport_error() -> None:
 
 
 def test_alpaca_http_403_is_transport_error() -> None:
-    # Covers both bad-grant 403s: insufficient FX grants and the recent-SIP
-    # subscription error — neither is missing data; both fail closed loudly.
+    # A 403 that is not the "recent SIP data" refusal (missing data grant, wrong
+    # feed entitlement) is never laddered: it fails closed on the first request.
     provider = _stub_provider(AlpacaMarketDataProvider, _canned(b"{}", status_code=403))
     with pytest.raises(AlpacaTransportError):
         provider.ohlcv("AAPL", days=30)
@@ -258,9 +275,11 @@ def test_alpaca_empty_bars_payload_is_lookup_error() -> None:
         provider.ohlcv("AAPL", days=30)
 
 
-def test_alpaca_sends_request_window_and_feed_contract() -> None:
-    """The request pins timeframe/feed/window: SIP, 1Day, end = two days ago."""
+def test_alpaca_sends_request_window_and_feed_contract(monkeypatch) -> None:
+    """The request pins timeframe/feed/window: SIP, 1Day, explicit UTC end."""
 
+    fixed_now = datetime(2026, 10, 23, 0, 20, tzinfo=UTC)
+    monkeypatch.setattr(alpaca, "_utc_now", lambda: fixed_now)
     captured: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -278,12 +297,146 @@ def test_alpaca_sends_request_window_and_feed_contract() -> None:
     assert "adjustment=raw" in url
     assert "symbols=AAPL" in url
     assert "start=" in url and "end=" in url
-    # The window must end before today: Alpaca's free plan rejects SIP
-    # requests whose window includes the current calendar day with 403
-    # (live-verified 2026-09-24), and ending at yesterday guarantees every
-    # bar is a finalized session, with an extra day of buffer for Basic-plan SIP.
-    end_date = url.split("end=")[1].split("&")[0]
-    assert end_date == (datetime.now(UTC) - timedelta(days=2)).date().isoformat()
+    # The window ends _FRESHNESS_MARGIN before now and is an explicit instant:
+    # a date-only end is resolved by Alpaca to end-of-day US/Eastern, which is
+    # still in the future at the 00:20Z daily run and is refused with 403.
+    end_param = httpx.URL(url).params["end"]
+    assert end_param == "2026-10-22T23:50:00Z"
+    assert httpx.URL(url).params["start"] == "2026-10-18"
+
+
+# ------------------------------------------------- fresh window (t_bcc12803)
+
+
+def _bar(ts: str, close: float) -> dict[str, Any]:
+    return {
+        "t": ts,
+        "o": close - 1,
+        "h": close + 1,
+        "l": close - 2,
+        "c": close,
+        "v": 1000,
+        "n": 10,
+        "vw": close - 0.5,
+    }
+
+
+def test_alpaca_previous_session_bar_is_reachable_at_daily_run_time(monkeypatch) -> None:
+    """Regression (t_bcc12803): at the 00:20Z daily run the newest persisted bar
+    must be the previous session, not the one before it.
+
+    Live symptom 2026-10-22 00:21Z: the store's newest row was as_of 2026-10-20
+    even though the 2026-10-21 session had closed at 20:00Z, because the old
+    window ended at ``today - 2 days`` (a date-only end that Alpaca resolves to
+    end-of-day US/Eastern, i.e. still in the future before 04:00Z).
+    """
+
+    fixed_now = datetime(2026, 10, 23, 0, 20, tzinfo=UTC)
+    monkeypatch.setattr(alpaca, "_utc_now", lambda: fixed_now)
+    payload = {
+        "bars": {
+            "SPY": [
+                _bar("2026-10-20T04:00:00Z", 769.05),
+                _bar("2026-10-21T04:00:00Z", 773.09),
+                _bar("2026-10-22T04:00:00Z", 775.40),
+            ]
+        }
+    }
+    provider = _stub_provider(AlpacaMarketDataProvider, _canned(json.dumps(payload).encode()))
+    records = provider.ohlcv("SPY", days=10)
+    assert [record.as_of for record in records] == [
+        datetime(2026, 10, 20, 4, 0, tzinfo=UTC),
+        datetime(2026, 10, 21, 4, 0, tzinfo=UTC),
+        datetime(2026, 10, 22, 4, 0, tzinfo=UTC),
+    ]
+    assert records[-1].close == 775.40
+
+
+def test_alpaca_drops_the_in_progress_session_bar(monkeypatch) -> None:
+    """A bar for a session that has not closed yet is never persisted."""
+
+    fixed_now = datetime(2026, 10, 22, 18, 0, tzinfo=UTC)  # 14:00 ET, mid-session
+    monkeypatch.setattr(alpaca, "_utc_now", lambda: fixed_now)
+    payload = {
+        "bars": {
+            "AAPL": [
+                _bar("2026-10-21T04:00:00Z", 250.0),
+                _bar("2026-10-22T04:00:00Z", 255.0),  # today: still trading
+            ]
+        }
+    }
+    provider = _stub_provider(AlpacaMarketDataProvider, _canned(json.dumps(payload).encode()))
+    records = provider.ohlcv("AAPL", days=10)
+    assert [record.as_of.date().isoformat() for record in records] == ["2026-10-21"]
+
+
+def test_alpaca_only_in_progress_bars_is_lookup_error(monkeypatch) -> None:
+    fixed_now = datetime(2026, 10, 22, 18, 0, tzinfo=UTC)
+    monkeypatch.setattr(alpaca, "_utc_now", lambda: fixed_now)
+    payload = {"bars": {"AAPL": [_bar("2026-10-22T04:00:00Z", 255.0)]}}
+    provider = _stub_provider(AlpacaMarketDataProvider, _canned(json.dumps(payload).encode()))
+    with pytest.raises(LookupError):
+        provider.ohlcv("AAPL", days=10)
+
+
+def test_alpaca_recent_sip_refusal_steps_the_window_back(monkeypatch) -> None:
+    """A 403 "recent SIP data" retries with an older end instead of failing the day."""
+
+    fixed_now = datetime(2026, 10, 23, 0, 20, tzinfo=UTC)
+    monkeypatch.setattr(alpaca, "_utc_now", lambda: fixed_now)
+    ends: list[str] = []
+    payload = {"bars": {"AAPL": [_bar("2026-10-22T04:00:00Z", 255.0)]}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        ends.append(request.url.params["end"])
+        if len(ends) == 1:
+            return _canned(
+                b'{"message":"subscription does not permit querying recent SIP data"}', 403
+            )
+        return _canned(json.dumps(payload).encode())
+
+    settings = get_settings()
+    provider = AlpacaMarketDataProvider(settings)
+    provider.client._transport = httpx.MockTransport(handler)  # type: ignore[attr-defined]
+    records = provider.ohlcv("AAPL", days=10)
+    assert len(ends) == 2
+    assert ends[0] == "2026-10-22T23:50:00Z"
+    assert ends[1] < ends[0]  # stepped further back, never forward
+    assert [record.as_of.date().isoformat() for record in records] == ["2026-10-22"]
+
+
+def test_alpaca_recent_sip_refusal_on_every_step_is_transport_error(monkeypatch) -> None:
+    fixed_now = datetime(2026, 10, 23, 0, 20, tzinfo=UTC)
+    monkeypatch.setattr(alpaca, "_utc_now", lambda: fixed_now)
+    attempts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request.url.params["end"])
+        return _canned(b'{"message":"subscription does not permit querying recent SIP data"}', 403)
+
+    settings = get_settings()
+    provider = AlpacaMarketDataProvider(settings)
+    provider.client._transport = httpx.MockTransport(handler)  # type: ignore[attr-defined]
+    with pytest.raises(AlpacaTransportError):
+        provider.ohlcv("AAPL", days=10)
+    assert len(attempts) == len(alpaca._RECENT_SIP_STEPS)
+
+
+def test_alpaca_other_403_is_not_laddered(monkeypatch) -> None:
+    """A grant/permission 403 must fail loudly on the first request."""
+
+    attempts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request.url.params["end"])
+        return _canned(b'{"message":"request is not authorized"}', 403)
+
+    settings = get_settings()
+    provider = AlpacaMarketDataProvider(settings)
+    provider.client._transport = httpx.MockTransport(handler)  # type: ignore[attr-defined]
+    with pytest.raises(AlpacaTransportError):
+        provider.ohlcv("AAPL", days=10)
+    assert len(attempts) == 1
 
 
 # ------------------------------------------------------------- public mode
@@ -629,6 +782,45 @@ def test_cli_stock_fetch_persists(tmp_path, monkeypatch) -> None:
     assert "persisted 1 rows" in result.output
     assert "+1 rows" in result.output
     assert len(store.read("AAPL")) == 1
+
+
+def test_cli_stock_fetch_reports_session_lag(tmp_path, monkeypatch) -> None:
+    """The fetch line states the newest bar and its lag, so a stale day is visible
+    in the cron log without opening the mtm rows."""
+
+    from typer.testing import CliRunner
+
+    from yowayowa import stock_cli
+    from yowayowa.cli_entry import app as entry_app
+
+    store = StockOhlcvStore(root=tmp_path / "stock-ohlcv")
+    store.append("AAPL", [_record("AAPL", "alpaca", datetime(2026, 9, 15, 4, tzinfo=UTC), 101.0)])
+    monkeypatch.setattr(stock_cli, "default_store", lambda data_dir="./data": store)
+    monkeypatch.setattr(stock_cli, "_providers", lambda: {"stub": _StubOkProvider()})
+    # 2026-09-17 00:20Z: the 2026-09-16 session has closed, the newest bar is 09-15
+    monkeypatch.setattr(stock_cli, "utc_now", lambda: datetime(2026, 9, 17, 0, 20, tzinfo=UTC))
+    result = CliRunner().invoke(entry_app, ["stock-fetch", "AAPL", "--days", "5"])
+    assert result.exit_code == 0, result.output
+    assert "lag 1" in result.output
+    assert "[LATE]" in result.output
+
+
+def test_cli_stock_fetch_reports_current_bar_without_late_flag(tmp_path, monkeypatch) -> None:
+    from typer.testing import CliRunner
+
+    from yowayowa import stock_cli
+    from yowayowa.cli_entry import app as entry_app
+
+    store = StockOhlcvStore(root=tmp_path / "stock-ohlcv")
+    store.append("AAPL", [_record("AAPL", "alpaca", datetime(2026, 9, 15, 4, tzinfo=UTC), 101.0)])
+    monkeypatch.setattr(stock_cli, "default_store", lambda data_dir="./data": store)
+    monkeypatch.setattr(stock_cli, "_providers", lambda: {"stub": _StubOkProvider()})
+    # 2026-09-16 00:20Z: the 2026-09-15 session is the last finalized one
+    monkeypatch.setattr(stock_cli, "utc_now", lambda: datetime(2026, 9, 16, 0, 20, tzinfo=UTC))
+    result = CliRunner().invoke(entry_app, ["stock-fetch", "AAPL", "--days", "5"])
+    assert result.exit_code == 0, result.output
+    assert "lag 0" in result.output
+    assert "[LATE]" not in result.output
 
 
 def test_cli_stock_fetch_rejects_bad_symbol(tmp_path, monkeypatch) -> None:

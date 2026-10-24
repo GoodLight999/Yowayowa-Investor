@@ -8,80 +8,18 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+# The regular-session holiday table lives in trading_sessions so acquisition
+# and this audit can never disagree about which days are sessions.
+from yowayowa.trading_sessions import is_session_day, nyse_regular_holidays
 
-def _observed(day: date) -> date:
-    if day.weekday() == 5:
-        return day - timedelta(days=1)
-    if day.weekday() == 6:
-        return day + timedelta(days=1)
-    return day
-
-
-def _easter_sunday(year: int) -> date:
-    """Gregorian Easter computus; NYSE is closed on the preceding Friday."""
-
-    a = year % 19
-    b, c = divmod(year, 100)
-    d, e = divmod(b, 4)
-    f = (b + 8) // 25
-    g = (b - f + 1) // 3
-    h = (19 * a + b - d - g + 15) % 30
-    i, k = divmod(c, 4)
-    weekday_adjustment = (32 + 2 * e + 2 * i - h - k) % 7
-    m = (a + 11 * h + 22 * weekday_adjustment) // 451
-    month, day = divmod(h + weekday_adjustment - 7 * m + 114, 31)
-    return date(year, month, day + 1)
-
-
-def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
-    first = date(year, month, 1)
-    return first + timedelta(days=(weekday - first.weekday()) % 7 + 7 * (n - 1))
-
-
-def _last_weekday(year: int, month: int, weekday: int) -> date:
-    last = date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1)
-    return last - timedelta(days=(last.weekday() - weekday) % 7)
-
-
-def nyse_regular_holidays(year: int) -> set[date]:
-    """Regular NYSE full-day holidays, including observed federal dates.
-
-    Emergency and one-off closures are intentionally not guessed; reported
-    missing sessions on those dates require an operator/calendar review.
-    """
-
-    new_year = date(year, 1, 1)
-    if new_year.weekday() == 6:
-        new_year += timedelta(days=1)
-    holidays = {
-        new_year,
-        _nth_weekday(year, 1, 0, 3),  # Martin Luther King Jr. Day
-        _nth_weekday(year, 2, 0, 3),  # Washington's Birthday
-        _easter_sunday(year) - timedelta(days=2),  # Good Friday
-        _last_weekday(year, 5, 0),  # Memorial Day
-        _observed(date(year, 7, 4)),
-        _nth_weekday(year, 9, 0, 1),  # Labor Day
-        _nth_weekday(year, 11, 3, 4),  # Thanksgiving
-        _observed(date(year, 12, 25)),  # Christmas
-    }
-    if year >= 2022:
-        holidays.add(_observed(date(year, 6, 19)))  # Juneteenth
-    # The exchanges closed for President Jimmy Carter's National Day of Mourning.
-    if year == 2025:
-        holidays.add(date(2025, 1, 9))
-    return holidays
+__all__ = ["audit_ohlcv", "nyse_regular_holidays"]
 
 
 def _expected_dates(start: date, end: date, *, market: str) -> set[date]:
     expected: set[date] = set()
-    holidays = {
-        holiday
-        for year in range(start.year, end.year + 1)
-        for holiday in nyse_regular_holidays(year)
-    }
     current = start
     while current <= end:
-        if market == "crypto_calendar_day" or (current.weekday() < 5 and current not in holidays):
+        if market == "crypto_calendar_day" or (current.weekday() < 5 and is_session_day(current)):
             expected.add(current)
         current += timedelta(days=1)
     return expected
