@@ -18,11 +18,21 @@ import typer
 from rich import print
 from rich.table import Table
 
+from yowayowa.acquisition.snapshots import corrupt_rows_note
 from yowayowa.config import get_settings
 from yowayowa.crypto_acquisition import CryptoOhlcvStore, default_store, fetch_crypto_ohlcv
 from yowayowa.crypto_models import normalize_crypto_symbol
 
 DEFAULT_SYMBOLS = ("BTC", "ETH")
+
+
+def _print_corrupt_rows(diagnostics: dict[str, dict[str, Any]]) -> None:
+    """Surface skipped JSONL rows: their keys count as unseen, so rows repeat."""
+
+    for symbol, symbol_diagnostics in sorted(diagnostics.items()):
+        note = corrupt_rows_note(symbol_diagnostics)
+        if note is not None:
+            print(f"[yellow]{symbol}: {note}; rows may have been persisted again[/yellow]")
 
 
 def _providers() -> dict[str, Any]:
@@ -54,7 +64,10 @@ def crypto_fetch(
         if provider not in providers:
             raise typer.BadParameter("provider must be all, coingecko, or binance")
         providers = {provider: providers[provider]}
-    summary = fetch_crypto_ohlcv(providers, default_store(), normalized, days=days)
+    diagnostics: dict[str, dict[str, Any]] = {}
+    summary = fetch_crypto_ohlcv(
+        providers, default_store(), normalized, days=days, diagnostics=diagnostics
+    )
     for symbol, per_provider in summary.items():
         for provider_name, outcome in per_provider.items():
             error = outcome.get("error")
@@ -62,6 +75,7 @@ def crypto_fetch(
                 print(f"[yellow]{symbol}/{provider_name}: {error}[/yellow]")
             else:
                 print(f"{symbol}/{provider_name}: persisted {outcome['persisted']} rows")
+    _print_corrupt_rows(diagnostics)
     print(f"Store: {default_store().root}")
 
 

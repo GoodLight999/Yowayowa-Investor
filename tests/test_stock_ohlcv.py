@@ -847,3 +847,69 @@ def test_alpaca_policy_is_personal_only_not_official() -> None:
     assert policy.access.value == "registered_key"
     assert any("NOT an official reference rate" in note for note in policy.notes)
     assert any("403" in note for note in policy.notes)  # FX grant missing, verified
+
+
+# ------------------------------- corrupt-row observability (P5 audit 15)
+#
+# Duplicate exclusion keeps its meaning (a corrupt row cannot exclude its key)
+# but the condition is now countable instead of silent.
+
+
+def test_stock_store_clean_append_reports_no_corrupt_rows(tmp_path) -> None:
+    store = StockOhlcvStore(root=tmp_path / "stock-ohlcv")
+    diagnostics: dict[str, Any] = {}
+    store.append("AAPL", [_record("AAPL", "alpaca", _days(1)[0], 101.0)], diagnostics=diagnostics)
+    assert diagnostics["corrupt_rows"] == 0
+    assert diagnostics["corrupt_row_numbers"] == []
+    assert diagnostics["path"].endswith("ohlcv.jsonl")
+
+
+def test_stock_store_counts_corrupt_key_line_instead_of_losing_it_silently(tmp_path) -> None:
+    store = StockOhlcvStore(root=tmp_path / "stock-ohlcv")
+    day = _days(1)[0]
+    store.append("AAPL", [_record("AAPL", "alpaca", day, 101.0)])
+    path = tmp_path / "stock-ohlcv" / "AAPL" / "ohlcv.jsonl"
+    path.write_text('{"provider": "alpaca", "currency": "USD", "as_of": \n', encoding="utf-8")
+
+    diagnostics: dict[str, Any] = {}
+    written = store.append("AAPL", [_record("AAPL", "alpaca", day, 101.0)], diagnostics=diagnostics)
+    # unchanged semantics: the row is re-appended because its key was unreadable
+    assert written == 1
+    assert diagnostics["corrupt_rows"] == 1
+    assert diagnostics["corrupt_row_numbers"] == [1]
+    assert "json_decode_error" in diagnostics["corrupt_reasons"][0]
+
+
+def test_stock_store_counts_non_object_key_line(tmp_path) -> None:
+    store = StockOhlcvStore(root=tmp_path / "stock-ohlcv")
+    path = tmp_path / "stock-ohlcv" / "MSFT" / "ohlcv.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text('["alpaca", "USD"]\n', encoding="utf-8")
+
+    diagnostics: dict[str, Any] = {}
+    written = store.append(
+        "MSFT", [_record("MSFT", "alpaca", _days(1)[0], 300.0)], diagnostics=diagnostics
+    )
+    assert written == 1
+    assert diagnostics["corrupt_rows"] == 1
+    assert "not_a_json_object" in diagnostics["corrupt_reasons"][0]
+
+
+def test_stock_fetch_reports_corrupt_rows_and_keeps_summary_keys(tmp_path) -> None:
+    store = StockOhlcvStore(root=tmp_path / "stock-ohlcv")
+    day = _days(1)[0]
+    store.append("AAPL", [_record("AAPL", "alpaca", day, 203.0)])
+    path = tmp_path / "stock-ohlcv" / "AAPL" / "ohlcv.jsonl"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("{broken\n")
+
+    class _Ok:
+        def ohlcv(self, symbol: str, *, days: int = 30):
+            return [_record(symbol, "alpaca", day, 203.0)]
+
+    diagnostics: dict[str, dict[str, Any]] = {}
+    summary = fetch_stock_ohlcv({"alpaca": _Ok()}, store, ["AAPL"], diagnostics=diagnostics)
+    # the valid row still excludes the duplicate: the counter is additive only
+    assert summary["AAPL"]["alpaca"] == {"persisted": 0, "error": None}
+    assert diagnostics["AAPL"]["corrupt_rows"] == 1
+    assert diagnostics["AAPL"]["corrupt_row_numbers"] == [2]

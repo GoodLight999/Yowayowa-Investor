@@ -44,6 +44,12 @@ class BinanceTransportError(RuntimeError):
     """Binance is unreachable (maps to HTTP 502)."""
 
 
+def _utc_now() -> datetime:
+    """Clock seam: tests inject a fixed instant; production always uses UTC now."""
+
+    return datetime.now(UTC)
+
+
 class BinanceKlinesProvider:
     """Daily crypto klines from the Binance public API (personal mode only)."""
 
@@ -96,7 +102,7 @@ class BinanceKlinesProvider:
         cached = self._history_cache.get(cache_key)
         if cached is not None:
             return cached
-        end = datetime.now(UTC).date() - timedelta(days=1)
+        end = _utc_now().date() - timedelta(days=1)
         start = end - timedelta(days=days - 1)
         cursor_ms = int(datetime.combine(start, datetime.min.time(), tzinfo=UTC).timestamp() * 1000)
         end_ms = (

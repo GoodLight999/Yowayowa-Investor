@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -129,3 +130,95 @@ def test_diff_payloads_caps_at_200_changes() -> None:
     changed, changes = diff_payloads(previous, current)
     assert changed is True
     assert len(changes) == 200
+
+
+# ------------------------------------- corrupt-row observability (P5 audit 16-17)
+#
+# history/recent_entries keep skipping a corrupt row instead of dropping the
+# file, but the skip is now counted and attributable to a line number.
+
+
+def test_history_clean_read_reports_no_corrupt_rows(tmp_path) -> None:
+    store = SnapshotStore(tmp_path)
+    at = datetime(2026, 9, 23, tzinfo=UTC)
+    store.append("conn", "res", _record("conn", "res", "s1", at), {"a": 1})
+    diagnostics: dict
+    diagnostics = {}
+    history = store.history("conn", "res", 20, diagnostics=diagnostics)
+    assert [record.snapshot_id for record in history] == ["s1"]
+    assert diagnostics["corrupt_rows"] == 0
+    assert diagnostics["corrupt_row_numbers"] == []
+    assert diagnostics["path"].endswith("res.jsonl")
+
+
+def test_history_counts_corrupt_lines_and_keeps_its_contract(tmp_path) -> None:
+    store = SnapshotStore(tmp_path)
+    at = datetime(2026, 9, 23, tzinfo=UTC)
+    store.append("conn", "res", _record("conn", "res", "s1", at), {"a": 1})
+    path = tmp_path / "conn" / "res.jsonl"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write('{"record": {"snapshot_id": "s2"\n')  # broken JSON
+        handle.write("[1, 2]\n")  # valid JSON, wrong top-level type
+
+    diagnostics: dict = {}
+    history = store.history("conn", "res", 20, diagnostics=diagnostics)
+    assert [record.snapshot_id for record in history] == ["s1"]
+    assert diagnostics["corrupt_rows"] == 2
+    assert diagnostics["corrupt_row_numbers"] == [2, 3]
+    assert any("json_decode_error" in r for r in diagnostics["corrupt_reasons"])
+    assert any("not_a_json_object" in r for r in diagnostics["corrupt_reasons"])
+    # existing return contract unchanged when diagnostics is not requested
+    assert store.history("conn", "res", 20) == history
+
+
+def test_latest_payload_falls_back_and_reports_the_corrupt_tail(tmp_path) -> None:
+    store = SnapshotStore(tmp_path)
+    at = datetime(2026, 9, 23, tzinfo=UTC)
+    store.append("conn", "res", _record("conn", "res", "s1", at), {"a": 1})
+    path = tmp_path / "conn" / "res.jsonl"
+    with path.open("a", encoding="utf-8") as handle:
+        # a readable row whose record cannot be validated
+        handle.write('{"record": {"snapshot_id": "s2"}, "payload": {"a": 2}}\n')
+
+    diagnostics: dict = {}
+    pair = store.latest_payload("conn", "res", diagnostics=diagnostics)
+    assert pair is not None
+    assert pair[0].snapshot_id == "s1"  # fell back to the older stored version
+    assert diagnostics["corrupt_rows"] == 1
+    assert diagnostics["corrupt_row_numbers"] == [2]
+
+
+def test_recent_entries_counts_non_object_payload(tmp_path) -> None:
+    store = SnapshotStore(tmp_path)
+    at = datetime(2026, 9, 23, tzinfo=UTC)
+    store.append("conn", "res", _record("conn", "res", "s1", at), {"a": 1})
+    path = tmp_path / "conn" / "res.jsonl"
+    record = _record("conn", "res", "s2", at).model_dump(mode="json")
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"record": record, "payload": [1, 2]}) + "\n")
+
+    diagnostics: dict = {}
+    entries = store.recent_entries("conn", "res", 2, diagnostics=diagnostics)
+    assert [record.snapshot_id for record, _payload in entries] == ["s1"]
+    assert diagnostics["corrupt_rows"] == 1
+    assert "payload is not an object" in diagnostics["corrupt_reasons"][0]
+
+
+def test_all_rows_corrupt_yields_empty_and_full_count(tmp_path) -> None:
+    store = SnapshotStore(tmp_path)
+    path = tmp_path / "conn" / "res.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text("{broken\n\n[]\n", encoding="utf-8")
+    diagnostics: dict = {}
+    assert store.history("conn", "res", 10, diagnostics=diagnostics) == []
+    assert diagnostics["corrupt_rows"] == 2
+    assert diagnostics["corrupt_row_numbers"] == [1, 3]
+    assert store.latest_payload("conn", "res") is None
+
+
+def test_missing_file_reports_reason_not_corruption(tmp_path) -> None:
+    store = SnapshotStore(tmp_path)
+    diagnostics: dict = {}
+    assert store.history("ghost", "res", 10, diagnostics=diagnostics) == []
+    assert diagnostics["corrupt_rows"] == 0
+    assert diagnostics["reason"] == "file_missing"

@@ -24,7 +24,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-from yowayowa.acquisition.snapshots import _safe_component
+from yowayowa.acquisition.snapshots import (
+    _safe_component,
+    jsonl_read_diagnostics,
+    read_jsonl_rows,
+)
 
 _IR_KEYWORD_RE = re.compile(
     r"(決算|説明会|資料|短信|FactBook|factbook|financial|results|presentation|"
@@ -195,14 +199,24 @@ def classify_documents(
 
 @dataclass
 class FingerprintStore:
-    """Append-only JSONL store of document fingerprints per IR source."""
+    """Append-only JSONL store of document fingerprints per IR source.
+
+    Reads keep the row-level best-effort contract (one corrupt line never
+    drops the file) but no longer hide it: pass a dict as ``diagnostics`` to
+    any ``known_*`` read to receive the number of skipped lines together with
+    their 1-based line numbers and reasons. Skipped lines make those URLs look
+    unfetched, which is what re-fetches and duplicate alerts come from.
+    """
 
     root: Path
+
+    def _read_path(self, source_id: str) -> Path:
+        return self.root / _safe_component(source_id) / "fingerprints.jsonl"
 
     def _path(self, source_id: str) -> Path:
         directory = self.root / _safe_component(source_id)
         directory.mkdir(parents=True, exist_ok=True)
-        return directory / "fingerprints.jsonl"
+        return self._read_path(source_id)
 
     def record(self, source_id: str, fingerprints: list[dict[str, str]]) -> None:
         lines = [json.dumps(item, ensure_ascii=False) for item in fingerprints]
@@ -210,64 +224,55 @@ class FingerprintStore:
             for line in lines:
                 handle.write(line + "\n")
 
-    def known_keys(self, source_id: str) -> set[str]:
+    def _rows(
+        self, source_id: str, diagnostics: dict[str, Any] | None = None
+    ) -> list[tuple[int, dict[str, Any]]]:
+        path = self._read_path(source_id)
+        if diagnostics is not None:
+            diagnostics.clear()
+            diagnostics.update(jsonl_read_diagnostics(path))
+        return read_jsonl_rows(path, diagnostics=diagnostics)
+
+    def known_keys(self, source_id: str, *, diagnostics: dict[str, Any] | None = None) -> set[str]:
         """All recorded (url, sha) keys; URL-only records key as ``url|``."""
 
-        path = self.root / _safe_component(source_id) / "fingerprints.jsonl"
-        if not path.exists():
-            return set()
         keys: set[str] = set()
-        with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                try:
-                    item = json.loads(stripped)
-                except json.JSONDecodeError:
-                    continue
-                url = item.get("url")
-                if url:
-                    keys.add(f"{url}|{item.get('sha256') or ''}")
+        for _row_number, item in self._rows(source_id, diagnostics):
+            url = item.get("url")
+            if url:
+                keys.add(f"{url}|{item.get('sha256') or ''}")
         return keys
 
-    def known_content_urls(self, source_id: str) -> set[str]:
+    def known_content_urls(
+        self, source_id: str, *, diagnostics: dict[str, Any] | None = None
+    ) -> set[str]:
         """URLs with at least one recorded non-empty content hash."""
 
-        path = self.root / _safe_component(source_id) / "fingerprints.jsonl"
-        if not path.exists():
-            return set()
         urls: set[str] = set()
-        with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                try:
-                    item = json.loads(stripped)
-                except json.JSONDecodeError:
-                    continue
-                url = item.get("url")
-                sha = item.get("sha256")
-                if url and sha:
-                    urls.add(url)
+        for _row_number, item in self._rows(source_id, diagnostics):
+            url = item.get("url")
+            sha = item.get("sha256")
+            if url and sha:
+                urls.add(url)
         return urls
 
-    def known_urls(self, source_id: str) -> set[str]:
-        path = self.root / _safe_component(source_id) / "fingerprints.jsonl"
-        if not path.exists():
-            return set()
+    def known_urls(self, source_id: str, *, diagnostics: dict[str, Any] | None = None) -> set[str]:
         urls: set[str] = set()
-        with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                try:
-                    item = json.loads(stripped)
-                except json.JSONDecodeError:
-                    continue
-                url = item.get("url")
-                if url:
-                    urls.add(url)
+        for _row_number, item in self._rows(source_id, diagnostics):
+            url = item.get("url")
+            if url:
+                urls.add(url)
         return urls
+
+    def read_diagnostics(self, source_id: str) -> dict[str, Any]:
+        """Corrupt-row diagnostics for one source's fingerprint file.
+
+        Read-only scan of ``fingerprints.jsonl``: ``corrupt_rows`` > 0 means
+        the next classification will treat those URLs as never seen. Use this
+        to surface the counter on a monitoring/diagnostic surface without
+        threading a dict through a classification call.
+        """
+
+        diagnostics: dict[str, Any] = {}
+        self.known_keys(source_id, diagnostics=diagnostics)
+        return diagnostics

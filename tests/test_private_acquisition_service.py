@@ -305,3 +305,31 @@ def test_snapshots_listing_and_diff_via_service(tmp_path: Path) -> None:
     assert diff is not None
     assert diff.changed is True
     assert diff.changes[0].path == "$.v"
+
+
+# ------------------------------- corrupt-row observability (P5 audit 16-17)
+#
+# A corrupt snapshot line used to make "latest" silently become an older
+# version; the acquisition outcome now carries the count in its notes.
+
+
+def test_fetch_notes_corrupt_snapshot_lines(tmp_path: Path) -> None:
+    transport = ScriptedTransport([_response(), _response(b'{"cash": 1200}')])
+    service = _build_service(transport, data_dir=tmp_path)
+    service.register_connector(_definition())
+    first = service.fetch("test-conn", "account")
+    assert first.notes == []  # clean history stays quiet
+
+    path = tmp_path / "test-conn" / "account.jsonl"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write('{"record": {"snapshot_id": \n')
+
+    second = service.fetch("test-conn", "account", force_refresh=True)
+    assert second.fetch_state == AcquisitionFetchState.OK
+    joined = " | ".join(second.notes)
+    assert "1 corrupt line(s) skipped" in joined
+    assert "rows [2]" in joined
+    assert "diff baseline may be older" in joined
+    # the diff itself still compares against the readable version
+    assert second.diff is not None
+    assert second.diff.changed is True

@@ -27,8 +27,10 @@ from yowayowa.crypto_models import (
     COINGECKO_COIN_IDS,
     CryptoOhlcvRecord,
     normalize_crypto_symbol,
+    utc_midnight,
 )
 from yowayowa.domain import LicenseClass
+from yowayowa.providers import binance
 from yowayowa.providers.binance import BinanceKlinesProvider, BinanceTransportError
 from yowayowa.providers.coingecko import CoinGeckoOhlcProvider, CoinGeckoTransportError
 from yowayowa.services.licensing import source_policy
@@ -65,9 +67,25 @@ def _coingecko_payload(days: int = 6) -> list[list[float]]:
     return rows
 
 
-def _binance_payload(days: int = 6) -> list[list[float]]:
+_BINANCE_FIXTURE_NOW = datetime(
+    2026, 9, 26, 12, 0, tzinfo=UTC
+)  # mid-forming-day of the classic fixture dates
+
+
+def _binance_payload(days: int = 6, *, now: datetime | None = None) -> list[list[float]]:
+    """Klines ending yesterday relative to ``now``, plus a forming bar at now's day.
+
+    Rows are anchored to the injected clock (never the wall clock), so the
+    window a test asserts on is fixed by the ``_utc_now`` injection alone.
+    """
+
+    now = now or _BINANCE_FIXTURE_NOW
+    completed_days = _days(
+        days,
+        start=datetime.combine(now.date() - timedelta(days=days), datetime.min.time(), tzinfo=UTC),
+    )
     rows = []
-    for index, ts in enumerate(_days(days)):
+    for index, ts in enumerate(completed_days):
         rows.append(
             [
                 ts.timestamp() * 1000.0,
@@ -83,7 +101,7 @@ def _binance_payload(days: int = 6) -> list[list[float]]:
                 0,
             ]
         )
-    forming = _days(days)[-1] + timedelta(days=1)
+    forming = completed_days[-1] + timedelta(days=1)
     rows.append(  # currently-forming bar, must be dropped
         [
             forming.timestamp() * 1000.0,
@@ -217,10 +235,30 @@ def test_coingecko_empty_payload_is_lookup_error() -> None:
 # ------------------------------------------------------------- binance
 
 
-def test_binance_klines_returns_records_with_daily_provenance() -> None:
-    provider = _stub_provider(BinanceKlinesProvider, _binance_payload())
+# Three injected "now" instants: right after the classic fixture dates, at the
+# calendar middle between fixture and today, and today's real instant frozen
+# once at test start. The payload is anchored to the injected clock, so all
+# three must produce the same expectations: the wall clock is out of the loop.
+_BINANCE_INJECTED_NOWS = [
+    datetime(2026, 9, 27, 0, 20, tzinfo=UTC),
+    datetime(2026, 10, 13, 12, 0, tzinfo=UTC),
+    None,  # today, frozen at test start
+]
+
+
+@pytest.mark.parametrize(
+    "injected_now",
+    _BINANCE_INJECTED_NOWS,
+    ids=["after-fixture", "mid-calendar", "today"],
+)
+def test_binance_klines_returns_records_with_daily_provenance(
+    monkeypatch: pytest.MonkeyPatch, injected_now: datetime | None
+) -> None:
+    fixed_now = injected_now or datetime.now(UTC).replace(microsecond=0)
+    monkeypatch.setattr(binance, "_utc_now", lambda: fixed_now)
+    provider = _stub_provider(BinanceKlinesProvider, _binance_payload(now=fixed_now))
     records = provider.ohlcv("BTC", days=30)
-    assert len(records) == 7  # all fixture dates are before the live query window
+    assert len(records) == 6  # six completed days; the forming bar at now's day is dropped
     first = records[0]
     assert first.provider == "binance"
     assert first.currency == "USDT"
@@ -228,6 +266,10 @@ def test_binance_klines_returns_records_with_daily_provenance() -> None:
     assert first.quote_volume == 2540.0
     assert first.license_class == LicenseClass.PERSONAL_ONLY.value
     assert BINANCE_SYMBOLS["BTC"] == "BTCUSDT"
+    # window placement is decided by the injected clock alone, not the wall clock
+    assert records[0].as_of == utc_midnight(fixed_now - timedelta(days=6))
+    # the window ends at yesterday's UTC close
+    assert records[-1].as_of == utc_midnight(fixed_now - timedelta(days=1))
 
 
 def test_binance_long_history_paginates_and_excludes_unfinished_day() -> None:
@@ -270,13 +312,61 @@ def test_binance_long_history_paginates_and_excludes_unfinished_day() -> None:
     assert all(record.as_of.date() < datetime.now(UTC).date() for record in records)
 
 
-def test_binance_zero_bar_is_skipped() -> None:
-    payload = _binance_payload()
+@pytest.mark.parametrize(
+    "injected_now",
+    _BINANCE_INJECTED_NOWS,
+    ids=["after-fixture", "mid-calendar", "today"],
+)
+def test_binance_zero_bar_is_skipped(
+    monkeypatch: pytest.MonkeyPatch, injected_now: datetime | None
+) -> None:
+    fixed_now = injected_now or datetime.now(UTC).replace(microsecond=0)
+    monkeypatch.setattr(binance, "_utc_now", lambda: fixed_now)
+    payload = _binance_payload(now=fixed_now)
     payload[2] = [payload[2][0], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     provider = _stub_provider(BinanceKlinesProvider, payload)
     records = provider.ohlcv("BTC", days=30)
-    assert len(records) == 6
+    assert len(records) == 5  # zero bar + forming bar dropped, no zero-fill
     assert all(record.close > 0 for record in records)
+    zero_day = utc_midnight(fixed_now - timedelta(days=4))  # payload[2] is now - 4 days
+    assert all(record.as_of != zero_day for record in records)
+
+
+def test_binance_window_boundaries_follow_injected_clock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixed_now = datetime(2026, 10, 13, 0, 20, tzinfo=UTC)
+    monkeypatch.setattr(binance, "_utc_now", lambda: fixed_now)
+    # days=30: the window is [now - 30d, yesterday]; the start day itself counts in
+    window_start = utc_midnight(fixed_now - timedelta(days=30))
+    window_end = utc_midnight(fixed_now - timedelta(days=1))
+    forming_day = utc_midnight(fixed_now)  # today is still forming and must never persist
+
+    def row(day: datetime, close: float) -> list[float]:
+        return [
+            day.timestamp() * 1000.0,
+            close - 1.0,
+            close + 1.0,
+            close - 2.0,
+            close,
+            10.0,
+            (day + timedelta(days=1)).timestamp() * 1000.0,
+            close * 10.0,
+            0,
+            0,
+            0,
+        ]
+
+    payload = [
+        row(window_start - timedelta(days=1), 300.0),  # day before start: outside, excluded
+        row(window_start, 301.0),  # start day itself: included
+        row(window_end, 302.0),  # end day (yesterday): included
+        row(forming_day, 303.0),  # forming bar (today): excluded
+    ]
+    provider = _stub_provider(BinanceKlinesProvider, payload)
+    records = provider.ohlcv("BTC", days=30)
+    # exact boundary decision, not a count that could pass by accident
+    assert [record.as_of for record in records] == [window_start, window_end]
 
 
 def test_binance_http_400_is_lookup_error() -> None:
@@ -582,3 +672,75 @@ def test_binance_policy_is_personal_only_not_official() -> None:
     assert policy.commercial_use is False
     assert policy.public_api is False
     assert any("NOT an official reference rate" in note for note in policy.notes)
+
+
+# ------------------------------- corrupt-row observability (P5 audit 14)
+#
+# Duplicate exclusion keeps its meaning (a corrupt row cannot exclude its key)
+# but the condition is now countable instead of silent.
+
+
+def test_store_clean_append_reports_no_corrupt_rows(tmp_path) -> None:
+    store = CryptoOhlcvStore(root=tmp_path / "crypto-ohlcv")
+    diagnostics: dict[str, Any] = {}
+    store.append("BTC", [_record("BTC", "coingecko", _days(1)[0], 101.0)], diagnostics=diagnostics)
+    assert diagnostics["corrupt_rows"] == 0
+    assert diagnostics["corrupt_row_numbers"] == []
+    assert diagnostics["path"].endswith("ohlcv.jsonl")
+
+
+def test_store_counts_corrupt_key_line_instead_of_losing_it_silently(tmp_path) -> None:
+    store = CryptoOhlcvStore(root=tmp_path / "crypto-ohlcv")
+    day = _days(1)[0]
+    store.append("BTC", [_record("BTC", "coingecko", day, 101.0)])
+    path = tmp_path / "crypto-ohlcv" / "BTC" / "ohlcv.jsonl"
+    path.write_text('{"provider": "coingecko", "currency": "USD", "as_of": \n', encoding="utf-8")
+
+    diagnostics: dict[str, Any] = {}
+    written = store.append(
+        "BTC", [_record("BTC", "coingecko", day, 101.0)], diagnostics=diagnostics
+    )
+    # unchanged semantics: the row is re-appended because its key was unreadable
+    assert written == 1
+    assert diagnostics["corrupt_rows"] == 1
+    assert diagnostics["corrupt_row_numbers"] == [1]
+    assert "json_decode_error" in diagnostics["corrupt_reasons"][0]
+
+
+def test_store_counts_non_object_key_line(tmp_path) -> None:
+    store = CryptoOhlcvStore(root=tmp_path / "crypto-ohlcv")
+    path = tmp_path / "crypto-ohlcv" / "ETH" / "ohlcv.jsonl"
+    path.parent.mkdir(parents=True)
+    path.write_text('["binance", "USDT"]\n', encoding="utf-8")
+
+    diagnostics: dict[str, Any] = {}
+    written = store.append(
+        "ETH", [_record("ETH", "binance", _days(1)[0], 2000.0)], diagnostics=diagnostics
+    )
+    assert written == 1
+    assert diagnostics["corrupt_rows"] == 1
+    assert "not_a_json_object" in diagnostics["corrupt_reasons"][0]
+
+
+def test_fetch_reports_corrupt_rows_and_keeps_summary_keys(tmp_path) -> None:
+    store = CryptoOhlcvStore(root=tmp_path / "crypto-ohlcv")
+    day = _days(1)[0]
+    store.append("BTC", [_record("BTC", "binance", day, 203.0)])
+    path = tmp_path / "crypto-ohlcv" / "BTC" / "ohlcv.jsonl"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write("{broken\n")
+
+    class _Ok:
+        def ohlcv(self, symbol: str, *, days: int = 30):
+            return [_record(symbol, "binance", day, 203.0)]
+
+    diagnostics: dict[str, dict[str, Any]] = {}
+    summary = fetch_crypto_ohlcv({}, store, ["BTC"])  # no providers: no read at all
+    assert summary == {"BTC": {}}
+    assert diagnostics == {}
+
+    summary = fetch_crypto_ohlcv({"binance": _Ok()}, store, ["BTC"], diagnostics=diagnostics)
+    # the valid row still excludes the duplicate: the counter is additive only
+    assert summary["BTC"]["binance"] == {"persisted": 0, "error": None}
+    assert diagnostics["BTC"]["corrupt_rows"] == 1
+    assert diagnostics["BTC"]["corrupt_row_numbers"] == [2]

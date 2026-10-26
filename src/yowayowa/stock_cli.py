@@ -18,6 +18,7 @@ import typer
 from rich import print
 from rich.table import Table
 
+from yowayowa.acquisition.snapshots import corrupt_rows_note
 from yowayowa.config import get_settings
 from yowayowa.stock_acquisition import (
     StockOhlcvStore,
@@ -46,6 +47,15 @@ DEFAULT_SYMBOLS = (
 )
 
 
+def _print_corrupt_rows(diagnostics: dict[str, dict[str, Any]]) -> None:
+    """Surface skipped JSONL rows: their keys count as unseen, so rows repeat."""
+
+    for symbol, symbol_diagnostics in sorted(diagnostics.items()):
+        note = corrupt_rows_note(symbol_diagnostics)
+        if note is not None:
+            print(f"[yellow]{symbol}: {note}; rows may have been persisted again[/yellow]")
+
+
 def _providers() -> dict[str, Any]:
     from yowayowa.providers.alpaca import AlpacaMarketDataProvider
 
@@ -67,7 +77,10 @@ def stock_fetch(
             normalized.append(normalize_stock_symbol(raw))
         except ValueError as exc:
             raise typer.BadParameter(str(exc)) from exc
-    summary = fetch_stock_ohlcv(_providers(), default_store(), normalized, days=days)
+    diagnostics: dict[str, dict[str, Any]] = {}
+    summary = fetch_stock_ohlcv(
+        _providers(), default_store(), normalized, days=days, diagnostics=diagnostics
+    )
     store = default_store()
     now = utc_now()
     total = 0
@@ -88,6 +101,7 @@ def stock_fetch(
             else:
                 total += int(outcome.get("persisted", 0))
                 print(f"{symbol}/{provider_name}: persisted {outcome['persisted']} rows{tail}")
+    _print_corrupt_rows(diagnostics)
     if worst_lag >= 1:
         print(f"[yellow]freshness: behind by {worst_lag} session(s)[/yellow]")
     print(f"Store: {store.root}")

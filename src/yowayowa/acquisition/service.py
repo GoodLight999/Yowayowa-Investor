@@ -27,6 +27,7 @@ from yowayowa.acquisition.registry import (
 )
 from yowayowa.acquisition.snapshots import (
     SnapshotStore,
+    corrupt_rows_note,
     diff_payloads,
     payload_sha256,
 )
@@ -205,7 +206,7 @@ class PrivateAcquisitionService:
 
         as_of = _extract_as_of(payload)
         snapshot, diff = self._append_snapshot(
-            connector_id, resource, payload, parser_version, schema_version, as_of, now
+            connector_id, resource, payload, parser_version, schema_version, as_of, now, notes
         )
         self.cache.put(connector_id, resource, dict(payload), definition.freshness, now=now)
         self.registry.update_runtime(
@@ -357,8 +358,16 @@ class PrivateAcquisitionService:
         schema_version: str,
         as_of: datetime | None,
         now: datetime,
+        notes: list[str],
     ) -> tuple[SnapshotRecord, SnapshotDiff | None]:
-        prior = self.snapshot_store.recent_entries(connector_id, resource, 1)
+        prior_diagnostics: dict[str, Any] = {}
+        prior = self.snapshot_store.recent_entries(
+            connector_id, resource, 1, diagnostics=prior_diagnostics
+        )
+        if prior_diagnostics.get("corrupt_rows"):
+            note = corrupt_rows_note(prior_diagnostics)
+            if note is not None:
+                notes.append(f"{note}; the diff baseline may be older than the last stored version")
         digest = payload_sha256(payload)
         record = SnapshotRecord(
             snapshot_id=digest,
