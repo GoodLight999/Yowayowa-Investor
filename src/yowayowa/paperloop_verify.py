@@ -23,15 +23,14 @@ import json
 import sys
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from yowayowa.paperloop import (
-    BENCH_CRYPTO_BOOK,
     BOOKS_ENABLED,
+    CRYPTO_BOOKS,
     CRYPTO_UNIVERSE,
     EQUITY_UNIVERSE,
     LIVE_SCHEMAS,
-    S01_BOOK,
     SCHEMA_V12,
     SCHEMA_V13,
     STRATEGY_BOOKS,
@@ -332,8 +331,7 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
         if not rev:
             result["checks"][L8]["failures"].append({"seq": row.get("seq"), "problem": "missing"})
             continue
-        stamp = str(row.get("recorded_at"))[:10]
-        revisions.setdefault(str(rev), []).append(stamp)
+        revisions.setdefault(str(rev), []).append(str(row.get("recorded_at"))[:10])
     result["code_rev_days"] = {rev: sorted(set(days)) for rev, days in revisions.items()}
 
     # ---- L9: prereg registered BEFORE the book's first decision -----------
@@ -364,15 +362,14 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
         if book not in first_decision or stamp < first_decision[book]:
             first_decision[book] = stamp
     for book, stamp in sorted(first_decision.items()):
-        registered = prereg_at.get(book)
-        if registered is None:
+        if book not in prereg_at:
             result["checks"][L9]["failures"].append({"book": book, "problem": "not_registered"})
-        elif registered > stamp:
+        elif prereg_at[book] > stamp:
             result["checks"][L9]["failures"].append(
                 {
                     "book": book,
                     "problem": "registered_after_first_decision",
-                    "registered_at": registered.isoformat(),
+                    "registered_at": prereg_at[book].isoformat(),
                     "first_decision": stamp.isoformat(),
                 }
             )
@@ -406,7 +403,7 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
         if row.get("event") != "halt_check":
             continue
         key = (str(row.get("book")), str(row.get("check_date")))
-        halt_keys.setdefault(key, []).append(int(row.get("seq")))
+        halt_keys.setdefault(key, []).append(int(cast(int, row.get("seq"))))
         if row.get("halted_after"):
             halted_days.add(key)
     for (book, day), seq_list in sorted(halt_keys.items()):
@@ -568,7 +565,7 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
             result["R2_excluded_revised"] += 1
             continue
         asset = str(row.get("asset"))
-        universe = CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
+        universe = CRYPTO_UNIVERSE if book in CRYPTO_BOOKS else EQUITY_UNIVERSE
         target_now = _engine_target(
             book,
             {other: _daily_map(root, other) for other in universe},

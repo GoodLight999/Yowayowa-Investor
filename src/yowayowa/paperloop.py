@@ -36,6 +36,45 @@ Key contracts:
 Note: equity books (C, EQUITY_EW) carry the same schema as the crypto books
 (v1.3 rows; BOOK_C_ENABLED gates the book C set).
 
+v1.8 weekly-row boundaries (C-05/C-06/C-07, docs/PAPERLOOP_MONEY_REVIEW_20261023.md):
+the weekly row is closed at ``week_end`` — ``cum_return`` / ``drawdown_now`` and
+the per-book comparison line are measured at the last mark ON/BEFORE
+``week_end`` (each value names its mark: ``cum_return_as_of`` /
+``drawdown_as_of`` / ``comparison_as_of`` / ``benchmark_as_of``) instead of the
+latest mark in the journal, and are None with a reason when no such mark
+exists (never 0). ``switches`` is counted per asset (``switches_by_asset``,
+sum == ``switches``) using each row's ``prev_regime_state``, so two assets in
+different regimes no longer read as flips; legacy rows without the column fall
+back to the previous decision for the same (book, asset). The top-level
+``vs_benchmark_pp_cum`` now carries the SAME shared-baseline definition as
+``books[A].vs_benchmark_pp_cum``; the old baseline-less difference is kept as
+``vs_benchmark_pp_cum_legacy_nobaseline``. The summary row is
+``demo-loop-summary-v1.8``: rows already in the append-only weekly file keep
+their old meanings (duplicate ``week_end`` rows are still appended, not
+replaced — that redesign is out of scope here).
+
+v1.9 addition (t_94687d03, follow-up of the C-05/C-06/C-07 review): a comparison
+is only reported when both sides end at the SAME day. Closing the line at
+``week_end`` left each side ending at its own last mark on/before that day, so a
+book with a 10-24 mark compared against a benchmark whose last mark was 10-21
+produced a number (+10.0pp) that subtracted a 3-day move from a 0-day move. Now
+that mismatch is refused: ``cum_pnl`` / ``max_drawdown`` /
+``benchmark_cum_pnl`` / ``benchmark_max_drawdown`` / ``vs_benchmark_pp_cum`` /
+``dd_vs_benchmark_ratio`` are None with
+``comparison_reason="endpoint_mismatch"``, while ``comparison_start`` and BOTH
+``comparison_as_of`` / ``benchmark_as_of`` are kept so the row still says which
+marks existed. The alternative (cut BOTH sides back to their last shared mark)
+was rejected: the comparison would then cover an older, shorter window under
+this week's label while ``cum_return`` / ``drawdown_now`` stay at ``week_end``,
+i.e. two different periods for one book in one row. The top-level
+``vs_benchmark_pp_cum`` follows the per-book line and its ``..._as_of`` is filled
+only when the value exists;
+``vs_benchmark_pp_cum_legacy_nobaseline`` obeys the same endpoint rule (it used
+to subtract two equities measured on different days) and reports why it is
+missing in ``vs_benchmark_pp_cum_legacy_nobaseline_reason``. The summary row is
+``demo-loop-summary-v1.9``: rows already written may hold a value computed
+across two different end days.
+
 v1.8 addition (C-04, docs/PAPERLOOP_MONEY_REVIEW_20261023.md): a mark-to-market
 day that cannot price every OPEN position no longer crashes and no longer
 values a holding at 0. ``run_daily_mtm`` prices each holding from the local
@@ -131,7 +170,7 @@ import urllib.request
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from yowayowa.backtest_models import VOLATILITY_TARGET_SYMBOL, BacktestStrategyDefinition
 from yowayowa.paperloop_guard import GuardInput, check_trade
@@ -139,20 +178,46 @@ from yowayowa.paperloop_guard import GuardInput, check_trade
 # --- frozen v1 parameters (never tuned retroactively) ------------------------
 
 S01_BOOK = "A"
+# v1.10 (t_52c4aa20): the SHADOW book of A. Same signal, same frozen
+# parameters, same gate — only the gross exposure is capped at
+# ``SHADOW_GROSS_CAP`` so the preregistered hypothesis ("a 50% gross cap
+# lowers the drawdown vs 1/N") can be read forward from the journal instead of
+# being estimated from A's P&L after the fact. Book A itself is untouched:
+# its spec_hash, parameters and judgment logic stay exactly as frozen.
+BOOK_A_HALF = "A_HALF"
+SHADOW_GROSS_CAP = 0.5
 BOOK_C_BOOK = "C"
 BENCH_CRYPTO_BOOK = "CRYPTO_1N"
 BENCH_EQUITY_BOOK = "EQUITY_EW"
-STRATEGY_BOOKS = (S01_BOOK, BOOK_C_BOOK)
+STRATEGY_BOOKS = (S01_BOOK, BOOK_C_BOOK, BOOK_A_HALF)
+# v1.10: book→universe/calendar class asked in ONE place, so a new book cannot
+# be silently read as the wrong asset class by one of the ~15 call sites.
+CRYPTO_BOOKS = (S01_BOOK, BOOK_A_HALF, BENCH_CRYPTO_BOOK)
+EQUITY_BOOKS = (BOOK_C_BOOK, BENCH_EQUITY_BOOK)
 # v1.4 (t_dddae39e): the equity benchmark book was preregistered and coded
 # (BOOK_SPEC_HASHES / _benchmark_weights / the equity branches below) when
 # Book C was deployed, but it was never added here — so Book C had no
 # comparison book and its own frozen hypothesis ("S-02 controls drawdown vs
 # EW") could not be read forward. Enabled from the next decision date; it buys
 # 1/N once and never trades again, exactly like CRYPTO_1N (D7).
-BOOKS_ENABLED = (S01_BOOK, BENCH_CRYPTO_BOOK, BOOK_C_BOOK, BENCH_EQUITY_BOOK)
+BOOKS_ENABLED = (
+    S01_BOOK,
+    BENCH_CRYPTO_BOOK,
+    BOOK_C_BOOK,
+    BENCH_EQUITY_BOOK,
+    # v1.10 (t_52c4aa20): last so the pre-existing books keep their row order
+    # in the journal (mtm/halt_check order) and in the panel.
+    BOOK_A_HALF,
+)
 # Each strategy book's own comparison book (read by weekly_summary). A uses the
 # crypto 1/N book, C uses the equity EW book it was adopted against.
-BOOK_BENCHMARK = {S01_BOOK: BENCH_CRYPTO_BOOK, BOOK_C_BOOK: BENCH_EQUITY_BOOK}
+BOOK_BENCHMARK = {
+    S01_BOOK: BENCH_CRYPTO_BOOK,
+    BOOK_C_BOOK: BENCH_EQUITY_BOOK,
+    # v1.10: the shadow book is judged against the SAME 1/N benchmark A is,
+    # otherwise its DD ratio would not be comparable to A's.
+    BOOK_A_HALF: BENCH_CRYPTO_BOOK,
+}
 CRYPTO_UNIVERSE = ("BTC", "ETH")
 EQUITY_UNIVERSE = (VOLATILITY_TARGET_SYMBOL, "IWM", "JNJ", "PG")
 SMA_LOOKBACK = 200
@@ -630,6 +695,35 @@ def _first_fill_candidate(root: Path, symbol: str, after: datetime) -> dict[str,
     return min(candidates, key=lambda bar: _parse_ts(bar["open_time"]))
 
 
+def _fill_store_newest(root: Path, symbol: str) -> dict[str, Any]:
+    """What the fill resolver last had for ``symbol`` (``fill_wait`` context).
+
+    v1.9 (t_d0fbc804): recorded verbatim on each fill_wait row so a skipped
+    fill run says what it looked at: the newest daily session in the OHLCV
+    store (the only equity fill source) and the newest realized 1h tape bar.
+    """
+
+    daily = _daily_map(root, symbol)
+    newest_session = max(daily, default=None)
+    out: dict[str, Any] = {
+        "daily_newest_session": newest_session.isoformat() if newest_session else None,
+        "tape_newest_open_ts": None,
+    }
+    tape = tape_dir(root) / f"{symbol.upper()}.jsonl"
+    if tape.exists():
+        newest_open: datetime | None = None
+        for entry in _rows_from_jsonl(tape):
+            try:
+                open_ts = _parse_ts(entry["open_time"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if newest_open is None or open_ts > newest_open:
+                newest_open = open_ts
+        if newest_open is not None:
+            out["tape_newest_open_ts"] = newest_open.isoformat()
+    return out
+
+
 # --- indicators -------------------------------------------------------------
 
 
@@ -686,13 +780,19 @@ def _engine_target(
 
     from yowayowa.services.backtest import _target_weights
 
-    if book == S01_BOOK:
+    if book in (S01_BOOK, BOOK_A_HALF):
         strategy = BacktestStrategyDefinition(
-            id="s01-a",
+            id="s01-a" if book == S01_BOOK else "s01-a-half",
             name="crypto_trend_dual_ma",
             description=(
                 "Paper book A: frozen crypto_trend_dual_ma strategy from the "
                 "P2 crypto backtests (SMA200, next-open execution, equal weight)."
+                if book == S01_BOOK
+                else (
+                    "Paper book A_HALF: the SAME frozen crypto_trend_dual_ma "
+                    "strategy and universe as book A, with the gross exposure "
+                    f"capped at {SHADOW_GROSS_CAP:.0%} (t_52c4aa20)."
+                )
             ),
             signal="crypto_trend_dual_ma",
             universe=list(CRYPTO_UNIVERSE),
@@ -715,6 +815,14 @@ def _engine_target(
     else:
         raise ValueError(f"unsupported book for the engine: {book!r}")
     target = _target_weights(strategy, rows_by_symbol, decision_date)
+    if book == BOOK_A_HALF:
+        # v1.10 (t_52c4aa20): the ONLY difference from book A. The engine's
+        # frozen answer ``1/len(active)`` becomes ``0.5/len(active)`` (and the
+        # all-gates-failed zeros stay zeros), so the book holds the same
+        # positions at half the exposure and keeps the other half in cash.
+        # Applied here, not in services/backtest.py, so no backtest or book A
+        # path can pick it up by accident.
+        target = {symbol: weight * SHADOW_GROSS_CAP for symbol, weight in target.items()}
     assert all(math.isfinite(weight) for weight in target.values()), "non-finite target weight"
     return target
 
@@ -732,6 +840,10 @@ BOOK_SPEC_HASHES: dict[str, str] = {
     BENCH_CRYPTO_BOOK: "benchmark:crypto_1n:buy_and_hold:BTCETH",
     BOOK_C_BOOK: "primary:s02:vol_target_defensive:SPY_IWM_JNJ_PG:15:weekly:0.0015",
     BENCH_EQUITY_BOOK: "benchmark:equity_ew:buy_and_hold:SPY_IWM_JNJ_PG",
+    # v1.10 (t_52c4aa20): a DIFFERENT spec string, so the shadow book can never
+    # be confused with A in prereg/check_prereg/L10. Nothing here is shared with
+    # A's frozen string.
+    BOOK_A_HALF: "shadow:s01h:crypto_trend_dual_ma:BTCETH:200:daily:0.0015:gross0.5",
 }
 
 # --- regime_spec (§3-4): preregistered market-regime boundaries ---------------
@@ -1057,7 +1169,7 @@ def evaluate_halt(
     """Per-book HALT evaluation: per-asset triggers merged; DD is book scope."""
 
     results: dict[str, list[str]] = {}
-    is_equity = book in (BOOK_C_BOOK, BENCH_EQUITY_BOOK)
+    is_equity = book in EQUITY_BOOKS
     for symbol in rows_by_symbol:
         results[symbol] = _halt_reasons_asset(
             rows_by_symbol[symbol], closes_by_symbol[symbol], utc_now, annualization, is_equity
@@ -1121,14 +1233,26 @@ def ensure_prereg(
                     else (
                         "Benchmark: US Equity 4-asset equal weight buy-and-hold"
                         if book == BENCH_EQUITY_BOOK
-                        else "Benchmark: BTC/ETH 1/N buy-and-hold"
+                        else (
+                            "A 50% gross cap on S-01 lowers the drawdown vs 1/N"
+                            if book == BOOK_A_HALF
+                            else "Benchmark: BTC/ETH 1/N buy-and-hold"
+                        )
                     )
                 )
             ),
             "judgment_rule": (
                 "design §4 milestones at 4/12/26 weeks"
                 if book in (BOOK_C_BOOK, BENCH_EQUITY_BOOK)
-                else "Q1 signal efficacy on the SMA200 state (design §4)"
+                # v1.10 (t_52c4aa20): the shadow book is read on design §4's
+                # 12-week rows AND on the 20-business-day forward window from
+                # the loss-attribution report §7-2.
+                else (
+                    "design §4 12週 + 20営業日連続: 費用控除後 equity>=1.0 / "
+                    "最大DD<=3.0% / DD比<=0.6"
+                    if book == BOOK_A_HALF
+                    else "Q1 signal efficacy on the SMA200 state (design §4)"
+                )
             ),
             "registered_at": _utc_now_text(utc_now),
             # v1.4 (t_dddae39e): EQUITY_EW belongs to the Book C deployment
@@ -1140,7 +1264,11 @@ def ensure_prereg(
                 else (
                     "worker-go:t_dddae39e"
                     if book == BENCH_EQUITY_BOOK
-                    else "worker-flash:t_d9a25dd2"
+                    else (
+                        "worker-goat:t_52c4aa20"
+                        if book == BOOK_A_HALF
+                        else "worker-flash:t_d9a25dd2"
+                    )
                 )
             ),
         }
@@ -1265,7 +1393,7 @@ def store_freeze_inputs(root: Path, book: str, decision_date: date) -> str:
     """
 
     inputs: dict[str, Any] = {}
-    for symbol in CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE:
+    for symbol in CRYPTO_UNIVERSE if book in CRYPTO_BOOKS else EQUITY_UNIVERSE:
         rows = _daily_map(root, symbol)
         prior = [day for day in sorted(rows) if day < decision_date]
         inputs[symbol] = {
@@ -1341,9 +1469,7 @@ def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
             for row in rows
         )
         state = rebuild_state(root, book)
-        universe = list(
-            CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
-        )
+        universe = list(CRYPTO_UNIVERSE if book in CRYPTO_BOOKS else EQUITY_UNIVERSE)
         prices: dict[str, float | None] = {}
         price_bar_date: str | None = None
         for symbol in universe:
@@ -1581,9 +1707,9 @@ def _bars_since_switch(root: Path, book: str, symbol: str, decision_date: date) 
         for row in _load_journal(root)
         if row.get("event") == "decision" and row.get("book") == book and row.get("asset") == symbol
     ]
-    for i, row in enumerate(rows):
+    for count, row in enumerate(rows, start=1):
         if row.get("switch_flag"):
-            return i
+            return count - 1
     return None
 
 
@@ -1618,21 +1744,17 @@ def run_daily_decide(
         # v1.4 (t_dddae39e): the equity EW benchmark book rides the SAME weekly
         # cadence, otherwise its comparison line would be a different strategy
         # (daily decisions) than the book it is measuring.
-        if book in (BOOK_C_BOOK, BENCH_EQUITY_BOOK) and decision_date.weekday() != 0:
+        if book in EQUITY_BOOKS and decision_date.weekday() != 0:
             continue
         check_prereg(root, book)
-        universe = list(
-            CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
-        )
+        universe = list(CRYPTO_UNIVERSE if book in CRYPTO_BOOKS else EQUITY_UNIVERSE)
         rows_by_symbol = {symbol: _daily_map(root, symbol) for symbol in universe}
         closes_by_symbol: dict[str, list[float]] = {
             symbol: [rows[day]["close"] for day in sorted(rows) if day < decision_date]
             for symbol, rows in rows_by_symbol.items()
         }
-        is_equity = book in (BOOK_C_BOOK, BENCH_EQUITY_BOOK)
-        annualization = (
-            CRYPTO_ANNUALIZATION if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_ANNUALIZATION
-        )
+        is_equity = book in EQUITY_BOOKS
+        annualization = CRYPTO_ANNUALIZATION if book in CRYPTO_BOOKS else EQUITY_ANNUALIZATION
         state = rebuild_state(root, book)
         dd = state["equity"] / state["peak"] - 1.0 if state["peak"] > 0 else 0.0
         trigger_details: list[dict[str, Any]] = []
@@ -1709,7 +1831,9 @@ def run_daily_decide(
             last_bar = max(rows_by_symbol[symbol], default=None)
             first_bar = min(rows_by_symbol[symbol], default=None)
             input_bar_dates = (
-                [first_bar.isoformat(), last_bar.isoformat()] if last_bar is not None else None
+                [cast(date, first_bar).isoformat(), last_bar.isoformat()]
+                if last_bar is not None
+                else None
             )
             last_bars_by_symbol = {
                 other: max(rows_by_symbol[other]) for other in universe if rows_by_symbol[other]
@@ -1750,7 +1874,15 @@ def run_daily_decide(
                         "sigma21": sigma,
                         "sigma21_prior": _sigma21_prior(closes, annualization),
                         "last_return": closes[-1] / closes[-2] - 1.0 if len(closes) >= 2 else None,
-                        "regime_state": "HALT",
+                        # t_f1aa50e5: benchmark books carry no strategy state
+                        # (L14: not_applicable) even on a HALT day — the same
+                        # rule as the normal path below. halt_flag / halt_reason
+                        # / fill_status=skipped still say WHY nothing traded.
+                        "regime_state": (
+                            "not_applicable"
+                            if book in (BENCH_CRYPTO_BOOK, BENCH_EQUITY_BOOK)
+                            else "HALT"
+                        ),
                         "prev_regime_state": prev_regime,
                         "switch_flag": False,
                         "switch_reason": "",
@@ -1779,7 +1911,7 @@ def run_daily_decide(
                 written += 1
                 continue
             benchmark_bought = False
-            if book in (S01_BOOK, BOOK_C_BOOK):
+            if book in STRATEGY_BOOKS:
                 target_map = _engine_target(
                     book, {other: rows_by_symbol[other] for other in universe}, decision_date
                 )
@@ -1794,7 +1926,7 @@ def run_daily_decide(
                 target_map = _benchmark_weights(book)  # pragma: no cover
             # raw target: the strategy with NO halt and NO guard applied
             # (counterfactual column; target_weight below stays as traded)
-            if book in (S01_BOOK, BOOK_C_BOOK):
+            if book in STRATEGY_BOOKS:
                 raw_map = _engine_target(
                     book, {other: rows_by_symbol[other] for other in universe}, decision_date
                 )
@@ -1879,7 +2011,7 @@ def run_daily_decide(
                         symbol, rows_by_symbol[symbol], last_bar or decision_date
                     ),
                     "regime_spec_hash": regime_hash,
-                    "guard_applied": book in (S01_BOOK, BOOK_C_BOOK),  # benchmark gets no guard
+                    "guard_applied": book in STRATEGY_BOOKS,  # benchmark gets no guard
                     "trigger": trigger,
                     "run_id": run_id,
                 },
@@ -2028,6 +2160,14 @@ def resolve_fills(
     a newer decision has superseded are closed (see
     ``_supersede_stale_pendings``) so only the newest decision per
     (book, asset) can trade.
+
+    v1.9 (t_d0fbc804): a pending that still has no fill candidate writes a
+    ``fill_wait`` row (reason + what the store last held) instead of staying
+    silent — the 2026-10-20T02:05Z run left Book C's four pendings unfilled
+    with no journal trace, and the ~45 h booking lag had no on-journal cause.
+    The row is a per-run diagnostic: it never finishes the decision (B1 reads
+    fill/fill_rejected only) and is not counted in rows_written (like
+    halt_check).
     """
 
     now = utc_now if utc_now is not None else CLOCK(UTC)
@@ -2053,6 +2193,26 @@ def resolve_fills(
                 print(f"1h fetch failed for {asset}: {exc}", file=sys.stderr)
         fill = _first_fill_candidate(root, asset, after=recorded_at)
         if fill is None:
+            # v1.9 (t_d0fbc804): never silent — record why this pending is
+            # still waiting and what the store last held, so a fill run that
+            # resolves nothing is visible on the journal (the 2026-10-20T02:05Z
+            # run wrote no row at all for Book C's four skipped pendings).
+            _append_row(
+                root,
+                {
+                    "event": "fill_wait",
+                    "book": book,
+                    "asset": asset,
+                    "decision_id": decision_id,
+                    "recorded_at": _utc_now_text(now),
+                    "reason": "no_fill_bar",
+                    "needed_after": row.get("recorded_at"),
+                    "store_newest": _fill_store_newest(root, asset),
+                    "run_id": run_id,
+                    "trigger": trigger,
+                    "backfill": bool(row.get("backfill")),
+                },
+            )
             continue  # stays pending for the next fill run
         fill_open_ts = _parse_ts(fill["open_time"])
         assert fill_open_ts > recorded_at, (
@@ -2145,7 +2305,7 @@ def resolve_fills(
                     "units_before": held_units,
                     "units_after": held_units,
                     "cash_after": state["cash"],
-                    "guard_applied": book in (S01_BOOK, BOOK_C_BOOK),
+                    "guard_applied": book in STRATEGY_BOOKS,
                     "backfill": bool(row.get("backfill")),
                     "trigger": trigger,
                     "run_id": run_id,
@@ -2192,7 +2352,7 @@ def resolve_fills(
                 "units_before": held_units,
                 "units_after": units_after,
                 "cash_after": cash_after,
-                "guard_applied": book in (S01_BOOK, BOOK_C_BOOK),
+                "guard_applied": book in STRATEGY_BOOKS,
                 "backfill": bool(row.get("backfill")),
                 "trigger": trigger,
                 "run_id": run_id,
@@ -2245,7 +2405,7 @@ def mark_up(root: Path, utc_now: datetime | None = None) -> int:
         if bar is None:
             continue  # the execution day's bar has not landed yet
         frozen_path = inputs_dir(root) / execution_date.isoformat() / f"{book}.json"
-        universe = CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
+        universe = CRYPTO_UNIVERSE if book in CRYPTO_BOOKS else EQUITY_UNIVERSE
         target_now = _engine_target(
             book, {other: _daily_map(root, other) for other in universe}, execution_date
         )
@@ -2479,6 +2639,10 @@ _KNOWN_JOURNAL_EVENTS = frozenset(
         # It carries no order and no equity — only the reason and the missing
         # assets — so it belongs to the frozen set (M6 is about order paths).
         "mtm_unpriced",
+        # v1.9 (t_d0fbc804): a fill run that had no fill bar yet. It carries no
+        # order and no equity — only the reason and the store state — so it is
+        # a diagnostic row, not an order path (same rule as mtm_unpriced above).
+        "fill_wait",
         "run",
         "halt_check",
     }
@@ -2865,8 +3029,60 @@ def _week_return(
     return end / base - 1.0, base_label, end_day.isoformat(), None
 
 
+def _equity_as_of(
+    root: Path, book: str, as_of: date
+) -> tuple[float | None, float | None, date | None, str | None]:
+    """The book's equity (and running peak) at the last mark on/before ``as_of``.
+
+    v1.8 (C-05, docs/PAPERLOOP_MONEY_REVIEW_20261023.md): ``weekly_summary`` took
+    ``cum_return`` / ``drawdown_now`` / the comparison line from ``rebuild_state``
+    — the journal's LATEST mark, whenever it was written. A row generated for
+    ``week_end`` therefore carried any mark written after that week (the real
+    weekly file has a ``week_end=2026-10-26`` row dated 10-23, and a later re-run
+    stamped later marks onto the same label). The weekly file is append-only, so
+    a value that leaks a future mark can never be corrected afterwards.
+
+    Returns ``(equity, peak, as_of_mark_date, reason)``. ``equity`` is the last
+    ``mtm`` row dated on/before ``as_of`` (ties: the later journal row wins,
+    exactly as ``rebuild_state`` does). ``peak`` is the highest ``peak_equity``
+    recorded up to that day, started at the 1.0 inception and keeping the
+    running peak for rows that predate the column — the same rule
+    ``rebuild_state`` applies, just cut at ``as_of``.
+
+    With no mark at/before ``as_of`` the equity is None and ``reason`` says why:
+    a book that has never been marked is unknown, not 1.0 and not 0.0.
+    """
+
+    equity: float | None = None
+    peak = 1.0
+    mark_day: date | None = None
+    for row in _load_journal(root):
+        if row.get("event") != "mtm" or row.get("book") != book:
+            continue
+        if row.get("equity") is None or row.get("mtm_date") is None:
+            continue
+        try:
+            day = date.fromisoformat(str(row["mtm_date"]))
+        except ValueError:
+            continue
+        if day > as_of:
+            continue
+        if mark_day is None or day >= mark_day:
+            equity = float(row["equity"])
+            mark_day = day
+        peak = max(peak, float(row.get("peak_equity", peak)))
+    if equity is None:
+        return None, None, None, "no_mark_at_or_before_week_end"
+    return equity, peak, mark_day, None
+
+
 def _comparison_line(
-    root: Path, book: str, bench: str, state_by_book: Mapping[str, dict[str, Any]]
+    root: Path,
+    book: str,
+    bench: str,
+    state_by_book: Mapping[str, dict[str, Any]],
+    *,
+    as_of: date | None = None,
 ) -> dict[str, Any]:
     """One strategy book's comparison line against its own benchmark (§4 gates).
 
@@ -2883,6 +3099,22 @@ def _comparison_line(
     Drawdowns are recomputed from the mtm equity marks on/after ``base_day``
     with the running peak started at the baseline value, so a pre-baseline
     high-water mark does not leak a one-sided drawdown into the window.
+
+    v1.8 (C-05): ``as_of`` closes the line at a date (the weekly row passes its
+    ``week_end``). Both books then END at their own last mark on/before that
+    day — not at the state's latest mark — and the drawdown window is cut there
+    too, so a mark written after ``week_end`` can never enter a row labelled
+    with it. ``comparison_as_of`` / ``benchmark_as_of`` name the two endpoints.
+    v1.9 (t_94687d03): when ``as_of`` is given, the two sides no longer end at
+    different days silently. A comparison needs the SAME window on both sides;
+    if the book and the benchmark stop at different marks on/before ``as_of``,
+    every number here is None with ``comparison_reason="endpoint_mismatch"``
+    (``comparison_start`` and BOTH as-ofs are still filled in, so the row says
+    which marks existed). Truncating both sides to their last SHARED mark was
+    the alternative; it was rejected because it would report an older window
+    under the current week's label while ``cum_return`` / ``drawdown_now``
+    stay at ``week_end`` — two different periods for one book in one row.
+    Omitting ``as_of`` keeps the previous meaning for existing callers.
     """
 
     book_state = state_by_book.get(book)
@@ -2897,6 +3129,8 @@ def _comparison_line(
         "dd_vs_benchmark_ratio": None,
         "dd_ratio_reason": None,
         "comparison_start": None,
+        "comparison_as_of": None,
+        "benchmark_as_of": None,
         "comparison_reason": None,
     }
     start = _first_fill_date(root, bench)
@@ -2905,6 +3139,12 @@ def _comparison_line(
         return out
     book_marks = _mtm_marks(root, book)
     bench_marks = _mtm_marks(root, bench)
+    if as_of is not None:
+        book_marks = {day: value for day, value in book_marks.items() if day <= as_of}
+        bench_marks = {day: value for day, value in bench_marks.items() if day <= as_of}
+        if not book_marks or not bench_marks:
+            out["comparison_reason"] = "no_mark_at_or_before_week_end"
+            return out
     shared = sorted(day for day in book_marks.keys() & bench_marks.keys() if day >= start)
     if not shared:
         out["comparison_reason"] = "no_shared_mark_since_benchmark_first_fill"
@@ -2914,8 +3154,28 @@ def _comparison_line(
     if base_book <= 0 or base_bench <= 0 or book_state is None or bench_state is None:
         out["comparison_reason"] = "baseline_unusable"
         return out
-    book_cum = float(book_state["equity"]) / base_book - 1.0
-    bench_cum = float(bench_state["equity"]) / base_bench - 1.0
+    book_end_day = max(book_marks)
+    bench_end_day = max(bench_marks)
+    if as_of is not None and book_end_day != bench_end_day:
+        # v1.9 (t_94687d03): the two sides end at their own last mark on/before
+        # ``as_of``. When those days differ, the difference of the two returns
+        # compares a longer window against a shorter one (the reported +10.0pp
+        # was a 3-day move against a 0-day move). Fail closed instead of
+        # emitting a number nobody can defend, and keep both endpoints so the
+        # row still records which marks were available.
+        out["comparison_start"] = base_day.isoformat()
+        out["comparison_as_of"] = book_end_day.isoformat()
+        out["benchmark_as_of"] = bench_end_day.isoformat()
+        out["comparison_reason"] = "endpoint_mismatch"
+        return out
+    if as_of is None:
+        book_equity = float(book_state["equity"])
+        bench_equity = float(bench_state["equity"])
+    else:
+        book_equity = book_marks[book_end_day]
+        bench_equity = bench_marks[bench_end_day]
+    book_cum = book_equity / base_book - 1.0
+    bench_cum = bench_equity / base_bench - 1.0
     book_dd = _max_drawdown_since(book_marks, base_day)
     bench_dd = _max_drawdown_since(bench_marks, base_day)
     out.update(
@@ -2926,6 +3186,8 @@ def _comparison_line(
             "benchmark_max_drawdown": bench_dd,
             "vs_benchmark_pp_cum": (book_cum - bench_cum) * 100.0,
             "comparison_start": base_day.isoformat(),
+            "comparison_as_of": book_end_day.isoformat(),
+            "benchmark_as_of": bench_end_day.isoformat(),
         }
     )
     out["dd_vs_benchmark_ratio"] = _dd_vs_benchmark_ratio(book_dd, bench_dd)
@@ -3027,6 +3289,74 @@ def _week_shortfalls(
     return values, errors
 
 
+def _week_switches(
+    journal: Sequence[Mapping[str, Any]], book: str, window_start: date, week_end: date
+) -> tuple[int, dict[str, int]]:
+    """Regime flips (RISK_ON <-> RISK_OFF, HALT excluded) per asset, ONE week.
+
+    v1.8 (C-06, docs/PAPERLOOP_MONEY_REVIEW_20261023.md): the weekly ``switches``
+    count kept ONE ``prev_regime`` cursor for the whole book, so the decision
+    rows of BTC and ETH were compared against EACH OTHER. A day where the two
+    assets disagreed (BTC=RISK_ON, ETH=RISK_OFF) read as one flip per row —
+    BTC-vs-ETH on the way in, ETH-vs-BTC on the way out — for a week in which
+    neither asset changed its own regime. Regime is a per-asset state, so the
+    cursor is per asset.
+
+    Each decision row states its own ``prev_regime_state`` — the preceding
+    (book, asset) decision as the writer saw it — and that is what the count
+    uses. Legacy rows that predate the column fall back to the previous
+    decision row for the same (book, asset) in the journal order: the same rule
+    the writer applied, so a backfilled journal counts identically.
+
+    Only rows inside ``window_start..week_end`` that are not ``backfill`` are
+    counted (the same set the weekly row reports as ``decisions``): older and
+    backfilled rows shape the chain but are not this week's switches.
+
+    ``switches_by_asset`` carries an entry for every asset with a judged
+    decision in the week — zeros included — so ``sum(...) == switches`` and a
+    quiet asset is visibly zero instead of absent.
+
+    A HALT (or unparseable) regime neither counts nor resets the per-asset
+    cursor: an exit from a halt is measured against the last risk state before
+    it, which is how the writer stamped ``prev_regime_state``.
+    """
+
+    flip_states = ("RISK_ON", "RISK_OFF")
+    judged_ids: set[str] = set()
+    by_asset: dict[str, int] = {}
+    for row in journal:
+        if row.get("event") != "decision" or row.get("book") != book:
+            continue
+        if row.get("backfill"):
+            continue
+        try:
+            day = date.fromisoformat(str(row.get("decision_date")))
+        except (TypeError, ValueError):
+            continue
+        if not window_start <= day <= week_end:
+            continue
+        judged_ids.add(str(row.get("decision_id")))
+        by_asset.setdefault(str(row.get("asset")), 0)
+    last_regime: dict[str, str] = {}
+    for row in journal:
+        if row.get("event") != "decision" or row.get("book") != book:
+            continue
+        asset = str(row.get("asset"))
+        regime = str(row.get("regime_state"))
+        recorded_prev = str(row.get("prev_regime_state") or "")
+        prev = recorded_prev if recorded_prev in flip_states else last_regime.get(asset)
+        if (
+            str(row.get("decision_id")) in judged_ids
+            and prev in flip_states
+            and regime in flip_states
+            and prev != regime
+        ):
+            by_asset[asset] = by_asset.get(asset, 0) + 1
+        if regime in flip_states:
+            last_regime[asset] = regime
+    return sum(by_asset.values()), by_asset
+
+
 def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     """Weekly summary row (M8/spec §7): per book + milestone judgment.
 
@@ -3039,12 +3369,38 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     rows with an unusable ``shortfall_bps`` are reported in
     ``shortfall_errors`` (with ``shortfall_n_excluded``) instead of aborting
     the whole weekly row.
+
+    v1.8 (C-05/C-06/C-07, docs/PAPERLOOP_MONEY_REVIEW_20261023.md): the row is
+    now closed at ``week_end``. ``cum_return`` / ``drawdown_now`` and the
+    per-book comparison line are measured at the last mark ON/BEFORE
+    ``week_end`` (``cum_return_as_of`` / ``drawdown_as_of`` /
+    ``comparison_as_of`` say which mark), never at whatever mark happened to be
+    latest when the row was generated — the file is append-only, so a leaked
+    future mark could not be corrected. With no such mark the values are None
+    with ``cum_return_reason`` / ``drawdown_reason``. ``switches`` is counted
+    per asset (``switches_by_asset``, whose sum is ``switches``) instead of
+    against a single book-wide cursor. The top-level ``vs_benchmark_pp_cum`` is
+    now the SAME shared-baseline definition as ``books[A].vs_benchmark_pp_cum``
+    (same value, including None); the old baseline-less difference is kept
+    as ``vs_benchmark_pp_cum_legacy_nobaseline``. Rows already in the file
+    (``...-v1.7`` and older) keep their old meanings.
+
+    v1.9 (t_94687d03): the comparison never mixes two different end days. If a
+    book's last mark on/before ``week_end`` differs from its benchmark's, the
+    line's numbers are None with ``comparison_reason="endpoint_mismatch"``
+    (both ``comparison_as_of`` / ``benchmark_as_of`` still name the two marks),
+    the top-level ``vs_benchmark_pp_cum`` / ``..._as_of`` follow it (the as-of
+    is only filled when the value exists), and
+    ``vs_benchmark_pp_cum_legacy_nobaseline`` follows the same rule with its
+    own ``..._reason`` (``endpoint_mismatch`` / ``no_mark_at_or_before_week_end``).
+    Rows written before this version may hold a value computed across the two
+    different days.
     """
 
     root = loop_root(data_dir)
     window_start = week_end - timedelta(days=6)
     out: dict[str, Any] = {
-        "schema": "demo-loop-summary-v1.7",
+        "schema": "demo-loop-summary-v1.9",
         "week_end": week_end.isoformat(),
         "generated_at": _utc_now_text(),
         "books": {},
@@ -3059,49 +3415,32 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     if anchors:
         out["last_anchor_seq"] = anchors[-1].get("seq")
         out["last_anchor_hash"] = anchors[-1].get("row_hash")
+    journal = _load_journal(root)
     state_by_book: dict[str, dict[str, Any]] = {}
     for book in BOOKS_ENABLED:
         state = rebuild_state(root, book)
         state_by_book[book] = state
         decisions = [
             row
-            for row in _load_journal(root)
+            for row in journal
             if row.get("event") == "decision"
             and row.get("book") == book
             and window_start <= date.fromisoformat(str(row["decision_date"])) <= week_end
         ]
         judged = [row for row in decisions if not row.get("backfill")]
-        fills = [
-            row
-            for row in _load_journal(root)
-            if row.get("event") == "fill" and row.get("book") == book
-        ]
+        fills = [row for row in journal if row.get("event") == "fill" and row.get("book") == book]
         rejects = [
             row
-            for row in _load_journal(root)
+            for row in journal
             if row.get("event") == "fill_rejected" and row.get("book") == book
         ]
-        marks = [
-            row
-            for row in _load_journal(root)
-            if row.get("event") == "mark" and row.get("book") == book
-        ]
+        marks = [row for row in journal if row.get("event") == "mark" and row.get("book") == book]
         week_shortfalls, shortfall_errors = _week_shortfalls(marks, window_start, week_end)
-        switches = 0  # D11: regime flips RISK_ON <-> RISK_OFF, HALT excluded
-        prev_regime: str | None = None
-        for row in judged:
-            regime = str(row.get("regime_state"))
-            if (
-                regime in ("RISK_ON", "RISK_OFF")
-                and prev_regime is not None
-                and prev_regime != regime
-            ):
-                switches += 1
-            if regime in ("RISK_ON", "RISK_OFF"):
-                prev_regime = regime
+        # v1.8 (C-06): D11 regime flips are a PER-ASSET state (HALT excluded)
+        switches, switches_by_asset = _week_switches(journal, book, window_start, week_end)
         mtms = [
             row
-            for row in _load_journal(root)
+            for row in journal
             if row.get("event") == "mtm"
             and row.get("book") == book
             and window_start <= date.fromisoformat(str(row["mtm_date"])) <= week_end
@@ -3109,10 +3448,21 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
         week_return, week_base, week_as_of, week_reason = _week_return(
             _mtm_marks(root, book), window_start, week_end
         )
-        drawdown = state["equity"] / state["peak"] - 1.0 if state["peak"] > 0 else None
+        # v1.8 (C-05): the equity columns are closed at week_end, not at the
+        # journal's latest mark (the state above still drives halted/stopped).
+        equity_now, peak_now, equity_as_of, cumulative_reason = _equity_as_of(root, book, week_end)
+        cum_return = equity_now - 1.0 if equity_now is not None else None
+        drawdown: float | None = None
+        drawdown_reason = cumulative_reason
+        if equity_now is not None and peak_now is not None and peak_now > 0:
+            drawdown = equity_now / peak_now - 1.0
+            drawdown_reason = None
+        elif equity_now is not None:
+            drawdown_reason = "peak_unusable"
         book_out = {
             "decisions": len(judged),
             "switches": switches,
+            "switches_by_asset": switches_by_asset,
             "fills": len(fills),
             "fills_rejected": len(rejects),
             "backfill_days": len(decisions) - len(judged),
@@ -3124,8 +3474,14 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
             "week_return_base": week_base,
             "week_return_as_of": week_as_of,
             "week_return_reason": week_reason,
-            "cum_return": state["equity"] - 1.0,
+            # v1.8 (C-05): cumulative return / drawdown at week_end, with the
+            # mark they were measured at (None + reason when there is none).
+            "cum_return": cum_return,
+            "cum_return_as_of": equity_as_of.isoformat() if equity_as_of else None,
+            "cum_return_reason": cumulative_reason,
             "drawdown_now": drawdown,
+            "drawdown_as_of": equity_as_of.isoformat() if equity_as_of else None,
+            "drawdown_reason": drawdown_reason,
             # v1.7 (C-03): these four statistics are THIS WEEK's marks only
             # (was: every mark the book ever wrote). Rows excluded for an
             # unusable shortfall_bps are listed, not swallowed.
@@ -3154,14 +3510,14 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
             "mtm_days": len(mtms),
             "halt_check_days": sum(
                 1
-                for row in _load_journal(root)
+                for row in journal
                 if row.get("event") == "halt_check"
                 and row.get("book") == book
                 and window_start <= date.fromisoformat(str(row.get("check_date"))) <= week_end
             ),
             "runs_completed": sum(
                 1
-                for row in _load_journal(root)
+                for row in journal
                 if row.get("event") == "run"
                 and row.get("phase") == "end"
                 and row.get("job") == "daily"
@@ -3170,21 +3526,56 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
             ),
         }
         out["books"][book] = book_out
-    # vs benchmark (pp, week + cumulative)
-    book_a, book_bench = state_by_book.get(S01_BOOK), state_by_book.get(BENCH_CRYPTO_BOOK)
-    if book_a is not None and book_bench is not None:
-        out["vs_benchmark_pp_cum"] = (book_a["equity"] - book_bench["equity"]) * 100.0
     # v1.4 (t_dddae39e): every strategy book carries its OWN comparison line so
     # the frozen §4 gates (cum pnl vs benchmark, DD <= benchmark DD x 0.6) are
     # readable from the weekly row instead of being recomputed by hand.
     # Review round 2: the line is measured from a shared baseline date and is
     # None (with a reason) until the benchmark has actually filled — a
     # benchmark still in cash is never reported as a 0% comparison.
+    # v1.8 (C-05): the line ends at week_end, like every other equity column.
     for book, bench in BOOK_BENCHMARK.items():
         book_out = out["books"].get(book)
         if not isinstance(book_out, dict):
             continue
-        book_out.update(_comparison_line(root, book, bench, state_by_book))
+        book_out.update(_comparison_line(root, book, bench, state_by_book, as_of=week_end))
+    # v1.8 (C-07): the top-level column used to be a DIFFERENT definition under
+    # the SAME name as books[A].vs_benchmark_pp_cum (state difference, no shared
+    # baseline). One name, one definition: the top level now repeats the
+    # per-book line, and the old baseline-less difference survives under its own
+    # name. A row already written keeps whatever it wrote.
+    book_a_out = out["books"].get(S01_BOOK)
+    if isinstance(book_a_out, dict):
+        out["vs_benchmark_pp_cum"] = book_a_out.get("vs_benchmark_pp_cum")
+        # v1.9 (t_94687d03): an as-of only labels a number that exists. When
+        # the line is None (endpoint mismatch or any other reason) the top
+        # level carries no date, exactly like the other unavailable cases;
+        # the per-book line still names both endpoints.
+        out["vs_benchmark_pp_cum_as_of"] = (
+            book_a_out.get("comparison_as_of")
+            if book_a_out.get("vs_benchmark_pp_cum") is not None
+            else None
+        )
+    if state_by_book.get(S01_BOOK) is not None and state_by_book.get(BENCH_CRYPTO_BOOK) is not None:
+        equity_a, _peak_a, as_of_a, reason_a = _equity_as_of(root, S01_BOOK, week_end)
+        equity_bench, _peak_bench, as_of_bench, reason_bench = _equity_as_of(
+            root, BENCH_CRYPTO_BOOK, week_end
+        )
+        legacy_value: float | None
+        legacy_reason: str | None
+        if equity_a is None or equity_bench is None:
+            legacy_value = None
+            legacy_reason = reason_a or reason_bench
+        elif as_of_a != as_of_bench:
+            # v1.9 (t_94687d03): the old baseline-less difference subtracted two
+            # equities measured on DIFFERENT days, so it still produced a number
+            # when the comparison line was refused. Same rule, same refusal.
+            legacy_value = None
+            legacy_reason = "endpoint_mismatch"
+        else:
+            legacy_value = (equity_a - equity_bench) * 100.0
+            legacy_reason = None
+        out["vs_benchmark_pp_cum_legacy_nobaseline"] = legacy_value
+        out["vs_benchmark_pp_cum_legacy_nobaseline_reason"] = legacy_reason
     # Q1-Q7 eval per book (design §4/§5: from the derived panel, insufficient
     # is a first-class answer with a numeric reason)
     out["eval"] = _eval_blocks(data_dir, book=S01_BOOK, week_end=week_end)
@@ -3312,18 +3703,14 @@ def _write_daily_halt_checks(root: Path, utc_now: datetime | None = None) -> int
     decision_date = now.date()
     written = 0
     for book in BOOKS_ENABLED:
-        universe = list(
-            CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
-        )
+        universe = list(CRYPTO_UNIVERSE if book in CRYPTO_BOOKS else EQUITY_UNIVERSE)
         rows_by_symbol = {symbol: _daily_map(root, symbol) for symbol in universe}
         closes_by_symbol = {
             symbol: [rows[day]["close"] for day in sorted(rows) if day < decision_date]
             for symbol, rows in rows_by_symbol.items()
         }
-        is_equity = book in (BOOK_C_BOOK, BENCH_EQUITY_BOOK)
-        annualization = (
-            CRYPTO_ANNUALIZATION if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_ANNUALIZATION
-        )
+        is_equity = book in EQUITY_BOOKS
+        annualization = CRYPTO_ANNUALIZATION if book in CRYPTO_BOOKS else EQUITY_ANNUALIZATION
         state = rebuild_state(root, book)
         trigger_details: list[dict[str, Any]] = []
         for symbol in universe:

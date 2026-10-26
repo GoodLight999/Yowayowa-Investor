@@ -19,13 +19,14 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 from yowayowa.paperloop import (
     BENCH_CRYPTO_BOOK,
     BOOKS_ENABLED,
+    CRYPTO_BOOKS,
     CRYPTO_UNIVERSE,
     EQUITY_UNIVERSE,
     S01_BOOK,
@@ -111,7 +112,7 @@ def build_panel(
 
 
 def _build_panel_from_journal(
-    journal: list[Mapping[str, Any]],
+    journal: list[dict[str, Any]],
     root: Any,
     *,
     start: date | None = None,
@@ -148,9 +149,7 @@ def _build_panel_from_journal(
     )
     rows: list[dict[str, Any]] = []
     for book in BOOKS_ENABLED:
-        universe = list(
-            CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
-        )
+        universe = list(CRYPTO_UNIVERSE if book in CRYPTO_BOOKS else EQUITY_UNIVERSE)
         for asset in universe:
             for day in panel_dates:
                 if start is not None and day < start.isoformat():
@@ -166,17 +165,18 @@ def _build_panel_from_journal(
                 # ret_next comes from the NEXT day's mtm price for the asset
                 # (the panel never reads the market store)
                 next_day = _next_day(day)
-                next_mtm = mtm_by_key.get((book, next_day))
+                next_mtm = mtm_by_key.get((book, cast(str, next_day)))
                 close = decision.get("close")
                 ret_next = None
                 ret_next_why = "unobserved"
                 if next_mtm is not None:
                     nxt = (next_mtm.get("prices") or {}).get(asset)
-                    if nxt is not None and close not in (None, 0):
+                    if nxt is not None and close is not None and close != 0:
                         ret_next = float(nxt) / float(close) - 1.0
                         ret_next_why = ""
                 elif not next_day:
                     ret_next_why = "not_applicable"
+
                 regime_tag = decision.get("regime_tag") or {}
                 halt = halt_by_key.get((book, day))
                 panel_rows = {
@@ -256,7 +256,7 @@ def _judgeable(
     return not bool(decision.get("backfill"))
 
 
-def _equity_on(journal: list[Mapping[str, Any]], book: str, day: str) -> float | None:
+def _equity_on(journal: Sequence[Mapping[str, Any]], book: str, day: str) -> float | None:
     latest: Mapping[str, Any] | None = None
     for row in journal:
         if (
@@ -268,7 +268,7 @@ def _equity_on(journal: list[Mapping[str, Any]], book: str, day: str) -> float |
     return float(latest["equity"]) if latest is not None else None
 
 
-def _equity_gross_on(journal: list[Mapping[str, Any]], book: str, day: str) -> float | None:
+def _equity_gross_on(journal: Sequence[Mapping[str, Any]], book: str, day: str) -> float | None:
     latest: Mapping[str, Any] | None = None
     for row in journal:
         if (
@@ -334,8 +334,8 @@ def eval_q1(rows: list[Mapping[str, Any]], *, book: str = S01_BOOK) -> dict[str,
             "insufficient",
             f"need {Q1_MIN_PER_STATE} days per state; observed ON={n_on} OFF={n_off}",
         )
-    delta = _mean(on) - _mean(off)
-    se = _block_bootstrap_se([x - y for x, y in zip(on, off, strict=False)]) if False else None
+    delta = cast(float, _mean(on)) - cast(float, _mean(off))
+    se = _block_bootstrap_se([x - y for x, y in zip(on, off, strict=True)]) if False else None
     # SE of the difference of means (block bootstrap on the pooled series)
     pooled = on + off
     se = _block_bootstrap_se(pooled)
@@ -431,7 +431,7 @@ def _cost_drag_pp(rows: list[Mapping[str, Any]], book: str) -> float | None:
         return None
     last = max(scope, key=lambda r: str(r.get("date")))
     equity, gross = last.get("equity"), last.get("equity_gross")
-    if equity is None or gross in (None, 0):
+    if equity is None or gross is None or gross == 0:
         return None
     return (float(gross) - float(equity)) / float(gross) * 100.0
 

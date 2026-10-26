@@ -217,9 +217,7 @@ def test_decide_fill_idempotency_and_mtm(tmp_path: Path, monkeypatch) -> None:
     # v1.4 (t_dddae39e): count from the enabled book set, so a book that is
     # enabled later cannot silently drift this expectation again.
     expected_decisions = sum(
-        len(pl.CRYPTO_UNIVERSE)
-        if book in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
-        else len(pl.EQUITY_UNIVERSE)
+        len(pl.CRYPTO_UNIVERSE) if book in pl.CRYPTO_BOOKS else len(pl.EQUITY_UNIVERSE)
         for book in pl.BOOKS_ENABLED
     )
     assert pl.run_daily_decide(root, now) == expected_decisions
@@ -240,11 +238,19 @@ def test_decide_fill_idempotency_and_mtm(tmp_path: Path, monkeypatch) -> None:
     _inject_bar(root, "BTC", now + timedelta(hours=1), 101.0)
     _inject_bar(root, "ETH", now + timedelta(hours=1), 60.0)
     resolved = pl.resolve_fills(root, now + timedelta(hours=2))
-    assert resolved == 4
+    # v1.10 (t_52c4aa20): the three crypto books (A, the 1/N benchmark and the
+    # 50% gross shadow book A_HALF) fill 2 assets each; the equity books have no
+    # stock tape bars in this fixture.
+    assert resolved == 2 * len(pl.CRYPTO_BOOKS)
     fills = [row for row in pl._load_journal(root) if row.get("event") == "fill"]
     assert all(row["side"] == "buy" for row in fills)
-    # D2: traded notional = |target-held| * equity = 0.5 * 1.0
-    assert all(abs(row["traded_notional"] - 0.5) < 1e-9 for row in fills)
+    # D2: traded notional = |target-held| * equity = 0.5 * 1.0 for A and the
+    # benchmark, 0.25 * 1.0 for the half-gross shadow book
+    for row in fills:
+        expected_notional = (
+            0.5 * pl.SHADOW_GROSS_CAP if row["book"] == pl.BOOK_A_HALF else 0.5
+        )
+        assert abs(row["traded_notional"] - expected_notional) < 1e-9, row["book"]
     # D4: filled rows are never re-filled
     assert pl.resolve_fills(root, now + timedelta(hours=3)) == 0
     # D7: the benchmark's day-2 rows are hold-only
@@ -272,7 +278,8 @@ def test_decide_fill_idempotency_and_mtm(tmp_path: Path, monkeypatch) -> None:
     _inject_bar(root, "BTC", later + timedelta(hours=1), 102.0)
     _inject_bar(root, "ETH", later + timedelta(hours=1), 61.0)
     resolved2 = pl.resolve_fills(root, later + timedelta(hours=2))
-    assert resolved2 == 4  # book A rebalance 2 + benchmark hold-only fills 2
+    # v1.10: A rebalance 2 + A_HALF rebalance 2 + benchmark hold-only fills 2
+    assert resolved2 == 2 * len(pl.CRYPTO_BOOKS)
     rebalance_fills = [
         row
         for row in pl._load_journal(root)
@@ -295,7 +302,7 @@ def test_commit_before_fill_discards_early_bars(tmp_path: Path, monkeypatch) -> 
     # after a strictly-later bar lands, the fill uses it
     _inject_bar(root, "BTC", now + timedelta(hours=1), 101.0)
     _inject_bar(root, "ETH", now + timedelta(hours=1), 60.0)
-    assert pl.resolve_fills(root, now + timedelta(hours=2)) == 4
+    assert pl.resolve_fills(root, now + timedelta(hours=2)) == 2 * len(pl.CRYPTO_BOOKS)
 
 
 def test_chain_error_on_corrupt_journal(tmp_path: Path, monkeypatch) -> None:
@@ -340,7 +347,9 @@ def test_mark_signed_shortfall(tmp_path: Path, monkeypatch) -> None:
                 + "\n"
             )
     marked = pl.mark_up(root, now + timedelta(hours=25))
-    assert marked == 2  # strategy book only (benchmark marks are excluded, D7)
+    # v1.10 (t_52c4aa20): strategy books only (benchmark marks are excluded, D7)
+    # — now A, C(no fill here) and the A_HALF shadow book, 2 crypto assets each.
+    assert marked == 2 * len([b for b in pl.STRATEGY_BOOKS if b in pl.CRYPTO_BOOKS])
     marks = [row for row in pl._load_journal(root) if row.get("event") == "mark"]
     assert all(row["shortfall_bps"] > 0 for row in marks)  # paper > bt open, buy
     btc_mark = next(row for row in marks if row["asset"] == "BTC")
@@ -430,7 +439,7 @@ def test_dd20_is_warning_not_stop(tmp_path: Path, monkeypatch) -> None:
     pl.run_daily_decide(root, buy_day)
     _inject_bar(root, "BTC", buy_day + timedelta(hours=1), rising[-1][2] * 1.001)
     _inject_bar(root, "ETH", buy_day + timedelta(hours=1), rising[-1][2] / 2 * 1.001)
-    assert pl.resolve_fills(root, buy_day + timedelta(hours=2)) == 4
+    assert pl.resolve_fills(root, buy_day + timedelta(hours=2)) == 2 * len(pl.CRYPTO_BOOKS)
     # append the slide bars, then mark to market: equity falls through -20%
     _write_crypto_days(data_dir, "BTC", days[260:])
     _write_crypto_days(data_dir, "ETH", [(d, o, c / 2) for d, o, c in days[260:]])
@@ -441,9 +450,19 @@ def test_dd20_is_warning_not_stop(tmp_path: Path, monkeypatch) -> None:
         for row in pl._load_journal(root)
         if row.get("event") == "mtm" and row["mtm_date"] == slide_day.date().isoformat()
     ]
-    crypto_mtms = [row for row in mtms if row.get("book") in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)]
-    assert crypto_mtms and all(row["drawdown"] <= pl.HALT_DRAWDOWN for row in crypto_mtms)
-    assert all(row["drawdown_warning"] is True for row in crypto_mtms)
+    crypto_mtms = [row for row in mtms if row.get("book") in pl.CRYPTO_BOOKS]
+    # v1.10 (t_52c4aa20): the FULL-gross crypto books breach the -20% line in
+    # this slide; the 50% gross shadow book is expected to breach only half of
+    # it, so it must NOT carry the warning. Pinned as a relation, not a value.
+    full_gross = [row for row in crypto_mtms if row["book"] != pl.BOOK_A_HALF]
+    half_gross = next(row for row in crypto_mtms if row["book"] == pl.BOOK_A_HALF)
+    assert full_gross
+    assert all(row["drawdown"] <= pl.HALT_DRAWDOWN for row in full_gross)
+    assert all(row["drawdown_warning"] is True for row in full_gross)
+    worst_full = min(row["drawdown"] for row in full_gross)
+    assert half_gross["drawdown"] > pl.HALT_DRAWDOWN  # half the exposure, half the DD
+    assert 0.40 <= half_gross["drawdown"] / worst_full <= 0.60
+    assert half_gross["drawdown_warning"] is False
     assert all(row["stopped"] is False for row in mtms)  # v1.3: no stop
     assert pl.rebuild_state(root, pl.S01_BOOK)["stopped"] is False
     # the next decide is NOT halted by the drawdown: halt_check warns instead
@@ -453,21 +472,24 @@ def test_dd20_is_warning_not_stop(tmp_path: Path, monkeypatch) -> None:
         for row in pl._load_journal(root)
         if row.get("event") == "halt_check"
         and row.get("check_date") == slide_day.date().isoformat()
-        and row.get("book") in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
+        and row.get("book") in pl.CRYPTO_BOOKS
     ]
-    assert len(halt_checks) == 2
+    assert len(halt_checks) == len(pl.CRYPTO_BOOKS)
     for row in halt_checks:
-        assert row["drawdown_warning"] is True
         assert row["halted_after"] is False
-        assert row["action"] == "warn"
+        if row["book"] == pl.BOOK_A_HALF:
+            assert row["drawdown_warning"] is False
+        else:
+            assert row["drawdown_warning"] is True
+            assert row["action"] == "warn"
     day_decisions = [
         row
         for row in pl._load_journal(root)
         if row.get("event") == "decision"
         and row.get("decision_date") == slide_day.date().isoformat()
-        and row.get("book") in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
+        and row.get("book") in pl.CRYPTO_BOOKS
     ]
-    assert len(day_decisions) == 4
+    assert len(day_decisions) == 2 * len(pl.CRYPTO_BOOKS)
     assert all(row["halt_flag"] is False for row in day_decisions)
     # the action mapping itself: a frozen stopped state stays "stop" on the
     # record, but a live v1.3 -20% DD is "warn"
@@ -485,7 +507,7 @@ def test_C6_superseded_pending(tmp_path: Path, monkeypatch) -> None:
     assert pl.resolve_fills(root, now) == 0
     day1_crypto_ids = {
         f"{book}:{asset}:{now.date().isoformat()}"
-        for book in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
+        for book in pl.CRYPTO_BOOKS
         for asset in pl.CRYPTO_UNIVERSE
     }
     day1_ids = set(day1_crypto_ids)
@@ -511,7 +533,7 @@ def test_C6_superseded_pending(tmp_path: Path, monkeypatch) -> None:
     _inject_bar(root, "BTC", later + timedelta(hours=1), 102.0)
     _inject_bar(root, "ETH", later + timedelta(hours=1), 61.0)
     resolved = pl.resolve_fills(root, later + timedelta(hours=2))
-    assert resolved == 4  # only the NEW decisions fill
+    assert resolved == 2 * len(pl.CRYPTO_BOOKS)  # only the NEW decisions fill
     journal = pl._load_journal(root)
     superseded = [row for row in journal if row.get("reject_reason") == "superseded"]
     assert {row["decision_id"] for row in superseded} == day1_crypto_ids
@@ -671,12 +693,10 @@ def test_book_c_weekly_cadence_gate(tmp_path: Path, monkeypatch) -> None:
     # v1.4 (t_dddae39e): the equity EW benchmark book decides on the same
     # Monday cadence, so the expected count comes from the enabled book set.
     expected = sum(
-        len(pl.CRYPTO_UNIVERSE)
-        if book in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
-        else len(pl.EQUITY_UNIVERSE)
+        len(pl.CRYPTO_UNIVERSE) if book in pl.CRYPTO_BOOKS else len(pl.EQUITY_UNIVERSE)
         for book in pl.BOOKS_ENABLED
     )
-    assert pl.run_daily_decide(root, mon) == expected  # 4 crypto + 4 stock + 4 EW
+    assert pl.run_daily_decide(root, mon) == expected  # 6 crypto + 4 stock + 4 EW
     mon_decisions = [
         row
         for row in pl._load_journal(root)
@@ -975,7 +995,10 @@ def test_milestone_judgment_fires_once_at_deadline(tmp_path: Path, monkeypatch) 
     # at the deadline: one judgment per strategy book, on the frozen gates
     out = pl.weekly_summary(_data_dir, deadline)
     assert len(pl._load_journal(root)) == journal_rows  # record-only: journal untouched
-    assert set(out["milestone"]) == {pl.S01_BOOK, pl.BOOK_C_BOOK}
+    # v1.10 (t_52c4aa20): the shadow book A_HALF is a strategy book too, so it
+    # carries its own 4-week judgment (same run rows, its own equity/cost).
+    assert set(out["milestone"]) == set(pl.STRATEGY_BOOKS)
+    assert set(out["milestone"]) >= {pl.S01_BOOK, pl.BOOK_C_BOOK}
     a = out["milestone"][pl.S01_BOOK]
     assert a["weeks"] == 4
     assert a["start_date"] == first_day.isoformat()
@@ -1671,9 +1694,14 @@ def test_week_return_is_the_weeks_change_not_the_cumulative_return(
     assert book["week_return_base"] == "2026-10-12"
     assert book["week_return_as_of"] == "2026-10-24"
     assert book["week_return_reason"] is None
-    # the number the pre-fix code wrote for this same journal (20%, not 5%)
-    assert book["cum_return"] == pytest.approx(0.20, rel=1e-12)
-    assert abs(book["week_return"] - book["cum_return"]) > 0.14
+    # v1.8 (C-05): the cumulative column is closed at week_end too — 1.155 on
+    # 10-24, not the 1.20 mark written after it (that is what the pre-fix code
+    # read, and 20% is what it wrote on this same journal)
+    assert book["cum_return"] == pytest.approx(1.155 - 1.0, rel=1e-12)
+    assert book["cum_return_as_of"] == "2026-10-24"
+    assert book["cum_return_reason"] is None
+    assert book["cum_return"] != pytest.approx(0.20, rel=1e-9)
+    assert abs(book["week_return"] - book["cum_return"]) > 0.09
 
     # a book whose whole life is inside the window: inception (1.0) is the base
     only_window = build("inception", [("2026-10-20", 1.10), ("2026-10-23", 1.21)])
@@ -1790,7 +1818,7 @@ def test_weekly_shortfall_is_scoped_to_the_week_and_survives_bad_rows(
         for line in pl.summary_path(mixed_root).read_text(encoding="utf-8").splitlines()
     ]
     assert written[-1]["books"][pl.S01_BOOK]["shortfall_n"] == 2
-    assert written[-1]["schema"] == "demo-loop-summary-v1.7"
+    assert written[-1]["schema"] == "demo-loop-summary-v1.9"
 
     # --- a week with only unusable values: None, never 0 ----------------------
     empty = tmp_path / "all_bad" / "data"
@@ -1804,6 +1832,436 @@ def test_weekly_shortfall_is_scoped_to_the_week_and_survives_bad_rows(
     assert bad["shortfall_bps_mean_upper95"] is None
     assert bad["shortfall_n_excluded"] == 1
     assert bad["shortfall_errors"][0]["reason"] == "missing_shortfall_bps"
+
+
+# --- C-05: the weekly row is closed at week_end --------------------------------
+
+
+def test_C05_equity_columns_are_closed_at_week_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C-05 (docs/PAPERLOOP_MONEY_REVIEW_20261023.md): no future mark in a row.
+
+    ``cum_return`` / ``drawdown_now`` came from ``rebuild_state`` — the journal's
+    LATEST mark — so a row generated for ``week_end`` carried any mark written
+    after it. The real file shows it: the last row says ``week_end=2026-10-26``
+    while every book's last mark is 10-23. The file is append-only, so such a
+    value can never be corrected.
+
+    Here 10-30 (a -22% crash) sits after week_end 10-25: the row must read the
+    10-24 mark (+15.5%, no drawdown) and name it, not the crash.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    data_dir = tmp_path / "closed" / "data"
+    root = pl.loop_root(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    _mtm(root, pl.S01_BOOK, "2026-10-12", 1.10, -0.0)
+    _mtm(root, pl.S01_BOOK, "2026-10-22", 1.144, -0.0)
+    _mtm(root, pl.S01_BOOK, "2026-10-24", 1.155, -0.0)
+    _mtm(root, pl.S01_BOOK, "2026-10-30", 0.90, 0.90 / 1.155 - 1.0)
+
+    book = pl.weekly_summary(data_dir, date(2026, 10, 25))["books"][pl.S01_BOOK]
+    assert book["cum_return"] == pytest.approx(1.155 - 1.0, rel=1e-12)
+    assert book["cum_return_as_of"] == "2026-10-24"
+    assert book["cum_return_reason"] is None
+    # peak_equity is 1.0 in this fixture, so the as-of drawdown is +15.5% - 1
+    # (measured, not the crash's -22.08%); what matters is the DATE it is
+    # measured at: the same mark as cum_return, before the future mark
+    assert book["drawdown_as_of"] == "2026-10-24"
+    assert book["drawdown_now"] != pytest.approx(0.90 / 1.155 - 1.0, rel=1e-9)
+
+    # a book whose only mark is AFTER week_end: unknown, with a reason
+    late_dir = tmp_path / "late" / "data"
+    late_root = pl.loop_root(late_dir)
+    late_root.mkdir(parents=True, exist_ok=True)
+    _mtm(late_root, pl.S01_BOOK, "2026-10-27", 1.20, 0.0)
+    late = pl.weekly_summary(late_dir, date(2026, 10, 25))["books"][pl.S01_BOOK]
+    assert late["cum_return"] is None
+    assert late["cum_return_as_of"] is None
+    assert late["cum_return_reason"] == "no_mark_at_or_before_week_end"
+    assert late["drawdown_now"] is None
+    assert late["drawdown_reason"] == "no_mark_at_or_before_week_end"
+
+
+def test_C05_comparison_line_is_closed_at_week_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C-05: the comparison line ends at week_end, both sides alike.
+
+    The benchmark fills on 10-21 and both books carry a 10-21 mark, so the shared
+    baseline is 10-21. A 10-30 mark (+30% on both sides) is AFTER week_end
+    2026-10-25; the line must read the 10-22 marks (+5% / +2% -> +3pp) and name
+    its endpoint. Before the fix the state's latest mark (10-30) produced +0pp
+    while ``comparison_start`` still said 10-21 — a row mixing two dates.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    data_dir = tmp_path / "cmp" / "data"
+    root = pl.loop_root(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    _fill(root, pl.BENCH_CRYPTO_BOOK, "2026-10-21")
+    _mtm(root, pl.S01_BOOK, "2026-10-21", 1.00, 0.0)
+    _mtm(root, pl.BENCH_CRYPTO_BOOK, "2026-10-21", 1.00, 0.0)
+    _mtm(root, pl.S01_BOOK, "2026-10-22", 1.05, 0.0)
+    _mtm(root, pl.BENCH_CRYPTO_BOOK, "2026-10-22", 1.02, 0.0)
+    _mtm(root, pl.S01_BOOK, "2026-10-30", 1.30, 0.0)
+    _mtm(root, pl.BENCH_CRYPTO_BOOK, "2026-10-30", 1.30, 0.0)
+
+    book = pl.weekly_summary(data_dir, date(2026, 10, 25))["books"][pl.S01_BOOK]
+    assert book["comparison_start"] == "2026-10-21"
+    assert book["comparison_as_of"] == "2026-10-22"
+    assert book["benchmark_as_of"] == "2026-10-22"
+    assert book["cum_pnl"] == pytest.approx(0.05, rel=1e-12)
+    assert book["benchmark_cum_pnl"] == pytest.approx(0.02, rel=1e-12)
+    assert book["vs_benchmark_pp_cum"] == pytest.approx(3.0, rel=1e-12)
+    # the value the pre-fix code wrote from the 10-30 marks
+    assert book["vs_benchmark_pp_cum"] != pytest.approx(0.0, abs=1e-9)
+    # ... and the same line computed WITHOUT as_of still rides the latest mark
+    line = pl._comparison_line(
+        root,
+        pl.S01_BOOK,
+        pl.BENCH_CRYPTO_BOOK,
+        {
+            pl.S01_BOOK: pl.rebuild_state(root, pl.S01_BOOK),
+            pl.BENCH_CRYPTO_BOOK: pl.rebuild_state(root, pl.BENCH_CRYPTO_BOOK),
+        },
+    )
+    assert line["vs_benchmark_pp_cum"] == pytest.approx(0.0, abs=1e-9)
+    assert line["comparison_as_of"] == "2026-10-30"
+
+
+# --- C-06: switches are a per-asset state -------------------------------------
+
+
+def _decision(
+    root: Path,
+    *,
+    asset: str,
+    regime: str,
+    prev: str | None = None,
+    day: str = "2026-10-22",
+    book: str = pl.S01_BOOK,
+    backfill: bool = False,
+    with_prev: bool = True,
+) -> None:
+    """One decision row, optionally LEGACY (no ``prev_regime_state`` key)."""
+
+    row: dict[str, object] = {
+        "event": "decision",
+        "book": book,
+        "decision_id": f"{book}:{asset}:{day}:{regime}",
+        "decision_date": day,
+        "asset": asset,
+        "regime_state": regime,
+        "backfill": backfill,
+    }
+    if with_prev:
+        row["prev_regime_state"] = prev
+    _append_row(root, **row)
+
+
+def _switches(data_dir: Path, week_end: date = date(2026, 10, 25)) -> tuple[int, dict, int]:
+    """(switches, switches_by_asset, the pre-fix book-wide count) for book A."""
+
+    out = pl.weekly_summary(data_dir, week_end)["books"][pl.S01_BOOK]
+    # the pre-fix algorithm, re-implemented here to show the difference:
+    # ONE cursor across every judged decision row of the week, whatever asset
+    old = 0
+    prev: str | None = None
+    for row in pl._load_journal(pl.loop_root(data_dir)):
+        if row.get("event") != "decision" or row.get("book") != pl.S01_BOOK:
+            continue
+        if row.get("backfill"):
+            continue
+        if not (
+            week_end - timedelta(days=6)
+            <= date.fromisoformat(str(row["decision_date"]))
+            <= week_end
+        ):
+            continue
+        regime = str(row.get("regime_state"))
+        if regime in ("RISK_ON", "RISK_OFF") and prev is not None and prev != regime:
+            old += 1
+        if regime in ("RISK_ON", "RISK_OFF"):
+            prev = regime
+    return out["switches"], out["switches_by_asset"], old
+
+
+def _switch_dir(tmp_path: Path, name: str):
+    data_dir = tmp_path / name / "data"
+    root = pl.loop_root(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    return data_dir, root
+
+
+def test_C06_two_assets_in_different_regimes_are_not_switches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C-06: BTC=RISK_ON / ETH=RISK_OFF in one week is zero switches.
+
+    The pre-fix count kept one cursor for the book, so the second asset's row was
+    compared against the FIRST asset's regime: BTC-vs-ETH in, ETH-vs-BTC out =
+    two fake switches in a week where neither asset changed its own state.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    data_dir, root = _switch_dir(tmp_path, "split")
+    _decision(root, asset="BTC", regime="RISK_ON", prev=None, day="2026-10-21")
+    _decision(root, asset="ETH", regime="RISK_OFF", prev=None, day="2026-10-21")
+    _decision(root, asset="BTC", regime="RISK_ON", prev="RISK_ON", day="2026-10-22")
+    _decision(root, asset="ETH", regime="RISK_OFF", prev="RISK_OFF", day="2026-10-22")
+
+    switches, by_asset, old = _switches(data_dir)
+    assert switches == 0
+    assert by_asset == {"BTC": 0, "ETH": 0}
+    assert old >= 1  # the pre-fix count for the same rows
+    assert sum(by_asset.values()) == switches
+
+
+def test_C06_one_assets_flip_counts_once_and_the_sum_matches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C-06: ETH turning RISK_OFF -> RISK_ON is exactly one switch (BTC stays)."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    data_dir, root = _switch_dir(tmp_path, "flip")
+    _decision(root, asset="BTC", regime="RISK_ON", prev="RISK_ON", day="2026-10-21")
+    _decision(root, asset="ETH", regime="RISK_OFF", prev="RISK_OFF", day="2026-10-21")
+    _decision(root, asset="BTC", regime="RISK_ON", prev="RISK_ON", day="2026-10-22")
+    _decision(root, asset="ETH", regime="RISK_ON", prev="RISK_OFF", day="2026-10-22")
+
+    switches, by_asset, old = _switches(data_dir)
+    assert switches == 1
+    assert by_asset == {"BTC": 0, "ETH": 1}
+    assert sum(by_asset.values()) == switches
+    # the pre-fix count read 2 for these same rows: one real flip plus the
+    # BTC-vs-ETH comparison the fake switch came from
+    assert old == 2
+
+
+def test_C06_legacy_rows_without_prev_regime_state_fall_back_per_asset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C-06: rows predating ``prev_regime_state`` count the same way.
+
+    The fallback is the previous decision for the SAME (book, asset) in journal
+    order — the rule the writer used — so a backfilled journal is not read
+    differently from a fresh one.
+
+    Split assets stay at 0; one asset reversing stays at 1; and the reversal is
+    still one switch when the earlier row is the previous WEEK's (the state
+    carries, the count does not: only in-window rows are counted, but the row
+    that opens the window is compared against the older one).
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+
+    split_dir, split_root = _switch_dir(tmp_path, "legacy_split")
+    _decision(split_root, asset="BTC", regime="RISK_ON", day="2026-10-21", with_prev=False)
+    _decision(split_root, asset="ETH", regime="RISK_OFF", day="2026-10-21", with_prev=False)
+    _decision(split_root, asset="BTC", regime="RISK_ON", day="2026-10-22", with_prev=False)
+    _decision(split_root, asset="ETH", regime="RISK_OFF", day="2026-10-22", with_prev=False)
+    switches, by_asset, old = _switches(split_dir)
+    assert switches == 0
+    assert by_asset == {"BTC": 0, "ETH": 0}
+    assert old >= 1
+
+    flip_dir, flip_root = _switch_dir(tmp_path, "legacy_flip")
+    _decision(flip_root, asset="BTC", regime="RISK_ON", day="2026-10-21", with_prev=False)
+    _decision(flip_root, asset="ETH", regime="RISK_OFF", day="2026-10-21", with_prev=False)
+    _decision(flip_root, asset="BTC", regime="RISK_ON", day="2026-10-22", with_prev=False)
+    _decision(flip_root, asset="ETH", regime="RISK_ON", day="2026-10-22", with_prev=False)
+    switches, by_asset, _old = _switches(flip_dir)
+    assert switches == 1
+    assert by_asset == {"BTC": 0, "ETH": 1}
+
+    # the reversal happens on the week's FIRST judged row: the chain still
+    # reaches back to the previous week's decision for the same asset
+    carry_dir, carry_root = _switch_dir(tmp_path, "legacy_carry")
+    _decision(carry_root, asset="BTC", regime="RISK_ON", day="2026-10-18", with_prev=False)
+    _decision(carry_root, asset="BTC", regime="RISK_OFF", day="2026-10-20", with_prev=False)
+    switches, by_asset, _old = _switches(carry_dir)
+    assert switches == 1
+    assert by_asset == {"BTC": 1}
+
+    # a HALT row neither counts nor resets the asset's cursor
+    halt_dir, halt_root = _switch_dir(tmp_path, "legacy_halt")
+    _decision(halt_root, asset="BTC", regime="RISK_ON", day="2026-10-20", with_prev=False)
+    _decision(halt_root, asset="BTC", regime="HALT", day="2026-10-21", with_prev=False)
+    _decision(halt_root, asset="BTC", regime="RISK_OFF", day="2026-10-22", with_prev=False)
+    switches, by_asset, _old = _switches(halt_dir)
+    assert switches == 1
+    assert by_asset == {"BTC": 1}
+
+
+# --- C-07: one name, one definition -------------------------------------------
+
+
+def test_C07_top_level_vs_benchmark_is_the_shared_baseline_definition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """C-07: the top-level column repeats ``books[A]``; the old one is renamed.
+
+    Book A is at 1.10 when CRYPTO_1N fills at 1.00, so the shared baseline is
+    10-21 with two DIFFERENT baseline equities (1.10 vs 1.00). A closes at 1.155
+    while the benchmark stays at 1.00:
+
+    * shared-baseline line: (1.155/1.10 - 1) - 0 = +5.0pp
+    * the old baseline-less difference: (1.155 - 1.00) x 100 = +15.5pp
+
+    Two definitions under one name is the defect (§C-07: up to ¥900,000 of
+    misreading); the number the operator reads as ``vs_benchmark_pp_cum`` must be
+    the one every per-book line uses, and the old formula keeps its own name.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    data_dir = tmp_path / "c07" / "data"
+    root = pl.loop_root(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    _mtm(root, pl.S01_BOOK, "2026-10-20", 1.10, 0.0)
+    _mtm(root, pl.BENCH_CRYPTO_BOOK, "2026-10-20", 1.00, 0.0)
+    _fill(root, pl.BENCH_CRYPTO_BOOK, "2026-10-21")
+    _mtm(root, pl.S01_BOOK, "2026-10-21", 1.10, 0.0)
+    _mtm(root, pl.BENCH_CRYPTO_BOOK, "2026-10-21", 1.00, 0.0)
+    _mtm(root, pl.S01_BOOK, "2026-10-22", 1.155, 0.0)
+    _mtm(root, pl.BENCH_CRYPTO_BOOK, "2026-10-22", 1.00, 0.0)
+
+    out = pl.weekly_summary(data_dir, date(2026, 10, 25))
+    book_a = out["books"][pl.S01_BOOK]
+    assert book_a["comparison_start"] == "2026-10-21"
+    assert book_a["comparison_as_of"] == "2026-10-22"
+    assert book_a["vs_benchmark_pp_cum"] == pytest.approx(5.0, rel=1e-12)
+    # one name, one definition: the top level IS the per-book line, same date
+    assert out["vs_benchmark_pp_cum"] == book_a["vs_benchmark_pp_cum"]
+    assert out["vs_benchmark_pp_cum_as_of"] == book_a["comparison_as_of"]
+    # the old formula keeps its own name (and its own, weaker baseline rule)
+    assert out["vs_benchmark_pp_cum_legacy_nobaseline"] == pytest.approx(15.5, rel=1e-12)
+    # the two definitions really do disagree on this journal (10.5pp = ¥105,000
+    # on a ¥10,000,000 base) — that is why one of them had to be renamed
+    assert out["vs_benchmark_pp_cum_legacy_nobaseline"] - out["vs_benchmark_pp_cum"] == (
+        pytest.approx(10.5, rel=1e-12)
+    )
+    # neither column is quietly absent, and the legacy one is not on the books
+    assert "vs_benchmark_pp_cum_legacy_nobaseline" not in book_a
+
+
+# --- t_94687d03: a comparison needs ONE end day for both sides ----------------
+
+
+def _endpoint_dir(tmp_path: Path, name: str, *, who_is_ahead: str) -> tuple[Path, Path]:
+    """Journal where one side carries a mark on 10-24 and the other does not.
+
+    Shared baseline is 10-21 (benchmark's fill day, both books marked). The book
+    is at 1.00 on the baseline; whichever side is ``who_is_ahead`` marks 1.10 on
+    10-24, the other side stops at 10-21.
+    """
+
+    data_dir = tmp_path / name / "data"
+    root = pl.loop_root(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    _fill(root, pl.BENCH_CRYPTO_BOOK, "2026-10-21")
+    _mtm(root, pl.S01_BOOK, "2026-10-21", 1.00, 0.0)
+    _mtm(root, pl.BENCH_CRYPTO_BOOK, "2026-10-21", 1.00, 0.0)
+    if who_is_ahead == "book":
+        _mtm(root, pl.S01_BOOK, "2026-10-24", 1.10, 0.0)
+    else:
+        _mtm(root, pl.BENCH_CRYPTO_BOOK, "2026-10-24", 1.10, 0.0)
+    return data_dir, root
+
+
+def test_C05_comparison_line_is_null_when_the_two_endpoints_differ(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """t_94687d03: a 3-day move is never reported against a 0-day move.
+
+    Closing the line at ``week_end`` left each side ending at its own last mark
+    on/before that day. With A marking 10-24 (1.10) and the benchmark stopping
+    at 10-21 (1.00), the row still carried ``vs_benchmark_pp_cum=+10.0pp``
+    labelled ``comparison_as_of=2026-10-24`` / ``benchmark_as_of=2026-10-21``:
+    A's three days of P&L against the benchmark's zero days. Fail closed on the
+    numbers, keep BOTH as-ofs so the row still records which marks existed.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+
+    for who in ("book", "benchmark"):
+        data_dir, root = _endpoint_dir(tmp_path, f"mismatch_{who}", who_is_ahead=who)
+        out = pl.weekly_summary(data_dir, date(2026, 10, 25))
+        book_a = out["books"][pl.S01_BOOK]
+
+        # the endpoints really are two different days, and both are reported
+        behind, ahead = (
+            ("2026-10-21", "2026-10-24") if who == "book" else ("2026-10-24", "2026-10-21")
+        )
+        assert book_a["comparison_start"] == "2026-10-21"
+        assert book_a["comparison_as_of"] == ahead
+        assert book_a["benchmark_as_of"] == behind
+        assert book_a["comparison_reason"] == "endpoint_mismatch"
+        for key in (
+            "cum_pnl",
+            "max_drawdown",
+            "benchmark_cum_pnl",
+            "benchmark_max_drawdown",
+            "vs_benchmark_pp_cum",
+            "dd_vs_benchmark_ratio",
+        ):
+            assert book_a[key] is None, f"{key} must be None when the endpoints differ"
+        # the number the row used to emit for this journal (+/-10% over the
+        # window only one side traded); reached again below through the no-as_of
+        # path, i.e. the pre-fix behaviour is still callable but is no longer
+        # what the weekly row writes.
+        expected_legacy = 10.0 if who == "book" else -10.0
+
+        # one name, one definition: the top level refuses too, and a refused
+        # value carries no date (the per-book line still names both marks)
+        assert out["vs_benchmark_pp_cum"] is None
+        assert out["vs_benchmark_pp_cum_as_of"] is None
+        # the legacy baseline-less difference subtracted two equities measured
+        # on different days; same endpoint rule, same refusal, with a reason
+        assert out["vs_benchmark_pp_cum_legacy_nobaseline"] is None
+        assert out["vs_benchmark_pp_cum_legacy_nobaseline_reason"] == "endpoint_mismatch"
+
+        # requirement: omitting as_of keeps the previous meaning for callers
+        line = pl._comparison_line(
+            root,
+            pl.S01_BOOK,
+            pl.BENCH_CRYPTO_BOOK,
+            {
+                pl.S01_BOOK: pl.rebuild_state(root, pl.S01_BOOK),
+                pl.BENCH_CRYPTO_BOOK: pl.rebuild_state(root, pl.BENCH_CRYPTO_BOOK),
+            },
+        )
+        assert line["comparison_reason"] is None
+        assert line["vs_benchmark_pp_cum"] == pytest.approx(expected_legacy, rel=1e-12)
+
+
+def test_C05_comparison_line_keeps_its_value_when_both_endpoints_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """t_94687d03 control: same marks on both sides -> yesterday's numbers.
+
+    Both books mark 10-24 (1.10 / 1.00), so the two endpoints are the same day
+    and every value the v1.8 row carried must survive unchanged.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    data_dir, _root = _endpoint_dir(tmp_path, "matched", who_is_ahead="book")
+    _mtm(pl.loop_root(data_dir), pl.BENCH_CRYPTO_BOOK, "2026-10-24", 1.00, 0.0)
+
+    out = pl.weekly_summary(data_dir, date(2026, 10, 25))
+    book_a = out["books"][pl.S01_BOOK]
+    assert book_a["comparison_start"] == "2026-10-21"
+    assert book_a["comparison_as_of"] == "2026-10-24"
+    assert book_a["benchmark_as_of"] == "2026-10-24"
+    assert book_a["comparison_reason"] is None
+    assert book_a["cum_pnl"] == pytest.approx(0.10, rel=1e-12)
+    assert book_a["benchmark_cum_pnl"] == pytest.approx(0.0, abs=1e-12)
+    assert book_a["vs_benchmark_pp_cum"] == pytest.approx(10.0, rel=1e-12)
+    assert out["vs_benchmark_pp_cum"] == book_a["vs_benchmark_pp_cum"]
+    assert out["vs_benchmark_pp_cum_as_of"] == "2026-10-24"
+    assert out["vs_benchmark_pp_cum_legacy_nobaseline"] == pytest.approx(10.0, rel=1e-12)
+    assert out["vs_benchmark_pp_cum_legacy_nobaseline_reason"] is None
 
 
 # --- C-04: an unpriceable mtm day is recorded, never zero-filled ---------------
@@ -1830,7 +2288,7 @@ def test_C04_unpriced_mtm_is_recorded_and_never_zero_filled(tmp_path: Path, monk
     pl.run_daily_decide(root, now)
     _inject_bar(root, "BTC", now + timedelta(hours=1), 101.0)
     _inject_bar(root, "ETH", now + timedelta(hours=1), 60.0)
-    assert pl.resolve_fills(root, now + timedelta(hours=2)) == 4
+    assert pl.resolve_fills(root, now + timedelta(hours=2)) == 2 * len(pl.CRYPTO_BOOKS)
     state_a = pl.rebuild_state(root, pl.S01_BOOK)
     assert {asset for asset, units in state_a["units"].items() if units} == {"BTC", "ETH"}
 
@@ -1852,7 +2310,7 @@ def test_C04_unpriced_mtm_is_recorded_and_never_zero_filled(tmp_path: Path, monk
         for row in journal
         if row.get("event") == "mtm_unpriced" and row["mtm_date"] == missing_day.isoformat()
     ]
-    assert {row["book"] for row in unpriced} == {pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK}
+    assert {row["book"] for row in unpriced} == set(pl.CRYPTO_BOOKS)
     assert all(row["reason"] == "unpriced_positions" for row in unpriced)
     assert all(row["unpriced_assets"] == ["BTC"] for row in unpriced)
     assert all("equity" not in row for row in unpriced)
@@ -1866,13 +2324,13 @@ def test_C04_unpriced_mtm_is_recorded_and_never_zero_filled(tmp_path: Path, monk
         row["book"]
         for row in journal
         if row.get("event") == "mtm_unpriced" and row["mtm_date"] == next_day.isoformat()
-    ] == [pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK]
+    ] == [book for book in pl.BOOKS_ENABLED if book in pl.CRYPTO_BOOKS]
     assert not [
         row
         for row in journal
         if row.get("event") == "mtm"
         and row["mtm_date"] == next_day.isoformat()
-        and row["book"] in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
+        and row["book"] in pl.CRYPTO_BOOKS
     ]
 
     # --- the same day is never recorded twice (B2 idempotency) ---------------
@@ -1883,11 +2341,11 @@ def test_C04_unpriced_mtm_is_recorded_and_never_zero_filled(tmp_path: Path, monk
         for row in journal
         if row.get("event") == "mtm_unpriced" and row["mtm_date"] == missing_day.isoformat()
     ]
-    assert len(same_day) == 2
+    assert len(same_day) == len(pl.CRYPTO_BOOKS)
 
     # --- tape comes back: the real mtm is written, with every holding priced --
     _write_crypto_days(data_dir, "BTC", [(now.date().isoformat(), 101.0, 101.0)])
-    assert pl.run_daily_mtm(root, _now_of(missing_day)) == 2  # the crypto books resume
+    assert pl.run_daily_mtm(root, _now_of(missing_day)) == len(pl.CRYPTO_BOOKS)
     journal = pl._load_journal(root)
     recovered = [
         row
@@ -1908,7 +2366,7 @@ def test_C04_unpriced_mtm_is_recorded_and_never_zero_filled(tmp_path: Path, monk
     # --- a holding the universe no longer lists is priced, not zeroed --------
     eth_next = pl._latest_finalized_close(root, "ETH", next_day)[1]
     monkeypatch.setattr(pl, "CRYPTO_UNIVERSE", ("BTC",))
-    assert pl.run_daily_mtm(root, _now_of(next_day)) == 2
+    assert pl.run_daily_mtm(root, _now_of(next_day)) == len(pl.CRYPTO_BOOKS)
     journal = pl._load_journal(root)
     shrunk = [
         row

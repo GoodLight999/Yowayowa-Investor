@@ -52,7 +52,8 @@ def test_B1_no_duplicate_fill_or_reject(tmp_path: Path, monkeypatch) -> None:
     pl.run_daily_decide(root, now)
     _inject_bar(root, "BTC", now + timedelta(hours=1), 101.0)
     _inject_bar(root, "ETH", now + timedelta(hours=1), 60.0)
-    assert pl.resolve_fills(root, now + timedelta(hours=2)) == 4
+    # v1.10 (t_52c4aa20): A + the 1/N benchmark + the A_HALF shadow book fill
+    assert pl.resolve_fills(root, now + timedelta(hours=2)) == 2 * len(pl.CRYPTO_BOOKS)
     # second resolve AFTER the fill: nothing new, in particular no
     # spurious fill_rejected for the already-filled decisions
     assert pl.resolve_fills(root, now + timedelta(hours=3)) == 0
