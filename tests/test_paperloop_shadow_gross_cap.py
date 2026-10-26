@@ -370,6 +370,11 @@ def test_real_journal_copy_next_decide_sizes_the_shadow_book_half(
     assert pl.mark_up(root, now + timedelta(hours=30)) >= 0
     result = pv.verify(data_dir, last_day, next_day)
     assert result["exit_code"] == 0, json.dumps(result.get("failed_checks"))
+    # L14 (paperloop_verify.py:497-521): the benchmark trades exactly once
+    # (1/N on first decision) and never again — verify-level assertion mirroring
+    # the journal-level invariant above. Does not depend on the number of
+    # decision days (audit t_a9b4d5f4 recommendation #3).
+    assert result["bench_fill_count"] == len(pl.CRYPTO_UNIVERSE), result["bench_fill_count"]
     assert result.get("R2_match") == result.get("R2_total")
     for check in pv.CHECKS:
         assert result["checks"][check]["ok"] is True, (
