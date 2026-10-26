@@ -9,6 +9,11 @@ WorkingDirectory=/root/current-work/yowayowa-investor
 Environment=PYTHONPATH=src
 Environment=YOWAYOWA_MODE=personal
 Environment=YOWAYOWA_DATABASE_URL=sqlite:////root/current-work/yowayowa-investor/data/yowayowa.db
+# EDINET API key delivery (t_2c4b6154): dedicated root-600 env file holding ONLY
+# YOWAYOWA_EDINET_API_KEY (sourced from the EDINET_API_KEY line of /root/.hermes/.env).
+# The '-' prefix keeps the unit boot-safe while the file does not exist yet.
+# Never put the key value in this unit, logs, or commits.
+EnvironmentFile=-/etc/yowayowa/edinet.env
 ExecStart=/root/current-work/yowayowa-investor/.venv/bin/python -m uvicorn yowayowa.api.app:app --host 127.0.0.1 --port 8001
 Restart=always
 RestartSec=5

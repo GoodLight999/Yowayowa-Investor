@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from yowayowa.db import Base
 from yowayowa.domain import LicenseClass, Provenance
+from yowayowa.services import edinet_index as edinet_index_module
 from yowayowa.services.edinet_index import (
     filing_history,
     maintain_recent_filing_index,
@@ -81,6 +82,14 @@ def _session() -> Iterator[Session]:
             yield session
     finally:
         engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _no_real_fetch_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Record EDINET pacing sleeps instead of actually sleeping in every test here."""
+    sleeps: list[float] = []
+    monkeypatch.setattr("yowayowa.services.edinet_index.time.sleep", sleeps.append)
+    return sleeps
 
 
 def test_edinet_index_sync_and_company_history_are_idempotent_and_coverage_aware() -> None:
@@ -191,3 +200,84 @@ def test_edinet_recent_maintenance_backfills_newest_missing_days_and_reports_cov
     assert second.days_synced == 2
     assert second.indexed_days == 5
     assert second.coverage_complete is True
+
+
+def test_edinet_index_fetch_interval_matches_house_one_second_pace() -> None:
+    # t_2c4b6154 constraint: the index path must never fetch faster than the
+    # house JSONL collector's one day per second.
+    assert edinet_index_module._MIN_FETCH_INTERVAL_SECONDS == 1.0
+
+
+def test_edinet_sync_paces_one_second_after_each_fetch_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    _no_real_fetch_sleep: list[float],
+) -> None:
+    clock = {"now": 1000.0}
+    monkeypatch.setattr("yowayowa.services.edinet_index.time.monotonic", lambda: clock["now"])
+
+    class SlowFakeEdinetClient(FakeEdinetClient):
+        # Each simulated fetch takes 0.3s on the fake clock.
+        def documents(self, filing_date: date) -> dict[str, Any]:
+            clock["now"] += 0.3
+            return super().documents(filing_date)
+
+    client = SlowFakeEdinetClient()
+    start = date(2026, 6, 20)
+    with _session() as session:
+        result = sync_filing_index(session, client, start, start + timedelta(days=2))  # type: ignore[arg-type]
+
+    assert result.days_synced == 3
+    # The interval is anchored on the previous completion, so the fetch duration
+    # never eats into it: every gap between two fetches is a full 1.0s
+    # (start-to-start 1.3s here), and nothing sleeps after the final attempt.
+    assert _no_real_fetch_sleep == [1.0, 1.0]
+    assert client.calls == [start, start + timedelta(days=1), start + timedelta(days=2)]
+
+
+def test_fetch_pacer_sleeps_only_the_unelapsed_part_of_the_interval(
+    monkeypatch: pytest.MonkeyPatch,
+    _no_real_fetch_sleep: list[float],
+) -> None:
+    clock = {"now": 100.0}
+    monkeypatch.setattr("yowayowa.services.edinet_index.time.monotonic", lambda: clock["now"])
+    pacer = edinet_index_module._FetchPacer()
+
+    pacer.wait_before_fetch()  # first fetch of a run is never delayed
+    assert _no_real_fetch_sleep == []
+
+    pacer.mark_attempt_finished()  # attempt completes at t=100.0
+    clock["now"] = 100.4  # 0.4s elapse before the next attempt is due
+    pacer.wait_before_fetch()
+    assert _no_real_fetch_sleep == pytest.approx([0.6])  # only the unelapsed part
+
+    clock["now"] = 200.0  # interval long since elapsed: no sleep at all
+    pacer.wait_before_fetch()
+    assert _no_real_fetch_sleep == pytest.approx([0.6])
+
+
+def test_edinet_maintenance_paces_failures_and_caps_requests_at_the_day_budget(
+    monkeypatch: pytest.MonkeyPatch,
+    _no_real_fetch_sleep: list[float],
+) -> None:
+    clock = {"now": 2000.0}
+    monkeypatch.setattr("yowayowa.services.edinet_index.time.monotonic", lambda: clock["now"])
+    today = date(2026, 7, 15)
+    failed = date(2026, 7, 14)  # the newest day of the window fails
+    client = FakeEdinetClient(fail_on=failed)
+    with _session() as session:
+        result = maintain_recent_filing_index(
+            session,
+            client,  # type: ignore[arg-type]
+            lookback_days=40,
+            network_day_budget=31,
+            today_jst=today,
+        )
+
+    assert result.days_attempted == 31
+    assert result.days_synced == 30
+    assert [failure.filing_date for failure in result.failures] == [failed]
+    assert len(client.calls) == 31
+    # A failed attempt still hit the network, so it paces the next start like a
+    # success: one 1.0s gap between each pair of consecutive attempts, none
+    # after the last one.
+    assert _no_real_fetch_sleep == [1.0] * 30
