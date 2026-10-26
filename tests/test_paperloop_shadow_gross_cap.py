@@ -352,8 +352,7 @@ def test_real_journal_copy_next_decide_sizes_the_shadow_book_half(
         # book A's decision logic is untouched: 1/len(active) or 0
         assert a_target in (0.0, 0.5, 1.0)
         assert (
-            by_book[pl.BOOK_A_HALF][asset]["spec_hash"]
-            != by_book[pl.S01_BOOK][asset]["spec_hash"]
+            by_book[pl.BOOK_A_HALF][asset]["spec_hash"] != by_book[pl.S01_BOOK][asset]["spec_hash"]
         )
 
     # the shadow book is registered by the SAME run, once, behind A's row
