@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -41,7 +42,16 @@ from yowayowa.services.ohlcv_evidence import (
     collect_stock_evidence,
     question_ticker_tokens,
 )
-from yowayowa.services.research_brief import MorningBriefService
+from yowayowa.services.research_brief import (
+    _EVIDENCE_TRUNCATED_NOTE,
+    _MAX_AVAILABLE_SYMBOLS_IN_PROMPT,
+    _PRICES_DETAIL_OMITTED_NOTE,
+    _PROMPT_MAX_CHARS,
+    MorningBriefService,
+    _compact_macro_for_prompt,
+    _compact_market_for_prompt,
+    _truncate_text,
+)
 from yowayowa.services.screening_pipeline import _DEFAULT_EDINET_PATH, read_screening_candidates
 
 __all__ = ["research_ask"]
@@ -55,6 +65,33 @@ _DEFAULT_STOCK_OHLCV_ROOT = Path("./data/stock-ohlcv")
 _DEFAULT_CRYPTO_OHLCV_ROOT = Path("./data/crypto-ohlcv")
 
 _MAX_FACTS = 48
+
+# Prompt budget (same design as the brief's, t_c3264797): the evidence JSON is
+# embedded verbatim into the AIMessage prompt, whose pydantic model caps
+# ``content`` at 50000 chars (``research_models.AIMessage``). The packet is
+# first projected through :func:`_compact_ask_evidence_for_prompt` (prompt
+# only; the caller's packet is never touched), then a deterministic staged
+# narrowing enforces ``_PROMPT_MAX_CHARS`` (imported from research_brief).
+# facts[] already IS the compact projection (bounded at ``_MAX_FACTS`` with
+# per-fact provenance), so it is kept verbatim at every stage — the model may
+# only cite fact ids that actually exist.
+_MAX_PROMPT_TEXT_CHARS = 300
+_NARROWED_ASK_HEAD_ROWS = 6
+
+_ASK_DISCIPLINE = (
+    "あなたはYowayowa-InvestorのリサーチQ&Aエージェントです。"
+    "以下のEvidence JSONだけを根拠に質問へ回答してください（日本語）。"
+    "Evidenceに無い数字を生成したり、自由計算（合計・増減率・比較の新規算術）を"
+    "してはいけません。数値はEvidenceまたはツール結果からそのまま引用し、"
+    "出典（docID/series_id/source_url/retrieved_at）を添えてください。"
+    "根拠が無い部分は『未取得』と明記してください。"
+    "さらに、数値を引用する箇所には必ず対応するfact IDを [F12] のように添えてください。"
+    "回答の末尾には必ず次の2セクションを付けてください:\n"
+    "###推論\n"
+    "- [F1,F5] モデルの解釈（根拠fact IDを添える）\n"
+    "###反証条件\n"
+    "- この結論が反証される条件"
+)
 
 
 def _mentioned_codes(question: str) -> list[str]:
@@ -97,27 +134,189 @@ def _edinet_rows_for_codes(
     return rows
 
 
+def _compact_screening_for_prompt(
+    candidates: list[Any],
+) -> list[Any]:
+    """Project screening-candidate rows for the prompt (pure copy).
+
+    ``provenance`` (a nested dict per row) is flattened to its scalar
+    provenance fields hoisted once per row — same value set, far less JSON.
+    Long free-text fields (``reason`` / ``company_name``) are head-truncated
+    with :func:`_truncate_text`. Non-dict rows pass through untouched.
+    """
+
+    projected: list[Any] = []
+    for row in candidates:
+        if not isinstance(row, dict):
+            projected.append(row)
+            continue
+        compacted = deepcopy(row)
+        provenance = compacted.pop("provenance", None)
+        if isinstance(provenance, dict):
+            for field in ("provider", "source", "source_url", "license_class"):
+                if field in provenance:
+                    compacted[field] = provenance[field]
+        if "reason" in compacted:
+            compacted["reason"] = _truncate_text(compacted.get("reason"), _MAX_PROMPT_TEXT_CHARS)
+        if "company_name" in compacted:
+            compacted["company_name"] = _truncate_text(
+                compacted.get("company_name"), _MAX_PROMPT_TEXT_CHARS
+            )
+        projected.append(compacted)
+    return projected
+
+
+def _compact_edinet_rows_for_prompt(rows: list[Any]) -> list[Any]:
+    """Project raw EDINET rows for the prompt (pure copy).
+
+    Keeps the raw key names (``docID`` etc.) the model is told to cite and
+    head-truncates the free-text fields (``filerName`` / ``docDescription``).
+    """
+
+    projected: list[Any] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            projected.append(row)
+            continue
+        compacted = deepcopy(row)
+        for field in ("filerName", "docDescription"):
+            if field in compacted:
+                compacted[field] = _truncate_text(compacted.get(field), _MAX_PROMPT_TEXT_CHARS)
+        projected.append(compacted)
+    return projected
+
+
+def _compact_ask_evidence_for_prompt(evidence: dict[str, Any]) -> dict[str, Any]:
+    """Prompt-only projection of the ask evidence packet (pure; non-destructive).
+
+    Same contract as the brief's
+    ``research_brief._compact_evidence_for_prompt``: values are passed
+    through unchanged (no rounding, no new arithmetic) and the caller's
+    packet is never mutated. ``facts`` is kept verbatim — it is already the
+    bounded, per-fact provenance projection the model must cite.
+    """
+
+    compacted = deepcopy(evidence)
+    if isinstance(compacted.get("screening_candidates"), list):
+        compacted["screening_candidates"] = _compact_screening_for_prompt(
+            compacted["screening_candidates"]
+        )
+    if isinstance(compacted.get("edinet_filings"), list):
+        compacted["edinet_filings"] = _compact_edinet_rows_for_prompt(compacted["edinet_filings"])
+    for field, market_kind in (("stock_ohlcv", "stock"), ("crypto_ohlcv", "crypto")):
+        market = compacted.get(field)
+        if isinstance(market, dict):
+            compacted[field] = _compact_market_for_prompt(market, market_kind=market_kind)
+    if isinstance(compacted.get("macro_latest"), list):
+        compacted["macro_latest"] = _compact_macro_for_prompt({"series": compacted["macro_latest"]})
+        # The helper wraps its provenance hoist as ``sources``; flatten it back
+        # into the packet so the ask prompt keeps its original top-level shape.
+        sources = compacted["macro_latest"].pop("sources", None)
+        if isinstance(sources, dict):
+            compacted["macro_sources"] = sources
+    return compacted
+
+
+def _narrow_ask_price_rows(data: dict[str, Any]) -> dict[str, Any]:
+    """Stage 1: keep only the newest row per symbol."""
+
+    for field in ("stock_ohlcv", "crypto_ohlcv"):
+        market = data.get(field)
+        if isinstance(market, dict) and isinstance(market.get("symbols"), dict):
+            for symbol_evidence in market["symbols"].values():
+                if isinstance(symbol_evidence, dict) and isinstance(
+                    symbol_evidence.get("latest_rows"), list
+                ):
+                    symbol_evidence["latest_rows"] = symbol_evidence["latest_rows"][:1]
+    return data
+
+
+def _cap_ask_available_symbols(data: dict[str, Any]) -> dict[str, Any]:
+    """Stage 2: cap the available-symbols lists."""
+
+    for field in ("stock_ohlcv", "crypto_ohlcv"):
+        market = data.get(field)
+        if isinstance(market, dict) and isinstance(market.get("available_symbols"), list):
+            market["available_symbols"] = market["available_symbols"][
+                :_MAX_AVAILABLE_SYMBOLS_IN_PROMPT
+            ]
+    return data
+
+
+def _drop_ask_price_detail(data: dict[str, Any]) -> dict[str, Any]:
+    """Stage 3: drop per-symbol price detail, keep coverage + symbol lists."""
+
+    for field in ("stock_ohlcv", "crypto_ohlcv"):
+        market = data.get(field)
+        if isinstance(market, dict):
+            market.pop("symbols", None)
+    notes = data.get("coverage_notes")
+    if isinstance(notes, dict):
+        rules = notes.get("rules")
+        if isinstance(rules, list):
+            rules.append(_PRICES_DETAIL_OMITTED_NOTE)
+    return data
+
+
+def _narrow_ask_head_lists(data: dict[str, Any]) -> dict[str, Any]:
+    """Final stage: head-truncate the per-family head lists.
+
+    ``facts`` is the citation backbone — it is never narrowed, so every
+    ``[F*]`` id the model may cite stays resolvable. Narrowing is recorded in
+    ``coverage_notes.rules`` (fail explicit, never silent).
+    """
+
+    for field in ("screening_candidates", "edinet_filings", "macro_latest"):
+        entries = data.get(field)
+        if isinstance(entries, list):
+            data[field] = entries[:_NARROWED_ASK_HEAD_ROWS]
+    notes = data.get("coverage_notes")
+    if isinstance(notes, dict):
+        rules = notes.get("rules")
+        if isinstance(rules, list):
+            rules.append(_EVIDENCE_TRUNCATED_NOTE)
+    return data
+
+
 def _ask_prompt(question: str, evidence: dict[str, Any]) -> str:
-    return "\n\n".join(
-        [
-            (
-                "あなたはYowayowa-InvestorのリサーチQ&Aエージェントです。"
-                "以下のEvidence JSONだけを根拠に質問へ回答してください（日本語）。"
-                "Evidenceに無い数字を生成したり、自由計算（合計・増減率・比較の新規算術）を"
-                "してはいけません。数値はEvidenceまたはツール結果からそのまま引用し、"
-                "出典（docID/series_id/source_url/retrieved_at）を添えてください。"
-                "根拠が無い部分は『未取得』と明記してください。"
-                "さらに、数値を引用する箇所には必ず対応するfact IDを [F12] のように添えてください。"
-                "回答の末尾には必ず次の2セクションを付けてください:\n"
-                "###推論\n"
-                "- [F1,F5] モデルの解釈（根拠fact IDを添える）\n"
-                "###反証条件\n"
-                "- この結論が反証される条件"
-            ),
-            f"USER QUESTION:\n{question}",
-            "EVIDENCE JSON:\n" + json.dumps(evidence, ensure_ascii=False, default=str, indent=2),
-        ]
-    )
+    """Build the strict ask prompt inside ``AIMessage``'s 50000-char limit.
+
+    The evidence is first projected through
+    :func:`_compact_ask_evidence_for_prompt` (prompt-only; the packet itself
+    is never touched). A deterministic staged narrowing then enforces
+    ``_PROMPT_MAX_CHARS``: each stage re-renders and re-measures, and the
+    discipline text and ``facts`` (the [F*] citation backbone) are never
+    shortened.
+    """
+
+    data = _compact_ask_evidence_for_prompt(evidence)
+
+    def _render(data: dict[str, Any]) -> str:
+        return "\n\n".join(
+            [
+                _ASK_DISCIPLINE,
+                f"USER QUESTION:\n{question}",
+                "EVIDENCE JSON:\n" + json.dumps(data, ensure_ascii=False, default=str, indent=2),
+            ]
+        )
+
+    prompt = _render(data)
+    if len(prompt) < _PROMPT_MAX_CHARS:
+        return prompt
+    # Stage 1: one row per symbol.
+    prompt = _render(_narrow_ask_price_rows(data))
+    if len(prompt) < _PROMPT_MAX_CHARS:
+        return prompt
+    # Stage 2: cap the available-symbols lists.
+    prompt = _render(_cap_ask_available_symbols(data))
+    if len(prompt) < _PROMPT_MAX_CHARS:
+        return prompt
+    # Stage 3: drop per-symbol price detail, keep coverage + symbol lists.
+    prompt = _render(_drop_ask_price_detail(data))
+    if len(prompt) < _PROMPT_MAX_CHARS:
+        return prompt
+    # Final stage: head-truncate screening / EDINET / macro head lists.
+    return _render(_narrow_ask_head_lists(data))
 
 
 def _fact_statement_limit(text: Any, limit: int = 80) -> str:

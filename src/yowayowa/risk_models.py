@@ -38,6 +38,12 @@ class PortfolioRiskAnalytics(BaseModel):
     expected_shortfall_95: float | None = None
     beta: float | None = None
     benchmark_correlation: float | None = None
+    # P5 R10: when benchmark_correlation is None because benchmark data could
+    # not be retrieved, benchmark_correlation_missing is True and the reason
+    # carries a machine-readable code ("symbol_not_found" | "provider_error" |
+    # "insufficient_data"). A value is never fabricated to fill the gap.
+    benchmark_correlation_missing: bool = False
+    benchmark_correlation_missing_reason: str | None = None
     gross_exposure: float
     net_exposure: float
     largest_position_weight: float

@@ -117,6 +117,10 @@ class YahooMarketProvider:
         if frame.empty:
             raise LookupError(f"No market history returned for {normalized_symbol}")
         frame = frame.rename(columns=str.lower)
+        # Provider rows are not guaranteed to arrive in date order; ordering the
+        # frame chronologically keeps bar order and the published as_of honest
+        # (F3: a reversed response used to publish a stale as_of).
+        ordered = frame.sort_index(kind="stable")
         bars = [
             PriceBar(
                 timestamp=self._utc_timestamp(index),
@@ -126,10 +130,10 @@ class YahooMarketProvider:
                 close=float(row["close"]),
                 volume=float(row["volume"]) if pd.notna(row.get("volume")) else None,
             )
-            for index, row in frame.iterrows()
+            for index, row in ordered.iterrows()
             if pd.notna(row.get("close"))
         ]
-        computed = compute_indicators(frame, indicators)
+        computed = compute_indicators(ordered, indicators)
         now = datetime.now(UTC)
         result = MarketHistory(
             symbol=normalized_symbol,
@@ -211,6 +215,10 @@ class YahooMarketProvider:
             return cached
         frame = yf.Ticker(provider_symbol).history(period="5d", interval="1d", auto_adjust=False)
         close = self._close_series(frame.rename(columns=str.lower) if not frame.empty else frame)
+        # A non-positive quote is not a rate: 0.0 (or a negative print) is a bad
+        # row, not a zero-valued currency pair (F2).
+        if close is not None:
+            close = close[close > 0]
         if close is None or close.empty:
             raise LookupError(f"No FX rate returned for {normalized}")
         snapshot = FxRateSnapshot(
@@ -352,9 +360,18 @@ class YahooMarketProvider:
     def _quotes_from_frame(frame: pd.DataFrame, symbols: tuple[str, ...]) -> MarketQuoteBatch:
         quotes: dict[str, MarketQuote] = {}
         unavailable: list[str] = []
-        for symbol in symbols:
+        # A flat (non-MultiIndex) frame carries no symbol identity: yfinance only
+        # produces one for a single-ticker download. Attribute it to the first
+        # requested symbol and leave the rest unavailable, so one listing's
+        # series is never stamped onto every symbol (F1).
+        flat_frame = not frame.empty and not isinstance(frame.columns, pd.MultiIndex)
+        for position, symbol in enumerate(symbols):
             provider_symbol = YahooMarketProvider._provider_symbol(symbol)
-            symbol_frame = YahooMarketProvider._symbol_frame(frame, provider_symbol)
+            symbol_frame = (
+                None
+                if flat_frame and position > 0
+                else YahooMarketProvider._symbol_frame(frame, provider_symbol)
+            )
             close = YahooMarketProvider._close_series(symbol_frame)
             if close is None or close.empty:
                 unavailable.append(symbol)
@@ -394,8 +411,15 @@ class YahooMarketProvider:
     ) -> MarketOverview:
         items: list[MarketOverviewItem] = []
         unavailable: list[str] = []
-        for spec in specs:
-            symbol_frame = YahooMarketProvider._symbol_frame(frame, spec.symbol)
+        # Same rule as ``_quotes_from_frame``: a flat frame is only attributable
+        # to the first spec, never duplicated onto every requested instrument (F1).
+        flat_frame = not frame.empty and not isinstance(frame.columns, pd.MultiIndex)
+        for position, spec in enumerate(specs):
+            symbol_frame = (
+                None
+                if flat_frame and position > 0
+                else YahooMarketProvider._symbol_frame(frame, spec.symbol)
+            )
             close = YahooMarketProvider._close_series(symbol_frame)
             if close is None or close.empty:
                 unavailable.append(spec.symbol)

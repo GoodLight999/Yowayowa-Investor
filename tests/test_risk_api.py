@@ -125,5 +125,86 @@ def test_portfolio_risk_api_returns_historical_contract(tmp_path, monkeypatch) -
             assert payload["annualized_volatility"] > 0
             assert payload["max_drawdown"] <= 0
             assert payload["provenance"][1]["source"] == "history"
+            # P5 R10: when correlation is computed the missing flag stays False
+            assert payload["benchmark_correlation"] is not None
+            assert payload["benchmark_correlation_missing"] is False
+            assert payload["benchmark_correlation_missing_reason"] is None
+    finally:
+        _reset_settings()
+
+
+def test_portfolio_risk_api_returns_benchmark_missing_reason_on_unknown_symbol(
+    tmp_path, monkeypatch
+) -> None:
+    """P5 R10: unknown benchmark ticker surfaces a reason + missing flag via HTTP."""
+    monkeypatch.setenv("YOWAYOWA_MODE", "personal")
+    monkeypatch.setenv("YOWAYOWA_DATABASE_URL", f"sqlite:///{tmp_path / 'risk2.db'}")
+    monkeypatch.delenv("YOWAYOWA_API_TOKEN", raising=False)
+    _reset_settings()
+
+    from yowayowa.api import risk_routes
+    from yowayowa.api.app import app
+
+    now = datetime(2026, 8, 13, tzinfo=UTC)
+    valuation = PortfolioAnalytics(
+        portfolio_id=1,
+        name="Core",
+        base_currency="USD",
+        net_market_value=200.0,
+        gross_market_value=200.0,
+        known_cost_basis=100.0,
+        known_cost_market_value=200.0,
+        unrealized_pnl=100.0,
+        day_pnl=5.0,
+        largest_position_weight=1.0,
+        concentration_hhi=1.0,
+        positions=[
+            PositionAnalytics(
+                symbol="RKLB",
+                quantity=Decimal("10"),
+                currency="USD",
+                price=20.0,
+                fx_to_base=1.0,
+                market_value_base=200.0,
+                weight=1.0,
+                as_of=now,
+            )
+        ],
+        currency_exposure=[],
+        provenance=_provenance("quotes"),
+        evaluated_at=now,
+    )
+    index = pd.date_range("2026-08-03", periods=5, tz="UTC")
+    history = HistoricalReturnData(
+        returns=pd.DataFrame({"RKLB": [0.02, -0.01, 0.03, -0.02, 0.01]}, index=index),
+        benchmark_returns=pd.Series(dtype=float, name="^TOPX"),
+        unavailable_symbols=[],
+        provenance=_provenance("history"),
+        benchmark_status="symbol_not_found",
+    )
+
+    class FakeRiskProvider:
+        def portfolio_returns(self, portfolio, benchmark, period):
+            return history
+
+    monkeypatch.setattr(risk_routes, "yahoo_market_provider", lambda: object())
+    monkeypatch.setattr(risk_routes, "yahoo_risk_provider", FakeRiskProvider)
+    monkeypatch.setattr(risk_routes, "portfolio_analytics", lambda portfolio, provider: valuation)
+
+    try:
+        with TestClient(app) as client:
+            client.post(
+                "/v1/portfolios",
+                json={"name": "Core", "base_currency": "USD"},
+            )
+            response = client.get(
+                "/v1/portfolios/1/risk",
+                params={"benchmark": "^TOPX", "period": "1y"},
+            )
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["benchmark_correlation"] is None
+            assert payload["benchmark_correlation_missing"] is True
+            assert payload["benchmark_correlation_missing_reason"] == "symbol_not_found"
     finally:
         _reset_settings()

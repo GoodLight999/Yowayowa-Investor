@@ -381,7 +381,7 @@ def test_eps_diluted_derives_value_from_finite_inputs() -> None:
     assert points[0].form == "Yahoo normalized statement"
 
 
-def test_safe_frame_falls_back_to_frequency_kwarg() -> None:
+def test_load_frame_falls_back_to_frequency_kwarg() -> None:
     calls: list[dict[str, str]] = []
 
     def legacy_loader(**kwargs: str) -> pd.DataFrame:
@@ -390,21 +390,31 @@ def test_safe_frame_falls_back_to_frequency_kwarg() -> None:
             raise TypeError("legacy yfinance uses frequency=")
         return pd.DataFrame({"2025-12-31": [1]})
 
-    frame = YahooFundamentalsProvider._safe_frame(legacy_loader, "yearly")
+    frame = YahooFundamentalsProvider._load_frame(legacy_loader, "yearly", "income_statement")
 
     assert not frame.empty
     assert calls == [{"freq": "yearly"}, {"frequency": "yearly"}]
 
 
-def test_safe_frame_returns_empty_when_both_signatures_fail() -> None:
+def test_load_frame_raises_its_reason_when_both_signatures_fail() -> None:
     def broken_loader(**_: str) -> pd.DataFrame:
         raise RuntimeError("boom")
 
-    assert YahooFundamentalsProvider._safe_frame(broken_loader, "yearly").empty
+    with pytest.raises(yahoo_fundamentals.YahooStatementFetchError) as caught:
+        YahooFundamentalsProvider._load_frame(broken_loader, "yearly", "balance_sheet")
+
+    error = caught.value
+    assert error.statement == "balance_sheet"
+    assert error.frequency == "yearly"
+    assert isinstance(error.cause, RuntimeError)
+    assert "RuntimeError: boom" in str(error)
 
 
-def test_safe_frame_rejects_non_dataframe_payload() -> None:
-    assert YahooFundamentalsProvider._safe_frame(lambda **_: "not-a-frame", "yearly").empty
+def test_load_frame_rejects_non_dataframe_payload() -> None:
+    with pytest.raises(yahoo_fundamentals.YahooStatementFetchError) as caught:
+        YahooFundamentalsProvider._load_frame(lambda **_: "not-a-frame", "yearly", "cash_flow")
+
+    assert "not a DataFrame" in str(caught.value)
 
 
 def test_point_rejects_unparseable_value_or_period() -> None:

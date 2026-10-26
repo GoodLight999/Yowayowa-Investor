@@ -18,11 +18,13 @@ class HistoricalReturnData:
         benchmark_returns: pd.Series,
         unavailable_symbols: list[str],
         provenance: Provenance,
+        benchmark_status: str = "ok",
     ) -> None:
         self.returns = returns
         self.benchmark_returns = benchmark_returns
         self.unavailable_symbols = unavailable_symbols
         self.provenance = provenance
+        self.benchmark_status = benchmark_status
 
 
 class YahooRiskProvider:
@@ -56,17 +58,41 @@ class YahooRiskProvider:
             if position.currency != base_currency
         }
         tickers = list(dict.fromkeys([*symbols, benchmark, *fx_by_currency.values()]))
-        frame = yf.download(
-            tickers=tickers,
-            period=period,
-            interval="1d",
-            auto_adjust=True,
-            actions=False,
-            progress=False,
-            group_by="column",
-            threads=True,
-            timeout=self.settings.request_timeout_seconds,
-        )
+        now = datetime.now(UTC)
+        try:
+            frame = yf.download(
+                tickers=tickers,
+                period=period,
+                interval="1d",
+                auto_adjust=True,
+                actions=False,
+                progress=False,
+                group_by="column",
+                threads=True,
+                timeout=self.settings.request_timeout_seconds,
+            )
+        except Exception:
+            # P5 R10: provider-level failure — no data is available at all.
+            # Return an empty but well-formed result with a machine-readable
+            # status so callers can distinguish this from a missing symbol.
+            provenance = Provenance(
+                provider="yahoo/yfinance",
+                source="Yahoo Finance adjusted daily history",
+                source_url="https://finance.yahoo.com/",
+                license_class=LicenseClass.PERSONAL_ONLY,
+                retrieved_at=now,
+                as_of=now,
+                notes=[
+                    "yfinance.download raised an exception; no historical data was retrieved.",
+                ],
+            )
+            return HistoricalReturnData(
+                returns=pd.DataFrame(),
+                benchmark_returns=pd.Series(dtype=float, name=benchmark),
+                unavailable_symbols=list(symbols),
+                provenance=provenance,
+                benchmark_status="provider_error",
+            )
         close = self._close_frame(frame, tickers)
         returns = close.pct_change(fill_method=None)
         result = pd.DataFrame(index=returns.index)
@@ -86,8 +112,16 @@ class YahooRiskProvider:
                 combined = (1 + local) * (1 + fx_return) - 1
             result[position.symbol] = combined
         benchmark_returns = returns.get(benchmark)
-        if benchmark_returns is None:
+        # P5 R10: detect whether the benchmark ticker actually resolved to data.
+        # ``benchmark_returns`` may be None (ticker absent from the frame) or a
+        # fully-NaN series (ticker present but no usable prices); both mean the
+        # benchmark could not be sourced. The ``or`` short-circuits, so calling
+        # ``.dropna()`` on a None series can never happen.
+        if benchmark_returns is None or benchmark_returns.dropna().empty:
             benchmark_returns = pd.Series(dtype=float, name=benchmark)
+            benchmark_status = "symbol_not_found"
+        else:
+            benchmark_status = "ok"
         result = result.dropna(how="all")
         now = datetime.now(UTC)
         provenance = Provenance(
@@ -111,6 +145,7 @@ class YahooRiskProvider:
             benchmark_returns=benchmark_returns,
             unavailable_symbols=unavailable,
             provenance=provenance,
+            benchmark_status=benchmark_status,
         )
 
     @staticmethod
