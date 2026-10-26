@@ -52,9 +52,13 @@ missing new files surface as unexpected ruff failures (both observed on
 
 ## Makefile contract
 
-- `make verify` = lint → typecheck → test → openapi, all calling
+- `make verify` = lint → typecheck → test → openapi → openapi-check, all calling
   `$(V)/bin/<tool>` directly (`ruff`, `mypy`, `pytest`,
-  `python -m yowayowa.cli_shim`).
+  `python -m yowayowa.cli_shim`, `scripts/check_openapi_baseline.py`).
+- `make openapi-check` fails when `app.openapi()` differs from the committed
+  baseline `docs/openapi_baseline.json`; `make openapi-baseline` rewrites that
+  baseline after an intentional contract change (procedure:
+  `docs/OPENAPI_BASELINE.md`).
 - `make dev` runs `$(V)/bin/python -m uvicorn yowayowa.api.app:app --reload`;
   the exported `PYTHONPATH` is inherited by uvicorn's reload subprocess, so
   the server also resolves `yowayowa` from the current tree.
