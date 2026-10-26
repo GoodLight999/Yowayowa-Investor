@@ -3,8 +3,9 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,7 @@ from yowayowa.domain import (
     CurrencyExposure,
     Portfolio,
     PortfolioAnalytics,
+    PortfolioDeletion,
     PortfolioSnapshot,
     Position,
     PositionAnalytics,
@@ -26,11 +28,28 @@ from yowayowa.domain import (
     PositionUpsert,
 )
 from yowayowa.providers.base import MarketDataProvider
-from yowayowa.symbols import normalize_currency, normalize_symbol
+from yowayowa.symbols import InputValidationError, normalize_currency, normalize_symbol
 
 
 class PositionVersionConflictError(ValueError):
     """A position changed since the caller last observed its version."""
+
+
+class PortfolioNotEmptyError(ValueError):
+    """Refused to delete a portfolio that still owns dependent rows.
+
+    Portfolio deletion destroys financial history, so the default is to refuse
+    and report exactly what is attached; only an explicit ``force`` cascades.
+    """
+
+    def __init__(self, portfolio_id: int, counts: dict[str, int]) -> None:
+        self.portfolio_id = portfolio_id
+        self.counts = counts
+        detail = ", ".join(f"{name}={count}" for name, count in counts.items() if count)
+        super().__init__(
+            f"Portfolio {portfolio_id} still owns dependent rows ({detail}); "
+            "pass force=true to cascade the delete"
+        )
 
 
 def _to_model(row: PortfolioRecord) -> Portfolio:
@@ -78,17 +97,95 @@ def get_portfolio(session: Session, portfolio_id: int) -> Portfolio:
 
 
 def create_portfolio(session: Session, name: str, base_currency: str) -> Portfolio:
+    stripped_name = name.strip()
+    if not stripped_name:
+        raise InputValidationError(f"Portfolio name must not be blank: {name!r}")
     now = utcnow()
     row = PortfolioRecord(
-        name=name.strip(),
+        name=stripped_name,
         base_currency=normalize_currency(base_currency),
         created_at=now,
         updated_at=now,
     )
     session.add(row)
-    session.commit()
+    # Own the transaction: a failed commit (e.g. a duplicate name hitting the
+    # UNIQUE constraint) must not leave the caller's session stuck in
+    # PendingRollbackError. Rollback here, then re-raise the original exception
+    # so callers keep their established meaning (the API maps IntegrityError
+    # to 409 "Portfolio name already exists").
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     session.refresh(row)
     return _to_model(row)
+
+
+def _portfolio_dependent_counts(session: Session, portfolio_id: int) -> dict[str, int]:
+    def count(model: Any) -> int:
+        total = session.scalar(
+            select(func.count()).select_from(model).where(model.portfolio_id == portfolio_id)
+        )
+        return int(total or 0)
+
+    return {
+        "positions": count(PositionRecord),
+        "snapshots": count(PortfolioSnapshotRecord),
+        "applied_executions": count(BrokerExecutionApplicationRecord),
+    }
+
+
+def delete_portfolio(
+    session: Session,
+    portfolio_id: int,
+    *,
+    force: bool = False,
+) -> PortfolioDeletion:
+    """Delete a portfolio and, only with ``force``, everything it owns.
+
+    Fail-closed contract:
+
+    * unknown id -> ``LookupError`` (HTTP 404);
+    * any remaining ``positions`` / ``portfolio_snapshots`` /
+      ``broker_execution_applications`` row -> ``PortfolioNotEmptyError``
+      (HTTP 409) unless ``force=True``;
+    * ``force=True`` removes all of those rows and the portfolio in one
+      transaction and reports how many rows of each kind went away.
+
+    Snapshots are never silently kept without their portfolio, and the broker
+    execution application ledger is deleted with it so a later reconcile cannot
+    resurrect a deleted holding as "already applied".
+    """
+    row = session.get(PortfolioRecord, portfolio_id)
+    if row is None:
+        raise LookupError(f"Portfolio {portfolio_id} not found")
+    name = row.name
+    counts = _portfolio_dependent_counts(session, portfolio_id)
+    if any(counts.values()) and not force:
+        session.rollback()
+        raise PortfolioNotEmptyError(portfolio_id, counts)
+    try:
+        for model in (
+            BrokerExecutionApplicationRecord,
+            PositionRecord,
+            PortfolioSnapshotRecord,
+        ):
+            session.execute(delete(model).where(model.portfolio_id == portfolio_id))
+        session.execute(delete(PortfolioRecord).where(PortfolioRecord.id == portfolio_id))
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    session.expire_all()
+    return PortfolioDeletion(
+        portfolio_id=portfolio_id,
+        name=name,
+        force=force,
+        deleted_positions=counts["positions"],
+        deleted_snapshots=counts["snapshots"],
+        deleted_applied_executions=counts["applied_executions"],
+    )
 
 
 def upsert_position(
@@ -389,6 +486,11 @@ def list_portfolio_snapshots(
     portfolio_id: int,
     limit: int = 365,
 ) -> list[PortfolioSnapshot]:
+    # SQLite reads LIMIT -1 as "no limit", which would silently drop the cap;
+    # negative limits are refused instead. limit=0 stays "return nothing"
+    # (pinned by test_snapshot_limit_returns_newest_window).
+    if limit < 0:
+        raise ValueError(f"limit must be non-negative, got {limit}")
     if session.get(PortfolioRecord, portfolio_id) is None:
         raise LookupError(f"Portfolio {portfolio_id} not found")
     rows = session.scalars(
