@@ -65,10 +65,51 @@ v1.0 からの変更点（2026-10-11）:
   （算出できない理由。0 で埋めない）で窓を検証できる。
   **v1.2〜v1.5 の行の `week_return` は inception からの累積**であり、同じ列名で
   意味が違う。修正後の行には累積が `cum_return` として併記される（旧行には無い）。
-  行の `schema` は `demo-loop-summary-v1.7`（v1.6 は C-03 修正前の作業ツリー版で、
-  実ファイルには 1 行も書かれていない。実在する旧行は `...-v1.2` と `schema` 無し）。
+  行の `schema` は `demo-loop-summary-v1.9`（v1.6〜v1.8 は C-02/C-03/C-05 修正時の作業ツリー
+  版で、実ファイルには 1 行も書かれていない。実在する旧行は `...-v1.2` と `schema` 無し）。
   実測（実ジャーナル, week_end=2026-10-26）: A は旧 -3.3447% → 新 -0.8421%
   （差 2.5026pp）、CRYPTO_1N は旧 -3.5442% → 新 -0.8651%。
+- **週次行の equity 系は `week_end` で閉じる（v1.8, C-05）**: `cum_return` /
+  `drawdown_now` と帳簿別の比較行は「`week_end` 以前の最後の mark」で評価する。
+  以前は生成時点の最新 mark（`rebuild_state`）を使っていたため、`week_end` より後に
+  書かれた mark が古いラベルの行に載った（実ファイルには `week_end=2026-10-26` で
+  値は 10-23 までの行が 3 本ある）。追記専用なので後から直せない。各値には
+  `cum_return_as_of` / `drawdown_as_of` / `comparison_as_of` / `benchmark_as_of`
+  で使った mark の日付が付き、該当 mark が無ければ None と理由
+  （`cum_return_reason` / `drawdown_reason` / `comparison_reason`）になる。0 で埋めない。
+  実測（実ジャーナル, week_end=2026-10-19 を今日のジャーナルで再生成）: A の
+  `cum_return` は旧 -3.3447%（10-23 の mark）→ 新 -2.5238%（10-19 の mark）、
+  `drawdown_now` は旧 -4.1269% → 新 -3.3127%。`EQUITY_EW` は 10-19 に mark が
+  無いため 0.0 → None + `no_mark_at_or_before_week_end`。
+- **`switches` は銘柄別（v1.8, C-06）**: regime は銘柄ごとの状態なので、各 decision
+  行の `prev_regime_state` と比べて RISK_ON<->RISK_OFF の反転を数える
+  （`switches_by_asset`。合計は `switches` と一致）。以前は帳簿で1本のカーソルを
+  持ち、別銘柄の regime と比較していた。`prev_regime_state` を持たない旧行だけは
+  同一（book, asset）の直前 decision と比較する。HALT は数えずカーソルも動かさない。
+  実測（実ジャーナル）: `week_end=2026-10-19` の Book C は実ファイルの行が
+  `switches=2`（BTC/SPY 系の銘柄またぎ）→ 新 0（全銘柄 0、各銘柄自身は反転なし）。
+- **`vs_benchmark_pp_cum` は1定義（v1.8, C-07）**: トップレベルは
+  `books[A].vs_benchmark_pp_cum` と同じ「共有基準日」の定義になり、同値（None も同じ）。
+  旧来の基準日なしの差 `(A.equity - CRYPTO_1N.equity) * 100` は
+  `vs_benchmark_pp_cum_legacy_nobaseline` に別名で残す（同じ as-of で計算）。
+  実測（実ジャーナル）: 両週とも A の `comparison_start` が A の起点と一致していた
+  ため 0.1786pp / 0.1995pp で一致（定義が割れるのは基準日と起点がずれたとき）。
+- **比較の終点が2日になるなら出さない（v1.9, t_94687d03）**: `week_end` 以前の最後の
+  mark は帳簿ごとに違う日になり得る。片方が 10-24 で止まり、ベンチマークが 10-21 で
+  止まっていると、「A の3日分の騰落」対「ベンチマークの0日分」を引き算して
+  `vs_benchmark_pp_cum` に値が出ていた（合成ジャーナルで +10.0pp）。v1.9 は
+  `comparison_as_of` と `benchmark_as_of` が違う日なら数値側をすべて null にし、
+  `comparison_reason` に `endpoint_mismatch` を付ける。**両方の as-of と
+  `comparison_start` は残す**（どの mark があったかは行から読める）。
+  代替案（両方を「共有する最後の mark」まで切り詰める）は採らない: 同じ行の
+  `cum_return` / `drawdown_now` は `week_end` のままなので、1帳簿について
+  2つの期間が同じ行に並ぶことになる。トップレベル `vs_benchmark_pp_cum` も同じく
+  null（値が無いとき `vs_benchmark_pp_cum_as_of` も null）。
+  `vs_benchmark_pp_cum_legacy_nobaseline` も同じ規則で、日付がずれたら null +
+  `vs_benchmark_pp_cum_legacy_nobaseline_reason` に `endpoint_mismatch`
+  （mark 自体が無い場合は `no_mark_at_or_before_week_end`）。
+  `as_of` を省いた `_comparison_line` の呼び出しは従来どおり（既存呼び出しの意味を
+  変えない）。v1.9 より前の行は、この不一致を理由に止めていない。
 - **`shortfall_*` は「その週の mark」の集計（v1.7, C-03）**: `shortfall_bps_mean_signed` /
   `shortfall_bps_mean_abs` / `shortfall_bps_mean_upper95` / `shortfall_n` は
   `week_end-6日..week_end` の mark 行だけを対象にする（`shortfall_scope="week"`、

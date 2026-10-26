@@ -22,6 +22,12 @@ FRED access is BYOK. A series may inherit restrictions or attribution requiremen
 
 The adapter is useful for the personal-first product but is marked personal-only. It is not the commercial redistribution strategy.
 
+## Synthetic data
+
+Fabricated data never carries a real venue's provider name. `LicenseClass.SYNTHETIC` (`synthetic`) marks locally generated boards and fixtures; the orderbook seed generator uses `provider="synthetic-seed-orderbook"` and states in its source string that it is not an exchange feed.
+
+`OrderbookService.get_snapshot` returns a synthetic board only when no snapshot has been captured (that board is persisted as the baseline) or when the persisted file exists but cannot be read. In the unreadable case the damaged file is left byte-for-byte untouched, the failure is appended to `data/orderbooks/corrupt_reads.jsonl` with the file's size and sha256, and the synthetic board is returned without being persisted over the original.
+
 ## Daily strategy signals
 
 Daily screening rejects duplicate or gapped sessions, stale members, invalid

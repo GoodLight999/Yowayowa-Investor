@@ -1,0 +1,32 @@
+== 1. static router dependencies: 185 operations, 155 with require_api_token ==
+  GET   /v1/orderbook/{symbol}                       deps=['require_api_token']
+  GET   /v1/orderbook/{symbol}/depth                 deps=['require_api_token']
+  GET   /v1/orderbook/{symbol}/metrics               deps=['require_api_token']
+  POST  /v1/orderbook/{symbol}/impact                deps=['require_api_token']
+  POST  /v1/orderbook/{symbol}/snapshots             deps=['require_api_token']
+  control (must keep require_api_token, unchanged by this card):
+  POST  /v1/screening/run                            deps=['require_api_token']
+  GET   /v1/portfolios                               deps=['require_api_token', 'db_session']
+  POST  /v1/portfolios                               deps=['require_api_token', 'db_session']
+
+== 2. OpenAPI parameters ==
+  GET   /v1/orderbook/7203                     params=['symbol', 'authorization']
+  GET   /v1/orderbook/7203/depth               params=['symbol', 'max_levels', 'authorization']
+  GET   /v1/orderbook/7203/metrics             params=['symbol', 'authorization']
+  POST  /v1/orderbook/7203/impact              params=['symbol', 'authorization']
+  POST  /v1/orderbook/7203/snapshots           params=['symbol', 'authorization']
+  GET   /v1/portfolios                         params=['authorization']
+
+== 3. live statuses with api_token configured (no-token / wrong-token / valid) ==
+  GET   /v1/orderbook/7203                     401 / 401 / 200
+  GET   /v1/orderbook/7203/depth?max_levels=5  401 / 401 / 200
+  GET   /v1/orderbook/7203/metrics             401 / 401 / 200
+  POST  /v1/orderbook/7203/impact              401 / 401 / 200
+  POST  /v1/orderbook/7203/snapshots           401 / 401 / 200
+
+== 4. live statuses with api_token unset (deps.py fail-open, unchanged) ==
+  GET   /v1/orderbook/7203                     200
+  GET   /v1/orderbook/7203/depth?max_levels=5  200
+  GET   /v1/orderbook/7203/metrics             200
+  POST  /v1/orderbook/7203/impact              200
+  POST  /v1/orderbook/7203/snapshots           200
