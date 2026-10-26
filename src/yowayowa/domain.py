@@ -13,6 +13,7 @@ class LicenseClass(StrEnum):
     PERSONAL_ONLY = "personal_only"
     USER_KEY = "user_key"
     LICENSED_REDISTRIBUTABLE = "licensed_redistributable"
+    SYNTHETIC = "synthetic"
 
 
 class Provenance(BaseModel):
@@ -220,6 +221,21 @@ class Portfolio(BaseModel):
     positions: list[Position]
     created_at: datetime
     updated_at: datetime
+
+
+class PortfolioDeletion(BaseModel):
+    """What a portfolio delete actually removed.
+
+    Counts are reported for every dependent table so the caller can prove the
+    financial rows are gone instead of trusting a bare ``204``.
+    """
+
+    portfolio_id: int
+    name: str
+    force: bool
+    deleted_positions: int
+    deleted_snapshots: int
+    deleted_applied_executions: int
 
 
 class PositionAnalytics(BaseModel):
