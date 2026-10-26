@@ -28,6 +28,21 @@ class PortfolioSizingIdea(BaseModel):
         return self
 
 
+class QuoteSizingIdeaRequest(BaseModel):
+    """Operator assumptions for one quote-backed sizing idea (P5 R5).
+
+    Only symbol, stop price, and lot size are supplied by the caller. Entry
+    price, currency, and provenance are never accepted here — they must come
+    from the fetched provider quote or the idea is not built.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    symbol: str = Field(min_length=1, max_length=32)
+    stop_price: Decimal = Field(gt=0)
+    lot_size: int = Field(ge=1, le=1_000_000)
+
+
 class PortfolioSizingRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

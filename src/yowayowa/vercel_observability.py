@@ -7,6 +7,7 @@ import re
 import sys
 import time
 import traceback
+from contextvars import ContextVar
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, distribution, version
 from pathlib import Path
@@ -14,6 +15,8 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from starlette.responses import PlainTextResponse
+
+from yowayowa.api.deps import operator_token_held
 
 _ARCHIVE_SHA = re.compile(r"/archive/([0-9a-fA-F]{7,40})\.zip(?:$|[?#])")
 _LOGGER = logging.getLogger("yowayowa.vercel")
@@ -26,6 +29,18 @@ if not _LOGGER.handlers:
     _LOGGER.addHandler(handler)
 _LOGGER.setLevel(logging.INFO)
 _LOGGER.propagate = False
+
+#: Fixed client-facing wording for upstream (502) failures. Route handlers map
+#: provider defects to this message; the exception type, message, and URL are
+#: preserved only in the structured ``http.exception`` log line.
+UPSTREAM_UNAVAILABLE_DETAIL = "Upstream data source is temporarily unavailable"
+
+#: Request correlation captured by the middleware. Handled upstream failures
+#: (502) never reach the middleware's except branch, so their log lines pull
+#: request_id / method / path from here to stay correlatable.
+_REQUEST_CONTEXT: ContextVar[dict[str, str] | None] = ContextVar(
+    "yowayowa_request_context", default=None
+)
 
 
 def _package_revision() -> str | None:
@@ -106,6 +121,31 @@ def _emit(payload: dict[str, object], *, error: bool = False) -> None:
     (_LOGGER.error if error else _LOGGER.info)(line)
 
 
+def log_upstream_exception(exc: BaseException) -> None:
+    """Emit an ``http.exception`` line for a handled upstream failure.
+
+    Routes translate provider defects into HTTP 502 whose body carries only a
+    fixed message; the exception type, message, and traceback survive here
+    (and only here), correlated with the request via ``request_id``.
+    """
+    context = _REQUEST_CONTEXT.get() or {}
+    _emit(
+        {
+            "level": "error",
+            "event": "http.exception",
+            "request_id": context.get("request_id"),
+            "method": context.get("method"),
+            "path": context.get("path"),
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "trace": _safe_traceback(exc),
+            **runtime_source_info(),
+            **_vercel_runtime(),
+        },
+        error=True,
+    )
+
+
 def install_vercel_observability(app: FastAPI) -> None:
     """Install Vercel request correlation and production-specific asset caching."""
 
@@ -117,6 +157,13 @@ def install_vercel_observability(app: FastAPI) -> None:
     async def vercel_request_observability(request: Request, call_next):  # type: ignore[no-untyped-def]
         request_id = _request_id(request)
         request.state.yowayowa_request_id = request_id
+        context_token = _REQUEST_CONTEXT.set(
+            {
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+            }
+        )
         started = time.perf_counter()
         try:
             response = await call_next(request)
@@ -137,6 +184,8 @@ def install_vercel_observability(app: FastAPI) -> None:
                 error=True,
             )
             raise
+        finally:
+            _REQUEST_CONTEXT.reset(context_token)
 
         response.headers["x-yowayowa-request-id"] = request_id
         is_asset_request = request.url.path.startswith(_ASSET_PREFIXES)
@@ -175,9 +224,17 @@ def install_vercel_observability(app: FastAPI) -> None:
 
     @app.get("/internal/debug/runtime", include_in_schema=False)
     async def vercel_runtime_debug(request: Request) -> dict[str, object]:
-        return {
+        """Liveness for every caller; build/runtime detail only with the token.
+
+        Anonymous callers (token unset, mismatched, or header absent) get only
+        the correlation fields; ``source``/``vercel`` build identification is
+        returned solely when the exact operator Bearer token is presented.
+        """
+        payload: dict[str, object] = {
             "status": "ok",
             "request_id": _request_id(request),
-            "source": runtime_source_info(),
-            "vercel": _vercel_runtime(),
         }
+        if operator_token_held(request.headers.get("authorization")):
+            payload["source"] = runtime_source_info()
+            payload["vercel"] = _vercel_runtime()
+        return payload

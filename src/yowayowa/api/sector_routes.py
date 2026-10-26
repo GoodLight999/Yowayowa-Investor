@@ -6,6 +6,10 @@ from yowayowa.api.deps import require_api_token
 from yowayowa.domain import MarketOverview
 from yowayowa.providers.base import ProviderPolicyError
 from yowayowa.providers.registry import yahoo_sector_provider
+from yowayowa.vercel_observability import (
+    UPSTREAM_UNAVAILABLE_DETAIL,
+    log_upstream_exception,
+)
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_token)])
 
@@ -17,4 +21,5 @@ def sector_overview() -> MarketOverview:
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc

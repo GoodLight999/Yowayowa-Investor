@@ -28,6 +28,7 @@ from yowayowa.domain import (
     Portfolio,
     PortfolioAnalytics,
     PortfolioCreate,
+    PortfolioDeletion,
     PortfolioSnapshot,
     PositionBulkUpsert,
     PositionUpsert,
@@ -62,9 +63,11 @@ from yowayowa.services.alerts import (
 from yowayowa.services.comparison import available_metrics, compare
 from yowayowa.services.operations import plan_operation
 from yowayowa.services.portfolios import (
+    PortfolioNotEmptyError,
     PositionVersionConflictError,
     bulk_upsert_positions,
     create_portfolio,
+    delete_portfolio,
     get_portfolio,
     list_portfolio_snapshots,
     list_portfolios,
@@ -82,8 +85,17 @@ from yowayowa.services.watchlists import (
     remove_symbol,
 )
 from yowayowa.symbols import normalize_symbol
+from yowayowa.vercel_observability import (
+    UPSTREAM_UNAVAILABLE_DETAIL,
+    log_upstream_exception,
+)
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_token)])
+
+#: Fixed client-facing wording for a provider-policy refusal on search. A refusal
+#: is a licensing decision, not an outage and not "0 results"; the exception text,
+#: provider name, and any source URL stay out of the response body.
+SEARCH_POLICY_UNAVAILABLE_DETAIL = "Search is unavailable under the configured provider policy"
 
 
 def _sec(settings: Settings) -> SecClient:
@@ -114,14 +126,17 @@ def search_instruments(
     sec_results: list[Instrument] = []
     yahoo_results: list[Instrument] = []
     errors: list[Exception] = []
+    policy_denied = False
     try:
         sec_results = _sec(settings).search(q, limit)
+    except ProviderPolicyError:
+        policy_denied = True
     except Exception as exc:
         errors.append(exc)
     try:
         yahoo_results = YahooSearchProvider(settings).search(q, limit)
     except ProviderPolicyError:
-        pass
+        policy_denied = True
     except Exception as exc:
         errors.append(exc)
 
@@ -139,7 +154,15 @@ def search_instruments(
                 }
             )
     if not merged and errors:
-        raise HTTPException(status_code=502, detail=str(errors[0]))
+        # A real upstream defect outranks a co-occurring policy refusal: the
+        # caller must not read an outage as a licensing decision.
+        for error in errors:
+            log_upstream_exception(error)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL)
+    if not merged and policy_denied:
+        # Nothing could be returned *by policy*: distinguish that from a true
+        # zero-result search instead of answering 200 with an empty list.
+        raise HTTPException(status_code=403, detail=SEARCH_POLICY_UNAVAILABLE_DETAIL)
     return list(merged.values())[:limit]
 
 
@@ -150,7 +173,8 @@ def fundamentals(symbol: str, settings: Settings = Depends(get_settings)) -> Fun
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/valuation/{symbol}", response_model=ValuationSnapshot)
@@ -165,7 +189,8 @@ def valuation(symbol: str, settings: Settings = Depends(get_settings)) -> Valuat
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/news/{query}", response_model=NewsFeed)
@@ -179,7 +204,8 @@ def news(
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/calendar", response_model=EventCalendar)
@@ -217,7 +243,8 @@ def calendar_events(
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/markets/overview", response_model=MarketOverview)
@@ -227,7 +254,8 @@ def market_overview() -> MarketOverview:
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/markets/quotes", response_model=MarketQuoteBatch)
@@ -245,7 +273,8 @@ def market_quotes(
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/markets/{symbol}/history", response_model=MarketHistory)
@@ -264,7 +293,8 @@ def market_history(
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/macro/fred/{series_id}")
@@ -274,7 +304,8 @@ def fred_series(series_id: str, settings: Settings = Depends(get_settings)) -> d
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/filings/edinet")
@@ -286,7 +317,8 @@ def edinet_documents(
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/watchlists", response_model=list[Watchlist])
@@ -345,6 +377,21 @@ def post_portfolio(payload: PortfolioCreate, session: Session = Depends(db_sessi
         raise HTTPException(status_code=409, detail="Portfolio name already exists") from exc
 
 
+@router.delete("/portfolios/{portfolio_id}", response_model=PortfolioDeletion)
+def delete_portfolio_by_id(
+    portfolio_id: int,
+    force: bool = False,
+    session: Session = Depends(db_session),
+) -> PortfolioDeletion:
+    """Delete a portfolio; refuse while it still owns rows unless ``force`` is set."""
+    try:
+        return delete_portfolio(session, portfolio_id, force=force)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PortfolioNotEmptyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.put("/portfolios/{portfolio_id}/positions", response_model=Portfolio)
 def put_position(
     portfolio_id: int, payload: PositionUpsert, session: Session = Depends(db_session)
@@ -399,7 +446,8 @@ def get_portfolio_analytics(
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/portfolios/{portfolio_id}/snapshots", response_model=list[PortfolioSnapshot])
@@ -479,7 +527,8 @@ def post_alert_evaluation(session: Session = Depends(db_session)) -> AlertEvalua
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.delete("/alerts/{alert_id}", status_code=204)

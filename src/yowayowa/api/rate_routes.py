@@ -5,6 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from yowayowa.api.deps import require_api_token
 from yowayowa.providers.registry import treasury_yield_curve_provider
 from yowayowa.rate_models import TreasuryYieldCurve
+from yowayowa.vercel_observability import (
+    UPSTREAM_UNAVAILABLE_DETAIL,
+    log_upstream_exception,
+)
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_token)])
 
@@ -20,4 +24,5 @@ def treasury_curve(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc

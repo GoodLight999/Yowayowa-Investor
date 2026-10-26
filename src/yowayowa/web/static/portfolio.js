@@ -44,6 +44,7 @@
     if (!portfolios.length) {
       select.innerHTML = `<option value="">${escapeHtml(t('portfolio.no_portfolios'))}</option>`;
       select.disabled = true;
+      renderDeleteTarget();
       return;
     }
     select.disabled = false;
@@ -51,6 +52,42 @@
       <option value="${item.id}" ${item.id === selectedId ? 'selected' : ''}>
         ${escapeHtml(item.name)} · ${escapeHtml(item.base_currency)}
       </option>`).join('');
+    renderDeleteTarget();
+  }
+
+  function renderDeleteTarget() {
+    const button = document.querySelector('#portfolio-delete');
+    const note = document.querySelector('#portfolio-delete-note');
+    const portfolio = currentPortfolio();
+    if (button) button.disabled = !portfolio;
+    if (!note) return;
+    note.textContent = portfolio
+      ? t('portfolio.delete_target', { name: portfolio.name })
+      : t('portfolio.delete_note');
+  }
+
+  function danglingCounts(detail) {
+    if (typeof detail !== 'string') return null;
+    const positions = /positions=(\d+)/.exec(detail);
+    const snapshots = /snapshots=(\d+)/.exec(detail);
+    const applied = /applied_executions=(\d+)/.exec(detail);
+    if (!positions && !snapshots && !applied) return null;
+    return {
+      positions: positions ? Number(positions[1]) : 0,
+      snapshots: snapshots ? Number(snapshots[1]) : 0,
+      applied_executions: applied ? Number(applied[1]) : 0,
+    };
+  }
+
+  async function reloadAfterMissing(portfolio) {
+    const message = document.querySelector('#portfolio-message');
+    try {
+      await loadPortfolios();
+    } catch (error) {
+      message.textContent = error.message;
+      return;
+    }
+    message.textContent = t('portfolio.delete_missing', { name: portfolio.name });
   }
 
   function renderSummary(data) {
@@ -163,7 +200,7 @@
       [t('risk.var95'), percent(data.value_at_risk_95)],
       [t('risk.es95'), percent(data.expected_shortfall_95)],
       [t('risk.beta'), decimal(data.beta)],
-      [t('risk.benchmark_corr'), decimal(data.benchmark_correlation)],
+      [t('risk.benchmark_corr'), data.benchmark_correlation_missing_reason ? `\u2014 (${escapeHtml(data.benchmark_correlation_missing_reason)})` : decimal(data.benchmark_correlation)],
       [t('risk.coverage'), percent(data.covered_gross_weight)],
       [t('risk.observations'), decimal(data.observations, 0)],
     ];
@@ -312,6 +349,71 @@
     }
   }
 
+  async function removePortfolio() {
+    const portfolio = currentPortfolio();
+    const message = document.querySelector('#portfolio-message');
+    if (!portfolio) {
+      message.textContent = t('portfolio.delete_none');
+      renderDeleteTarget();
+      return;
+    }
+    if (!window.confirm(t('portfolio.delete_confirm', { name: portfolio.name }))) {
+      message.textContent = t('portfolio.delete_cancelled', { name: portfolio.name });
+      return;
+    }
+    message.textContent = t('portfolio.delete_in_progress', { name: portfolio.name });
+    let deleted = null;
+    try {
+      deleted = await api(`/v1/portfolios/${portfolio.id}`, { method: 'DELETE' });
+    } catch (error) {
+      if (error.status === 404) {
+        await reloadAfterMissing(portfolio);
+        return;
+      }
+      if (error.status !== 409) {
+        message.textContent = error.message;
+        return;
+      }
+      const counts = danglingCounts(error.detail);
+      const forcePrompt = counts
+        ? t('portfolio.delete_force_confirm', {
+          name: portfolio.name,
+          positions: counts.positions,
+          snapshots: counts.snapshots,
+          applied_executions: counts.applied_executions,
+        })
+        : t('portfolio.delete_force_confirm_generic', { name: portfolio.name });
+      if (!window.confirm(forcePrompt)) {
+        message.textContent = t('portfolio.delete_cancelled', { name: portfolio.name });
+        return;
+      }
+      try {
+        deleted = await api(`/v1/portfolios/${portfolio.id}?force=true`, { method: 'DELETE' });
+      } catch (forceError) {
+        if (forceError.status === 404) {
+          await reloadAfterMissing(portfolio);
+          return;
+        }
+        message.textContent = forceError.message;
+        return;
+      }
+    }
+    try {
+      await loadPortfolios();
+    } catch (error) {
+      message.textContent = error.message;
+      return;
+    }
+    message.textContent = deleted?.force
+      ? t('portfolio.deleted_forced', {
+        name: deleted.name || portfolio.name,
+        positions: deleted.deleted_positions,
+        snapshots: deleted.deleted_snapshots,
+        applied_executions: deleted.deleted_applied_executions,
+      })
+      : t('portfolio.deleted', { name: deleted?.name || portfolio.name });
+  }
+
   function parsePortfolioCsv(text) {
     const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     if (lines.length < 2) throw new Error(t('portfolio.invalid_csv'));
@@ -361,10 +463,12 @@
   }
 
   document.querySelector('#portfolio-select')?.addEventListener('change', () => {
+    renderDeleteTarget();
     resetRisk();
     loadAnalytics();
   });
   document.querySelector('#refresh-portfolio')?.addEventListener('click', () => loadAnalytics());
+  document.querySelector('#portfolio-delete')?.addEventListener('click', removePortfolio);
   document.querySelector('#risk-run')?.addEventListener('click', loadRisk);
   document.querySelector('#portfolio-import-button')?.addEventListener('click', importCsv);
   document.querySelector('#portfolio-export-button')?.addEventListener('click', () => {

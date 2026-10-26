@@ -46,6 +46,7 @@ const api = async (path, options = {}) => {
     const message = locale === 'en' && typeof detail === 'string' ? detail : generic;
     const error = new Error(message);
     error.status = response.status;
+    error.detail = detail;
     throw error;
   }
   return response.json();

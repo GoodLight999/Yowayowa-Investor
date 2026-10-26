@@ -111,6 +111,23 @@ def require_api_token(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API token")
 
 
+def operator_token_held(
+    authorization: str | None,
+    settings: Settings | None = None,
+) -> bool:
+    """True only when the operator API token is set and the Bearer header matches.
+
+    Same exact ``Bearer <token>`` comparison as :func:`require_api_token`; lets
+    routes that must stay reachable without a token (liveness) withhold build
+    and runtime detail from callers without the operator token.
+    """
+    if settings is None:
+        settings = get_settings()
+    if not settings.api_token:
+        return False
+    return authorization == f"Bearer {settings.api_token}"
+
+
 def require_private_connectors(settings: Settings = Depends(get_settings)) -> None:
     """Fail closed unless the private acquisition toolkit is explicitly enabled."""
     if settings.mode != "personal" or not settings.private_connectors_enabled:

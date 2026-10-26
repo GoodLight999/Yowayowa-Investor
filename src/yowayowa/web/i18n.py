@@ -123,6 +123,34 @@ _EN: dict[str, str] = {
     "portfolio.replace_import": "Replace current positions",
     "portfolio.imported": "Imported {count} positions.",
     "portfolio.invalid_csv": "CSV must contain symbol, quantity, average_cost, currency columns.",
+    "portfolio.danger_zone": "Danger zone",
+    "portfolio.delete": "Delete portfolio",
+    "portfolio.delete_note": (
+        "Deletes the selected portfolio together with its holdings and valuation history."
+    ),
+    "portfolio.delete_target": (
+        "Target: {name}. Deleting also removes its holdings and valuation history."
+    ),
+    "portfolio.delete_confirm": (
+        'Delete portfolio "{name}"? Its holdings and valuation history are deleted with it, '
+        "and this cannot be undone."
+    ),
+    "portfolio.delete_force_confirm": (
+        '"{name}" still has {positions} holdings, {snapshots} history entries and '
+        "{applied_executions} applied executions. Delete them too? This cannot be undone."
+    ),
+    "portfolio.delete_force_confirm_generic": (
+        '"{name}" still has holdings or history. Delete them too? This cannot be undone.'
+    ),
+    "portfolio.delete_cancelled": 'Deletion of "{name}" was cancelled.',
+    "portfolio.delete_missing": '"{name}" no longer exists. The list was reloaded.',
+    "portfolio.delete_none": "There is no portfolio to delete.",
+    "portfolio.delete_in_progress": 'Deleting "{name}"…',
+    "portfolio.deleted": '"{name}" deleted.',
+    "portfolio.deleted_forced": (
+        '"{name}" deleted with {positions} holdings, {snapshots} history entries and '
+        "{applied_executions} applied executions."
+    ),
     "compare.title": "Compare",
     "compare.symbols": "Symbols",
     "compare.symbol_limit": "2-20 symbols",
@@ -234,6 +262,7 @@ _EN: dict[str, str] = {
     "license.personal_only": "Personal-use data",
     "license.user_key": "User-key data",
     "license.licensed_redistributable": "Licensed redistributable data",
+    "license.synthetic": "Synthetic data (not sourced)",
 }
 
 _JA: dict[str, str] = {
@@ -353,6 +382,32 @@ _JA: dict[str, str] = {
     "portfolio.replace_import": "現在の保有銘柄を置き換える",
     "portfolio.imported": "{count}銘柄を読み込みました。",
     "portfolio.invalid_csv": "CSVには symbol, quantity, average_cost, currency 列が必要です。",
+    "portfolio.danger_zone": "削除",
+    "portfolio.delete": "ポートフォリオを削除",
+    "portfolio.delete_note": "選択中のポートフォリオを、保有銘柄と評価履歴ごと削除します。",
+    "portfolio.delete_target": "対象: {name}。削除すると保有銘柄と評価履歴も消えます。",
+    "portfolio.delete_confirm": (
+        "ポートフォリオ「{name}」を削除します。保有銘柄と評価履歴も消え、元に戻せません。"
+        "実行する場合は OK を選んでください。"
+    ),
+    "portfolio.delete_force_confirm": (
+        "「{name}」には保有 {positions} 件・評価履歴 {snapshots} 件・"
+        "約定適用 {applied_executions} 件が残っています。"
+        "これらも含めて強制削除する場合は OK を選んでください。元に戻せません。"
+    ),
+    "portfolio.delete_force_confirm_generic": (
+        "「{name}」には保有銘柄または履歴が残っています。"
+        "これらも含めて強制削除する場合は OK を選んでください。元に戻せません。"
+    ),
+    "portfolio.delete_cancelled": "「{name}」の削除を中止しました。",
+    "portfolio.delete_missing": "「{name}」は既に存在しません。一覧を再読み込みしました。",
+    "portfolio.delete_none": "削除できるポートフォリオがありません。",
+    "portfolio.delete_in_progress": "「{name}」を削除中…",
+    "portfolio.deleted": "「{name}」を削除しました。",
+    "portfolio.deleted_forced": (
+        "「{name}」を削除しました。保有 {positions} 件・評価履歴 {snapshots} 件・"
+        "約定適用 {applied_executions} 件も削除しました。"
+    ),
     "compare.title": "銘柄比較",
     "compare.symbols": "銘柄",
     "compare.symbol_limit": "2〜20銘柄",
@@ -464,6 +519,7 @@ _JA: dict[str, str] = {
     "license.personal_only": "個人利用データ",
     "license.user_key": "ユーザーAPIキー利用データ",
     "license.licensed_redistributable": "再配布許諾済みデータ",
+    "license.synthetic": "合成データ・実データではありません",
 }
 
 if set(_EN) != set(_JA):

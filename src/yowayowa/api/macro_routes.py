@@ -11,6 +11,10 @@ from yowayowa.providers.base import ProviderPolicyError
 from yowayowa.providers.bea import BeaClient
 from yowayowa.providers.bls import BlsClient
 from yowayowa.providers.estat import EstatClient
+from yowayowa.vercel_observability import (
+    UPSTREAM_UNAVAILABLE_DETAIL,
+    log_upstream_exception,
+)
 
 router = APIRouter(prefix="/v1/macro", dependencies=[Depends(require_api_token)])
 
@@ -68,7 +72,8 @@ def bls_series(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/bea/nipa/catalog", response_model=BeaNipaCatalog)
@@ -108,7 +113,8 @@ def bea_nipa_table(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/estat/tables", response_model=EstatTableSearch)
@@ -129,9 +135,11 @@ def estat_tables(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except LookupError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=type(exc).__name__) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/estat/{stats_data_id}/meta", response_model=EstatMetadata)
@@ -151,9 +159,11 @@ def estat_metadata(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except LookupError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=type(exc).__name__) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/estat/{stats_data_id}/data", response_model=EstatData)
@@ -182,6 +192,8 @@ def estat_data(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except LookupError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=type(exc).__name__) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc

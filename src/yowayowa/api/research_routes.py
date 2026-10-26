@@ -35,6 +35,10 @@ from yowayowa.services.presets import (
     list_presets,
     update_preset,
 )
+from yowayowa.vercel_observability import (
+    UPSTREAM_UNAVAILABLE_DETAIL,
+    log_upstream_exception,
+)
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_token)])
 
@@ -133,7 +137,8 @@ def saved_news(
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/research/{symbol}", response_model=CompanyResearch)
@@ -164,7 +169,8 @@ def company_research(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/options/{symbol}", response_model=OptionChainSnapshot)
@@ -180,7 +186,8 @@ def option_chain(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/discover/catalog")
@@ -203,7 +210,8 @@ def discover_screen(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/macro/fred/search")
@@ -222,7 +230,8 @@ def fred_search(
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/macro/fred/releases")
@@ -240,7 +249,8 @@ def fred_releases(
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/macro/fred/{series_id}")
@@ -274,4 +284,5 @@ def fred_series(
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
