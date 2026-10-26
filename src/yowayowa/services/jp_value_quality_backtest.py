@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from statistics import fmean
-from typing import Any
+from typing import Any, cast
 
 from yowayowa.services.backtest import _bootstrap_cagr, _metrics
 from yowayowa.services.jp_value_quality import (
@@ -566,7 +566,7 @@ def benchmark_outcome(
     closes = [value for value in closes if value is not None]
     returns = [
         current / prior - 1
-        for prior, current in itertools.pairwise(closes)
+        for prior, current in itertools.pairwise(cast("list[float]", closes))
         if prior > 0
     ]
     equity = 1.0
@@ -659,7 +659,9 @@ def slice_outcome(outcome: BacktestOutcome, start: date, end: date) -> BacktestO
 
 
 def summarise(outcome: BacktestOutcome) -> dict[str, Any]:
-    metric_value = lambda key: (outcome.metrics.get(key) or {}).get("value")  # noqa: E731
+    def metric_value(key: str) -> Any:
+        return (outcome.metrics.get(key) or {}).get("value")
+
     return {
         "label": outcome.label,
         "start": outcome.start.isoformat(),

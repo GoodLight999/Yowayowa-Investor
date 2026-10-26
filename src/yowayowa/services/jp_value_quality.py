@@ -28,7 +28,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 #: Japanese annual reports (有価証券報告書) are due within three months of the
 #: fiscal year end; a one-month extension is possible.  120 days is therefore a
@@ -343,7 +343,7 @@ class UniverseScore:
     def ranked(self) -> list[SymbolScore]:
         return sorted(
             (item for item in self.scores.values() if item.composite is not None),
-            key=lambda item: (-item.composite, item.symbol),
+            key=lambda item: (-cast(float, item.composite), item.symbol),
         )
 
 
@@ -409,15 +409,14 @@ def score_universe(
         )
 
     evaluated = [item for item in scores.values() if item.composite is not None]
+    missing_by_dimension: dict[str, int] = {
+        dimension: sum(1 for item in scores.values() if item.dimensions[dimension] is None)
+        for dimension in DIMENSIONS
+    }
     coverage: dict[str, object] = {
         "evaluated": len(scores),
         "scored": len(evaluated),
-        "missing_by_dimension": {
-            dimension: sum(
-                1 for item in scores.values() if item.dimensions[dimension] is None
-            )
-            for dimension in DIMENSIONS
-        },
+        "missing_by_dimension": missing_by_dimension,
         "missing_by_component": {
             component: sum(
                 1 for symbol in scores if symbol not in component_ranks[component]
@@ -427,8 +426,7 @@ def score_universe(
     }
     if scores:
         coverage["missing_rate_by_dimension"] = {
-            dimension: count / len(scores)
-            for dimension, count in coverage["missing_by_dimension"].items()  # type: ignore[union-attr]
+            dimension: count / len(scores) for dimension, count in missing_by_dimension.items()
         }
     return UniverseScore(
         decision_date=decision_date or date.min,
