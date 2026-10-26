@@ -217,7 +217,9 @@ def test_decide_fill_idempotency_and_mtm(tmp_path: Path, monkeypatch) -> None:
     # v1.4 (t_dddae39e): count from the enabled book set, so a book that is
     # enabled later cannot silently drift this expectation again.
     expected_decisions = sum(
-        len(pl.CRYPTO_UNIVERSE) if book in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK) else len(pl.EQUITY_UNIVERSE)
+        len(pl.CRYPTO_UNIVERSE)
+        if book in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
+        else len(pl.EQUITY_UNIVERSE)
         for book in pl.BOOKS_ENABLED
     )
     assert pl.run_daily_decide(root, now) == expected_decisions
@@ -439,9 +441,7 @@ def test_dd20_is_warning_not_stop(tmp_path: Path, monkeypatch) -> None:
         for row in pl._load_journal(root)
         if row.get("event") == "mtm" and row["mtm_date"] == slide_day.date().isoformat()
     ]
-    crypto_mtms = [
-        row for row in mtms if row.get("book") in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)
-    ]
+    crypto_mtms = [row for row in mtms if row.get("book") in (pl.S01_BOOK, pl.BENCH_CRYPTO_BOOK)]
     assert crypto_mtms and all(row["drawdown"] <= pl.HALT_DRAWDOWN for row in crypto_mtms)
     assert all(row["drawdown_warning"] is True for row in crypto_mtms)
     assert all(row["stopped"] is False for row in mtms)  # v1.3: no stop
@@ -605,10 +605,11 @@ def test_bench_dd_stop_hook_and_milestone26() -> None:
 def test_stock_fetch_pipeline_advances_bars(tmp_path: Path, monkeypatch) -> None:
     """Regression test for D1 (t_feb3aa55): daily pipeline fetches equity data
     and stock store bars advance, preventing stale_hours > 72 HALT on Day 2."""
+    import httpx
+
     from yowayowa.config import get_settings
     from yowayowa.providers.alpaca import AlpacaMarketDataProvider
     from yowayowa.stock_acquisition import StockOhlcvStore, fetch_stock_ohlcv
-    import httpx
 
     # Verify daily.sh contains stock-fetch for EQUITY_UNIVERSE
     daily_sh_path = Path(__file__).resolve().parent.parent / "ops" / "demo-loop" / "daily.sh"
@@ -622,8 +623,26 @@ def test_stock_fetch_pipeline_advances_bars(tmp_path: Path, monkeypatch) -> None
     symbols = list(pl.EQUITY_UNIVERSE)
     canned_bars = {
         sym: [
-            {"t": "2026-10-16T04:00:00Z", "o": 100.0, "h": 102.0, "l": 99.0, "c": 101.0, "v": 1000, "n": 10, "vw": 100.5},
-            {"t": "2026-10-19T04:00:00Z", "o": 101.0, "h": 103.0, "l": 100.0, "c": 102.0, "v": 1000, "n": 10, "vw": 101.5},
+            {
+                "t": "2026-10-16T04:00:00Z",
+                "o": 100.0,
+                "h": 102.0,
+                "l": 99.0,
+                "c": 101.0,
+                "v": 1000,
+                "n": 10,
+                "vw": 100.5,
+            },
+            {
+                "t": "2026-10-19T04:00:00Z",
+                "o": 101.0,
+                "h": 103.0,
+                "l": 100.0,
+                "c": 102.0,
+                "v": 1000,
+                "n": 10,
+                "vw": 101.5,
+            },
         ]
         for sym in symbols
     }

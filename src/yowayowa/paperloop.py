@@ -1581,11 +1581,9 @@ def _bars_since_switch(root: Path, book: str, symbol: str, decision_date: date) 
         for row in _load_journal(root)
         if row.get("event") == "decision" and row.get("book") == book and row.get("asset") == symbol
     ]
-    count = 0
-    for row in rows:
-        count += 1
+    for i, row in enumerate(rows):
         if row.get("switch_flag"):
-            return count - 1
+            return i
     return None
 
 
@@ -2247,9 +2245,7 @@ def mark_up(root: Path, utc_now: datetime | None = None) -> int:
         if bar is None:
             continue  # the execution day's bar has not landed yet
         frozen_path = inputs_dir(root) / execution_date.isoformat() / f"{book}.json"
-        universe = (
-            CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
-        )
+        universe = CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
         target_now = _engine_target(
             book, {other: _daily_map(root, other) for other in universe}, execution_date
         )

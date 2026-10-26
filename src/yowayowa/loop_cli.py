@@ -24,13 +24,13 @@ from pathlib import Path
 
 from yowayowa.paperloop import (
     ChainError,
+    _new_run_id,
+    _write_daily_halt_checks,
     loop_root,
     mark_up,
     resolve_fills,
     run_daily_decide,
     weekly_summary,
-    _write_daily_halt_checks,
-    _new_run_id,
 )
 
 

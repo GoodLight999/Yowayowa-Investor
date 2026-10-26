@@ -568,9 +568,7 @@ def verify(data_dir: Path, start: date, end: date) -> dict[str, Any]:
             result["R2_excluded_revised"] += 1
             continue
         asset = str(row.get("asset"))
-        universe = (
-            CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
-        )
+        universe = CRYPTO_UNIVERSE if book in (S01_BOOK, BENCH_CRYPTO_BOOK) else EQUITY_UNIVERSE
         target_now = _engine_target(
             book,
             {other: _daily_map(root, other) for other in universe},

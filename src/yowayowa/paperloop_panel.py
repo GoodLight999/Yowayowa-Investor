@@ -20,21 +20,16 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping
-from datetime import UTC, date, datetime
+from datetime import date
 from typing import Any
 
 from yowayowa.paperloop import (
-    BOOKS_ENABLED,
-    BOOK_C_BOOK,
     BENCH_CRYPTO_BOOK,
-    BENCH_EQUITY_BOOK,
+    BOOKS_ENABLED,
     CRYPTO_UNIVERSE,
     EQUITY_UNIVERSE,
     S01_BOOK,
-    STRATEGY_BOOKS,
-    _daily_map,
     _load_journal,
-    _parse_ts,
     is_live_schema,
     loop_root,
 )
@@ -182,7 +177,6 @@ def _build_panel_from_journal(
                         ret_next_why = ""
                 elif not next_day:
                     ret_next_why = "not_applicable"
-                freshness = decision.get("freshness_status") or {}
                 regime_tag = decision.get("regime_tag") or {}
                 halt = halt_by_key.get((book, day))
                 panel_rows = {
@@ -319,7 +313,7 @@ def _verdict_block(
 
 
 def eval_q1(rows: list[Mapping[str, Any]], *, book: str = S01_BOOK) -> dict[str, Any]:
-    """Q1 signal efficacy: mean(next-day return | ON) − mean(... | OFF)."""
+    """Q1 signal efficacy: mean(next-day return | ON) - mean(... | OFF)."""
 
     scope = [
         r
@@ -341,7 +335,7 @@ def eval_q1(rows: list[Mapping[str, Any]], *, book: str = S01_BOOK) -> dict[str,
             f"need {Q1_MIN_PER_STATE} days per state; observed ON={n_on} OFF={n_off}",
         )
     delta = _mean(on) - _mean(off)
-    se = _block_bootstrap_se([x - y for x, y in zip(on, off)]) if False else None
+    se = _block_bootstrap_se([x - y for x, y in zip(on, off, strict=False)]) if False else None
     # SE of the difference of means (block bootstrap on the pooled series)
     pooled = on + off
     se = _block_bootstrap_se(pooled)

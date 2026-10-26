@@ -10,14 +10,9 @@ drops each of L3/L4/L5/L6/L9/L11/L12 exactly once).
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
-import pytest
-
-from yowayowa import paperloop as pl
-from yowayowa import paperloop_panel as pp
-from yowayowa import paperloop_verify as pv
 from tests.test_paperloop import (
     _inject_bar,
     _now_of,
@@ -26,7 +21,9 @@ from tests.test_paperloop import (
     _stub_networks,
     _write_crypto_days,
 )
-
+from yowayowa import paperloop as pl
+from yowayowa import paperloop_panel as pp
+from yowayowa import paperloop_verify as pv
 
 # --- decided-state helpers ----------------------------------------------------
 
@@ -39,7 +36,11 @@ def _decisions(root: Path, book: str, day: str):
     return [
         row
         for row in _journal(root)
-        if row.get("event") == "decision" and row.get("book") == book and row.get("decision_date") == day
+        if (
+            row.get("event") == "decision"
+            and row.get("book") == book
+            and row.get("decision_date") == day
+        )
     ]
 
 
@@ -47,7 +48,7 @@ def _decisions(root: Path, book: str, day: str):
 
 
 def test_B1_no_duplicate_fill_or_reject(tmp_path: Path, monkeypatch) -> None:
-    data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
     pl.run_daily_decide(root, now)
     _inject_bar(root, "BTC", now + timedelta(hours=1), 101.0)
     _inject_bar(root, "ETH", now + timedelta(hours=1), 60.0)
@@ -68,7 +69,7 @@ def test_B1_no_duplicate_fill_or_reject(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_B2_mtm_dedupe(tmp_path: Path, monkeypatch) -> None:
-    data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
     pl.run_daily_decide(root, now)
     for _ in range(3):
         pl.run_daily_mtm(root, now)
@@ -84,7 +85,7 @@ def test_B2_mtm_dedupe(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_B4_naive_timestamp_refused(tmp_path: Path, monkeypatch) -> None:
-    data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    _data_dir, root, _now = _prepare(tmp_path, monkeypatch)
     rows_before = len(_journal(root))
     try:
         pl._append_row(
@@ -110,7 +111,11 @@ def test_B4_naive_timestamp_refused(tmp_path: Path, monkeypatch) -> None:
         raise AssertionError("a naive recorded_at must be refused (B4/P4)")
     # the row is NOT in the journal
     assert len(_journal(root)) == rows_before
-    mtms = [row for row in _journal(root) if row.get("event") == "mtm" and row.get("mtm_date") == "2026-10-12"]
+    mtms = [
+        row
+        for row in _journal(root)
+        if row.get("event") == "mtm" and row.get("mtm_date") == "2026-10-12"
+    ]
     assert mtms == []
 
 
@@ -118,7 +123,7 @@ def test_B4_naive_timestamp_refused(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_B5_code_rev_every_row(tmp_path: Path, monkeypatch) -> None:
-    data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
     pl.run_daily_decide(root, now)
     for row in _journal(root):
         assert row.get("code_rev"), f"row {row.get('seq')} has no code_rev"
@@ -126,9 +131,7 @@ def test_B5_code_rev_every_row(tmp_path: Path, monkeypatch) -> None:
     assert all(row.get("spec_hash") for row in decisions)
     assert all(
         row.get("spec_hash")
-        == __import__("hashlib").sha256(
-            pl.BOOK_SPEC_HASHES[pl.S01_BOOK].encode()
-        ).hexdigest()
+        == __import__("hashlib").sha256(pl.BOOK_SPEC_HASHES[pl.S01_BOOK].encode()).hexdigest()
         for row in decisions
     )
 
@@ -137,7 +140,7 @@ def test_B5_code_rev_every_row(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_B6_anchor_dedupe(tmp_path: Path, monkeypatch) -> None:
-    data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
     # decide itself anchors the day exactly once; a retry (same date) adds
     # nothing (B6)
     pl.run_daily_decide(root, now)
@@ -164,7 +167,7 @@ def _rows(root: Path):
     return [
         row
         for row in _journal(root)
-        if row.get("event") == "anchor" or "row_hash" in row and row.get("anchor_date")
+        if row.get("event") == "anchor" or ("row_hash" in row and row.get("anchor_date"))
     ]
 
 
@@ -172,7 +175,7 @@ def _rows(root: Path):
 
 
 def test_halt_check_and_run_rows(tmp_path: Path, monkeypatch) -> None:
-    data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
     pl.run_daily_decide(root, now, run_id="run-a", trigger="cron")
     journal = _journal(root)
     halt_checks = [row for row in journal if row.get("event") == "halt_check"]
@@ -189,11 +192,13 @@ def test_halt_check_and_run_rows(tmp_path: Path, monkeypatch) -> None:
     end_row = runs[-1]
     assert end_row.get("ok") is True
     assert end_row.get("host") == pl.host_name()
+
+
 # --- regime_tag: deterministic, preregistered, independent -------------------
 
 
 def test_regime_tag_and_prereg(tmp_path: Path, monkeypatch) -> None:
-    data_dir, root, now = _prepare(tmp_path, monkeypatch)
+    _data_dir, root, now = _prepare(tmp_path, monkeypatch)
     pl.run_daily_decide(root, now)
     decisions = _decisions(root, pl.S01_BOOK, now.date().isoformat())
     for row in decisions:
@@ -443,10 +448,8 @@ def test_eval_Q1_passes_with_enough_observations(tmp_path: Path, monkeypatch) ->
     """Enough alternating days give Q1 a real Δ and a verdict (not insufficient)."""
 
     _stub_networks(monkeypatch)
-    import random
 
     data_dir = tmp_path / "data"
-    rng = random.Random(7)
     btc = _series(100.0, 300, drift=0.0001, rising_after=100)
     # alternate ON/OFF around the SMA: rewrite closes as ±0.3% around 120
     btc = [
