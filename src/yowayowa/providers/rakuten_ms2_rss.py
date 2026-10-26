@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unicodedata
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from enum import IntEnum
@@ -51,15 +52,46 @@ def _id_text(value: object) -> str | None:
     return text or None
 
 
-def _to_int(value: object) -> int:
-    if isinstance(value, bool) or value is None:
-        return 0
-    if isinstance(value, (int, float)):
-        return int(value)
-    try:
-        return int(str(value).replace(",", "").strip())
-    except ValueError:
-        return 0
+def _to_int(value: object) -> int | None:
+    """Parse a worksheet cell as an integer; unreadable input yields None.
+
+    Full-width digits and commas are normalized (NFKC, then separator removal)
+    because they carry the same number. Anything that is not a plain integer
+    after that — blanks, booleans, unit suffixes such as "1,000株", fractional
+    values — stays ``None``: an unreadable quantity is unknown, not a quantity
+    of zero.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    text = unicodedata.normalize("NFKC", str(value)).replace(",", "").strip()
+    sign = ""
+
+    if text[:1] in {"+", "-"}:
+        sign, text = text[0], text[1:]
+    # int() also accepts underscores; require plain ASCII digits after NFKC.
+    if not text or not text.isascii() or not text.isdigit():
+        return None
+    return int(f"{sign}{text}")
+
+
+def _order_quantity(value: object) -> int | None:
+    """A usable order quantity must be a positive integer; anything else is unknown."""
+    parsed = _to_int(value)
+    if parsed is None or parsed <= 0:
+        return None
+    return parsed
+
+
+def _filled_quantity(value: object) -> int | None:
+    """0 is a real filled quantity; only unreadable/negative input becomes None."""
+    parsed = _to_int(value)
+    if parsed is None or parsed < 0:
+        return None
+    return parsed
 
 
 def _to_decimal(value: object) -> Decimal | None:
@@ -111,9 +143,16 @@ def parse_rss_order_status(value: object) -> BrokerOrderStatus:
 def parse_order_text_status(
     text: object,
     *,
-    filled_quantity: int,
-    quantity: int,
+    filled_quantity: int | None,
+    quantity: int | None,
 ) -> BrokerOrderStatus:
+    """Map the broker's status text onto an explicit status.
+
+    Partial-vs-full is decided by counts only when both counts are known;
+    with an unknown quantity the text cannot be resolved to
+    PARTIALLY_FILLED, so the status stays UNKNOWN instead of guessing.
+    """
+
     value = str(text or "").strip()
     if value == "約定":
         return BrokerOrderStatus.FILLED
@@ -121,7 +160,12 @@ def parse_order_text_status(
         return BrokerOrderStatus.CANCELLED
     if "出来ず" in value:
         return BrokerOrderStatus.REJECTED
-    if "出来有" in value and 0 < filled_quantity < quantity:
+    if (
+        "出来有" in value
+        and filled_quantity is not None
+        and quantity is not None
+        and 0 < filled_quantity < quantity
+    ):
         return BrokerOrderStatus.PARTIALLY_FILLED
     if any(marker in value for marker in ("執行", "待機", "受付", "取消中", "訂正済")):
         return BrokerOrderStatus.PENDING
@@ -144,7 +188,7 @@ class RakutenRssInquiry:
         records: list[RakutenOrderIdRecord] = []
         for row in rows:
             rss_order_id = _to_int(row.get("発注ID"))
-            if rss_order_id <= 0:
+            if rss_order_id is None or rss_order_id <= 0:
                 continue
             records.append(
                 RakutenOrderIdRecord(
@@ -163,6 +207,13 @@ class RakutenRssInquiry:
         return None
 
     def list_orders(self) -> list[BrokerOrder]:
+        """Normalize the order list; unreadable quantities stay unknown (None).
+
+        A row whose order quantity cannot be parsed is still returned with
+        ``quantity=None`` so the caller can distinguish "unknown" from a real
+        quantity, and no fill is ever asserted from a count we could not read.
+        """
+
         submissions = {
             record.broker_order_id: record.rss_order_id
             for record in self.order_id_records()
@@ -185,8 +236,8 @@ class RakutenRssInquiry:
             broker_order_id = _id_text(row.get("注文番号"))
             if broker_order_id is None:
                 continue
-            quantity = _to_int(row.get("注文数量"))
-            filled_quantity = _to_int(row.get("約定数量"))
+            quantity = _order_quantity(row.get("注文数量"))
+            filled_quantity = _filled_quantity(row.get("約定数量"))
             side_text = str(row.get("売買") or "")
             side = BrokerOrderSide.BUY if "買" in side_text else BrokerOrderSide.SELL
             transport_id = submissions.get(broker_order_id)
@@ -210,6 +261,12 @@ class RakutenRssInquiry:
         return orders
 
     def list_positions(self) -> list[BrokerPosition]:
+        """Normalize holdings; an unreadable quantity stays unknown (Decimal None).
+
+        Negative quantities are preserved (margin shorts are real values); only
+        cells that cannot be read at all become ``None``.
+        """
+
         table = self._reader.read_table_formula("RssPositionList()")
         rows = _table_rows(
             table,
@@ -228,11 +285,12 @@ class RakutenRssInquiry:
             symbol = str(row.get("銘柄コード") or "").strip()
             if not symbol:
                 continue
+            raw_quantity = _to_int(row.get("保有数量"))
             positions.append(
                 BrokerPosition(
                     broker=RAKUTEN_SECURITIES_BROKER,
                     symbol=symbol,
-                    quantity=Decimal(_to_int(row.get("保有数量"))),
+                    quantity=(Decimal(raw_quantity) if raw_quantity is not None else None),
                     average_cost=_to_decimal(row.get("平均取得価額")),
                     market_price=_to_decimal(row.get("時価")),
                     market_value=_to_decimal(row.get("時価評価額")),

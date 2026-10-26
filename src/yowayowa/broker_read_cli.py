@@ -52,6 +52,11 @@ def auth_check(
     )
 
 
+def _cell(value: object) -> str:
+    """Render a value that may legitimately be unknown (None) as an em dash."""
+    return "—" if value is None else str(value)
+
+
 def _print_fetch_summary(connector_id: str, payload: dict[str, object]) -> None:
     detail = payload.get("detail")
     margin_state = detail.get("margin_state") if isinstance(detail, dict) else None
@@ -74,7 +79,7 @@ def _print_fetch_summary(connector_id: str, payload: dict[str, object]) -> None:
         for row in positions:
             table.add_row(
                 str(row["symbol"]),
-                str(row["quantity"]),
+                _cell(row["quantity"]),
                 str(row.get("average_cost") or "—"),
                 str(row.get("market_price") or "—"),
                 str(row.get("market_value") or "—"),
@@ -92,8 +97,8 @@ def _print_fetch_summary(connector_id: str, payload: dict[str, object]) -> None:
                 row.get("broker_order_id") or "(none)",
                 str(row["symbol"]),
                 str(row["side"]),
-                str(row["quantity"]),
-                str(row["filled_quantity"]),
+                _cell(row["quantity"]),
+                _cell(row["filled_quantity"]),
                 str(row.get("average_fill_price") or "—"),
                 str(row["status"]),
             )
