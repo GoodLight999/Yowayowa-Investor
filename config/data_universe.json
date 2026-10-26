@@ -1,0 +1,24 @@
+{
+  "_comment": "Single source of truth for daily-acquisition symbol universes (design t_d524bc01 §3: cron scripts never carry symbols). Scripts read the list; adding a series here extends acquisition without touching cron.",
+  "stock": {
+    "alpaca": [
+      "AAPL",
+      "MSFT",
+      "NVDA",
+      "GOOGL",
+      "AMZN",
+      "META",
+      "TSLA",
+      "JNJ",
+      "JPM",
+      "PG",
+      "XOM",
+      "SPY",
+      "QQQ",
+      "IWM"
+    ]
+  },
+  "crypto": {
+    "binance": ["BTC", "ETH"]
+  }
+}
