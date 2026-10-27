@@ -441,7 +441,7 @@ def test_cli_rejection_renders_no_rich_panel_and_keeps_the_happy_path(
 
 @pytest.mark.skipif(
     not _CONSOLE_SCRIPT.exists(),
-    reason="yowayowa console script is not installed in this venv",
+    reason="yowayowa console script is not installed in this venv (ticket: t_34b0e0c1)",
 )
 def test_real_cli_entry_rejection_stderr_is_one_leak_free_line(tmp_path: Path) -> None:
     """Measured through the real entrypoint (same venv, no network).

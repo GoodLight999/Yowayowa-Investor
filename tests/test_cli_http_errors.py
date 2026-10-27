@@ -261,7 +261,7 @@ def test_real_app_404_through_main_boundary_is_one_line_without_retry(
 def _run_entry(args: list[str], base_url: str) -> subprocess.CompletedProcess[bytes]:
     entry = Path(sys.executable).with_name("yowayowa")
     if not entry.is_file():
-        pytest.skip("yowayowa console script is not installed in this venv")
+        pytest.skip("yowayowa console script is not installed in this venv (ticket: t_34b0e0c1)")
     src = Path(__file__).resolve().parents[1] / "src"
     env = os.environ.copy()
     env["PYTHONPATH"] = (

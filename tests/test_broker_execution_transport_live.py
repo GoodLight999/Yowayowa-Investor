@@ -25,7 +25,7 @@ from yowayowa.config import Settings
 
 pytestmark = pytest.mark.skipif(
     os.getenv("YOWAYOWA_P2B_LIVE_PROBE") != "1",
-    reason="live browser probe runs only with YOWAYOWA_P2B_LIVE_PROBE=1",
+    reason="live browser probe runs only with YOWAYOWA_P2B_LIVE_PROBE=1 (ticket: t_34b0e0c1)",
 )
 
 

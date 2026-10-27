@@ -116,6 +116,10 @@ known-first-party = ["yowayowa"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
+# "src" keeps the project importable without an editable install (shared-venv
+# rule, docs/AGENT_ENVIRONMENT.md); "." lets tests import sibling test modules
+# via `from tests.<module> import ...` on any checkout layout (t_34b0e0c1).
+pythonpath = ["src", "."]
 
 [tool.mypy]
 python_version = "3.12"
