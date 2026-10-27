@@ -125,9 +125,7 @@ def adjust_prices(
                 steps = revert_at - index
                 for offset in range(1, steps + 1):
                     fraction = offset / (steps + 1)
-                    out[index + offset - 1] = start_price * (
-                        (end_price / start_price) ** fraction
-                    )
+                    out[index + offset - 1] = start_price * ((end_price / start_price) ** fraction)
                     repaired.append(dates[index + offset - 1])
                 index = revert_at + 1
                 continue
@@ -146,16 +144,11 @@ def adjust_prices(
         index += 1
 
     scale = [
-        value / reference if reference else 1.0
-        for value, reference in zip(out, raw, strict=True)
+        value / reference if reference else 1.0 for value, reference in zip(out, raw, strict=True)
     ]
-    adjusted_closes = {
-        day: out[position] for position, day in enumerate(dates)
-    }
+    adjusted_closes = {day: out[position] for position, day in enumerate(dates)}
     adjusted_opens = {
-        day: opens[day] * scale[position]
-        for position, day in enumerate(dates)
-        if day in opens
+        day: opens[day] * scale[position] for position, day in enumerate(dates) if day in opens
     }
     return adjusted_closes, adjusted_opens, tuple(split_dates), tuple(repaired)
 
@@ -276,9 +269,7 @@ def load_snapshot(
     benchmarks = read_prices(directory / "benchmark.jsonl")
     manifest_path = directory / "manifest.json"
     manifest = (
-        json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest_path.exists()
-        else {}
+        json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
     )
     return fundamentals, prices, benchmarks, manifest
 
@@ -325,9 +316,7 @@ def build_inputs(
     return inputs, violations
 
 
-def select_ranked(
-    scores: UniverseScore, params: PortfolioParams
-) -> dict[str, float]:
+def select_ranked(scores: UniverseScore, params: PortfolioParams) -> dict[str, float]:
     ranked = [item for item in scores.ranked() if item.composite is not None]
     chosen = ranked[: params.top_n]
     if not chosen:
@@ -336,9 +325,7 @@ def select_ranked(
     return {item.symbol: weight for item in chosen}
 
 
-def select_baseline(
-    scores: UniverseScore, params: PortfolioParams
-) -> dict[str, float]:
+def select_baseline(scores: UniverseScore, params: PortfolioParams) -> dict[str, float]:
     rule = BaselineFilter()
     passing = [
         item
@@ -443,15 +430,11 @@ def run_backtest(
                     continue
                 asset_returns[symbol] = today_open / prior_close - 1
             if asset_returns:
-                overnight = sum(
-                    weights[symbol] * value for symbol, value in asset_returns.items()
-                )
+                overnight = sum(weights[symbol] * value for symbol, value in asset_returns.items())
                 equity *= 1 + overnight
                 if 1 + overnight > 0:
                     weights = {
-                        symbol: weight
-                        * (1 + asset_returns.get(symbol, 0.0))
-                        / (1 + overnight)
+                        symbol: weight * (1 + asset_returns.get(symbol, 0.0)) / (1 + overnight)
                         for symbol, weight in weights.items()
                     }
 
@@ -624,9 +607,7 @@ def slice_outcome(outcome: BacktestOutcome, start: date, end: date) -> BacktestO
     base = curve[0][1]
     rebased = [(day, value / base) for day, value in curve]
     returns = [
-        current[1] / prior[1] - 1
-        for prior, current in itertools.pairwise(rebased)
-        if prior[1] > 0
+        current[1] / prior[1] - 1 for prior, current in itertools.pairwise(rebased) if prior[1] > 0
     ]
     metrics = _metrics(returns, 0.0, None, False)
     return BacktestOutcome(

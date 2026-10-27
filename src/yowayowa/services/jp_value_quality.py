@@ -205,11 +205,7 @@ def compute_factor_inputs(
         missing.append("net_cash_ratio")
 
     op_strict = None
-    if (
-        operating_income is not None
-        and interest_expense is not None
-        and equity is not None
-    ):
+    if operating_income is not None and interest_expense is not None and equity is not None:
         op_strict = (operating_income - interest_expense) / equity
     else:
         missing.append("op_strict")
@@ -235,9 +231,7 @@ def compute_factor_inputs(
         and previous.operating_income is not None
         and previous.operating_income != 0
     ):
-        op_growth = (operating_income - previous.operating_income) / abs(
-            previous.operating_income
-        )
+        op_growth = (operating_income - previous.operating_income) / abs(previous.operating_income)
     else:
         missing.append("op_growth")
 
@@ -362,9 +356,7 @@ def score_universe(
 
     weights = weights or ScoreWeights()
     component_ranks = {
-        name: percentile_ranks(
-            {symbol: item.component(name) for symbol, item in inputs.items()}
-        )
+        name: percentile_ranks({symbol: item.component(name) for symbol, item in inputs.items()})
         for name in COMPONENTS
     }
 
@@ -398,9 +390,7 @@ def score_universe(
             symbol=symbol,
             composite=composite,
             dimensions=dimension_scores,
-            components={
-                name: component_ranks[name].get(symbol) for name in COMPONENTS
-            },
+            components={name: component_ranks[name].get(symbol) for name in COMPONENTS},
             missing_dimensions=tuple(
                 dimension for dimension, value in dimension_scores.items() if value is None
             ),
@@ -418,9 +408,7 @@ def score_universe(
         "scored": len(evaluated),
         "missing_by_dimension": missing_by_dimension,
         "missing_by_component": {
-            component: sum(
-                1 for symbol in scores if symbol not in component_ranks[component]
-            )
+            component: sum(1 for symbol in scores if symbol not in component_ranks[component])
             for component in COMPONENTS
         },
     }

@@ -192,9 +192,7 @@ def test_empty_result_exits_1(monkeypatch: pytest.MonkeyPatch) -> None:
     engine = _seed_engine([])
     try:
         monkeypatch.setattr(screening_cli, "get_session", lambda: Session(engine))
-        result = runner.invoke(
-            entry_app, ["screening-candidates", "99999"], env={"COLUMNS": "220"}
-        )
+        result = runner.invoke(entry_app, ["screening-candidates", "99999"], env={"COLUMNS": "220"})
         assert result.exit_code == 1
         assert "No screening candidates persisted for 99999" in result.output
     finally:

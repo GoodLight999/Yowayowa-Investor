@@ -247,9 +247,7 @@ def test_decide_fill_idempotency_and_mtm(tmp_path: Path, monkeypatch) -> None:
     # D2: traded notional = |target-held| * equity = 0.5 * 1.0 for A and the
     # benchmark, 0.25 * 1.0 for the half-gross shadow book
     for row in fills:
-        expected_notional = (
-            0.5 * pl.SHADOW_GROSS_CAP if row["book"] == pl.BOOK_A_HALF else 0.5
-        )
+        expected_notional = 0.5 * pl.SHADOW_GROSS_CAP if row["book"] == pl.BOOK_A_HALF else 0.5
         assert abs(row["traded_notional"] - expected_notional) < 1e-9, row["book"]
     # D4: filled rows are never re-filled
     assert pl.resolve_fills(root, now + timedelta(hours=3)) == 0
