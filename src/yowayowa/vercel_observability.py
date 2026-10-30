@@ -17,6 +17,7 @@ from fastapi import FastAPI, Request
 from starlette.responses import PlainTextResponse
 
 from yowayowa.api.deps import operator_token_held
+from yowayowa.db import positions_unique_constraint_status
 
 _ARCHIVE_SHA = re.compile(r"/archive/([0-9a-fA-F]{7,40})\.zip(?:$|[?#])")
 _LOGGER = logging.getLogger("yowayowa.vercel")
@@ -227,8 +228,9 @@ def install_vercel_observability(app: FastAPI) -> None:
         """Liveness for every caller; build/runtime detail only with the token.
 
         Anonymous callers (token unset, mismatched, or header absent) get only
-        the correlation fields; ``source``/``vercel`` build identification is
-        returned solely when the exact operator Bearer token is presented.
+        the correlation fields; ``source``/``vercel`` build identification and
+        the database migration status are returned solely when the exact
+        operator Bearer token is presented.
         """
         payload: dict[str, object] = {
             "status": "ok",
@@ -237,4 +239,7 @@ def install_vercel_observability(app: FastAPI) -> None:
         if operator_token_held(request.headers.get("authorization")):
             payload["source"] = runtime_source_info()
             payload["vercel"] = _vercel_runtime()
+            payload["database"] = {
+                "positions_unique_constraint": positions_unique_constraint_status(),
+            }
         return payload

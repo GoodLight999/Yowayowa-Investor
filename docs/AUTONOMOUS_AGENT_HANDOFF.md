@@ -886,13 +886,13 @@ EDINET:
 - preserve same-filing/currency constraints.
 
 JPX daily margin:
-- announced start 2026-09-28 if migration proceeds;
-- inspect live production format before writing final parser;
-- persist daily history;
-- instrument-page supply/demand;
-- screener/compare fields;
-- abrupt-change alerts;
-- point-in-time snapshots for outcome analysis.
+- live free production formats inspected (01 PDF + 日々公表 XLSX + 品貸料 XLSX + 03 PDF);
+- exact five-character codes, 4,250-row document totals and balance identities are fail-closed gates;
+- canonical daily history + source-specific auxiliary facts + raw SHA snapshots implemented;
+- API/CLI transparent supply/demand scans implemented; missing values never become zero;
+- as-of / published-at / retrieved-at are separate to prevent look-ahead;
+- still add instrument-page visualization and optional general screener/AI-evidence integration;
+- accumulate point-in-time snapshots for outcome analysis.
 
 #### P5 — Product completion audit
 

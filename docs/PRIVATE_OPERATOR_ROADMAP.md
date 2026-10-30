@@ -671,7 +671,7 @@ The system can answer:
 
 ### JPX daily margin balances
 
-JPX announced daily all-issue margin-balance publication beginning 2026-09-28 if migration proceeds.
+JPX began daily all-issue publication on 2026-09-28.
 
 **Status (2026-10-23): weekly credit-margin scraping DONE
 (parser/persistence/API/CLI + `yowayowa-alpaca`-style weekly cron); the daily
@@ -704,6 +704,14 @@ Still open:
 - add screener/comparison fields;
 - add abrupt-change alerts;
 - snapshot values for later forward validation.
+
+Update (2026-10-31 merge): the integration branch's free-publication
+surfaces — daily all-issue PDF/XLSX ingest with content-addressed raw
+downloads and the transparent supply/demand screens
+(`src/yowayowa/services/jpx_margin_signals.py`) — are also in this tree now;
+their contract is preserved in `docs/JPX_DAILY_MARGIN.md` (§ Free official
+publications integration). CI acceptance remains the delivery gate for that
+lane.
 
 ### Additional private Japan sources
 
