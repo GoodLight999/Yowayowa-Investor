@@ -61,3 +61,8 @@ cd /root/current-work/yowayowa-investor && PYTHONPATH=src YOWAYOWA_MODE=personal
 - `prereg.jsonl` 1 行目（A の凍結 spec）: `b71b70fc2e9df13c68d9…` 不変。verifier L10（decision spec_hash == prereg）全 ok。
 - 追記があったファイル（設計通り）: `journal.jsonl`（+6 行）・`prereg.jsonl`（+1 行）・`data/shadow-llm/journal.jsonl`（+2 ティック行）。
 - LLM ティックの cost: 同日成功分（行 2〜6）は `usage.cost_usd = 0.0` を実測。行 7〜8 は 429（トークン消費 0・請求なし・fallback 記録）。
+
+## 6. A_HALF 20営業日ゲート FAIL 確定の判定参照先（2026-10-31 追記・追記のみ）
+
+- **2026-11-23 の週次runでは、A_HALF の20営業日ゲートは FAIL 確定（10-27=0.998612 / 10-30=0.984391）として扱い、判断は `docs/DECISION_A_HALF_20BD_FAIL_OPTIONS.md` の選択肢(A)（この窓を FAIL として公式記録し、本則の12週ゲート＝2027-01 まで待つ）を正とする。**
+- 出典は承認済み判断書 `docs/DECISION_A_HALF_20BD_FAIL_OPTIONS.md`（原本 = カード `t_f8c8f92b` 添付・12,130 byte / sha256 `d9c5aca1091007ba5221c698f20c9dc1180b32f8d14d98d8c51a732405a7c49c`・判断本体は監査2回通過済み）。本節は参照先の明示のみを目的とした追記であり、既存記述は無変更。
