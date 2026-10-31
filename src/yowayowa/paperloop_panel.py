@@ -257,26 +257,42 @@ def _judgeable(
 
 
 def _equity_on(journal: Sequence[Mapping[str, Any]], book: str, day: str) -> float | None:
+    """The book's equity at the last mark ON/BEFORE ``day`` (AS-M126-09).
+
+    Rows are adopted in TARGET-day order — the greatest ``mtm_date`` at or
+    before the query day; only rows sharing that day tie-break by append
+    order (the later row wins), the same rule ``rebuild_state`` and
+    ``_equity_as_of`` apply. The recovery pass appends a PAST day's honest
+    mark at the journal's END, so "last append with ``mtm_date <= day``"
+    would put the recovered past value on every later day's panel row
+    (the audited repro: day 83 read 0.69895 instead of its own 0.968545 —
+    a 26.9595pp misdisplay that also leaked into weekly Q4).
+    """
+
     latest: Mapping[str, Any] | None = None
+    latest_day: str | None = None
     for row in journal:
-        if (
-            row.get("event") == "mtm"
-            and row.get("book") == book
-            and str(row.get("mtm_date")) <= day
-        ):
+        if row.get("event") != "mtm" or row.get("book") != book:
+            continue
+        mtm_day = str(row.get("mtm_date"))
+        if mtm_day <= day and (latest_day is None or mtm_day >= latest_day):
             latest = row
+            latest_day = mtm_day
     return float(latest["equity"]) if latest is not None else None
 
 
 def _equity_gross_on(journal: Sequence[Mapping[str, Any]], book: str, day: str) -> float | None:
+    """``_equity_on`` for the gross chain column (same target-day order)."""
+
     latest: Mapping[str, Any] | None = None
+    latest_day: str | None = None
     for row in journal:
-        if (
-            row.get("event") == "mtm"
-            and row.get("book") == book
-            and str(row.get("mtm_date")) <= day
-        ):
+        if row.get("event") != "mtm" or row.get("book") != book:
+            continue
+        mtm_day = str(row.get("mtm_date"))
+        if mtm_day <= day and (latest_day is None or mtm_day >= latest_day):
             latest = row
+            latest_day = mtm_day
     if latest is None:
         return None
     gross = latest.get("equity_gross")
