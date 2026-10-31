@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import hashlib
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
 from yowayowa.api.app import app
 from yowayowa.cli_entry import app as cli_app
+from yowayowa.domain import LicenseClass, Provenance
 from yowayowa.orderbook_models import (
     OrderbookLevel,
     OrderbookSnapshot,
 )
 from yowayowa.services.orderbook_service import (
+    CORRUPT_READ_LEDGER,
+    SYNTHETIC_PROVIDER,
     OrderbookService,
     compute_depth_ladder,
     compute_orderbook_metrics,
@@ -176,3 +184,100 @@ def test_ai_agent_orderbook_tools() -> None:
     impact_res = tool_impact.handler({"symbol": "7203", "side": "buy", "quantity": 100.0})
     assert impact_res["fully_filled"] is True
     assert "average_price" in impact_res
+
+
+CORRUPT_SNAPSHOT_BYTES = b'{"symbol": "7203", "bids": [{"price": 2850.0, "size": 1000.0}], "as'
+
+
+def _write_corrupt_snapshot(base: Path) -> tuple[Path, str]:
+    path = base / "7203" / "latest.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(CORRUPT_SNAPSHOT_BYTES)
+    return path, hashlib.sha256(CORRUPT_SNAPSHOT_BYTES).hexdigest()
+
+
+def test_corrupt_snapshot_is_preserved_and_reported(tmp_path: Path) -> None:
+    path, original_sha = _write_corrupt_snapshot(tmp_path)
+
+    snapshot = OrderbookService(tmp_path).get_snapshot("7203")
+
+    # (a) the persisted bytes are never overwritten with fabricated data
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == original_sha
+    # (b) the returned board is advertised as synthetic, not as an exchange feed
+    assert snapshot.provenance.provider == SYNTHETIC_PROVIDER
+    assert snapshot.provenance.license_class is LicenseClass.SYNTHETIC
+    assert any(note.startswith("degraded:") for note in snapshot.provenance.notes)
+    # (c) the corruption survives as a durable record keyed by the damaged bytes
+    ledger = tmp_path / CORRUPT_READ_LEDGER
+    records = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 1
+    assert records[0]["symbol"] == "7203"
+    assert records[0]["sha256"] == original_sha
+    assert records[0]["error_type"] == "JSONDecodeError"
+
+
+def test_repeated_corrupt_reads_neither_grow_ledger_nor_touch_file(tmp_path: Path) -> None:
+    path, original_sha = _write_corrupt_snapshot(tmp_path)
+    service = OrderbookService(tmp_path)
+
+    for _ in range(3):
+        service.get_snapshot("7203")
+
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == original_sha
+    ledger = tmp_path / CORRUPT_READ_LEDGER
+    assert len(ledger.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_schema_mismatch_snapshot_is_not_trusted(tmp_path: Path) -> None:
+    path = tmp_path / "7203" / "latest.json"
+    path.parent.mkdir(parents=True)
+    # Valid JSON, invalid orderbook: a negative price fails OrderbookLevel validation.
+    path.write_bytes(b'{"symbol": "7203", "bids": [{"price": -1.0, "size": 10.0}], "asks": []}')
+    original_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    snapshot = OrderbookService(tmp_path).get_snapshot("7203")
+
+    assert snapshot.provenance.license_class is LicenseClass.SYNTHETIC
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == original_sha
+    assert (tmp_path / CORRUPT_READ_LEDGER).exists()
+
+
+def test_valid_snapshot_path_is_unchanged(tmp_path: Path) -> None:
+    service = OrderbookService(tmp_path)
+    bids = [OrderbookLevel(price=100.0, size=10.0)]
+    asks = [OrderbookLevel(price=101.0, size=10.0)]
+    recorded = service.record_snapshot(
+        OrderbookSnapshot(
+            symbol="7203",
+            bids=bids,
+            asks=asks,
+            metrics=compute_orderbook_metrics(bids, asks),
+            provenance=Provenance(
+                provider="jpx-tse-feed",
+                source="captured feed",
+                license_class=LicenseClass.OFFICIAL_PUBLIC,
+                retrieved_at=datetime.now(UTC),
+            ),
+        )
+    )
+
+    loaded = service.get_snapshot("7203")
+
+    assert loaded.provenance.provider == "jpx-tse-feed"
+    assert loaded.provenance.license_class is LicenseClass.OFFICIAL_PUBLIC
+    assert loaded.bids == recorded.bids
+    assert loaded.as_of == recorded.as_of
+    assert not (tmp_path / CORRUPT_READ_LEDGER).exists()
+
+
+def test_missing_snapshot_bootstraps_synthetic_board(tmp_path: Path) -> None:
+    service = OrderbookService(tmp_path)
+
+    snapshot = service.get_snapshot("BTC/USD")
+
+    assert snapshot.provenance.provider == SYNTHETIC_PROVIDER
+    assert snapshot.provenance.license_class is LicenseClass.SYNTHETIC
+    persisted = json.loads((tmp_path / "BTC_USD" / "latest.json").read_text(encoding="utf-8"))
+    assert persisted["provenance"]["provider"] == SYNTHETIC_PROVIDER
+    assert persisted["provenance"]["license_class"] == "synthetic"
+    assert not (tmp_path / CORRUPT_READ_LEDGER).exists()

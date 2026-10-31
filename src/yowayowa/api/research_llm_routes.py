@@ -31,6 +31,10 @@ from yowayowa.services.research_brief import (
     persist_research_brief,
     read_latest_research_brief,
 )
+from yowayowa.vercel_observability import (
+    UPSTREAM_UNAVAILABLE_DETAIL,
+    log_upstream_exception,
+)
 
 router = APIRouter(prefix="/v1/research", dependencies=[Depends(require_api_token)])
 
@@ -84,8 +88,8 @@ def post_research_ask(
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
     except Exception as exc:
-        detail = f"Research ask error: {type(exc).__name__}: {exc}"
-        raise HTTPException(status_code=502, detail=detail) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.post("/brief", response_model=ResearchBriefHttpResponse)
@@ -108,8 +112,8 @@ def post_research_brief(
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
     except Exception as exc:
-        detail = f"Brief generation error: {type(exc).__name__}: {exc}"
-        raise HTTPException(status_code=502, detail=detail) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
     return ResearchBriefHttpResponse(brief=brief, persisted=persisted)
 
 

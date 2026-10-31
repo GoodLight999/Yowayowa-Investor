@@ -25,6 +25,10 @@ from yowayowa.services.codex_cli import (
     codex_cli_status,
     start_codex_login,
 )
+from yowayowa.vercel_observability import (
+    UPSTREAM_UNAVAILABLE_DETAIL,
+    log_upstream_exception,
+)
 
 router = APIRouter(prefix="/v1/ai", dependencies=[Depends(require_api_token)])
 
@@ -90,8 +94,8 @@ def ai_chat(
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
     except Exception as exc:
-        detail = f"AI provider error: {type(exc).__name__}: {exc}"
-        raise HTTPException(status_code=502, detail=detail) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.post("/chat", response_model=AIChatResponse, operation_id="ai_chat")
@@ -212,5 +216,5 @@ def ai_prompt_packet(
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
     except Exception as exc:
-        detail = f"Prompt packet error: {type(exc).__name__}: {exc}"
-        raise HTTPException(status_code=502, detail=detail) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc

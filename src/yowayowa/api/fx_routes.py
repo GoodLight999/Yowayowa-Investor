@@ -16,6 +16,10 @@ from yowayowa.fx_models import (
 )
 from yowayowa.providers.frankfurter import ECB_REFERENCE_CURRENCIES
 from yowayowa.providers.registry import frankfurter_fx_provider, yahoo_market_provider
+from yowayowa.vercel_observability import (
+    UPSTREAM_UNAVAILABLE_DETAIL,
+    log_upstream_exception,
+)
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_token)])
 
@@ -81,7 +85,8 @@ def fx_rate(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/fx/history", response_model=FxHistory)
@@ -99,7 +104,8 @@ def fx_history(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/fx/proposal", response_model=FxProposalSpec)
@@ -116,7 +122,8 @@ def fx_proposal(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
     return build_fx_proposal(
         normalized,
         direction,

@@ -84,6 +84,26 @@ def _beta_and_correlation(left: FloatArray, right: FloatArray) -> tuple[float | 
     return beta, correlation
 
 
+def _benchmark_missing_reason(benchmark_status: str, aligned_observations: int) -> str:
+    """P5 R10: machine-readable reason why benchmark_correlation is None.
+
+    ``benchmark_status`` arrives from the historical-data provider and
+    distinguishes a provider-level failure from a missing ticker.
+    ``aligned_observations`` is the number of dates on which both portfolio
+    and benchmark returns survive the join+dropna — i.e. the count used for
+    the correlation calculation.
+    """
+    if benchmark_status == "provider_error":
+        return "provider_error"
+    if benchmark_status == "symbol_not_found":
+        return "symbol_not_found"
+    if benchmark_status == "ok" and aligned_observations < 2:
+        return "insufficient_data"
+    if benchmark_status == "ok":
+        return "zero_variance"
+    return "unknown"
+
+
 def _empty_result(
     portfolio: Portfolio,
     valuation: PortfolioAnalytics,
@@ -107,6 +127,8 @@ def _empty_result(
         covered_gross_weight=0.0,
         unavailable_symbols=unavailable,
         risk_free_rate=risk_free_rate,
+        benchmark_correlation_missing=True,
+        benchmark_correlation_missing_reason=_benchmark_missing_reason(history.benchmark_status, 0),
         notes=[
             "Historical risk metrics are unavailable because no priced position has usable "
             "historical return coverage.",
@@ -206,6 +228,16 @@ def portfolio_risk_analytics(
         beta, benchmark_correlation = _beta_and_correlation(
             benchmark_matrix[:, 0], benchmark_matrix[:, 1]
         )
+    # P5 R10: surface WHY the benchmark correlation is absent instead of
+    # silently degrading to `None`.  The reason is derived from the provider's
+    # benchmark_status (provider_error / symbol_not_found) and, when the
+    # provider reports "ok", from how many aligned observations survived.
+    benchmark_correlation_missing = benchmark_correlation is None
+    benchmark_correlation_missing_reason: str | None = (
+        _benchmark_missing_reason(history.benchmark_status, int(benchmark_matrix.shape[0]))
+        if benchmark_correlation_missing
+        else None
+    )
 
     covariance_matrix = np.atleast_2d(np.cov(matrix, rowvar=False, ddof=1))
     portfolio_variance = float(normalized_weights @ covariance_matrix @ normalized_weights)
@@ -286,6 +318,8 @@ def portfolio_risk_analytics(
         expected_shortfall_95=expected_shortfall_95,
         beta=beta,
         benchmark_correlation=benchmark_correlation,
+        benchmark_correlation_missing=benchmark_correlation_missing,
+        benchmark_correlation_missing_reason=benchmark_correlation_missing_reason,
         gross_exposure=valuation.gross_market_value,
         net_exposure=valuation.net_market_value,
         largest_position_weight=valuation.largest_position_weight,

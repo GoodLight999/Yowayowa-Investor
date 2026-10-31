@@ -18,8 +18,15 @@ import typer
 from rich import print
 from rich.table import Table
 
+from yowayowa.acquisition.snapshots import corrupt_rows_note
 from yowayowa.config import get_settings
-from yowayowa.stock_acquisition import StockOhlcvStore, default_store, fetch_stock_ohlcv
+from yowayowa.stock_acquisition import (
+    StockOhlcvStore,
+    default_store,
+    fetch_stock_ohlcv,
+    persisted_freshness,
+    utc_now,
+)
 from yowayowa.stock_models import normalize_stock_symbol
 
 DEFAULT_SYMBOLS = (
@@ -38,6 +45,15 @@ DEFAULT_SYMBOLS = (
     "QQQ",
     "IWM",
 )
+
+
+def _print_corrupt_rows(diagnostics: dict[str, dict[str, Any]]) -> None:
+    """Surface skipped JSONL rows: their keys count as unseen, so rows repeat."""
+
+    for symbol, symbol_diagnostics in sorted(diagnostics.items()):
+        note = corrupt_rows_note(symbol_diagnostics)
+        if note is not None:
+            print(f"[yellow]{symbol}: {note}; rows may have been persisted again[/yellow]")
 
 
 def _providers() -> dict[str, Any]:
@@ -61,17 +77,34 @@ def stock_fetch(
             normalized.append(normalize_stock_symbol(raw))
         except ValueError as exc:
             raise typer.BadParameter(str(exc)) from exc
-    summary = fetch_stock_ohlcv(_providers(), default_store(), normalized, days=days)
+    diagnostics: dict[str, dict[str, Any]] = {}
+    summary = fetch_stock_ohlcv(
+        _providers(), default_store(), normalized, days=days, diagnostics=diagnostics
+    )
+    store = default_store()
+    now = utc_now()
     total = 0
+    worst_lag = 0
     for symbol, per_provider in summary.items():
+        freshness = persisted_freshness(store, symbol, now=now)
+        tail = ""
+        if freshness is not None:
+            lag = int(freshness["session_lag"])
+            worst_lag = max(worst_lag, lag)
+            tail = f", newest bar {freshness['bar_date'].isoformat()}, lag {lag}"
+            if lag >= 1:
+                tail += " [LATE]"
         for provider_name, outcome in per_provider.items():
             error = outcome.get("error")
             if error:
                 print(f"[yellow]{symbol}/{provider_name}: {error}[/yellow]")
             else:
                 total += int(outcome.get("persisted", 0))
-                print(f"{symbol}/{provider_name}: persisted {outcome['persisted']} rows")
-    print(f"Store: {default_store().root}")
+                print(f"{symbol}/{provider_name}: persisted {outcome['persisted']} rows{tail}")
+    _print_corrupt_rows(diagnostics)
+    if worst_lag >= 1:
+        print(f"[yellow]freshness: behind by {worst_lag} session(s)[/yellow]")
+    print(f"Store: {store.root}")
     print(f"+{total} rows")
 
 

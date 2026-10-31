@@ -1,0 +1,156 @@
+{
+ "evidence": "comparison line review round 2 (t_dddae39e)",
+ "generated_at": "2026-10-23T01:25:41.119398+00:00",
+ "what_this_proves": "The round-1 comparison line reported Book C vs EQUITY_EW while the benchmark held nothing but cash (benchmark_cum_pnl 0.0, vs_benchmark_pp_cum 0.9858pp). With the same journal, the fixed code returns None plus comparison_reason='benchmark_has_no_fill' for C, and leaves every Book A / CRYPTO_1N / C existing field byte-identical.",
+ "week_end": "2026-10-19",
+ "data_dir": "/root/.hermes/profiles/worker-go/cache/scratch/probe_dddae39e_r2/data",
+ "journal_sha256": "ed12c32a717d730a6fccc983620cd6c70a4423216499585ad7605b57179c2428",
+ "journal_unchanged_by_reading": {
+  "old": true,
+  "new": true
+ },
+ "code": {
+  "old": {
+   "sha256": "5572700777926e48e155ac2f370ca93c427815ac44361e9a16620ae5f728129f",
+   "module": "/root/.hermes/profiles/worker-go/cache/scratch/wt_old_r2/src/yowayowa/paperloop.py"
+  },
+  "new": {
+   "sha256": "7f5e6589a294aa69d6a0129371ca3caa1e71b3d3ff0379e38ed086f70a92eace",
+   "module": "/root/current-work/yowayowa-investor/src/yowayowa/paperloop.py"
+  }
+ },
+ "top_level_vs_benchmark_pp_cum": {
+  "old": 0.19951597133428534,
+  "new": 0.19951597133428534
+ },
+ "books": {
+  "A": {
+   "old_comparison_fields": {
+    "benchmark_book": "CRYPTO_1N",
+    "cum_pnl": -0.03344680388173804,
+    "max_drawdown": -0.041268668233111594,
+    "benchmark_cum_pnl": -0.035441963595080894,
+    "benchmark_max_drawdown": -0.04322386519071719,
+    "vs_benchmark_pp_cum": 0.19951597133428534,
+    "dd_vs_benchmark_ratio": 0.9547658001204044
+   },
+   "new_comparison_fields": {
+    "benchmark_book": "CRYPTO_1N",
+    "cum_pnl": -0.03344680388173804,
+    "max_drawdown": -0.041268668233111594,
+    "benchmark_cum_pnl": -0.035441963595080894,
+    "benchmark_max_drawdown": -0.04322386519071719,
+    "vs_benchmark_pp_cum": 0.19951597133428534,
+    "dd_vs_benchmark_ratio": 0.9547658001204044
+   },
+   "new_comparison_start": "2026-10-10",
+   "new_comparison_reason": null,
+   "existing_fields_identical": true,
+   "comparison_fields_identical": true
+  },
+  "C": {
+   "old_comparison_fields": {
+    "benchmark_book": "EQUITY_EW",
+    "cum_pnl": 0.006344189779700082,
+    "max_drawdown": -0.0034799531459484,
+    "benchmark_cum_pnl": 0.0,
+    "benchmark_max_drawdown": 0.0,
+    "vs_benchmark_pp_cum": 0.6344189779700082,
+    "dd_vs_benchmark_ratio": null
+   },
+   "new_comparison_fields": {
+    "benchmark_book": "EQUITY_EW",
+    "cum_pnl": null,
+    "max_drawdown": null,
+    "benchmark_cum_pnl": null,
+    "benchmark_max_drawdown": null,
+    "vs_benchmark_pp_cum": null,
+    "dd_vs_benchmark_ratio": null
+   },
+   "new_comparison_start": null,
+   "new_comparison_reason": "benchmark_has_no_fill",
+   "existing_fields_identical": true,
+   "comparison_fields_identical": false
+  },
+  "CRYPTO_1N": {
+   "old_comparison_fields": {
+    "benchmark_book": null,
+    "cum_pnl": null,
+    "max_drawdown": null,
+    "benchmark_cum_pnl": null,
+    "benchmark_max_drawdown": null,
+    "vs_benchmark_pp_cum": null,
+    "dd_vs_benchmark_ratio": null
+   },
+   "new_comparison_fields": {
+    "benchmark_book": null,
+    "cum_pnl": null,
+    "max_drawdown": null,
+    "benchmark_cum_pnl": null,
+    "benchmark_max_drawdown": null,
+    "vs_benchmark_pp_cum": null,
+    "dd_vs_benchmark_ratio": null
+   },
+   "new_comparison_start": null,
+   "new_comparison_reason": null,
+   "existing_fields_identical": true,
+   "comparison_fields_identical": true
+  },
+  "EQUITY_EW": {
+   "old_comparison_fields": {
+    "benchmark_book": null,
+    "cum_pnl": null,
+    "max_drawdown": null,
+    "benchmark_cum_pnl": null,
+    "benchmark_max_drawdown": null,
+    "vs_benchmark_pp_cum": null,
+    "dd_vs_benchmark_ratio": null
+   },
+   "new_comparison_fields": {
+    "benchmark_book": null,
+    "cum_pnl": null,
+    "max_drawdown": null,
+    "benchmark_cum_pnl": null,
+    "benchmark_max_drawdown": null,
+    "vs_benchmark_pp_cum": null,
+    "dd_vs_benchmark_ratio": null
+   },
+   "new_comparison_start": null,
+   "new_comparison_reason": null,
+   "existing_fields_identical": true,
+   "comparison_fields_identical": true
+  }
+ },
+ "reproduce": {
+  "old_tree": "git worktree add <dir> 13cbc6c  (round-1 paperloop.py sha 5572700777...)",
+  "new_tree": "the card commit b5f1448 (paperloop.py sha 7f5e6589...)",
+  "data": "a COPY of data/ (journal sha ed12c32a...); the real journal is only read",
+  "run": "PYTHONPATH=<tree>/src python gen_evidence.py <copy>/data <out>.json <label> 2026-10-19",
+  "note": "gen_evidence.py lives in the worker scratch dir; it only calls weekly_summary and writes the copy's weekly_summary.jsonl"
+ },
+ "verification": {
+  "paperloop_verify": {
+   "command": ".venv/bin/python -m yowayowa.paperloop_verify --data-dir ./data --from 2026-10-10 --to 2026-10-23",
+   "exit_code": 0,
+   "rows": 261,
+   "chain_ok": true,
+   "anchors_ok": true,
+   "failed_checks": [],
+   "R1_match": "32/32",
+   "R2_match": "32/32",
+   "R3_revised": 0,
+   "journal_sha256_unchanged": "ed12c32a717d730a6fccc983620cd6c70a4423216499585ad7605b57179c2428"
+  },
+  "tests": {
+   "tests/test_paperloop.py": {
+    "test_functions": 24,
+    "run": "one test at a time (TZ=UTC PYTHONPATH=. pytest tests/test_paperloop.py::<name> -q); the whole file exceeds 400 s on this host",
+    "result": "24/24 rc=0 (2 of them added in this round: test_comparison_line_*)"
+   },
+   "tests/test_paperloop_v12.py": {
+    "result": "19 passed, rc=0"
+   }
+  },
+  "lint": "ruff check/format on the changed files: no new findings (pre-existing SIM113/E501/I001 left untouched)"
+ }
+}

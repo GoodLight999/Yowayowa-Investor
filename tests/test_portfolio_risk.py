@@ -178,3 +178,107 @@ def test_yahoo_risk_close_frame_normalizes_yfinance_multiindex() -> None:
     assert list(close.columns) == ["AAA", "BBB"]
     assert close.loc[index[0], "AAA"] == pytest.approx(10.0)
     assert close.loc[index[1], "BBB"] == pytest.approx(21.0)
+
+
+def _benchmark_history(
+    portfolio_index: pd.DatetimeIndex,
+    benchmark: pd.Series,
+    benchmark_status: str = "ok",
+) -> HistoricalReturnData:
+    """Build an HistoricalReturnData with LONG/SHORT coverage matching the index."""
+    returns = pd.DataFrame(
+        {
+            "LONG": [0.01, -0.02, 0.015, 0.005, -0.004],
+            "SHORT": [0.03, -0.01, 0.02, -0.04, 0.01],
+        },
+        index=portfolio_index,
+    )
+    return HistoricalReturnData(
+        returns=returns,
+        benchmark_returns=benchmark,
+        unavailable_symbols=[],
+        provenance=_provenance("history"),
+        benchmark_status=benchmark_status,
+    )
+
+
+def test_portfolio_risk_benchmark_correlation_present_on_success() -> None:
+    """P5 R10 case 1: benchmark data is available and correlation is computed."""
+    portfolio, valuation = _portfolio_and_valuation()
+    index = pd.date_range("2026-08-03", periods=5, tz="UTC")
+    benchmark = pd.Series([0.005, -0.01, 0.012, 0.003, -0.002], index=index, name="^GSPC")
+    history = _benchmark_history(index, benchmark)
+
+    result = portfolio_risk_analytics(portfolio, valuation, history, benchmark="^GSPC", period="1y")
+
+    assert result.benchmark_correlation is not None
+    assert result.benchmark_correlation_missing is False
+    assert result.benchmark_correlation_missing_reason is None
+
+
+def test_portfolio_risk_benchmark_correlation_missing_on_unknown_symbol() -> None:
+    """P5 R10 case 2: benchmark ticker not found by the provider."""
+    portfolio, valuation = _portfolio_and_valuation()
+    index = pd.date_range("2026-08-03", periods=5, tz="UTC")
+    history = _benchmark_history(
+        index,
+        pd.Series(dtype=float, name="^TOPX"),
+        benchmark_status="symbol_not_found",
+    )
+
+    result = portfolio_risk_analytics(portfolio, valuation, history, benchmark="^TOPX", period="1y")
+
+    assert result.benchmark_correlation is None
+    assert result.benchmark_correlation_missing is True
+    assert result.benchmark_correlation_missing_reason == "symbol_not_found"
+
+
+def test_portfolio_risk_benchmark_correlation_missing_on_provider_error() -> None:
+    """P5 R10 case 3: provider raised an exception during download."""
+    portfolio, valuation = _portfolio_and_valuation()
+    index = pd.date_range("2026-08-03", periods=5, tz="UTC")
+    history = _benchmark_history(
+        index,
+        pd.Series(dtype=float, name="^GSPC"),
+        benchmark_status="provider_error",
+    )
+
+    result = portfolio_risk_analytics(portfolio, valuation, history, benchmark="^GSPC", period="1y")
+
+    assert result.benchmark_correlation is None
+    assert result.benchmark_correlation_missing is True
+    assert result.benchmark_correlation_missing_reason == "provider_error"
+
+
+def test_portfolio_risk_benchmark_correlation_missing_on_insufficient_data() -> None:
+    """P5 R10 case 4: benchmark found but too few aligned observations."""
+    portfolio, valuation = _portfolio_and_valuation()
+    index = pd.date_range("2026-08-03", periods=5, tz="UTC")
+    # Benchmark only has data on the first date — 1 aligned obs < 2 required.
+    benchmark = pd.Series([0.005], index=[index[0]], name="^GSPC")
+    history = _benchmark_history(index, benchmark, benchmark_status="ok")
+
+    result = portfolio_risk_analytics(portfolio, valuation, history, benchmark="^GSPC", period="1y")
+
+    assert result.benchmark_correlation is None
+    assert result.benchmark_correlation_missing is True
+    assert result.benchmark_correlation_missing_reason == "insufficient_data"
+
+
+def test_portfolio_risk_empty_result_carries_benchmark_reason() -> None:
+    """When no positions have history the _empty_result path still explains
+    why benchmark_correlation is absent."""
+    portfolio, valuation = _portfolio_and_valuation()
+    history = HistoricalReturnData(
+        returns=pd.DataFrame(),
+        benchmark_returns=pd.Series(dtype=float, name="^GSPC"),
+        unavailable_symbols=["LONG", "SHORT"],
+        provenance=_provenance("history"),
+        benchmark_status="symbol_not_found",
+    )
+
+    result = portfolio_risk_analytics(portfolio, valuation, history, benchmark="^GSPC", period="1y")
+
+    assert result.benchmark_correlation is None
+    assert result.benchmark_correlation_missing is True
+    assert result.benchmark_correlation_missing_reason == "symbol_not_found"

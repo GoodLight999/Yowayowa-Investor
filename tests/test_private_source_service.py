@@ -6,10 +6,13 @@ access happens. Fixture mail bodies use fictional companies and dates.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from yowayowa.acquisition.mailbox import MailboxAccessError, MailboxMessage
 from yowayowa.acquisition.models import AcquisitionFetchState, AuthState
@@ -18,6 +21,7 @@ from yowayowa.services.private_source_service import (
     PrivateMailboxSource,
     PrivateMessageFingerprintStore,
     PrivateSourceFetchOutcome,
+    PrivateSourceRegistryError,
     PrivateSourceRegistryStore,
     PrivateSourceService,
     body_sha256,
@@ -403,10 +407,127 @@ def test_registry_store_ignores_malformed_entries(tmp_path: Path) -> None:
 
 
 def test_registry_store_tolerates_broken_json(tmp_path: Path) -> None:
+    """A corrupt registry is an explicit error, never an empty source list."""
+
     store = PrivateSourceRegistryStore(root=tmp_path / "private-sources")
     store.root.mkdir(parents=True, exist_ok=True)
     store.path.write_text("{not-json", encoding="utf-8")
-    assert store.load() == []
+
+    with pytest.raises(PrivateSourceRegistryError):
+        store.load()
+
+
+def test_registry_store_refuses_to_save_over_unreadable_file(tmp_path: Path) -> None:
+    store = PrivateSourceRegistryStore(root=tmp_path / "private-sources")
+    store.root.mkdir(parents=True, exist_ok=True)
+    store.path.write_text('[{"source_id": ', encoding="utf-8")
+    before = store.path.read_bytes()
+
+    with pytest.raises(PrivateSourceRegistryError):
+        store.save([source()])
+
+    assert store.path.read_bytes() == before
+
+
+def test_registry_store_refuses_to_overwrite_invalid_entries(tmp_path: Path) -> None:
+    """Entries that no longer validate block the write instead of vanishing."""
+
+    store = PrivateSourceRegistryStore(root=tmp_path / "private-sources")
+    store.root.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        json.dumps([{"source_id": "!!invalid!!"}, source().model_dump(mode="json")]),
+        encoding="utf-8",
+    )
+
+    assert [item.source_id for item in store.load()] == ["sample-alerts"]
+    with pytest.raises(PrivateSourceRegistryError):
+        store.save([source()])
+    assert "!!invalid!!" in store.path.read_text(encoding="utf-8")
+
+
+def test_corrupt_registry_fails_closed_instead_of_zero_sources(tmp_path: Path) -> None:
+    """B19-equivalent: a corrupt ``sources.json`` never reads as "no sources".
+
+    Silent-empty used to stop mailbox ingestion without a trace and let a later
+    rebuild overwrite the file with whatever was passed in. Now the service
+    reports the registry error, refuses writes, and leaves the file untouched.
+    """
+
+    sources_dir = tmp_path / "private-sources"
+    sources_dir.mkdir(parents=True)
+    path = sources_dir / "sources.json"
+    path.write_text("{not valid json", encoding="utf-8")
+    sha_before = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    svc = PrivateSourceService(
+        data_dir=tmp_path,
+        reader_factory=lambda _: FakeReader([]),
+        now=lambda: FIXED_NOW,
+    )
+
+    # (a) never a normal, empty source list
+    with pytest.raises(PrivateSourceRegistryError):
+        svc.list_sources()
+    with pytest.raises(PrivateSourceRegistryError):
+        svc.get_source("sample-alerts")
+
+    outcome = svc.fetch("sample-alerts")
+    assert outcome.fetch_state is AcquisitionFetchState.FAILED
+    assert outcome.notes[0].startswith("private-source registry unusable")
+    assert "unknown private source: sample-alerts" in outcome.notes
+
+    # (c) the recovery procedure is recorded on the error the caller sees
+    assert svc.registry_error is not None
+    assert "restore the file from backup" in str(svc.registry_error)
+    assert f"{path}.corrupt" in str(svc.registry_error)
+
+    # (b) the corrupt file is left byte-identical: not rewritten, not deleted
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == sha_before
+
+
+def test_registry_with_invalid_entries_is_an_explicit_error(tmp_path: Path) -> None:
+    """A registry whose entries no longer validate is not a partial success."""
+
+    sources_dir = tmp_path / "private-sources"
+    sources_dir.mkdir(parents=True)
+    (sources_dir / "sources.json").write_text(
+        json.dumps([{"source_id": "!!invalid!!"}]), encoding="utf-8"
+    )
+
+    svc = PrivateSourceService(
+        data_dir=tmp_path,
+        reader_factory=lambda _: FakeReader([]),
+        now=lambda: FIXED_NOW,
+    )
+
+    assert svc.registry_error is not None
+    with pytest.raises(PrivateSourceRegistryError):
+        svc.list_sources()
+    outcome = svc.fetch("sample-alerts")
+    assert outcome.notes[0].startswith("private-source registry unusable")
+
+
+def test_corrupt_registry_is_never_overwritten_by_supplied_sources(tmp_path: Path) -> None:
+    """Rebuilding with a ``sources`` argument must not clobber a corrupt registry."""
+
+    sources_dir = tmp_path / "private-sources"
+    sources_dir.mkdir(parents=True)
+    path = sources_dir / "sources.json"
+    path.write_text("{not valid json", encoding="utf-8")
+    before = path.read_bytes()
+
+    svc = service(tmp_path, FakeReader([]))
+
+    assert svc.registry_error is not None
+    # The supplied source still works in memory...
+    assert [item.source_id for item in svc.list_sources()] == ["sample-alerts"]
+    # ...and the run reports the broken registry instead of a clean success.
+    fetched = svc.fetch("sample-alerts")
+    assert fetched.notes[0].startswith("private-source registry unusable")
+    # ...but nothing may be written over the unreadable file.
+    with pytest.raises(PrivateSourceRegistryError):
+        svc.add_source(source("second-alerts"))
+    assert path.read_bytes() == before
 
 
 def test_get_source_returns_none_for_unknown(tmp_path: Path) -> None:

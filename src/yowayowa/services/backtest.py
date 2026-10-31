@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import json
 import math
 import random
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from itertools import pairwise
+from pathlib import Path
 from statistics import fmean, stdev
 from typing import Any, Literal
 
 from yowayowa.backtest_models import (
+    VOLATILITY_TARGET_SYMBOL,
     BacktestEquityPoint,
     BacktestMetric,
     BacktestMetrics,
@@ -23,7 +26,107 @@ from yowayowa.services.backtest_definitions import get_strategy, list_strategies
 
 MIN_RETURN_SAMPLES = 20
 TRADING_DAYS_PER_YEAR = 252
+MOMENTUM_LONG = 252
+MOMENTUM_SKIP = 21
+RISK_ON_RETURN_WINDOW = 20
+RISK_ON_SMA = 100
+DEFENSIVE_VOL_WINDOW = 60
+DEFENSIVE_SUBSET = ("JNJ", "PG", "XOM", "JPM")
+GROWTH_SELECT = 5
+DEFENSIVE_SELECT = 3
+GARP_MOMENTUM_CANDIDATE_SELECT = 8
+GARP_PBR_SELECT = 5
+_SPLIT_FACTORS = tuple(
+    [1 / divisor for divisor in (2, 3, 4, 5, 7, 10, 15, 20, 25, 50, 100)]
+    + [float(divisor) for divisor in (2, 3, 4, 5, 10, 20)]
+)
+_SPLIT_TOLERANCE = 0.08
 __all__ = ["get_strategy", "list_strategies", "run_backtest"]
+
+
+def _load_split_calendar(
+    split_calendar: Mapping[str, Any] | None = None,
+    calendar_path: Path | None = None,
+) -> tuple[dict[str, dict[date, float]], list[str]]:
+    """Load or normalize the corroborated split calendar.
+
+    Returns a mapping of uppercase symbol -> {effective_date: ratio} and any warnings.
+    """
+    cal_warnings: list[str] = []
+    raw_cal: Any = None
+
+    if split_calendar is not None:
+        raw_cal = split_calendar
+    else:
+        pkg_path = (
+            Path(__file__).resolve().parents[3]
+            / "data"
+            / "fundamentals"
+            / "pbr"
+            / "split-calendar.json"
+        )
+        cwd_path = Path("data/fundamentals/pbr/split-calendar.json")
+        candidates = [calendar_path] if calendar_path is not None else [pkg_path, cwd_path]
+        target_path: Path | None = None
+        for p in candidates:
+            if p is not None and p.is_file():
+                target_path = p
+                break
+
+        if target_path is None:
+            searched = str(calendar_path) if calendar_path is not None else str(pkg_path)
+            cal_warnings.append(
+                f"split calendar unavailable: file not found at {searched}; splits not adjusted"
+            )
+        else:
+            try:
+                raw_cal = json.loads(target_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                cal_warnings.append(
+                    f"split calendar unavailable: failed to read {target_path} ({exc}); "
+                    "splits not adjusted"
+                )
+
+    normalized: dict[str, dict[date, float]] = {}
+    if isinstance(raw_cal, Mapping):
+        for sym, events in raw_cal.items():
+            sym_key = str(sym).strip().upper()
+            sym_dict: dict[date, float] = {}
+            if isinstance(events, Mapping):
+                for d_str, r in events.items():
+                    try:
+                        sym_dict[_date(d_str)] = float(r)
+                    except Exception as exc:
+                        cal_warnings.append(
+                            f"split calendar: skipped invalid entry for {sym_key} "
+                            f"({d_str}={r}): {exc}"
+                        )
+            elif isinstance(events, Sequence):
+                for item in events:
+                    if isinstance(item, Mapping) and "effective_date" in item and "ratio" in item:
+                        try:
+                            sym_dict[_date(item["effective_date"])] = float(item["ratio"])
+                        except Exception as exc:
+                            cal_warnings.append(
+                                f"split calendar: skipped invalid entry for {sym_key} "
+                                f"({item}): {exc}"
+                            )
+                    else:
+                        cal_warnings.append(
+                            f"split calendar: skipped invalid entry structure for {sym_key}: {item}"
+                        )
+            else:
+                cal_warnings.append(
+                    f"split calendar: skipped invalid events collection for {sym_key}: "
+                    f"{type(events).__name__}"
+                )
+            normalized[sym_key] = sym_dict
+    elif raw_cal is not None:
+        cal_warnings.append(
+            f"split calendar unavailable: expected mapping but got {type(raw_cal).__name__}; "
+            "splits not adjusted"
+        )
+    return normalized, cal_warnings
 
 
 def _metric(value: float | None, count: int, *, undefined: bool = False) -> BacktestMetric:
@@ -130,6 +233,79 @@ def _returns(prices: Sequence[float]) -> list[float]:
     return [current / prior - 1 for prior, current in pairwise(prices) if prior > 0]
 
 
+def _risk_on_regime(
+    rows_by_symbol: Mapping[str, Mapping[date, Mapping[str, Any]]],
+    decision_date: date,
+) -> bool:
+    """Lagged SPY gate; insufficient/invalid inputs fail closed, never imputed."""
+    rows = rows_by_symbol.get(VOLATILITY_TARGET_SYMBOL, {})
+    history = sorted(day for day in rows if day < decision_date)
+    if len(history) < RISK_ON_SMA:
+        return False
+    closes = [float(rows[day]["close"]) for day in history[-RISK_ON_SMA:]]
+    if not all(math.isfinite(value) and value > 0 for value in closes):
+        return False
+    return closes[-1] / closes[-(RISK_ON_RETURN_WINDOW + 1)] - 1 > 0 and closes[-1] > fmean(closes)
+
+
+def _garp_momentum_candidates(
+    strategy: BacktestStrategyDefinition,
+    rows_by_symbol: Mapping[str, Mapping[date, Mapping[str, Any]]],
+    decision_date: date,
+    *,
+    limit: int | None = GARP_MOMENTUM_CANDIDATE_SELECT,
+    missing_fundamentals: list[tuple[str, str]] | None = None,
+) -> list[tuple[str, float]]:
+    candidates: list[tuple[str, float]] = []
+    for symbol in strategy.universe:
+        rows = rows_by_symbol.get(symbol, {})
+        history = sorted(day for day in rows if day < decision_date)
+        reason = None
+        if len(history) < MOMENTUM_LONG + 1:
+            reason = "insufficient prior momentum history"
+        else:
+            try:
+                closes = [float(rows[day]["close"]) for day in history[-(MOMENTUM_LONG + 1) :]]
+                if not all(math.isfinite(value) and value > 0 for value in closes):
+                    reason = "invalid prior momentum prices"
+                else:
+                    momentum = closes[-(MOMENTUM_SKIP + 1)] / closes[0] - 1
+                    if math.isfinite(momentum):
+                        candidates.append((symbol, momentum))
+                    else:
+                        reason = "non-finite momentum"
+            except (KeyError, TypeError, ValueError, OverflowError):
+                reason = "invalid prior momentum prices"
+        if reason is not None and missing_fundamentals is not None:
+            missing_fundamentals.append((symbol, reason))
+    ranked = sorted(candidates, key=lambda item: (-item[1], item[0]))
+    return ranked if limit is None else ranked[:limit]
+
+
+def _garp_point_in_time_pbr(
+    rows: Mapping[date, Mapping[str, Any]], decision_date: date
+) -> float | None:
+    # Latest eligible BAR supplies the input; never fill its missing PBR from
+    # another row. An undisclosed newer row is not eligible in the first place.
+    eligible: list[date] = []
+    for day, row in rows.items():
+        if day >= decision_date:
+            continue
+        try:
+            disclosed = _date(row["disclosure_date"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if disclosed < decision_date:
+            eligible.append(day)
+    if not eligible:
+        return None
+    try:
+        pbr = float(rows[max(eligible)]["pbr"])
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None
+    return pbr if math.isfinite(pbr) and pbr > 0 else None
+
+
 def _target_weights(
     strategy: BacktestStrategyDefinition,
     rows_by_symbol: Mapping[str, Mapping[date, Mapping[str, Any]]],
@@ -137,6 +313,111 @@ def _target_weights(
     *,
     missing_fundamentals: list[tuple[str, str]] | None = None,
 ) -> dict[str, float]:
+    if strategy.signal == "garp_momentum_hybrid":
+        ranked = _garp_momentum_candidates(
+            strategy,
+            rows_by_symbol,
+            decision_date,
+            limit=None,
+            missing_fundamentals=missing_fundamentals,
+        )
+        target = dict.fromkeys(strategy.universe, 0.0)
+        if not ranked:
+            if missing_fundamentals is not None:
+                missing_fundamentals.append(
+                    ("portfolio", "no eligible momentum candidates; full liquidation")
+                )
+            return target
+        valued: list[tuple[str, float]] = []
+        for symbol, _ in ranked[:GARP_MOMENTUM_CANDIDATE_SELECT]:
+            pbr = _garp_point_in_time_pbr(rows_by_symbol[symbol], decision_date)
+            if pbr is not None:
+                valued.append((symbol, pbr))
+            elif missing_fundamentals is not None:
+                missing_fundamentals.append((symbol, "missing or invalid point-in-time PBR"))
+        if valued:
+            for symbol, _ in sorted(valued, key=lambda item: (item[1], item[0]))[:GARP_PBR_SELECT]:
+                target[symbol] = 1 / GARP_PBR_SELECT
+            return target
+        if missing_fundamentals is not None:
+            missing_fundamentals.append(
+                ("portfolio", "no valid candidate PBR; momentum-only fallback")
+            )
+        # Reuse the frozen momentum path, including max_positions, with equal
+        # weighting. Invalid momentum histories stay excluded. Explicit zeros
+        # only expand its keys; execution/metrics remain exactly the same.
+        eligible_symbols = {symbol for symbol, _ in ranked}
+        fallback_rows = {
+            symbol: rows_by_symbol.get(symbol, {}) if symbol in eligible_symbols else {}
+            for symbol in strategy.universe
+        }
+        momentum = _target_weights(
+            strategy.model_copy(update={"signal": "momentum_12_1", "weighting": "equal"}),
+            fallback_rows,
+            decision_date,
+        )
+        return {symbol: momentum.get(symbol, 0.0) for symbol in strategy.universe}
+
+    if strategy.signal == "defensive_rotation":
+        risk_on = _risk_on_regime(rows_by_symbol, decision_date)
+        candidates: list[tuple[str, float]] = []
+        for symbol in strategy.universe:
+            if not risk_on and symbol not in DEFENSIVE_SUBSET:
+                continue
+            rows = rows_by_symbol.get(symbol, {})
+            history = sorted(day for day in rows if day < decision_date)
+            required = MOMENTUM_LONG + 1 if risk_on else DEFENSIVE_VOL_WINDOW + 1
+            if len(history) < required:
+                continue
+            closes = [float(rows[day]["close"]) for day in history[-required:]]
+            if not all(math.isfinite(value) and value > 0 for value in closes):
+                continue
+            if risk_on:
+                value = closes[-(MOMENTUM_SKIP + 1)] / closes[-(MOMENTUM_LONG + 1)] - 1
+            else:
+                returns = _returns(closes)
+                if len(returns) != DEFENSIVE_VOL_WINDOW or not all(
+                    math.isfinite(value) for value in returns
+                ):
+                    continue
+                value = stdev(returns)
+            if math.isfinite(value):
+                candidates.append((symbol, value))
+        ranked = sorted(candidates, key=lambda item: (-item[1] if risk_on else item[1], item[0]))
+        selected_symbols = {
+            symbol for symbol, _ in ranked[: GROWTH_SELECT if risk_on else DEFENSIVE_SELECT]
+        }
+        # Growth slots are fixed at 20%; missing slots stay in cash. Defensive
+        # candidates share 1/N even when fewer than three are eligible.
+        weight = (
+            1 / GROWTH_SELECT if risk_on else 1 / len(selected_symbols) if selected_symbols else 0.0
+        )
+        return {
+            symbol: weight if symbol in selected_symbols else 0.0 for symbol in strategy.universe
+        }
+
+    if strategy.signal == "vol_target_defensive":
+        lookback = strategy.lookback or 21
+        target_vol = strategy.target_volatility if strategy.target_volatility is not None else 0.15
+        # Frozen US-equity convention: annualization_days=252, not crypto's 365.
+        sigma_star = target_vol / math.sqrt(252)
+        rows = rows_by_symbol.get(VOLATILITY_TARGET_SYMBOL, {})
+        history = sorted(day for day in rows if day < decision_date)
+        closes = [float(rows[day]["close"]) for day in history]
+        weight = 0.0
+        if len(closes) >= lookback + 1:
+            returns = _returns(closes[-(lookback + 1) :])
+            # Invalid prior prices can omit returns in _returns; never impute.
+            # statistics.stdev may raise on inf/nan, so fail closed first.
+            if len(returns) == lookback and all(math.isfinite(value) for value in returns):
+                sigma = stdev(returns)
+                if math.isfinite(sigma):
+                    weight = 1.0 if sigma == 0.0 else min(1.0, sigma_star / sigma)
+        target = {symbol: weight / len(strategy.universe) for symbol in strategy.universe}
+        assert sum(target.values()) <= 1 + 1e-12, "Volatility target must never use leverage"
+        # Explicit zeros liquidate old holdings; an empty dict would retain them.
+        return target
+
     if strategy.signal == "crypto_trend_dual_ma":
         lookback = strategy.lookback or 200
         active: list[str] = []
@@ -289,27 +570,151 @@ def run_backtest(
     histories: Mapping[str, Sequence[Mapping[str, Any]]],
     *,
     _include_oos: bool = True,
+    split_calendar: Mapping[str, Any] | None = None,
+    split_calendar_path: Path | None = None,
 ) -> BacktestRunResponse:
     if request.strategy_id != strategy.id:
         raise ValueError("request strategy_id does not match strategy definition")
     rows_by_symbol: dict[str, dict[date, Mapping[str, Any]]] = {}
     provenance: list[BacktestProvenance] = []
     warnings: list[str] = []
+    cal_by_symbol, cal_warnings = _load_split_calendar(
+        split_calendar=split_calendar, calendar_path=split_calendar_path
+    )
+    warnings.extend(cal_warnings)
     for symbol in strategy.universe:
-        rows: dict[date, Mapping[str, Any]] = {}
+        raw_rows: list[dict[str, Any]] = []
+        sessions_seen: set[date] = set()
         for row in histories.get(symbol, ()):
             if str(row.get("provider", request.provider)) != request.provider:
                 continue
             session = _date(row["as_of"])
             if session > request.end:
                 continue
-            close = float(row["close"])
-            opening = float(row.get("open", close))
+            close = float(row.get("adj_close", row.get("adjusted_close", row["close"])))
+            opening = float(row.get("adj_open", row.get("adjusted_open", row.get("open", close))))
             if not all(math.isfinite(price) and price > 0 for price in (close, opening)):
                 continue
-            if session in rows:
+            if session in sessions_seen:
                 raise ValueError(f"duplicate OHLCV session for {symbol} on {session}")
-            rows[session] = row
+            sessions_seen.add(session)
+            raw_rows.append(dict(row))
+
+        raw_rows.sort(key=lambda r: _date(r["as_of"]))
+        for r in raw_rows:
+            r["raw_open"] = float(r.get("open", r.get("close", 0.0)))
+        has_adj = any("adj_close" in r or "adjusted_close" in r for r in raw_rows)
+        if has_adj:
+            for r in raw_rows:
+                v_close = r.get("adj_close")
+                if v_close is None:
+                    v_close = r.get("adjusted_close")
+                if v_close is not None:
+                    r["close"] = float(v_close)
+
+                v_open = r.get("adj_open")
+                if v_open is None:
+                    v_open = r.get("adjusted_open")
+                if v_open is not None:
+                    r["open"] = float(v_open)
+
+                v_high = r.get("adj_high")
+                if v_high is None:
+                    v_high = r.get("adjusted_high")
+                if v_high is not None:
+                    r["high"] = float(v_high)
+
+                v_low = r.get("adj_low")
+                if v_low is None:
+                    v_low = r.get("adjusted_low")
+                if v_low is not None:
+                    r["low"] = float(v_low)
+        else:
+            sym_cal = cal_by_symbol.get(symbol.strip().upper(), {})
+            for i in range(1, len(raw_rows)):
+                prev = raw_rows[i - 1]
+                curr = raw_rows[i]
+                session_date = _date(curr["as_of"])
+                prev_close = float(prev["close"])
+                curr_open = float(curr.get("open", curr["close"]))
+                curr_close = float(curr["close"])
+                if prev_close <= 0 or curr_open <= 0 or curr_close <= 0:
+                    continue
+                ratio_open = curr_open / prev_close
+                ratio_close = curr_close / prev_close
+
+                factor = None
+                basis = None
+                ratio_val = None
+
+                # Source 1: SEC-confirmed split calendar
+                if session_date in sym_cal:
+                    cal_ratio = sym_cal[session_date]
+                    if cal_ratio > 0:
+                        expected_factor = 1.0 / cal_ratio
+                        if (
+                            abs(ratio_open - expected_factor) / expected_factor <= 0.15
+                            and abs(ratio_close - expected_factor) / expected_factor <= 0.15
+                        ):
+                            factor = expected_factor
+                            basis = "sec_calendar"
+                            ratio_val = cal_ratio
+
+                # Source 2: Explicit provider metadata (split_factor / split_ratio)
+                if factor is None and ("split_factor" in curr or "split_ratio" in curr):
+                    v_sf = curr.get("split_factor")
+                    if v_sf is None:
+                        v_sf = curr.get("split_ratio")
+                    if v_sf is not None:
+                        raw_sf = float(v_sf)
+                        if raw_sf > 1.0:
+                            exp_factor = 1.0 / raw_sf
+                            exp_ratio = raw_sf
+                        elif 0 < raw_sf < 1.0:
+                            exp_factor = raw_sf
+                            exp_ratio = 1.0 / raw_sf
+                        else:
+                            exp_factor = None
+                            exp_ratio = None
+
+                        if exp_factor is not None:
+                            if (
+                                abs(ratio_open - exp_factor) / exp_factor <= 0.15
+                                and abs(ratio_close - exp_factor) / exp_factor <= 0.15
+                            ):
+                                factor = exp_factor
+                                basis = "explicit_metadata"
+                                ratio_val = exp_ratio
+                            else:
+                                warnings.append(
+                                    f"Skipped uncorroborated split_factor={raw_sf:g} for "
+                                    f"{symbol} on {session_date}: observed ratio "
+                                    f"open={ratio_open:.4f}, close={ratio_close:.4f} did not "
+                                    f"match expected factor {exp_factor:.4f}"
+                                )
+
+                if factor is not None and abs(factor - 1.0) > 1e-4:
+                    for j in range(i):
+                        raw_rows[j]["close"] = float(raw_rows[j]["close"]) * factor
+                        if "open" in raw_rows[j]:
+                            raw_rows[j]["open"] = float(raw_rows[j]["open"]) * factor
+                        if "high" in raw_rows[j]:
+                            raw_rows[j]["high"] = float(raw_rows[j]["high"]) * factor
+                        if "low" in raw_rows[j]:
+                            raw_rows[j]["low"] = float(raw_rows[j]["low"]) * factor
+                    warnings.append(
+                        f"Split adjustment applied for {symbol} on {session_date}: "
+                        f"ratio={ratio_val:g}, basis={basis}"
+                    )
+                else:
+                    if abs(ratio_open - 1.0) > 0.15:
+                        warnings.append(
+                            f"Uncorroborated price discontinuity on {symbol} at {session_date}: "
+                            f"overnight open ratio {ratio_open:.4f}, close ratio "
+                            f"{ratio_close:.4f} (no adjustment applied)"
+                        )
+
+        rows: dict[date, Mapping[str, Any]] = {_date(r["as_of"]): r for r in raw_rows}
         rows_by_symbol[symbol] = rows
         for source in sorted({str(row.get("provider", request.provider)) for row in rows.values()}):
             source_rows = [
@@ -399,8 +804,15 @@ def run_backtest(
         "value_fundamental": 0,
         "kiyohara_value": 0,
         "crypto_trend_dual_ma": strategy.lookback or 200,
+        "vol_target_defensive": (strategy.lookback or 21) + 1,
+        "defensive_rotation": MOMENTUM_LONG + 1,
+        "garp_momentum_hybrid": MOMENTUM_LONG + 1,
     }[strategy.signal]
-    if strategy.weighting == "inverse_volatility" and strategy.signal != "crypto_trend_dual_ma":
+    if strategy.weighting == "inverse_volatility" and strategy.signal not in {
+        "crypto_trend_dual_ma",
+        "vol_target_defensive",
+        "defensive_rotation",
+    }:
         warmup = max(warmup, 61)
     for symbol, rows in rows_by_symbol.items():
         if sum(day < window_dates[0] for day in rows) < warmup:
@@ -484,7 +896,10 @@ def run_backtest(
                                 transaction_cost=traded * cost_rate,
                                 execution_price=float(
                                     rows_by_symbol[symbol][day].get(
-                                        "open", rows_by_symbol[symbol][day]["close"]
+                                        "raw_open",
+                                        rows_by_symbol[symbol][day].get(
+                                            "open", rows_by_symbol[symbol][day]["close"]
+                                        ),
                                     )
                                 ),
                             )
@@ -559,7 +974,8 @@ def run_backtest(
         f"Costs: {request.commission_bps:g} bps commission + "
         f"{request.slippage_bps:g} bps slippage, "
         "charged on one-way traded notional.",
-        "Raw OHLCV is used; dividends, split adjustments, taxes, market impact, borrow costs, "
+        "Raw OHLCV is adjusted for stock splits when corroborated by SEC split calendar "
+        "or explicit provider metadata; dividends, taxes, market impact, borrow costs, "
         "and delisting returns are not modeled.",
         "The configured universe is fixed, not point-in-time; survivorship bias may remain.",
         f"Bootstrap: IID daily-return resampling, 95% percentile interval, seed "
@@ -575,6 +991,44 @@ def run_backtest(
             f"Configured rebalance: {strategy.rebalance}; warmup/purge: {warmup} sessions."
         )
     is_metrics = None
+    if strategy.signal == "vol_target_defensive":
+        target_vol = strategy.target_volatility if strategy.target_volatility is not None else 0.15
+        assumptions[3] = (
+            f"Volatility target: sigma21 is the sample standard deviation of SPY's last "
+            f"{strategy.lookback or 21} daily session returns strictly before execution; "
+            f"sigma*={target_vol:g}/sqrt(252), w=min(1, sigma*/sigma21). "
+            f"Equity assets receive equal w/{len(strategy.universe)} weights "
+            "(four-asset S-02: w/4); residual 1-w is interest-free USD cash. "
+            "No leverage (w<=1 hard cap); insufficient history or non-finite sigma "
+            "fails closed to full liquidation; zero sigma receives w=1. "
+            f"Configured rebalance: {strategy.rebalance}; warmup/purge: {warmup} closes/sessions."
+        )
+    if strategy.signal == "defensive_rotation":
+        assumptions[3] = (
+            "Defensive rotation: R = (SPY last 20-session return > 0) AND "
+            "(SPY close(t-1) > SMA100(t-1)), using only closes strictly before execution. "
+            "Equality, insufficient or invalid history fails closed to risk-off. "
+            "Risk-on: top five 252-21 momentum assets receive 20% each; missing slots "
+            "remain cash. Risk-off: lowest sample-sigma60 of JNJ/PG/XOM/JPM intersected "
+            "with universe, up to three assets at equal 1/N; non-finite sigma excluded. "
+            "Every nonselected asset has explicit zero weight; no candidates means "
+            "full liquidation into interest-free USD cash. Generic weighting and "
+            "max_positions are ignored; no leverage. "
+            f"Configured rebalance: {strategy.rebalance}; warmup/purge: {warmup} closes/sessions."
+        )
+    if strategy.signal == "garp_momentum_hybrid":
+        assumptions[3] = (
+            "GARP two-stage ranking: top eight 252-21 momentum candidates, then up to "
+            "five lowest point-in-time PBR assets (symbol-ascending ties). Both bar "
+            "and disclosure dates must strictly precede execution; latest eligible "
+            "bar supplies PBR, finite and positive, without imputation or row joins. "
+            "Each selected PBR asset receives fixed 1/5; shortfall is interest-free "
+            "USD cash. Generic weighting/max_positions are ignored in this branch. "
+            "No valid candidate PBR delegates to equal-weight momentum using "
+            "max_positions. Every nonselected asset has explicit zero weight; "
+            "no momentum candidates means liquidation. No leverage. "
+            f"Configured rebalance: {strategy.rebalance}; warmup/purge: {warmup} closes/sessions."
+        )
     oos_start = None
     purged_sessions = 0
     if _include_oos:

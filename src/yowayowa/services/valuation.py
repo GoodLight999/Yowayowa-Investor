@@ -118,6 +118,26 @@ def _positive_ratio(numerator: float | None, denominator: float | None) -> float
     return numerator / denominator
 
 
+def _currency_note(
+    currency: str | None,
+    source: str | None,
+    reason: str | None,
+) -> str:
+    """Provenance sentence describing the price currency actually used (P5 R4)."""
+
+    if currency:
+        origin = f" from {source}" if source else ""
+        return (
+            f"Price and market-cap currency is {currency}{origin}; monetary multiples are "
+            "computed only when the financial-statement currency matches or is unknown."
+        )
+    detail = f" ({reason})" if reason else ""
+    return (
+        "Price currency is unavailable from the market provider"
+        f"{detail}; monetary multiples below are currency-unverified."
+    )
+
+
 def valuation_snapshot(
     fundamentals: Fundamentals,
     quote_batch: MarketQuoteBatch,
@@ -199,6 +219,7 @@ def valuation_snapshot(
                 *quote_batch.provenance.notes,
                 "Market capitalization is current quote multiplied by latest annual diluted shares "
                 "when both inputs are available.",
+                _currency_note(quote.currency, quote.currency_source, quote.currency_reason),
             ]
         }
     )
@@ -206,6 +227,12 @@ def valuation_snapshot(
         symbol=fundamentals.symbol,
         company_name=fundamentals.company_name,
         price=quote.price,
+        # One source for the price currency (P5 R4): the market quote. Nothing
+        # is re-derived here, so /v1/markets/quotes and /v1/valuation/{symbol}
+        # can never disagree about it.
+        currency=quote.currency,
+        currency_source=quote.currency_source,
+        currency_reason=quote.currency_reason,
         shares_diluted=shares,
         market_cap=market_cap,
         annual_period_end=max(annual_periods) if annual_periods else None,

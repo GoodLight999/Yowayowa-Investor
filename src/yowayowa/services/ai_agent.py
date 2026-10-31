@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -44,6 +45,7 @@ from yowayowa.services.portfolio_sizing import portfolio_sizing_proposals
 from yowayowa.services.portfolios import get_portfolio, list_portfolios, portfolio_analytics
 from yowayowa.services.screening import derived_metrics
 from yowayowa.services.screening_pipeline import read_screening_candidates
+from yowayowa.services.sizing_idea import build_quote_sizing_idea
 from yowayowa.services.strategy_calibration import calibration_report
 from yowayowa.services.strategy_outcomes import forward_outcome_report
 from yowayowa.services.strategy_presets import (
@@ -60,11 +62,68 @@ from yowayowa.services.strategy_yahoo import balance_sheet_supplement as yahoo_s
 from yowayowa.services.technical_context import read_technical_context
 from yowayowa.services.valuation import valuation_snapshot
 from yowayowa.services.watchlists import list_watchlists
-from yowayowa.sizing_models import PortfolioSizingRequest
+from yowayowa.sizing_models import PortfolioSizingRequest, QuoteSizingIdeaRequest
 from yowayowa.strategy_models import StrategyCandidateInput
 from yowayowa.symbols import normalize_symbol
 
 ToolHandler = Callable[[dict[str, Any]], Any]
+
+# Bounded 429 handling for the chat transports (t_ee4056a0). A 429 is a
+# scheduling signal, not a permanent failure: transient shapes (z.ai 1302
+# concurrency / 1305 overload / opaque bodies) get a short bounded backoff,
+# while period walls (1308 5-hour window, 1310/1316-1321 week-month limits,
+# 1309 plan expiry, 1313 fair-use, 1113 balance) cannot recover inside the
+# job, so they stop immediately with a short Japanese reason instead of a
+# raw traceback. Ref: skill zai-coding-plan-limits (error-code table).
+RATE_LIMIT_BACKOFF_SECONDS = (30, 90)
+RATE_LIMIT_NO_RETRY_CODES = frozenset({1113, 1308, 1309, 1310, 1311, 1313}) | frozenset(
+    range(1316, 1322)
+)
+RATE_LIMIT_REASON_JA: dict[int, str] = {
+    1113: "残高・リソースパッケージ不足。再試行では回復しない",
+    1302: "同時実行数の一時制限。時間を置けば回復見込み",
+    1305: "サービスの一時過負荷。時間を置けば回復見込み",
+    1308: "5時間利用枠の上限。次回リセット後に再実行",
+    1309: "プラン期限切れ。再試行では回復しない",
+    1310: "週次/月次利用枠の上限。次回リセット後に再実行",
+    1311: "プラン対象外モデル。再試行では回復しない",
+    1313: "フェアユースポリシーによる頻度制限。連打せず担当へ相談",
+}
+
+
+def _rate_limit_code(response: Any) -> int | None:
+    """Best-effort extraction of a z.ai-style rate-limit error code.
+
+    Real Z.AI bodies carry the code as a numeric string (``"1308"`` etc.),
+    so accept ints (bool excluded) and digit strings, preferring the
+    ``{"error": {"code": ...}}`` shape with a top-level ``code`` fallback.
+    """
+
+    with suppress(Exception):
+        payload = response.json()
+        if not isinstance(payload, dict):
+            return None
+        candidates: list[Any] = []
+        error = payload.get("error")
+        if isinstance(error, dict):
+            candidates.append(error.get("code"))
+        candidates.append(payload.get("code"))
+        for code in candidates:
+            if isinstance(code, bool):
+                continue
+            if isinstance(code, int):
+                return code
+            if isinstance(code, str) and code.strip().isdigit():
+                return int(code.strip())
+    return None
+
+
+def _rate_limit_reason_ja(code: int | None) -> str:
+    if code in RATE_LIMIT_REASON_JA:
+        return RATE_LIMIT_REASON_JA[code]
+    if code is not None and 1316 <= code <= 1321:
+        return "利用枠の上限。追加枠なし・次回リセット後に再実行"
+    return "レート制限。応答本文のコードを確認"
 
 
 class _BrokerReadProvider(Protocol):
@@ -928,6 +987,26 @@ class InvestmentResearchAgent:
                 self._tool_propose_portfolio_sizing,
             ),
             ToolSpec(
+                "build_quote_sizing_idea",
+                "Build one sizing idea for a symbol from the latest provider quote. Entry "
+                "price, price currency, and provenance come from the fetched quote and fail "
+                "closed when unresolved. Stop price and lot size are caller-supplied "
+                "assumptions and are never recommended here. Size the returned idea with "
+                "propose_portfolio_sizing; this tool never creates or sends orders.",
+                self._object_schema(
+                    {
+                        "symbol": {"type": "string", "minLength": 1, "maxLength": 32},
+                        "stop_price": {
+                            "type": "string",
+                            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+                        },
+                        "lot_size": {"type": "integer", "minimum": 1, "maximum": 1_000_000},
+                    },
+                    ["symbol", "stop_price", "lot_size"],
+                ),
+                self._tool_build_quote_sizing_idea,
+            ),
+            ToolSpec(
                 "get_alerts",
                 "Read configured price alerts.",
                 self._object_schema({}),
@@ -1044,6 +1123,12 @@ class InvestmentResearchAgent:
                 self._object_schema(
                     {
                         "run_date": {"type": "string"},
+                        "code": {
+                            "type": "string",
+                            "description": (
+                                "JPX code as persisted (4 or 5 digits); omit for every code."
+                            ),
+                        },
                         "limit": {"type": "integer"},
                     },
                 ),
@@ -1527,11 +1612,14 @@ class InvestmentResearchAgent:
 
     def _tool_screening_candidates(self, args: dict[str, Any]) -> Any:
         run_date = self._date_arg(args.get("run_date"))
+        raw_code = args.get("code")
+        code = raw_code.strip() if isinstance(raw_code, str) and raw_code.strip() else None
         raw_limit = args.get("limit")
         limit = min(max(int(raw_limit), 1), 100) if raw_limit is not None else 50
         return read_screening_candidates(
             self.session,
             run_date=run_date,
+            code=code,
             limit=limit,
         )
 
@@ -1729,6 +1817,16 @@ class InvestmentResearchAgent:
         valuation = portfolio_analytics(portfolio, yahoo_market_provider())
         result = portfolio_sizing_proposals(portfolio, valuation, request)
         return result.model_dump(mode="json")
+
+    def _tool_build_quote_sizing_idea(self, args: dict[str, Any]) -> Any:
+        request = QuoteSizingIdeaRequest.model_validate(
+            {
+                "symbol": args.get("symbol"),
+                "stop_price": args.get("stop_price"),
+                "lot_size": args.get("lot_size"),
+            }
+        )
+        return build_quote_sizing_idea(yahoo_market_provider(), request).model_dump(mode="json")
 
     def _tool_alerts(self, _: dict[str, Any]) -> Any:
         return [item.model_dump(mode="json") for item in list_alerts(self.session)]
@@ -1983,17 +2081,40 @@ class InvestmentResearchAgent:
         headers: dict[str, str],
         body: dict[str, Any],
     ) -> dict[str, Any]:
-        response = httpx.post(
-            url,
-            headers=headers,
-            json=body,
-            timeout=self.settings.request_timeout_seconds,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, dict):
-            raise RuntimeError("AI provider returned a non-object response")
-        return payload
+        attempt = 0
+        while True:
+            response = httpx.post(
+                url,
+                headers=headers,
+                json=body,
+                timeout=self.settings.request_timeout_seconds,
+            )
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code != 429:
+                    raise
+                code = _rate_limit_code(exc.response)
+                can_retry = attempt < len(RATE_LIMIT_BACKOFF_SECONDS)
+                if can_retry and code not in RATE_LIMIT_NO_RETRY_CODES:
+                    time.sleep(RATE_LIMIT_BACKOFF_SECONDS[attempt])
+                    attempt += 1
+                    continue
+                # Keep the httpx.HTTPStatusError contract of the existing
+                # API/CLI boundaries (ai_routes / research_llm_routes /
+                # cli_shim): re-raise the same type with a short Japanese
+                # reason and no raw body (never echo upstream error text,
+                # which could carry credentials).
+                raise httpx.HTTPStatusError(
+                    "AI provider rate limit (HTTP 429): "
+                    f"{_rate_limit_reason_ja(code)} [code={code}]",
+                    request=exc.request,
+                    response=exc.response,
+                ) from exc
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise RuntimeError("AI provider returned a non-object response")
+            return payload
 
     @staticmethod
     def _openai_message(payload: dict[str, Any]) -> dict[str, Any]:

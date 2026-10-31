@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NoReturn
 
 import typer
 from rich import print as rprint
@@ -8,12 +8,27 @@ from rich.panel import Panel
 from rich.table import Table
 
 from yowayowa.orderbook_models import OrderbookSnapshot
-from yowayowa.services.orderbook_service import OrderbookService
+from yowayowa.services.orderbook_service import (
+    InvalidOrderbookSymbolError,
+    OrderbookService,
+)
 
 app = typer.Typer(
     help="Level-2 Orderbook inspection, microstructure metrics, and execution impact analysis."
 )
 _service = OrderbookService()
+
+
+def _reject_invalid_symbol(exc: InvalidOrderbookSymbolError) -> NoReturn:
+    """Print the fixed one-line rejection to stderr and exit 1.
+
+    The message is the service's fixed string, never the raw input: typer
+    renders any exception escaping the callback through its rich traceback
+    panel (multi-line, with absolute source paths), so the CLI maps the
+    rejection itself — ``Error: <fixed message>`` on stderr, exit code 1.
+    """
+    typer.echo(f"Error: {exc}", err=True)
+    raise typer.Exit(code=1) from exc
 
 
 @app.command("show")
@@ -24,7 +39,10 @@ def show_orderbook(
     ] = 10,
 ) -> None:
     """Display visual market depth ladder (Level-2 Orderbook) with bids and asks."""
-    snapshot: OrderbookSnapshot = _service.get_snapshot(symbol)
+    try:
+        snapshot: OrderbookSnapshot = _service.get_snapshot(symbol)
+    except InvalidOrderbookSymbolError as exc:
+        _reject_invalid_symbol(exc)
     m = snapshot.metrics
 
     ofi_str = f"{m.order_flow_imbalance:+.2%}" if m.order_flow_imbalance is not None else "—"
@@ -75,7 +93,10 @@ def orderbook_metrics(
     symbol: Annotated[str, typer.Argument(help="Instrument code or symbol (e.g. 7203, BTC/USD)")],
 ) -> None:
     """Display microstructure metrics: spread, order flow imbalance, and micro-price."""
-    snapshot = _service.get_snapshot(symbol)
+    try:
+        snapshot = _service.get_snapshot(symbol)
+    except InvalidOrderbookSymbolError as exc:
+        _reject_invalid_symbol(exc)
     m = snapshot.metrics
 
     table = Table(title=f"Microstructure Metrics — {snapshot.symbol}", show_header=False)
@@ -116,7 +137,10 @@ def orderbook_impact(
         raise typer.Exit(code=1)
 
     side_literal: Literal["buy", "sell"] = "buy" if clean_side == "buy" else "sell"
-    result = _service.estimate_impact(symbol, side=side_literal, quantity=quantity)
+    try:
+        result = _service.estimate_impact(symbol, side=side_literal, quantity=quantity)
+    except InvalidOrderbookSymbolError as exc:
+        _reject_invalid_symbol(exc)
 
     table_title = f"Execution Impact Estimation — {result.symbol} ({result.side.upper()})"
     table = Table(title=table_title, show_header=False)

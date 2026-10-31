@@ -577,7 +577,16 @@ def test_app_boots_when_positions_migration_is_blocked(tmp_path) -> None:
         engine.dispose()
 
     previous_url = os.environ.get("YOWAYOWA_DATABASE_URL")
+    previous_token = os.environ.get("YOWAYOWA_API_TOKEN")
     os.environ["YOWAYOWA_DATABASE_URL"] = f"sqlite:///{db_path}"
+    # The runtime debug route gates build/runtime detail (including the
+    # positions-constraint status) behind the operator Bearer token, so hold
+    # the token here and present it on the runtime request below.
+    os.environ["YOWAYOWA_API_TOKEN"] = "fixture-operator-token"
+
+    from yowayowa.config import get_settings
+
+    get_settings.cache_clear()
     try:
         db_module.init_database()  # must not raise
         assert positions_unique_constraint_status()["applied"] is False
@@ -587,8 +596,9 @@ def test_app_boots_when_positions_migration_is_blocked(tmp_path) -> None:
         from yowayowa.api.app import app
 
         with TestClient(app) as client:
-            health = client.get("/v1/health")
-            runtime = client.get("/internal/debug/runtime")
+            auth = {"Authorization": "Bearer fixture-operator-token"}
+            health = client.get("/v1/health", headers=auth)
+            runtime = client.get("/internal/debug/runtime", headers=auth)
 
         assert health.status_code == 200
         assert runtime.status_code == 200
@@ -596,6 +606,11 @@ def test_app_boots_when_positions_migration_is_blocked(tmp_path) -> None:
         assert reported["applied"] is False
         assert "existing duplicates found" in reported["reason"]
     finally:
+        if previous_token is None:
+            os.environ.pop("YOWAYOWA_API_TOKEN", None)
+        else:
+            os.environ["YOWAYOWA_API_TOKEN"] = previous_token
+        get_settings.cache_clear()
         if previous_url is None:
             os.environ.pop("YOWAYOWA_DATABASE_URL", None)
         else:

@@ -1,0 +1,385 @@
+{
+  "as_of": "2026-10-24T22:15:00+09:00",
+  "snapshot_metadata": {
+    "journal": {
+      "path": "data/demo-loop/journal.jsonl",
+      "sha256": "c644a1767a42e5945fb965f35da43581807c09008526eb6f059c6615be71f85a",
+      "bytes": 277279,
+      "lines": 287,
+      "first_seq": 1,
+      "last_seq": 287,
+      "last_event": "run",
+      "last_recorded_at": "2026-10-24T02:06:07.301232+00:00",
+      "hash_chain_intact": true,
+      "bad_links": 0
+    },
+    "anchors": {
+      "path": "data/demo-loop/anchors.jsonl",
+      "sha256": "2a6c7eeaf4f9419517f3aab6a763175bc5090e3cdabff2916a2fea181934de6f",
+      "bytes": 3065,
+      "lines": 19,
+      "last_anchor_seq": 280,
+      "last_anchor_date": "2026-10-24",
+      "last_anchored_at": "2026-10-24T00:21:42.378966+00:00"
+    },
+    "prereg": {
+      "path": "data/demo-loop/prereg.jsonl",
+      "sha256": "d18a1dd0be26ec7a86f375d21e396f8c3d0d3183e54e3a24ba6e7b0fc4e57083",
+      "bytes": 4249,
+      "lines": 6
+    },
+    "weekly_summary": {
+      "path": "data/demo-loop/weekly_summary.jsonl",
+      "sha256": "48d039e453b1ab5b027c3e24005b600d02737178a5ff1fb5b177d4c7c7714ffd",
+      "bytes": 108708,
+      "lines": 16,
+      "note": "16 lines; lines 0-4 are legacy unversioned, lines 5-12 are v1.2 up to 2026-10-19, lines 13-15 are legacy v1.2 with future week_end 2026-10-26 generated prematurely on 2026-10-23."
+    },
+    "cusum_A": {
+      "path": "data/demo-loop/cusum_A.jsonl",
+      "sha256": "1185d9f0454b9b0c66c7317f6ab33126572cf49e71b5561b5f43d3d33ef5cb73",
+      "bytes": 2017,
+      "lines": 3,
+      "latest_week": "2026-W42",
+      "weeks_observed": 2,
+      "z": -0.6307875935134487,
+      "S": 0.1307875935134487,
+      "h_star": 4.8,
+      "alarm": false,
+      "action": "continue"
+    }
+  },
+  "verification_checks": {
+    "exit_code": 0,
+    "chain_ok": true,
+    "anchors_ok": true,
+    "rows_checked": 287,
+    "R1_match": "30/30",
+    "R2_match": "30/30",
+    "R3_revised": 0,
+    "legacy_v11_findings_count": 0
+  },
+  "books": {
+    "A": {
+      "strategy_name": "S-01 (crypto_trend_dual_ma, SMA200 daily)",
+      "latest_mtm": {
+        "seq": 277,
+        "mtm_date": "2026-10-24",
+        "price_bar_date": "2026-10-23",
+        "recorded_at": "2026-10-24T00:21:39.481434+00:00",
+        "recorded_equity": 0.9647163203851221,
+        "recorded_equity_gross": 0.9665725749596454,
+        "recorded_cum_cost_assumed": 0.0019107626153524557,
+        "recorded_cum_turnover": 1.2738417435683043,
+        "recorded_peak_equity": 1.0081585571392127,
+        "recorded_drawdown": -0.043090678987404374,
+        "recorded_cash": -0.031210077494024907,
+        "recorded_units": {
+          "BTC": 6.127285170354338e-06,
+          "ETH": 0.00020876847355110799
+        }
+      },
+      "independent_recalculation": {
+        "slice_seq": 277,
+        "formula_net_return": "equity / 1.0 - 1.0",
+        "net_pnl_rate": -0.03528367961487788,
+        "formula_gross": "compound(1 + cost_t / equity_t) via _cost_accumulators sliced to seq prior to mtm",
+        "equity_gross": 0.9665725749596454,
+        "gross_pnl_rate": -0.033427425040354564,
+        "diff_equity_gross": 0.0,
+        "formula_cum_cost": "sum(cost_assumed of fills prior to mtm)",
+        "cum_cost_assumed": 0.0019107626153524557,
+        "diff_cum_cost": 0.0,
+        "cum_turnover": 1.2738417435683043,
+        "diff_cum_turnover": 0.0,
+        "cost_drag_pp_relative_to_gross": 0.192045028238135,
+        "cost_drag_pp_absolute": 0.18562545745233194,
+        "max_drawdown_since_inception": -0.043090678987404374,
+        "current_drawdown_at_mtm": -0.043090678987404374,
+        "fills_count_up_to_mtm": 28,
+        "total_fills_count_in_journal": 30,
+        "post_mtm_fills": [
+          {
+            "seq": 283,
+            "asset": "BTC",
+            "side": "sell",
+            "traded_notional": 0.014167217167591579,
+            "cost_assumed": 2.1250825751387367e-05,
+            "recorded_at": "2026-10-24T02:06:07.301232+00:00"
+          },
+          {
+            "seq": 284,
+            "asset": "ETH",
+            "side": "sell",
+            "traded_notional": 0.015150162604668458,
+            "cost_assumed": 2.272524390700269e-05,
+            "recorded_at": "2026-10-24T02:06:07.301232+00:00"
+          }
+        ],
+        "post_mtm_fills_cost_total": 4.397606965839006e-05,
+        "total_cum_cost_including_post_mtm": 0.001954738685010846
+      }
+    },
+    "CRYPTO_1N": {
+      "strategy_name": "Benchmark: BTC/ETH 1/N buy-and-hold",
+      "latest_mtm": {
+        "seq": 278,
+        "mtm_date": "2026-10-24",
+        "price_bar_date": "2026-10-23",
+        "recorded_at": "2026-10-24T00:21:39.481434+00:00",
+        "recorded_equity": 0.9628900792586756,
+        "recorded_equity_gross": 0.9643382302033032,
+        "recorded_cum_cost_assumed": 0.0015,
+        "recorded_cum_turnover": 1.0,
+        "recorded_peak_equity": 1.0081334612272572,
+        "recorded_drawdown": -0.044878365522660335,
+        "recorded_cash": 0.0,
+        "recorded_units": {
+          "BTC": 6.00652084987608e-06,
+          "ETH": 0.0001990383963704646
+        }
+      },
+      "independent_recalculation": {
+        "slice_seq": 278,
+        "formula_net_return": "equity / 1.0 - 1.0",
+        "net_pnl_rate": -0.037109920741324354,
+        "formula_gross": "compound(1 + cost_t / equity_t) via _cost_accumulators sliced to seq prior to mtm",
+        "equity_gross": 0.9643382302033032,
+        "gross_pnl_rate": -0.035661769796696774,
+        "diff_equity_gross": 0.0,
+        "formula_cum_cost": "sum(cost_assumed of fills prior to mtm)",
+        "cum_cost_assumed": 0.0015,
+        "diff_cum_cost": 0.0,
+        "cum_turnover": 1.0,
+        "diff_cum_turnover": 0.0,
+        "cost_drag_pp_relative_to_gross": 0.15017043805494243,
+        "cost_drag_pp_absolute": 0.14481509446275798,
+        "max_drawdown_since_inception": -0.044878365522660335,
+        "current_drawdown_at_mtm": -0.044878365522660335,
+        "fills_count_up_to_mtm": 26,
+        "total_fills_count_in_journal": 28,
+        "post_mtm_fills": [
+          {
+            "seq": 285,
+            "asset": "BTC",
+            "side": "hold",
+            "traded_notional": 0.0,
+            "cost_assumed": 0.0,
+            "recorded_at": "2026-10-24T02:06:07.301232+00:00"
+          },
+          {
+            "seq": 286,
+            "asset": "ETH",
+            "side": "hold",
+            "traded_notional": 0.0,
+            "cost_assumed": 0.0,
+            "recorded_at": "2026-10-24T02:06:07.301232+00:00"
+          }
+        ],
+        "post_mtm_fills_cost_total": 0.0,
+        "total_cum_cost_including_post_mtm": 0.0015
+      }
+    },
+    "C": {
+      "strategy_name": "S-02 (vol_target_15% weekly, US Equity + Cash)",
+      "latest_mtm": {
+        "seq": 279,
+        "mtm_date": "2026-10-24",
+        "price_bar_date": "2026-10-22",
+        "recorded_at": "2026-10-24T00:21:39.481434+00:00",
+        "recorded_equity": 1.0270280601716781,
+        "recorded_equity_gross": 1.0285535631671296,
+        "recorded_cum_cost_assumed": 0.0015,
+        "recorded_cum_turnover": 1.0,
+        "recorded_peak_equity": 1.0270280601716781,
+        "recorded_drawdown": 0.0,
+        "recorded_cash": 0.0,
+        "recorded_units": {
+          "IWM": 0.0009183467000220735,
+          "JNJ": 0.0009811146484298235,
+          "PG": 0.0015812060556153799,
+          "SPY": 0.00032535875812989587
+        }
+      },
+      "independent_recalculation": {
+        "slice_seq": 279,
+        "formula_net_return": "equity / 1.0 - 1.0",
+        "net_pnl_rate": 0.027028060171678137,
+        "formula_gross": "compound(1 + cost_t / equity_t) via _cost_accumulators sliced to seq prior to mtm",
+        "equity_gross": 1.0285535631671296,
+        "gross_pnl_rate": 0.028553563167129647,
+        "diff_equity_gross": 0.0,
+        "formula_cum_cost": "sum(cost_assumed of fills prior to mtm)",
+        "cum_cost_assumed": 0.0015,
+        "diff_cum_cost": 0.0,
+        "cum_turnover": 1.0,
+        "diff_cum_turnover": 0.0,
+        "cost_drag_pp_relative_to_gross": 0.14831536733528694,
+        "cost_drag_pp_absolute": 0.1525502995451511,
+        "max_drawdown_since_inception": -0.0034799531459484,
+        "current_drawdown_at_mtm": 0.0,
+        "fills_count_up_to_mtm": 4,
+        "total_fills_count_in_journal": 4,
+        "post_mtm_fills": [],
+        "post_mtm_fills_cost_total": 0,
+        "total_cum_cost_including_post_mtm": 0.0015
+      }
+    },
+    "EQUITY_EW": {
+      "strategy_name": "Benchmark: US Equity 4-asset equal-weight buy-and-hold",
+      "latest_mtm": {
+        "seq": 280,
+        "mtm_date": "2026-10-24",
+        "price_bar_date": "2026-10-22",
+        "recorded_at": "2026-10-24T00:21:39.481434+00:00",
+        "recorded_equity": 1.0,
+        "recorded_equity_gross": 1.0,
+        "recorded_cum_cost_assumed": 0.0,
+        "recorded_cum_turnover": 0.0,
+        "recorded_peak_equity": 1.0,
+        "recorded_drawdown": 0.0,
+        "recorded_cash": 1.0,
+        "recorded_units": {}
+      },
+      "independent_recalculation": {
+        "slice_seq": 280,
+        "formula_net_return": "equity / 1.0 - 1.0",
+        "net_pnl_rate": 0.0,
+        "formula_gross": "compound(1 + cost_t / equity_t) via _cost_accumulators sliced to seq prior to mtm",
+        "equity_gross": 1.0,
+        "gross_pnl_rate": 0.0,
+        "diff_equity_gross": 0.0,
+        "formula_cum_cost": "sum(cost_assumed of fills prior to mtm)",
+        "cum_cost_assumed": 0.0,
+        "diff_cum_cost": 0.0,
+        "cum_turnover": 0.0,
+        "diff_cum_turnover": 0.0,
+        "cost_drag_pp_relative_to_gross": 0.0,
+        "cost_drag_pp_absolute": 0.0,
+        "max_drawdown_since_inception": 0.0,
+        "current_drawdown_at_mtm": 0.0,
+        "fills_count_up_to_mtm": 0,
+        "total_fills_count_in_journal": 0,
+        "post_mtm_fills": [],
+        "post_mtm_fills_cost_total": 0,
+        "total_cum_cost_including_post_mtm": 0.0
+      }
+    }
+  },
+  "comparisons": {
+    "A_vs_CRYPTO_1N": {
+      "benchmark_book": "CRYPTO_1N",
+      "comparison_start": "2026-10-10",
+      "comparison_as_of": "2026-10-24",
+      "benchmark_as_of": "2026-10-24",
+      "cum_pnl": -0.03528367961487788,
+      "benchmark_cum_pnl": -0.037109920741324354,
+      "vs_benchmark_pp_cum": 0.18262411264464706,
+      "max_drawdown": -0.043090678987404374,
+      "benchmark_max_drawdown": -0.044878365522660335,
+      "dd_vs_benchmark_ratio": 0.9601659616067499,
+      "status": "valid",
+      "comparison_reason": null
+    },
+    "C_vs_EQUITY_EW": {
+      "benchmark_book": "EQUITY_EW",
+      "comparison_start": null,
+      "comparison_as_of": null,
+      "benchmark_as_of": null,
+      "cum_pnl": null,
+      "benchmark_cum_pnl": null,
+      "vs_benchmark_pp_cum": null,
+      "max_drawdown": null,
+      "benchmark_max_drawdown": null,
+      "dd_vs_benchmark_ratio": null,
+      "status": "not_established",
+      "comparison_reason": "benchmark_has_no_fill",
+      "note": "EQUITY_EW has 0 fills and holds 100% cash since preregistration on 2026-10-23. Cash-holding benchmark cannot be used to claim outperformance for Book C."
+    }
+  },
+  "milestones": {
+    "book_A_S01": {
+      "inception_date": "2026-10-10",
+      "days_observed": 14,
+      "weeks_observed": 2,
+      "milestone_4w": {
+        "target_date": "2026-11-07",
+        "achieved": false
+      },
+      "milestone_12w": {
+        "target_date": "2027-01-02",
+        "achieved": false
+      },
+      "milestone_26w": {
+        "target_date": "2027-04-10",
+        "achieved": false
+      }
+    },
+    "book_C_S02": {
+      "deployment_date": "2026-10-19",
+      "days_observed": 5,
+      "weeks_observed": 0.71,
+      "milestone_4w": {
+        "target_date": "2026-11-16",
+        "achieved": false
+      },
+      "milestone_12w": {
+        "target_date": "2027-01-11",
+        "achieved": false
+      },
+      "milestone_26w": {
+        "target_date": "2027-04-19",
+        "achieved": false
+      }
+    }
+  },
+  "cusum_monitor_A": {
+    "latest_recorded_at": "2026-10-19T00:50:53.558848+00:00",
+    "week": "2026-W42",
+    "weeks_observed": 2,
+    "z": -0.6307875935134487,
+    "S": 0.1307875935134487,
+    "h_star": 4.8,
+    "alarm": false,
+    "action": "continue",
+    "current_week_status": "2026-W43 incomplete (ends 2026-10-26)"
+  },
+  "cost_accounting_clarifications": {
+    "assumed_cost_rate": "15.0 bps (0.0015) one-way per trade",
+    "unmeasured_operational_costs": "UNKNOWN (不明). Real broker commission, market impact beyond 15bps, exchange API subscriptions, infrastructure/compute costs, funding/borrow costs, taxes, and crypto network gas are unmeasured.",
+    "profit_claim_boundary": "Demo-loop forward values are virtual paper-trading returns on a 1.0 base ratio. They do not constitute real financial profit, statistical superiority, or permission for capital deployment."
+  },
+  "conclusions": {
+    "S01_Book_A": {
+      "has_profit_now": false,
+      "net_pnl_rate": -0.03528367961487788,
+      "benchmark_outperformance": true,
+      "benchmark_outperformance_pp": 0.18262411264464706,
+      "statistical_evidence": "INSUFFICIENT (14 days, 2 weeks out of 4w milestone)",
+      "action_decision": "継続観測 (Continue demo observation) / 実運用投入保留 (Hold live fund allocation)",
+      "next_concrete_step": "Complete 4-week milestone on 2026-11-07; evaluate CUSUM week 3 (2026-W43) on 2026-10-26; confirm zero HALT triggers."
+    },
+    "S02_Book_C": {
+      "has_profit_now": true,
+      "net_pnl_rate": 0.0270280601716781,
+      "benchmark_outperformance": null,
+      "benchmark_outperformance_pp": null,
+      "benchmark_reason": "benchmark_has_no_fill",
+      "statistical_evidence": "HEAVILY INSUFFICIENT (5 days, 1 rebalance out of 4w milestone)",
+      "action_decision": "継続観測 (Continue demo observation) / 実運用投入保留 (Hold live fund allocation)",
+      "next_concrete_step": "Execute EQUITY_EW first rebalance on Monday 2026-10-26 (fill 2026-10-27) to establish shared comparison baseline; complete 4-week milestone on 2026-11-16."
+    },
+    "S03_garp_momentum_hybrid": {
+      "status": "REJECTED",
+      "reason": "MaxDD -36.17% vs baseline -31.00%"
+    },
+    "S05_defensive_rotation": {
+      "status": "REJECTED",
+      "reason": "MaxDD -26.30% vs baseline -24.88%"
+    },
+    "P3_equity_baselines": {
+      "status": "REJECTED",
+      "reason": "Momentum collapsed in OOS (-6.91%)"
+    }
+  }
+}

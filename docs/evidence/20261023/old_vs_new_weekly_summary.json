@@ -1,0 +1,219 @@
+{
+ "old_books": [
+  "A",
+  "C",
+  "CRYPTO_1N"
+ ],
+ "new_books": [
+  "A",
+  "C",
+  "CRYPTO_1N",
+  "EQUITY_EW"
+ ],
+ "old_vs_benchmark_pp_cum": 0.17086960258662076,
+ "new_vs_benchmark_pp_cum": 0.17086960258662076,
+ "cmp_fields_differing": [
+  "books"
+ ],
+ "cmp_detail": {
+  "books": {
+   "old": {
+    "A": {
+     "decisions": 14,
+     "switches": 0,
+     "fills": 26,
+     "fills_rejected": 2,
+     "backfill_days": 0,
+     "week_return": -0.00080920000134721,
+     "drawdown_now": -0.008895185263325112,
+     "shortfall_bps_mean_signed": -11.620479402413425,
+     "shortfall_bps_mean_abs": 24.65879617085993,
+     "shortfall_bps_mean_upper95": -0.03230119725746583,
+     "shortfall_n": 24,
+     "recompute_R1_rate": 1.0,
+     "halt_days": 0,
+     "halted": false,
+     "stopped": false,
+     "mtm_days": 7,
+     "halt_check_days": 7,
+     "runs_completed": 8
+    },
+    "CRYPTO_1N": {
+     "decisions": 14,
+     "switches": 0,
+     "fills": 24,
+     "fills_rejected": 4,
+     "backfill_days": 0,
+     "week_return": -0.0025178960272134177,
+     "drawdown_now": -0.010565423789727357,
+     "shortfall_bps_mean_signed": null,
+     "shortfall_bps_mean_abs": null,
+     "shortfall_bps_mean_upper95": null,
+     "shortfall_n": 0,
+     "recompute_R1_rate": null,
+     "halt_days": 0,
+     "halted": false,
+     "stopped": false,
+     "mtm_days": 7,
+     "halt_check_days": 7,
+     "runs_completed": 8
+    },
+    "C": {
+     "decisions": 4,
+     "switches": 2,
+     "fills": 4,
+     "fills_rejected": 0,
+     "backfill_days": 0,
+     "week_return": 0.009858449869285302,
+     "drawdown_now": 0.0,
+     "shortfall_bps_mean_signed": 0.0,
+     "shortfall_bps_mean_abs": 0.0,
+     "shortfall_bps_mean_upper95": 0.0,
+     "shortfall_n": 4,
+     "recompute_R1_rate": 1.0,
+     "halt_days": 0,
+     "halted": false,
+     "stopped": false,
+     "mtm_days": 1,
+     "halt_check_days": 1,
+     "runs_completed": 8
+    }
+   },
+   "new": {
+    "A": {
+     "decisions": 14,
+     "switches": 0,
+     "fills": 26,
+     "fills_rejected": 2,
+     "backfill_days": 0,
+     "week_return": -0.00080920000134721,
+     "drawdown_now": -0.008895185263325112,
+     "shortfall_bps_mean_signed": -11.620479402413425,
+     "shortfall_bps_mean_abs": 24.65879617085993,
+     "shortfall_bps_mean_upper95": -0.03230119725746583,
+     "shortfall_n": 24,
+     "recompute_R1_rate": 1.0,
+     "halt_days": 0,
+     "halted": false,
+     "stopped": false,
+     "mtm_days": 7,
+     "halt_check_days": 7,
+     "runs_completed": 8
+    },
+    "CRYPTO_1N": {
+     "decisions": 14,
+     "switches": 0,
+     "fills": 24,
+     "fills_rejected": 4,
+     "backfill_days": 0,
+     "week_return": -0.0025178960272134177,
+     "drawdown_now": -0.010565423789727357,
+     "shortfall_bps_mean_signed": null,
+     "shortfall_bps_mean_abs": null,
+     "shortfall_bps_mean_upper95": null,
+     "shortfall_n": 0,
+     "recompute_R1_rate": null,
+     "halt_days": 0,
+     "halted": false,
+     "stopped": false,
+     "mtm_days": 7,
+     "halt_check_days": 7,
+     "runs_completed": 8
+    },
+    "C": {
+     "decisions": 4,
+     "switches": 2,
+     "fills": 4,
+     "fills_rejected": 0,
+     "backfill_days": 0,
+     "week_return": 0.009858449869285302,
+     "drawdown_now": 0.0,
+     "shortfall_bps_mean_signed": 0.0,
+     "shortfall_bps_mean_abs": 0.0,
+     "shortfall_bps_mean_upper95": 0.0,
+     "shortfall_n": 4,
+     "recompute_R1_rate": 1.0,
+     "halt_days": 0,
+     "halted": false,
+     "stopped": false,
+     "mtm_days": 1,
+     "halt_check_days": 1,
+     "runs_completed": 8
+    },
+    "EQUITY_EW": {
+     "decisions": 0,
+     "switches": 0,
+     "fills": 0,
+     "fills_rejected": 0,
+     "backfill_days": 0,
+     "week_return": 0.0,
+     "drawdown_now": 0.0,
+     "shortfall_bps_mean_signed": null,
+     "shortfall_bps_mean_abs": null,
+     "shortfall_bps_mean_upper95": null,
+     "shortfall_n": 0,
+     "recompute_R1_rate": null,
+     "halt_days": 0,
+     "halted": false,
+     "stopped": false,
+     "mtm_days": 0,
+     "halt_check_days": 0,
+     "runs_completed": 8
+    }
+   }
+  }
+ },
+ "new_C_block_new_fields": {
+  "benchmark_book": "EQUITY_EW",
+  "cum_pnl": null,
+  "max_drawdown": null,
+  "benchmark_cum_pnl": null,
+  "benchmark_max_drawdown": null,
+  "vs_benchmark_pp_cum": null,
+  "dd_vs_benchmark_ratio": null,
+  "comparison_start": null,
+  "comparison_reason": "benchmark_has_no_fill"
+ },
+ "new_A_block_new_fields": {
+  "benchmark_book": "CRYPTO_1N",
+  "benchmark_cum_pnl": -0.0025178960272134177,
+  "benchmark_max_drawdown": -0.04007643072684819,
+  "cum_pnl": -0.00080920000134721,
+  "dd_vs_benchmark_ratio": 0.9565671341372242,
+  "max_drawdown": -0.038335796486830165,
+  "vs_benchmark_pp_cum": 0.17086960258662076
+ },
+ "eval_by_book_old": [
+  "A",
+  "C",
+  "CRYPTO_1N"
+ ],
+ "eval_by_book_new": [
+  "A",
+  "C",
+  "CRYPTO_1N",
+  "EQUITY_EW"
+ ],
+ "_round1_new_C_block_new_fields": {
+  "benchmark_book": "EQUITY_EW",
+  "benchmark_cum_pnl": 0.0,
+  "benchmark_max_drawdown": null,
+  "cum_pnl": 0.009858449869285302,
+  "dd_vs_benchmark_ratio": null,
+  "max_drawdown": 0.0,
+  "vs_benchmark_pp_cum": 0.9858449869285302
+ },
+ "_superseded_by": "docs/evidence/20261023/comparison_line_review_r2.json",
+ "_review_corrections": [
+  {
+   "round": 2,
+   "reviewer": "audit-cld",
+   "at": "2026-10-23T01:24:08.096048+00:00",
+   "why": "new_C_block_new_fields reported a comparison while EQUITY_EW had no fill; the field is rewritten with the fixed code's output and the round-1 values are preserved under _round1_new_C_block_new_fields. Every other field in this file is left untouched as the historical old-vs-new record of that moment.",
+   "code": {
+    "round2_paperloop_sha256": "7f5e6589a294aa69d6a0129371ca3caa1e71b3d3ff0379e38ed086f70a92eace",
+    "note": "The code hash of the run that produced this file is not recorded here (round-1 artifact); the corrected block was produced by the round-2 code above, whose old/new comparison is in comparison_line_review_r2.json."
+   }
+  }
+ ]
+}

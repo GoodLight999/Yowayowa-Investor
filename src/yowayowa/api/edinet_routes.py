@@ -20,6 +20,10 @@ from yowayowa.providers.edinet import EdinetClient
 from yowayowa.providers.registry import edinet_client
 from yowayowa.services.edinet import document_list, financials, search_facts
 from yowayowa.services.edinet_index import filing_history, sync_filing_index
+from yowayowa.vercel_observability import (
+    UPSTREAM_UNAVAILABLE_DETAIL,
+    log_upstream_exception,
+)
 
 router = APIRouter(prefix="/v1/filings/edinet", dependencies=[Depends(require_api_token)])
 
@@ -43,7 +47,8 @@ def _translate_error(exc: Exception) -> HTTPException:
             return HTTPException(status_code=424, detail="EDINET API key was rejected")
         if status_code == 429:
             return HTTPException(status_code=429, detail="EDINET API rate limit was reached")
-    return HTTPException(status_code=502, detail=str(exc))
+    log_upstream_exception(exc)
+    return HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL)
 
 
 def _request_client(request: Request) -> EdinetClient:

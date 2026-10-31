@@ -95,6 +95,7 @@ def test_portfolio_returns_computes_returns_covariance_and_correlation(
     assert history.unavailable_symbols == []
     assert history.provenance.license_class == LicenseClass.PERSONAL_ONLY
     assert history.provenance.as_of is not None
+    assert history.benchmark_status == "ok"
     covariance = history.returns.cov()
     correlation = history.returns.corr()
     assert covariance.loc["AAA", "BBB"] != 0.0
@@ -171,6 +172,7 @@ def test_portfolio_returns_keeps_missing_benchmark_empty(
     assert history.benchmark_returns.empty
     assert history.unavailable_symbols == ["AAA"]
     assert history.returns.empty
+    assert history.benchmark_status == "symbol_not_found"
 
 
 def test_close_frame_returns_empty_frame_for_empty_download() -> None:
@@ -257,3 +259,24 @@ def test_as_of_converts_aware_index_to_utc() -> None:
 
     assert str(as_of.tzinfo) in {"UTC", "utc"}
     assert as_of.hour == 19  # 15:00 New York = 19:00 UTC
+
+
+def test_portfolio_returns_reports_provider_error_on_download_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """P5 R10: when yfinance.download raises, the provider returns
+    benchmark_status='provider_error' instead of propagating."""
+
+    def raise_error(**kwargs: object) -> pd.DataFrame:
+        raise RuntimeError("yfinance is down")
+
+    monkeypatch.setattr(yahoo_risk.yf, "download", raise_error)
+    portfolio = _portfolio(Position(symbol="AAA", quantity=Decimal(1), currency="USD"))
+
+    history = _provider().portfolio_returns(portfolio, benchmark="^GSPC", period="1y")
+
+    assert history.benchmark_status == "provider_error"
+    assert history.unavailable_symbols == ["AAA"]
+    assert history.returns.empty
+    assert history.benchmark_returns.empty
+    assert "exception" in history.provenance.notes[0]

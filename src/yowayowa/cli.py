@@ -4,11 +4,13 @@ import csv
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import httpx
 import typer
 from rich import print
 from rich.table import Table
+from rich.text import Text
 
 app = typer.Typer(help="Yowayowa-Investor CLI: every meaningful GUI operation has an API/CLI path.")
 watchlist_app = typer.Typer(help="Manage watchlists")
@@ -287,6 +289,45 @@ def portfolio_create(
         )
 
 
+@portfolio_app.command("delete")
+def portfolio_delete(
+    portfolio_id: int,
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Cascade delete holdings, snapshots and the broker application ledger.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        help="Actually delete. Without this flag nothing is sent to the API.",
+    ),
+    base_url: str = typer.Option("http://127.0.0.1:8000"),
+    token: str | None = typer.Option(None, envvar="YOWAYOWA_API_TOKEN"),
+) -> None:
+    if not yes:
+        print(
+            f"Refusing to delete portfolio {portfolio_id} without --yes "
+            "(nothing was sent). Re-run with --yes, and with --force if it still "
+            "owns holdings or snapshots."
+        )
+        raise typer.Exit(code=1)
+    with _client(base_url, token) as client:
+        response = client.delete(f"/v1/portfolios/{portfolio_id}", params={"force": force})
+        if response.status_code >= 400:
+            detail = response.json().get("detail", response.text)
+            print(f"Delete failed ({response.status_code}): {detail}")
+            raise typer.Exit(code=1)
+        payload = response.json()
+    print(
+        f"Deleted portfolio {payload['portfolio_id']} ({payload['name']}) · "
+        f"positions {payload['deleted_positions']} · "
+        f"snapshots {payload['deleted_snapshots']} · "
+        f"applied executions {payload['deleted_applied_executions']} · "
+        f"force {payload['force']}"
+    )
+
+
 @portfolio_app.command("position")
 def portfolio_position(
     portfolio_id: int,
@@ -486,6 +527,41 @@ def alerts_check(
     print(payload)
 
 
+def _screen_metric_value(value: float | int | None) -> str:
+    """Echo one screening metric scalar exactly as the API returned it.
+
+    No unit is inferred, so nothing is rescaled to %, multiples or JPY. Floats
+    use Python's shortest round-trip repr, which is the same string the API's
+    JSON carried, so no precision is lost or invented. ``None`` is missing data
+    and never zero, so it renders as ``unavailable`` while a real ``0`` keeps
+    its own representation.
+    """
+    if value is None:
+        return "unavailable"
+    if isinstance(value, float):
+        return repr(value)
+    return str(value)
+
+
+def screen_metrics_display(rows: list[dict[str, Any]]) -> Table:
+    """One row per metric (Symbol/Metric/Value) with keys in sorted order.
+
+    Every metric the API returns is listed; nothing is dropped or summarised.
+    Metric names and values are folded rather than ellipsized so a narrow
+    terminal cannot silently hide part of a key or a value.
+    """
+    table = Table("Symbol", "Metric", "Value")
+    for row in rows:
+        metrics: dict[str, float | int | None] = row["metrics"]
+        for key in sorted(metrics):
+            table.add_row(
+                row["symbol"],
+                Text(key, overflow="fold"),
+                Text(_screen_metric_value(metrics[key]), overflow="fold"),
+            )
+    return table
+
+
 @app.command()
 def screen(
     symbols: list[str],
@@ -515,15 +591,20 @@ def screen(
             .raise_for_status()
             .json()
         )
-    table = Table("Symbol", "Matched", "Failures", "Metrics")
-    for row in payload["rows"]:
-        table.add_row(
+    rows: list[dict[str, Any]] = payload["rows"]
+    summary = Table("Symbol", "Matched", "Failures")
+    for row in rows:
+        summary.add_row(
             row["symbol"],
             "yes" if row["matched"] else "no",
-            ", ".join(row["failures"]),
-            json.dumps(row["metrics"], ensure_ascii=False),
+            Text(", ".join(row["failures"]), overflow="fold"),
         )
-    print(table)
+    print(summary)
+    if rows:
+        print(screen_metrics_display(rows))
+        unavailable = [row["symbol"] for row in rows if not row["metrics"]]
+        if unavailable:
+            print(f"Unavailable metrics: {', '.join(unavailable)}")
 
 
 @app.command("signals")

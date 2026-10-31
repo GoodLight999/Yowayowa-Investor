@@ -103,6 +103,11 @@
         <button id="portfolio-export-button" class="ghost" type="button">{{ t('portfolio.export_csv') }}</button>
       </div>
     </section>
+    <section class="panel portfolio-danger-panel">
+      <div class="section-heading"><h2>{{ t('portfolio.danger_zone') }}</h2></div>
+      <p id="portfolio-delete-note" class="muted portfolio-danger-note">{{ t('portfolio.delete_note') }}</p>
+      <button id="portfolio-delete" class="ghost portfolio-delete" type="button" aria-describedby="portfolio-delete-note" disabled>{{ t('portfolio.delete') }}</button>
+    </section>
   </aside>
 </section>
 <section class="panel portfolio-source-panel">

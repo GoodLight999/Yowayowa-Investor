@@ -16,7 +16,7 @@
 V := $(CURDIR)/.venv
 export PYTHONPATH := $(CURDIR)/src
 
-.PHONY: install bootstrap dev test lint typecheck openapi verify
+.PHONY: install bootstrap dev test lint typecheck openapi openapi-check openapi-baseline verify
 
 # One-time tool-venv construction (initial setup only; do not re-run before
 # every verification). Never installs this project itself. Re-run this once
@@ -47,4 +47,13 @@ typecheck: | bootstrap
 openapi: | bootstrap
 	$(V)/bin/python -m yowayowa.cli_shim export-openapi
 
-verify: lint typecheck test openapi
+# Fail when app.openapi() no longer matches the committed baseline
+# (docs/openapi_baseline.json). Intentional contract changes: make
+# openapi-baseline, review the diff, commit it with the API change.
+openapi-check: | bootstrap
+	$(V)/bin/python scripts/check_openapi_baseline.py
+
+openapi-baseline: | bootstrap
+	$(V)/bin/python scripts/check_openapi_baseline.py --write
+
+verify: lint typecheck test openapi openapi-check

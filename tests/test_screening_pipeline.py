@@ -695,6 +695,43 @@ def _two_candidate_result() -> ScreeningRunResult:
     )
 
 
+def _page_overflow_result(count: int, target_code: str) -> ScreeningRunResult:
+    """``count`` candidates persisted in order, with ``target_code`` last.
+
+    Ordering is (run_date desc, id asc), so a target placed after ``count - 1``
+    filler rows only appears when the read is filtered by code rather than
+    sliced to the first page (dead-end audit 2026-10-23).
+    """
+
+    provenance = Provenance(
+        provider="edinet-v2",
+        source="fixture",
+        license_class=LicenseClass.OFFICIAL_PUBLIC,
+        retrieved_at=SIGNAL_RETRIEVED,
+        as_of=SIGNAL_DATE,
+    )
+    codes = [f"{1000 + index}5" for index in range(max(count - 1, 0))] + [target_code]
+    return ScreeningRunResult(
+        run_date=SIGNAL_DATE,
+        candidates=[
+            ScreeningCandidate(
+                code=code,
+                source=ScreeningSource.EDINET_FILING,
+                signal=ScreeningSignal.FILING_FORECAST_REVISION,
+                document_id=f"S100PAGE{index:03d}",
+                value={"doc_id": f"S100PAGE{index:03d}"},
+                reason="訂正有価証券報告書",
+                provenance=provenance,
+                detected_at=SIGNAL_RETRIEVED,
+            )
+            for index, code in enumerate(codes)
+        ],
+        per_source_counts={"edinet_filing": {"candidates": len(codes)}},
+        coverage={},
+        provenance=provenance,
+    )
+
+
 def test_persist_screening_run_is_idempotent_per_run_date() -> None:
     engine = _memory_engine()
     try:
@@ -926,6 +963,37 @@ def test_api_run_and_candidates(monkeypatch: pytest.MonkeyPatch, tmp_path) -> No
         assert rows[0]["provenance"]["provider"]
 
 
+def test_api_candidates_code_filter_narrows_before_the_limit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """``?code=`` must filter in the query, not after the page slice."""
+
+    _api_db_engine(monkeypatch, tmp_path)
+    from yowayowa import db as db_module
+
+    session = db_module.get_session()
+    try:
+        persist_screening_run(session, _page_overflow_result(60, "14140"))
+    finally:
+        session.close()
+
+    with TestClient(app) as client:
+        response = client.get("/v1/screening/candidates", params={"code": "14140"})
+        assert response.status_code == 200
+        rows = response.json()
+        assert [row["code"] for row in rows] == ["14140"]
+        # A page size of one still returns the requested code, because the
+        # filter runs in the query.
+        single = client.get("/v1/screening/candidates", params={"code": "14140", "limit": 1})
+        assert [row["code"] for row in single.json()] == ["14140"]
+        absent = client.get("/v1/screening/candidates", params={"code": "99990"})
+        assert absent.status_code == 200
+        assert absent.json() == []
+
+    monkeypatch.undo()
+    db_module.dispose_database()
+
+
 def test_api_fails_closed_outside_personal_mode(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     _api_db_engine(monkeypatch, tmp_path)
     monkeypatch.setenv("YOWAYOWA_MODE", "public")
@@ -982,6 +1050,39 @@ def test_cli_screening_run_and_candidates(monkeypatch: pytest.MonkeyPatch, tmp_p
     db_module.dispose_database()
 
 
+def test_cli_screening_candidates_code_filter_reads_past_the_first_page(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """Dead-end audit 2026-10-23: a persisted code beyond ``--limit`` was reported absent.
+
+    The CLI applied the ``CODE`` filter to the first ``limit`` rows instead of
+    pushing it into the query, so a real candidate could exit 1 with
+    "No screening candidates persisted for <code>".
+    """
+
+    from yowayowa import db as db_module
+
+    monkeypatch.setenv("YOWAYOWA_DATABASE_URL", f"sqlite:///{tmp_path / 'cli-filter.db'}")
+    db_module.dispose_database()
+    session = db_module.get_session()
+    try:
+        persist_screening_run(session, _page_overflow_result(60, "14140"))
+    finally:
+        session.close()
+
+    found = runner.invoke(cli_app, ["screening-candidates", "14140"])
+    assert found.exit_code == 0, found.output
+    assert "14140" in found.output
+    assert "10005" not in found.output  # only the requested code is listed
+
+    missing = runner.invoke(cli_app, ["screening-candidates", "99990"])
+    assert missing.exit_code == 1
+    assert "No screening candidates persisted for 99990" in missing.output
+
+    monkeypatch.undo()
+    db_module.dispose_database()
+
+
 # ------------------------------------------------------------------- AI tool
 
 
@@ -1002,5 +1103,8 @@ def test_ai_tool_get_screening_candidates_reads_session() -> None:
         assert payload and payload[0]["code"] in {"11115", "6758"}
         limited = agent._tool_screening_candidates({"limit": 1})
         assert len(limited) == 1
+        # The agent tool exposes the same code lookup as the CLI/API surfaces.
+        by_code = agent._tool_screening_candidates({"code": "6758"})
+        assert [row["code"] for row in by_code] == ["6758"]
     finally:
         engine.dispose()

@@ -11,8 +11,8 @@ from yowayowa.domain import LicenseClass, Provenance
 class OrderbookLevel(BaseModel):
     """Single price-quantity level in an orderbook."""
 
-    price: float = Field(gt=0, description="Order level price")
-    size: float = Field(gt=0, description="Available quantity at this price")
+    price: float = Field(gt=0, allow_inf_nan=False, description="Order level price")
+    size: float = Field(gt=0, allow_inf_nan=False, description="Available quantity at this price")
     order_count: int | None = Field(default=None, description="Number of orders at this level")
 
 
@@ -73,7 +73,7 @@ class ExecutionImpactRequest(BaseModel):
     """Request payload to simulate a market-order execution impact."""
 
     side: Literal["buy", "sell"]
-    quantity: float = Field(gt=0, description="Quantity to execute")
+    quantity: float = Field(gt=0, allow_inf_nan=False, description="Quantity to execute")
 
 
 class ExecutionImpactResult(BaseModel):
@@ -91,3 +91,7 @@ class ExecutionImpactResult(BaseModel):
     total_cost: float | None = None
     levels_swept: int = 0
     warning: str | None = None
+    # Where the board these numbers were computed from came from: mirrors
+    # OrderbookSnapshot.provenance so a synthetic or degraded board stays
+    # identifiable from the impact result itself.
+    provenance: Provenance

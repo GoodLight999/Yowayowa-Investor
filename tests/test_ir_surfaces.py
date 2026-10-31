@@ -204,3 +204,48 @@ def test_kpi_history_empty_read_does_not_create_storage_directories(tmp_path: An
     store = IrKpiHistoryStore(root)
     assert store.entries("https://ir.example.test/not-recorded.pdf") == []
     assert not root.exists()
+
+
+def test_api_monitor_returns_failed_outcome_when_transport_cannot_be_built(
+    monkeypatch: Any, tmp_path: Any
+) -> None:
+    """A connector/browser-session construction failure is 200 + failed, never 500.
+
+    The real service is exercised end to end here (only the factory is broken),
+    so this proves the fail-closed guard holds at the API boundary the operator
+    actually calls: the response carries ``fetch_state=failed`` and the recovery
+    note instead of propagating the factory error as an unhandled exception.
+    """
+
+    _personal_env(monkeypatch, tmp_path)
+    from yowayowa.api.app import app
+
+    def _broken_factory(source: IrSourceDefinition) -> Any:
+        raise RuntimeError("browser session could not be created")
+
+    service = IrMonitorService(
+        data_dir=tmp_path,
+        transport_factory=_broken_factory,
+        sources=[
+            IrSourceDefinition(
+                source_id="example-ir",
+                symbol="1234.T",
+                provider="ir.example.co.jp",
+                listing_url="https://ir.example.co.jp/library/briefing.html",
+            )
+        ],
+    )
+    app.dependency_overrides[get_ir_monitor_service] = lambda: service
+    try:
+        with TestClient(app) as client:
+            response = client.post("/v1/ir/sources/example-ir/monitor")
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert body["fetch_state"] == "failed"
+            assert body["fetched_count"] == 0
+            assert body["documents"] == []
+            note = " ".join(body["notes"])
+            assert "transport unavailable for source example-ir" in note
+            assert "Recovery:" in note
+    finally:
+        app.dependency_overrides.pop(get_ir_monitor_service, None)

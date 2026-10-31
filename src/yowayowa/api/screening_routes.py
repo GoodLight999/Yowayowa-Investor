@@ -87,6 +87,7 @@ def get_screening_candidates(
     run_date: date | None = Query(default=None),
     source: str | None = Query(default=None, max_length=32),
     signal: str | None = Query(default=None, max_length=64),
+    code: str | None = Query(default=None, max_length=5),
     limit: int = Query(
         default=_DEFAULT_CANDIDATES_LIMIT,
         ge=1,
@@ -103,6 +104,7 @@ def get_screening_candidates(
             run_date=run_date,
             source=source,
             signal=signal,
+            code=code,
             limit=limit,
         )
     finally:

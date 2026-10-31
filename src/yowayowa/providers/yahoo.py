@@ -22,6 +22,13 @@ from yowayowa.domain import (
 from yowayowa.fx_models import FxHistory, FxHistoryPoint, FxRateSnapshot
 from yowayowa.providers.base import ProviderDescriptor, enforce_provider_policy
 from yowayowa.providers.fundamentals import is_non_us_exchange_listing
+from yowayowa.quote_currency import (
+    CURRENCY_REASON_INVALID,
+    CURRENCY_REASON_LOOKUP_FAILED,
+    CURRENCY_REASON_NOT_PROVIDED,
+    CURRENCY_SOURCE_FAST_INFO,
+)
+from yowayowa.symbols import InputValidationError, normalize_currency
 from yowayowa.technical import compute_indicators
 
 
@@ -31,6 +38,13 @@ class MarketInstrumentSpec:
     label: str
     category: str
     unit: str
+
+
+# --- Price-currency contract for quotes (P5 R4) ------------------------------
+# ``currency_source`` records where a resolved code came from; ``currency_reason``
+# is the machine-readable explanation carried when the provider supplied none.
+# The vocabulary lives in ``yowayowa.quote_currency`` so every quote surface and
+# the valuation response share one set of strings.
 
 
 DEFAULT_MARKET_UNIVERSE: tuple[MarketInstrumentSpec, ...] = (
@@ -71,6 +85,12 @@ class YahooMarketProvider:
         self._quote_cache: TTLCache[tuple[str, ...], MarketQuoteBatch] = TTLCache(
             maxsize=128, ttl=ttl
         )
+        # A listing's price currency is stable; keep resolved values long
+        # enough that the per-symbol lookup is paid once per session, and never
+        # cache a miss (a transient provider failure must be retried).
+        self._quote_currency_cache: TTLCache[str, tuple[str, str]] = TTLCache[str, tuple[str, str]](
+            maxsize=2048, ttl=max(ttl, 12 * 3600)
+        )
         self._overview_cache: TTLCache[str, MarketOverview] = TTLCache(maxsize=4, ttl=ttl)
         self._fx_history_cache: TTLCache[tuple[str, str, str], FxHistory] = TTLCache(
             maxsize=128, ttl=ttl
@@ -97,6 +117,10 @@ class YahooMarketProvider:
         if frame.empty:
             raise LookupError(f"No market history returned for {normalized_symbol}")
         frame = frame.rename(columns=str.lower)
+        # Provider rows are not guaranteed to arrive in date order; ordering the
+        # frame chronologically keeps bar order and the published as_of honest
+        # (F3: a reversed response used to publish a stale as_of).
+        ordered = frame.sort_index(kind="stable")
         bars = [
             PriceBar(
                 timestamp=self._utc_timestamp(index),
@@ -106,10 +130,10 @@ class YahooMarketProvider:
                 close=float(row["close"]),
                 volume=float(row["volume"]) if pd.notna(row.get("volume")) else None,
             )
-            for index, row in frame.iterrows()
+            for index, row in ordered.iterrows()
             if pd.notna(row.get("close"))
         ]
-        computed = compute_indicators(frame, indicators)
+        computed = compute_indicators(ordered, indicators)
         now = datetime.now(UTC)
         result = MarketHistory(
             symbol=normalized_symbol,
@@ -153,8 +177,31 @@ class YahooMarketProvider:
             multi_level_index=True,
         )
         result = self._quotes_from_frame(frame if frame is not None else pd.DataFrame(), normalized)
+        result = self._with_price_currency(result)
         self._quote_cache[normalized] = result
         return result
+
+    def _with_price_currency(self, batch: MarketQuoteBatch) -> MarketQuoteBatch:
+        """Attach the provider-resolved price currency to each priced quote.
+
+        Only listings that produced a price are looked up: an unavailable
+        symbol has nothing to denominate. The lookup never breaks the quote
+        itself — a provider failure becomes ``currency_reason`` instead.
+        """
+
+        if not batch.quotes:
+            return batch
+        quotes: dict[str, MarketQuote] = {}
+        for symbol, quote in batch.quotes.items():
+            currency, source, reason = self._quote_currency(self._provider_symbol(symbol))
+            quotes[symbol] = quote.model_copy(
+                update={
+                    "currency": currency,
+                    "currency_source": source,
+                    "currency_reason": reason,
+                }
+            )
+        return batch.model_copy(update={"quotes": quotes})
 
     def fx_quote(self, pair: str) -> FxRateSnapshot:
         """Latest FX rate for a normalized pair, from the same Yahoo source."""
@@ -168,6 +215,10 @@ class YahooMarketProvider:
             return cached
         frame = yf.Ticker(provider_symbol).history(period="5d", interval="1d", auto_adjust=False)
         close = self._close_series(frame.rename(columns=str.lower) if not frame.empty else frame)
+        # A non-positive quote is not a rate: 0.0 (or a negative print) is a bad
+        # row, not a zero-valued currency pair (F2).
+        if close is not None:
+            close = close[close > 0]
         if close is None or close.empty:
             raise LookupError(f"No FX rate returned for {normalized}")
         snapshot = FxRateSnapshot(
@@ -275,13 +326,52 @@ class YahooMarketProvider:
             return f"{base}-{class_code}"
         return normalized
 
+    def _quote_currency(self, provider_symbol: str) -> tuple[str | None, str | None, str | None]:
+        """Price currency for one listing as ``(currency, source, reason)``.
+
+        The value comes from the provider's own quote metadata; it is never
+        inferred from a ticker suffix or an exchange table. When the provider
+        cannot supply a usable code the currency stays None and ``reason``
+        carries a machine-readable code, so callers can distinguish
+        "provider says nothing" from "not looked up yet" (P5 R4).
+        """
+
+        cached = self._quote_currency_cache.get(provider_symbol)
+        if cached is not None:
+            currency, source = cached
+            return currency, source, None
+        try:
+            fast_info = yf.Ticker(provider_symbol).fast_info
+            raw = fast_info.get("currency") if hasattr(fast_info, "get") else None
+        except Exception:
+            return None, None, CURRENCY_REASON_LOOKUP_FAILED
+        text = "" if raw is None else str(raw).strip().upper()
+        if not text:
+            return None, None, CURRENCY_REASON_NOT_PROVIDED
+        try:
+            code = normalize_currency(text)
+        except InputValidationError:
+            return None, None, CURRENCY_REASON_INVALID
+        # Cache successes only: a transient failure must be retried, not frozen.
+        self._quote_currency_cache[provider_symbol] = (code, CURRENCY_SOURCE_FAST_INFO)
+        return code, CURRENCY_SOURCE_FAST_INFO, None
+
     @staticmethod
     def _quotes_from_frame(frame: pd.DataFrame, symbols: tuple[str, ...]) -> MarketQuoteBatch:
         quotes: dict[str, MarketQuote] = {}
         unavailable: list[str] = []
-        for symbol in symbols:
+        # A flat (non-MultiIndex) frame carries no symbol identity: yfinance only
+        # produces one for a single-ticker download. Attribute it to the first
+        # requested symbol and leave the rest unavailable, so one listing's
+        # series is never stamped onto every symbol (F1).
+        flat_frame = not frame.empty and not isinstance(frame.columns, pd.MultiIndex)
+        for position, symbol in enumerate(symbols):
             provider_symbol = YahooMarketProvider._provider_symbol(symbol)
-            symbol_frame = YahooMarketProvider._symbol_frame(frame, provider_symbol)
+            symbol_frame = (
+                None
+                if flat_frame and position > 0
+                else YahooMarketProvider._symbol_frame(frame, provider_symbol)
+            )
             close = YahooMarketProvider._close_series(symbol_frame)
             if close is None or close.empty:
                 unavailable.append(symbol)
@@ -307,6 +397,8 @@ class YahooMarketProvider:
                 as_of=latest_as_of,
                 notes=[
                     "Batched 5-day daily history used for latest and previous closes.",
+                    "Price currency is read from the provider's quote metadata; when the "
+                    "provider supplies none, currency is null and currency_reason states why.",
                     "Personal-use provider. Public redistribution is blocked by provider policy.",
                 ],
             ),
@@ -319,8 +411,15 @@ class YahooMarketProvider:
     ) -> MarketOverview:
         items: list[MarketOverviewItem] = []
         unavailable: list[str] = []
-        for spec in specs:
-            symbol_frame = YahooMarketProvider._symbol_frame(frame, spec.symbol)
+        # Same rule as ``_quotes_from_frame``: a flat frame is only attributable
+        # to the first spec, never duplicated onto every requested instrument (F1).
+        flat_frame = not frame.empty and not isinstance(frame.columns, pd.MultiIndex)
+        for position, spec in enumerate(specs):
+            symbol_frame = (
+                None
+                if flat_frame and position > 0
+                else YahooMarketProvider._symbol_frame(frame, spec.symbol)
+            )
             close = YahooMarketProvider._close_series(symbol_frame)
             if close is None or close.empty:
                 unavailable.append(spec.symbol)

@@ -2702,6 +2702,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cachetools" },
+    { name = "click" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "jinja2" },
@@ -2764,6 +2765,7 @@ xbrl = [
 requires-dist = [
     { name = "arelle-release", marker = "extra == 'xbrl'", specifier = ">=2.37,<3" },
     { name = "cachetools", specifier = ">=5.5,<7" },
+    { name = "click", specifier = ">=8.5,<9" },
     { name = "fastapi", specifier = ">=0.116,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.7,<3" },

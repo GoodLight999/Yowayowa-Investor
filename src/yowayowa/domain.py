@@ -13,6 +13,7 @@ class LicenseClass(StrEnum):
     PERSONAL_ONLY = "personal_only"
     USER_KEY = "user_key"
     LICENSED_REDISTRIBUTABLE = "licensed_redistributable"
+    SYNTHETIC = "synthetic"
 
 
 class Provenance(BaseModel):
@@ -64,7 +65,13 @@ class MarketQuote(BaseModel):
     symbol: str
     price: float
     previous_close: float | None = None
+    # Price currency contract (P5 R4): ``currency`` holds the ISO-4217 code the
+    # provider returned for this listing. When the provider cannot supply one,
+    # ``currency`` stays None and ``currency_reason`` carries a machine-readable
+    # code — the field is never silently omitted or guessed from a ticker suffix.
     currency: str | None = None
+    currency_source: str | None = None
+    currency_reason: str | None = None
     as_of: datetime
 
 
@@ -125,6 +132,11 @@ class ValuationSnapshot(BaseModel):
     symbol: str
     company_name: str
     price: float
+    # Copied verbatim from the single market-quote source (P5 R4); valuation
+    # never re-derives or guesses the price currency.
+    currency: str | None = None
+    currency_source: str | None = None
+    currency_reason: str | None = None
     shares_diluted: float | None = None
     market_cap: float | None = None
     annual_period_end: date | None = None
@@ -209,6 +221,21 @@ class Portfolio(BaseModel):
     positions: list[Position]
     created_at: datetime
     updated_at: datetime
+
+
+class PortfolioDeletion(BaseModel):
+    """What a portfolio delete actually removed.
+
+    Counts are reported for every dependent table so the caller can prove the
+    financial rows are gone instead of trusting a bare ``204``.
+    """
+
+    portfolio_id: int
+    name: str
+    force: bool
+    deleted_positions: int
+    deleted_snapshots: int
+    deleted_applied_executions: int
 
 
 class PositionAnalytics(BaseModel):

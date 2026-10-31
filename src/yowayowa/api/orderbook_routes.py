@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from yowayowa.api.deps import require_api_token
 from yowayowa.orderbook_models import (
     ExecutionImpactRequest,
     ExecutionImpactResult,
@@ -13,7 +14,11 @@ from yowayowa.orderbook_models import (
 )
 from yowayowa.services.orderbook_service import OrderbookService
 
-router = APIRouter(prefix="/v1/orderbook", tags=["orderbook"])
+router = APIRouter(
+    prefix="/v1/orderbook",
+    tags=["orderbook"],
+    dependencies=[Depends(require_api_token)],
+)
 _service = OrderbookService()
 
 

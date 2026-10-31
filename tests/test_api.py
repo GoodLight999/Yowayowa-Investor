@@ -29,8 +29,27 @@ def test_api_startup_health_watchlists_compare_and_portfolio_surfaces(
             assert runtime.status_code == 200
             assert runtime.json()["status"] == "ok"
             assert runtime.json()["request_id"] == runtime.headers["x-yowayowa-request-id"]
-            assert "source" in runtime.json()
-            assert "vercel" in runtime.json()
+            assert "source" not in runtime.json()
+            assert "vercel" not in runtime.json()
+
+            monkeypatch.setenv("YOWAYOWA_API_TOKEN", "fixture-operator-token")
+            _reset_settings()
+            try:
+                runtime_held = client.get(
+                    "/internal/debug/runtime",
+                    headers={"Authorization": "Bearer fixture-operator-token"},
+                )
+                assert runtime_held.status_code == 200
+                assert runtime_held.json()["status"] == "ok"
+                assert (
+                    runtime_held.json()["request_id"]
+                    == (runtime_held.headers["x-yowayowa-request-id"])
+                )
+                assert "source" in runtime_held.json()
+                assert "vercel" in runtime_held.json()
+            finally:
+                monkeypatch.delenv("YOWAYOWA_API_TOKEN")
+                _reset_settings()
 
             japanese = client.get("/?lang=ja")
             assert japanese.status_code == 200

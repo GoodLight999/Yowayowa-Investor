@@ -1,0 +1,146 @@
+{
+ "task": "t_2998ff0e",
+ "method": "A daily mtm chain (dedupe/day keep-last) returns scaled by gross g, compounded from 1.0; identical to docs/DEMO_LOOP_SHADOW_GROSS_CAP_20261025.md §4 (t_52c4aa20)",
+ "journal_sha256": "b0a72968663ff271ad12ba087e6bcb753cbc4d83e3629454659825b38855df55",
+ "window": {
+  "from": "2026-10-10",
+  "to": "2026-10-25",
+  "days": 16,
+  "returns": 15
+ },
+ "bench": {
+  "book": "CRYPTO_1N",
+  "equity": 0.955352,
+  "return_pct": -4.4648,
+  "maxdd_pct": -5.2355,
+  "return_over_maxdd": 0.8528
+ },
+ "levels": [
+  {
+   "gross": 0.25,
+   "equity": 0.989374,
+   "return_pct": -1.0626,
+   "maxdd_pct": -1.2646,
+   "dd_ratio": 0.2415,
+   "return_over_maxdd": 0.8403
+  },
+  {
+   "gross": 0.5,
+   "equity": 0.978641,
+   "return_pct": -2.1359,
+   "maxdd_pct": -2.5342,
+   "dd_ratio": 0.484,
+   "return_over_maxdd": 0.8428
+  },
+  {
+   "gross": 0.75,
+   "equity": 0.967805,
+   "return_pct": -3.2195,
+   "maxdd_pct": -3.8086,
+   "dd_ratio": 0.7274,
+   "return_over_maxdd": 0.8453
+  },
+  {
+   "gross": 1.0,
+   "equity": 0.956872,
+   "return_pct": -4.3128,
+   "maxdd_pct": -5.0872,
+   "dd_ratio": 0.9717,
+   "return_over_maxdd": 0.8478
+  }
+ ],
+ "criterion": "max of return_pct / maxdd_pct (after-cost cumulative return over max drawdown)",
+ "best_level": 1.0,
+ "best_value": 0.8478,
+ "regression_checks": {
+  "g100_equity_matches_official_eval": true,
+  "g100_maxdd_matches_official_eval": true,
+  "g100_dd_ratio_matches_official_eval": true,
+  "g50_equity_matches_t52c4aa20": true,
+  "g50_maxdd_matches_t52c4aa20": true,
+  "g50_dd_ratio_matches_t52c4aa20": true
+ },
+ "daily_chain": [
+  {
+   "date": "2026-10-10",
+   "equity": 1.0
+  },
+  {
+   "date": "2026-10-11",
+   "equity": 0.997365035907519
+  },
+  {
+   "date": "2026-10-12",
+   "equity": 1.0081585571392127
+  },
+  {
+   "date": "2026-10-13",
+   "equity": 0.9790891092980176
+  },
+  {
+   "date": "2026-10-14",
+   "equity": 0.9979133123785253
+  },
+  {
+   "date": "2026-10-15",
+   "equity": 0.9743105555611894
+  },
+  {
+   "date": "2026-10-16",
+   "equity": 0.9819362820462199
+  },
+  {
+   "date": "2026-10-17",
+   "equity": 0.9744742544785614
+  },
+  {
+   "date": "2026-10-18",
+   "equity": 0.9695099958662674
+  },
+  {
+   "date": "2026-10-19",
+   "equity": 0.9747615877195582
+  },
+  {
+   "date": "2026-10-20",
+   "equity": 0.973255313604369
+  },
+  {
+   "date": "2026-10-21",
+   "equity": 0.9880808034901979
+  },
+  {
+   "date": "2026-10-22",
+   "equity": 0.9991907999986528
+  },
+  {
+   "date": "2026-10-23",
+   "equity": 0.966553196118262
+  },
+  {
+   "date": "2026-10-24",
+   "equity": 0.9647163203851221
+  },
+  {
+   "date": "2026-10-25",
+   "equity": 0.9568718032846939
+  }
+ ],
+ "daily_returns": [
+  -0.00263496,
+  0.01082204,
+  -0.0288342,
+  0.01922624,
+  -0.02365211,
+  0.00782679,
+  -0.0075993,
+  -0.00509429,
+  0.00541675,
+  -0.00154527,
+  0.01523289,
+  0.01124402,
+  -0.03266404,
+  -0.00190044,
+  -0.00813142
+ ]
+}

@@ -1,0 +1,203 @@
+{
+  "base_commit": "f97abbd",
+  "protected_files_unchanged": 246,
+  "stock_ohlcv_unchanged": 14,
+  "all_ohlcv_unchanged": 19,
+  "non_xom_sidecars_byte_unchanged": true,
+  "financial_rows_source_and_formula_checked": 15258,
+  "xom_changed_rows": 40,
+  "xom_first_changed_date": "2026-08-03",
+  "xom_last_changed_date": "2026-09-28",
+  "xom_boundary": [
+    {
+      "day": "2026-07-31",
+      "before": {
+        "cik": "0000034088",
+        "accession": "0000034088-26-000067",
+        "equity": 254381000000.0,
+        "reported_shares": 4144947162.0,
+        "pbr": 2.5327779467070264,
+        "disclosure_date": "2026-05-04"
+      },
+      "after": {
+        "cik": "0000034088",
+        "accession": "0000034088-26-000067",
+        "equity": 254381000000.0,
+        "reported_shares": 4144947162.0,
+        "pbr": 2.5327779467070264,
+        "disclosure_date": "2026-05-04"
+      }
+    },
+    {
+      "day": "2026-08-03",
+      "before": {
+        "cik": "0000034088",
+        "accession": "0000034088-26-000067",
+        "equity": 254381000000.0,
+        "reported_shares": 4144947162.0,
+        "pbr": 2.526586132375138,
+        "disclosure_date": "2026-05-04"
+      },
+      "after": {
+        "cik": "0002115436",
+        "accession": "0000034088-26-000093",
+        "equity": 259380000000.0,
+        "reported_shares": 4111911960.0,
+        "pbr": 2.4581427577978254,
+        "disclosure_date": "2026-08-03"
+      }
+    },
+    {
+      "day": "2026-09-28",
+      "before": {
+        "cik": "0000034088",
+        "accession": "0000034088-26-000067",
+        "equity": 254381000000.0,
+        "reported_shares": 4144947162.0,
+        "pbr": 2.6481412242590445,
+        "disclosure_date": "2026-05-04"
+      },
+      "after": {
+        "cik": "0002115436",
+        "accession": "0000034088-26-000093",
+        "equity": 259380000000.0,
+        "reported_shares": 4111911960.0,
+        "pbr": 2.5764050109461025,
+        "disclosure_date": "2026-08-03"
+      }
+    }
+  ],
+  "split_events": [
+    [
+      "AAPL",
+      "2020-08-31",
+      4.0
+    ],
+    [
+      "AMZN",
+      "2022-06-06",
+      20.0
+    ],
+    [
+      "GOOGL",
+      "2022-07-18",
+      20.0
+    ],
+    [
+      "NVDA",
+      "2021-07-20",
+      4.0
+    ],
+    [
+      "NVDA",
+      "2024-06-10",
+      10.0
+    ],
+    [
+      "TSLA",
+      "2020-08-31",
+      5.0
+    ],
+    [
+      "TSLA",
+      "2022-08-25",
+      3.0
+    ]
+  ],
+  "offline_regeneration_byte_equal": true,
+  "relocated_offline_generation_byte_equal": true,
+  "relocated_runner_byte_equal": true,
+  "supplied_sha256": "6987f59273b349db0b7a7b83796720f82fc0f8cfa31730b6418d662dc2acd8a4",
+  "trading_results_changed": false,
+  "criteria": {
+    "a_oos_sharpe_improvement": "pass",
+    "b_is_oos_cagr_gap_reduction": "pass",
+    "c_full_max_drawdown_reduction": "not_met",
+    "d_full_bootstrap_lower_ge_minus_0_15": "pass",
+    "reason": "Measured supplied-input GARP vs matched momentum; inspect coverage and OOS length.",
+    "c_oos_max_drawdown_reduction": "pass"
+  },
+  "archive_bytes": 4928314,
+  "archive_sha256": "546c94c276002500f69a709782eeebf9a61051bcb949b9fe77ddf411e7cd6802",
+  "price_input_hashes": {
+    "data/stock-ohlcv/TSLA/ohlcv.jsonl": "b014d0660017c04532bba21851032928466a10c26b95de7824c5317c3d4deed4",
+    "data/stock-ohlcv/QQQ/ohlcv.jsonl": "24d39b4bdf7a9aa4b35758da3711e992ea803d59f40bc2fa7c18ac28c4948d72",
+    "data/stock-ohlcv/JPM/ohlcv.jsonl": "50c7efc7ff1ad7b6fda319b8cfc68001a8ea0d853869d9f2c8e1c87a98a5e8d2",
+    "data/stock-ohlcv/AMZN/ohlcv.jsonl": "2b74a01701c0ccb5cc0e0a543ce21efec0705432f32a1eda2f95b46dbe118d24",
+    "data/stock-ohlcv/GOOGL/ohlcv.jsonl": "fa772748722ca68da246c2af4cc48faaf370c4f8c21241d1477d1f6b4c5047fa",
+    "data/stock-ohlcv/AAPL/ohlcv.jsonl": "db75b322dbcdfaae754be32d6bcebdf318f5fbf4d9633e49ef0a76611034d83a",
+    "data/stock-ohlcv/JNJ/ohlcv.jsonl": "38bfb612e7d907e532dfdfd6f1b8fdf2efa19be7a4342226a1580288f89f4e32",
+    "data/stock-ohlcv/XOM/ohlcv.jsonl": "1a2daedbbb4886bd5765431db8541a837cd2c8416ddb0dcc816599d2cbd047f2",
+    "data/stock-ohlcv/NVDA/ohlcv.jsonl": "e3aef3f7156193813c8d7b09f9e9a8b387ae71889aae6650488289f9521b0e6e",
+    "data/stock-ohlcv/META/ohlcv.jsonl": "17e5c9ae7c3f11f8a26c7c5f5db74af13ffea2b995925044c8927749b91898be",
+    "data/stock-ohlcv/SPY/ohlcv.jsonl": "7e5f68f95bbbe7c17c54947b6911190f8b80483f3030c925f45487a6dc9b7825",
+    "data/stock-ohlcv/MSFT/ohlcv.jsonl": "bbb26a24a3074fee91a76debe120735e705518a09639463f02fa34a16d524d58",
+    "data/stock-ohlcv/IWM/ohlcv.jsonl": "1aeaf3649f068878a4ff3660f9889dc4bc1f838831e0f096faaa0858db845068",
+    "data/stock-ohlcv/PG/ohlcv.jsonl": "dbf013d2f66dde5b1c3dedef7289240242a8d9c0a6e0adaa29fe1fe1b58a8e87"
+  },
+  "extracted_archive_runner_byte_equal": true,
+  "real_runner_tamper_fail_closed": {
+    "pbr/XOM.jsonl": {
+      "exit_code": 1,
+      "output_not_created": true,
+      "sha256_mismatch_reported": true
+    },
+    "pbr/SPY.jsonl": {
+      "exit_code": 1,
+      "output_not_created": true,
+      "sha256_mismatch_reported": true
+    },
+    "pbr/split-calendar.json": {
+      "exit_code": 1,
+      "output_not_created": true,
+      "sha256_mismatch_reported": true
+    },
+    "sec-raw/CIK0002115436.json": {
+      "exit_code": 1,
+      "output_not_created": true,
+      "sha256_mismatch_reported": true
+    }
+  },
+  "legacy_runner_byte_regression": {
+    "backtest_results_p3.json": {
+      "sha256": "b88c17ea70d1b574fdb04b2a320132e23cd3ea6d29eca1cb64e9fe648cddea1e",
+      "byte_equal": true
+    },
+    "backtest_results_s02.json": {
+      "sha256": "9aa2228bb511580814fb6ab9d39ee8e9c36b77110139b1cd5f6abd3eef28f7dd",
+      "byte_equal": true
+    },
+    "backtest_results_s05.json": {
+      "sha256": "21da050b10c6b72b356fe34005bce96fbe2383ab937265afefe2fcd0b5262795",
+      "byte_equal": true
+    },
+    "crypto_backtest_results.json": {
+      "sha256": "1cdca730152f697acae252b8bb609ff30f4a1ab13fe393f650849bccf8cc720b",
+      "byte_equal": true
+    },
+    "backtest_results_s03.json": {
+      "sha256": "7da48a967068f188339e7564b732343917616c81c5372572da87a935087daa08",
+      "byte_equal": true
+    }
+  },
+  "existing_tracked_result_json_byte_unchanged": {
+    "backtest_results_p3.json": "7420f8e068ecc698a3a14ebf245891e7dbf7bb49bdc41384c04a7189169d61c8",
+    "backtest_results_s02.json": "9aa2228bb511580814fb6ab9d39ee8e9c36b77110139b1cd5f6abd3eef28f7dd",
+    "backtest_results_s03.json": "7da48a967068f188339e7564b732343917616c81c5372572da87a935087daa08",
+    "backtest_results_s05.json": "21da050b10c6b72b356fe34005bce96fbe2383ab937265afefe2fcd0b5262795",
+    "crypto_backtest_results.json": "1cdca730152f697acae252b8bb609ff30f4a1ab13fe393f650849bccf8cc720b"
+  },
+  "dedicated_tests": {
+    "passed": 85,
+    "exit_code": 0,
+    "duration_seconds": 1.44
+  },
+  "make_verify": {
+    "exit_code": 0,
+    "passed": 1972,
+    "skipped": 2,
+    "warnings": 1,
+    "duration_seconds": 372.33,
+    "lint_format_mypy_openapi": "passed"
+  }
+}

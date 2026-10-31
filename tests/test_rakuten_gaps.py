@@ -78,14 +78,16 @@ def test_id_text_value_shapes() -> None:
 
 
 def test_to_int_value_shapes() -> None:
-    assert _to_int(None) == 0
-    assert _to_int(True) == 0
-    assert _to_int(False) == 0
+    # Unreadable input is unknown (None), never a zero quantity.
+    assert _to_int(None) is None
+    assert _to_int(True) is None
+    assert _to_int(False) is None
     assert _to_int(5) == 5
-    assert _to_int(2.9) == 2
+    assert _to_int(2.9) is None  # fractional share counts are not truncated
+    assert _to_int(2.0) == 2
     assert _to_int("1,234") == 1234
     assert _to_int(" 42 ") == 42
-    assert _to_int("bad") == 0
+    assert _to_int("bad") is None
 
 
 def test_to_decimal_value_shapes() -> None:
@@ -206,7 +208,7 @@ def test_order_id_records_skips_non_positive_ids() -> None:
     table = [
         [H_ID, H_FUNC, H_ORDER, H_RESULT],
         [0, "fn", "111", "ok"],  # id <= 0 -> skipped
-        [None, "fn", "222", "ok"],  # _to_int(None) == 0 -> skipped
+        [None, "fn", "222", "ok"],  # _to_int(None) is None -> skipped
         [5, "", "", ""],
     ]
     reader = DictReader({}, {"RssOrderIDList()": table})

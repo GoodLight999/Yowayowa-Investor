@@ -44,6 +44,7 @@ from yowayowa.acquisition.models import (
     AuthState,
     NetworkExchange,
 )
+from yowayowa.acquisition.snapshots import corrupt_rows_note
 from yowayowa.acquisition.transport import (
     PrivateAcquisitionError,
     SessionTransport,
@@ -154,6 +155,26 @@ class IrDocumentRecord(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class IrSourceRegistryError(RuntimeError):
+    """The persisted IR source registry exists but cannot be used.
+
+    Fail closed: an unreadable registry must never be read as "no sources"
+    (that silently stops IR monitoring) and must never be overwritten (that
+    would destroy every operator-registered company). The file on disk is left
+    untouched so it can be inspected, repaired, or restored from backup.
+    """
+
+    def __init__(self, path: Path, detail: str) -> None:
+        self.path = path
+        self.detail = detail
+        super().__init__(
+            f"IR source registry unusable ({detail}): {path}. "
+            f"Recovery: restore the file from backup, repair the JSON by hand, or move it "
+            f"aside (mv {path} {path}.corrupt) to start from an empty registry. "
+            "This service never modifies or deletes the file it cannot read."
+        )
+
+
 class IrSourceRegistryStore:
     """Durable registry of IR source definitions (one JSON file).
 
@@ -170,24 +191,34 @@ class IrSourceRegistryStore:
         return self.root / "sources.json"
 
     def load(self) -> list[IrSourceDefinition]:
-        if not self.path.exists():
-            return []
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return []
-        if not isinstance(raw, list):
-            return []
-        definitions: list[IrSourceDefinition] = []
-        for item in raw:
-            if isinstance(item, dict):
-                try:
-                    definitions.append(IrSourceDefinition.model_validate(item))
-                except ValidationError:
-                    continue
+        definitions, _ = self._read()
+        return definitions
+
+    def load_checked(self) -> list[IrSourceDefinition]:
+        """Read the registry, refusing to hide entries that cannot be parsed.
+
+        ``load`` deliberately returns the parseable subset for inspection;
+        the service uses this stricter form so a partially unreadable registry
+        is an explicit error state instead of a silent loss of configuration.
+        """
+
+        definitions, invalid_entries = self._read()
+        if invalid_entries:
+            raise IrSourceRegistryError(
+                self.path,
+                f"{invalid_entries} of the persisted entries failed validation",
+            )
         return definitions
 
     def save(self, definitions: list[IrSourceDefinition]) -> None:
+        # Never persist over a registry we could not read in full: that is how
+        # operator-defined sources get destroyed.
+        _, invalid_entries = self._read()
+        if invalid_entries:
+            raise IrSourceRegistryError(
+                self.path,
+                f"{invalid_entries} of the persisted entries failed validation",
+            )
         self.root.mkdir(parents=True, exist_ok=True)
         payload = [definition.model_dump(mode="json") for definition in definitions]
         self.path.write_text(
@@ -195,19 +226,64 @@ class IrSourceRegistryStore:
             encoding="utf-8",
         )
 
+    def _read(self) -> tuple[list[IrSourceDefinition], int]:
+        """Parsed definitions plus the count of entries that failed validation.
+
+        An unreadable file raises instead of looking like an empty registry.
+        """
+
+        if not self.path.exists():
+            return [], 0
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise IrSourceRegistryError(self.path, f"{type(exc).__name__}: {exc}") from exc
+        if not isinstance(raw, list):
+            raise IrSourceRegistryError(
+                self.path, f"expected a JSON list, found {type(raw).__name__}"
+            )
+        definitions: list[IrSourceDefinition] = []
+        invalid_entries = 0
+        for item in raw:
+            if isinstance(item, dict):
+                try:
+                    definitions.append(IrSourceDefinition.model_validate(item))
+                    continue
+                except ValidationError:
+                    pass
+            invalid_entries += 1
+        return definitions, invalid_entries
+
 
 class IrMonitorOutcome(BaseModel):
-    """Full outcome for one monitoring run over one IR source."""
+    """Full outcome for one monitoring run over one IR source.
+
+    ``fetch_state`` is derived from what the run actually retrieved, not from
+    the listing GET alone: a run that discovered documents but could not
+    retrieve a single byte is ``FAILED``. Counts are split so a caller reading
+    only the summary cannot confuse "new documents detected on the listing
+    page" with "new document bytes retrieved": ``new_count`` counts URL-level
+    new detections (including documents beyond the fetch budget), while
+    ``fetched_count`` counts records whose content was actually retrieved this
+    run.
+    """
 
     source_id: str
     symbol: str
     fetch_state: AcquisitionFetchState
     listing_url: str
     documents: list[IrDocumentRecord] = Field(default_factory=list)
+    # New documents detected by URL identity. Includes documents that were not
+    # fetched this run (budget) — always read it together with fetched_count.
     new_count: int = 0
     revised_count: int = 0
     unchanged_count: int = 0
     seen_count: int = 0
+    # Documents whose bytes were retrieved and fingerprinted in this run.
+    fetched_count: int = 0
+    # Document fetch attempts that produced no response (HTTP error, transport
+    # error, oversized document). Zero means every attempt succeeded.
+    failed_fetch_count: int = 0
     timeline_entries: int = 0
     network: list[NetworkExchange] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
@@ -224,6 +300,35 @@ class IrRevisionDiff(BaseModel):
     change: str  # increase | decrease | revision (sign flip) | added | removed
     delta: float | None = None
     note: str | None = None
+
+
+class IrTransportUnavailableError(PrivateAcquisitionError):
+    """The per-source transport could not be built (connector / browser session).
+
+    Fail closed: connector and browser-session construction happens *outside*
+    the HTTP call, so a failure there is not an ``httpx`` error and used to
+    escape ``monitor()`` as an unhandled exception (HTTP 500 at the API layer)
+    instead of a FAILED outcome. The factory is now invoked inside the same
+    ``PrivateAcquisitionError`` guard as the fetches, and any construction
+    failure is normalised into this error so every acquisition path reports an
+    explicit state plus a recovery procedure.
+
+    This is a ``PrivateAcquisitionError`` on purpose: the guards in
+    ``_fetch_listing`` / ``_fetch_document`` already treat that type as a
+    fail-closed acquisition outcome, so no path can regress to a bare raise.
+    """
+
+    def __init__(self, source_id: str, detail: str) -> None:
+        self.source_id = source_id
+        self.detail = detail
+        super().__init__(
+            AcquisitionFetchState.FAILED,
+            f"transport unavailable for source {source_id} ({detail}). "
+            "Recovery: re-connect the operator session for this source (re-run the "
+            "login/reauthentication flow), rebuild the connector/browser session that "
+            "provides the transport factory, then re-run monitoring. "
+            "No document was fetched in this run.",
+        )
 
 
 TransportFactory = Callable[[IrSourceDefinition], SessionTransport]
@@ -245,32 +350,69 @@ class IrMonitorService:
         self.data_dir = data_dir
         self._transport_factory = transport_factory
         self._registry = IrSourceRegistryStore(root=data_dir / "ir-sources")
-        persisted = self._registry.load()
+        self._registry_error: IrSourceRegistryError | None = None
+        try:
+            persisted = self._registry.load_checked()
+        except IrSourceRegistryError as exc:
+            # Fail closed: a corrupt registry is an explicit error state, never
+            # "no sources", and it must not be overwritten.
+            self._registry_error = exc
+            persisted = []
         merged: dict[str, IrSourceDefinition] = {source.source_id: source for source in persisted}
         for source in sources or []:
             merged[source.source_id] = source
         self._sources = merged
-        if sources:
-            self._registry.save(self.list_sources())
+        if sources and self._registry_error is None:
+            try:
+                self._registry.save(self.list_sources())
+            except IrSourceRegistryError as exc:
+                # The file parsed but holds entries that no longer validate.
+                self._registry_error = exc
         self._now = now
         self._detector = detector or HeuristicAuthDetector()
-        self._max_documents = max_documents_per_run
+        # A non-positive run budget cannot bound anything: ``max(1, 0 // 2)``
+        # would fetch one document past a zero budget and a negative remainder
+        # made ``reverify_pool[:-N]`` slice targets away. Normalise instead of
+        # silently breaking the caller's bound.
+        self._max_documents = (
+            max_documents_per_run if max_documents_per_run > 0 else _MAX_DOCUMENTS_PER_RUN
+        )
         self._fingerprints = FingerprintStore(root=data_dir / "ir-fingerprints")
         self._timeline = IrTimelineStore(root=data_dir / "ir-timeline")
         self._kpi_history = IrKpiHistoryStore(root=data_dir / "ir-kpi-history")
 
+    @property
+    def registry_error(self) -> IrSourceRegistryError | None:
+        """Why the persisted registry is unusable, or ``None`` when it is fine."""
+
+        return self._registry_error
+
     # ------------------------------------------------------------- registry
 
     def add_source(self, definition: IrSourceDefinition) -> None:
-        """Register (or replace) a source and persist the registry."""
+        """Register (or replace) a source and persist the registry.
+
+        Refuses to write while the persisted registry is unusable: saving the
+        in-memory list would silently drop every source already on disk.
+        """
+
+        if self._registry_error is not None:
+            raise self._registry_error
         self._sources[definition.source_id] = definition
         self._registry.save(self.list_sources())
 
     def list_sources(self) -> list[IrSourceDefinition]:
-        return [self._sources[key] for key in sorted(self._sources)]
+        definitions = [self._sources[key] for key in sorted(self._sources)]
+        if not definitions and self._registry_error is not None:
+            # An unreadable registry must never look like "no sources registered".
+            raise self._registry_error
+        return definitions
 
     def get_source(self, source_id: str) -> IrSourceDefinition | None:
-        return self._sources.get(source_id)
+        definition = self._sources.get(source_id)
+        if definition is None and self._registry_error is not None:
+            raise self._registry_error
+        return definition
 
     # ------------------------------------------------------------- timeline
 
@@ -289,15 +431,20 @@ class IrMonitorService:
     def monitor(self, source_id: str) -> IrMonitorOutcome:
         source = self._sources.get(source_id)
         if source is None:
+            unknown_notes = [f"unknown IR source: {source_id}"]
+            if self._registry_error is not None:
+                unknown_notes.insert(0, str(self._registry_error))
             return IrMonitorOutcome(
                 source_id=source_id,
                 symbol="",
                 fetch_state=AcquisitionFetchState.FAILED,
                 listing_url="",
-                notes=[f"unknown IR source: {source_id}"],
+                notes=unknown_notes,
             )
         network: list[NetworkExchange] = []
         notes: list[str] = []
+        if self._registry_error is not None:
+            notes.append(str(self._registry_error))
         now = self._now()
 
         # 1. discovery: fetch the listing page
@@ -320,8 +467,23 @@ class IrMonitorService:
         # 2. detection: pre-classify ALL discovered documents by URL so the
         # run can (a) record every discovered URL as seen and (b) fetch only
         # candidates that are potentially new/revised (bounded).
-        known = self._fingerprints.known_keys(source.source_id)
-        known_content = self._fingerprints.known_content_urls(source.source_id)
+        # Both readers share one diagnostics dict: each read clears and
+        # rewrites it, so the note is built after the second read (both read
+        # the same file, the counts are identical).
+        fingerprint_diagnostics: dict[str, Any] = {}
+        known = self._fingerprints.known_keys(source.source_id, diagnostics=fingerprint_diagnostics)
+        known_content = self._fingerprints.known_content_urls(
+            source.source_id, diagnostics=fingerprint_diagnostics
+        )
+        corrupt_note = corrupt_rows_note(fingerprint_diagnostics)
+        if corrupt_note is not None:
+            # Same one-line notes contract as every other degradation here:
+            # the skipped rows make those URLs classify as new until they are
+            # re-fetched, so re-fetch and duplicate alerts can fire.
+            notes.append(
+                corrupt_note + "; until re-fetched, the affected URLs classify as new and"
+                " may trigger re-fetch and duplicate alerts"
+            )
         fetched: dict[str, dict[str, str]] = {}
         responses: dict[str, TransportResponse] = {}
 
@@ -342,8 +504,8 @@ class IrMonitorService:
         # Re-verification budget prefers URLs with a prior content hash:
         # those can prove "unchanged" or surface a real "revised"; URLs never
         # content-verified wait until new-document budget frees up.
-        reverify_budget = self._max_documents - len(fetch_targets)
-        if reverify_budget:
+        reverify_budget = max(0, self._max_documents - len(fetch_targets))
+        if reverify_budget > 0:
             reverify_pool = [item for item in candidates if item["status"] == "seen"]
             reverify_pool.sort(key=lambda item: item["url"] not in known_content)
             reverify_targets = reverify_pool[:reverify_budget]
@@ -355,10 +517,12 @@ class IrMonitorService:
                 : self._max_documents
             ]
         by_url = {document.url: document for document in discovered}
+        fetch_attempts = 0
         for item in fetch_targets + reverify_targets:
             document = by_url.get(item["url"])
             if document is None:
                 continue
+            fetch_attempts += 1
             response = self._fetch_document(source, document, network, notes)
             if response is None:
                 continue
@@ -403,16 +567,31 @@ class IrMonitorService:
         # (never fetched) are reported separately as seen.
         unchanged_count = sum(1 for record in records if record.status == "unchanged")
         seen_count = sum(1 for record in records if record.status == "seen")
+        # Derive the top-level state from what was actually retrieved. A run
+        # that discovered documents but retrieved none of them is a failed
+        # retrieval: reporting ``ok`` next to a nonzero new_count made callers
+        # read "N new documents fetched" out of a run with zero bytes fetched.
+        fetched_count = len(fetched)
+        failed_fetch_count = max(0, fetch_attempts - fetched_count)
+        fetch_state = AcquisitionFetchState.OK
+        if fetch_attempts and not fetched_count:
+            fetch_state = AcquisitionFetchState.FAILED
+            notes.append(
+                f"no document could be retrieved: all {fetch_attempts} document "
+                "fetch attempt(s) failed (new_count counts URL-only detections)"
+            )
         return IrMonitorOutcome(
             source_id=source.source_id,
             symbol=source.symbol,
-            fetch_state=AcquisitionFetchState.OK,
+            fetch_state=fetch_state,
             listing_url=source.listing_url,
             documents=records,
             new_count=new_count,
             revised_count=revised_count,
             unchanged_count=unchanged_count,
             seen_count=seen_count,
+            fetched_count=fetched_count,
+            failed_fetch_count=failed_fetch_count,
             timeline_entries=timeline_entries,
             network=network,
             notes=notes,
@@ -421,7 +600,23 @@ class IrMonitorService:
     # ------------------------------------------------------------- fetches
 
     def _transport(self, source: IrSourceDefinition) -> SessionTransport:
-        return self._transport_factory(source)
+        """Build the per-source transport inside the fail-closed guard.
+
+        Connector/browser-session construction is part of acquisition, not
+        plumbing: a failure there must surface as a FAILED outcome with a
+        recovery note, never as an exception out of ``monitor()`` (which the
+        API layer would turn into HTTP 500). A ``PrivateAcquisitionError`` is
+        re-raised unchanged so its own state (AUTH_EXPIRED / FAILED) survives.
+        """
+
+        try:
+            return self._transport_factory(source)
+        except PrivateAcquisitionError:
+            raise
+        except Exception as exc:  # any factory failure is an acquisition failure
+            raise IrTransportUnavailableError(
+                source.source_id, f"{type(exc).__name__}: {exc}"
+            ) from exc
 
     def _fetch_listing(
         self,

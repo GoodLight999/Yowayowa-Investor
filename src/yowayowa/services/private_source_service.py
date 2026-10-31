@@ -112,6 +112,26 @@ class PrivateSourceFetchOutcome(BaseModel):
     cache_ttl_seconds: int = _CACHE_TTL_SECONDS
 
 
+class PrivateSourceRegistryError(RuntimeError):
+    """The persisted private-source registry exists but cannot be used.
+
+    Fail closed: an unreadable registry must never be read as "no sources"
+    (mailbox ingestion would silently stop) and must never be overwritten (that
+    would destroy every operator-defined source). The file on disk is left
+    untouched so it can be inspected, repaired, or restored from backup.
+    """
+
+    def __init__(self, path: Path, detail: str) -> None:
+        self.path = path
+        self.detail = detail
+        super().__init__(
+            f"private-source registry unusable ({detail}): {path}. "
+            f"Recovery: restore the file from backup, repair the JSON by hand, or move it "
+            f"aside (mv {path} {path}.corrupt) to start from an empty registry. "
+            "This service never modifies or deletes the file it cannot read."
+        )
+
+
 class PrivateSourceRegistryStore:
     """Durable registry of private source definitions (one JSON file)."""
 
@@ -123,30 +143,68 @@ class PrivateSourceRegistryStore:
         return self.root / "sources.json"
 
     def load(self) -> list[PrivateMailboxSource]:
-        if not self.path.exists():
-            return []
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return []
-        if not isinstance(raw, list):
-            return []
-        sources: list[PrivateMailboxSource] = []
-        for item in raw:
-            if isinstance(item, dict):
-                try:
-                    sources.append(PrivateMailboxSource.model_validate(item))
-                except ValidationError:
-                    continue
+        sources, _ = self._read()
+        return sources
+
+    def load_checked(self) -> list[PrivateMailboxSource]:
+        """Read the registry, refusing to hide entries that cannot be parsed.
+
+        ``load`` deliberately returns the parseable subset for inspection;
+        the service uses this stricter form so a partially unreadable registry
+        is an explicit error state instead of a silent loss of configuration.
+        """
+
+        sources, invalid_entries = self._read()
+        if invalid_entries:
+            raise PrivateSourceRegistryError(
+                self.path,
+                f"{invalid_entries} of the persisted entries failed validation",
+            )
         return sources
 
     def save(self, sources: list[PrivateMailboxSource]) -> None:
+        # Never persist over a registry we could not read in full: that is how
+        # operator-defined sources get destroyed.
+        _, invalid_entries = self._read()
+        if invalid_entries:
+            raise PrivateSourceRegistryError(
+                self.path,
+                f"{invalid_entries} of the persisted entries failed validation",
+            )
         self.root.mkdir(parents=True, exist_ok=True)
         payload = [source.model_dump(mode="json") for source in sources]
         self.path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+
+    def _read(self) -> tuple[list[PrivateMailboxSource], int]:
+        """Parsed sources plus the count of entries that failed validation.
+
+        An unreadable file raises instead of looking like an empty registry.
+        """
+
+        if not self.path.exists():
+            return [], 0
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise PrivateSourceRegistryError(self.path, f"{type(exc).__name__}: {exc}") from exc
+        if not isinstance(raw, list):
+            raise PrivateSourceRegistryError(
+                self.path, f"expected a JSON list, found {type(raw).__name__}"
+            )
+        sources: list[PrivateMailboxSource] = []
+        invalid_entries = 0
+        for item in raw:
+            if isinstance(item, dict):
+                try:
+                    sources.append(PrivateMailboxSource.model_validate(item))
+                    continue
+                except ValidationError:
+                    pass
+            invalid_entries += 1
+        return sources, invalid_entries
 
 
 class PrivateMessageFingerprintStore:
@@ -215,13 +273,24 @@ class PrivateSourceService:
         self.data_dir = data_dir
         self._reader_factory = reader_factory
         self._registry = PrivateSourceRegistryStore(root=data_dir / "private-sources")
-        persisted = self._registry.load()
+        self._registry_error: PrivateSourceRegistryError | None = None
+        try:
+            persisted = self._registry.load_checked()
+        except PrivateSourceRegistryError as exc:
+            # Fail closed: a corrupt registry is an explicit error state, never
+            # "no sources", and it must not be overwritten.
+            self._registry_error = exc
+            persisted = []
         merged: dict[str, PrivateMailboxSource] = {source.source_id: source for source in persisted}
         for source in sources or []:
             merged[source.source_id] = source
         self._sources = merged
-        if sources:
-            self._registry.save(self.list_sources())
+        if sources and self._registry_error is None:
+            try:
+                self._registry.save(self.list_sources())
+            except PrivateSourceRegistryError as exc:
+                # The file parsed but holds entries that no longer validate.
+                self._registry_error = exc
         self._now = now
         self._max_messages = max_messages
         self._fingerprints = PrivateMessageFingerprintStore(
@@ -232,17 +301,36 @@ class PrivateSourceService:
 
     # ------------------------------------------------------------- registry
 
-    def add_source(self, source: PrivateMailboxSource) -> None:
-        """Register (or replace) a source and persist the registry."""
+    @property
+    def registry_error(self) -> PrivateSourceRegistryError | None:
+        """Why the persisted registry is unusable, or ``None`` when it is fine."""
 
+        return self._registry_error
+
+    def add_source(self, source: PrivateMailboxSource) -> None:
+        """Register (or replace) a source and persist the registry.
+
+        Refuses to write while the persisted registry is unusable: saving the
+        in-memory list would silently drop every source already on disk.
+        """
+
+        if self._registry_error is not None:
+            raise self._registry_error
         self._sources[source.source_id] = source
         self._registry.save(self.list_sources())
 
     def list_sources(self) -> list[PrivateMailboxSource]:
-        return [self._sources[key] for key in sorted(self._sources)]
+        sources = [self._sources[key] for key in sorted(self._sources)]
+        if not sources and self._registry_error is not None:
+            # An unreadable registry must never look like "no sources registered".
+            raise self._registry_error
+        return sources
 
     def get_source(self, source_id: str) -> PrivateMailboxSource | None:
-        return self._sources.get(source_id)
+        source = self._sources.get(source_id)
+        if source is None and self._registry_error is not None:
+            raise self._registry_error
+        return source
 
     # ---------------------------------------------------------------- fetch
 
@@ -258,12 +346,15 @@ class PrivateSourceService:
 
         source = self._sources.get(source_id)
         if source is None:
+            unknown_notes = [f"unknown private source: {source_id}"]
+            if self._registry_error is not None:
+                unknown_notes.insert(0, str(self._registry_error))
             return PrivateSourceFetchOutcome(
                 source_id=source_id,
                 provider="",
                 fetch_state=AcquisitionFetchState.FAILED,
                 auth_state=AuthState.UNKNOWN,
-                notes=[f"unknown private source: {source_id}"],
+                notes=unknown_notes,
             )
 
         now = self._now()
@@ -304,6 +395,8 @@ class PrivateSourceService:
         network.append(self._exchange(source_url, elapsed_ms, now))
 
         notes: list[str] = []
+        if self._registry_error is not None:
+            notes.append(str(self._registry_error))
         if not messages:
             notes.append("no messages matched the source query")
 

@@ -4,6 +4,7 @@ from functools import lru_cache
 
 from yowayowa.config import Settings, get_settings
 from yowayowa.domain import Fundamentals
+from yowayowa.providers.alpha_vantage import AlphaVantageClient
 from yowayowa.providers.bea import BeaClient
 from yowayowa.providers.binance import BinanceKlinesProvider
 from yowayowa.providers.bls import BlsClient
@@ -120,6 +121,11 @@ def bea_client() -> BeaClient:
 @lru_cache(maxsize=1)
 def fred_client() -> FredClient:
     return FredClient(get_settings())
+
+
+@lru_cache(maxsize=1)
+def alpha_vantage_client() -> AlphaVantageClient:
+    return AlphaVantageClient(get_settings())
 
 
 @lru_cache(maxsize=1)

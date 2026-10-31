@@ -14,7 +14,10 @@ from yowayowa.news_models import SavedNewsFeed
 from yowayowa.preset_models import PresetKind, ResearchPreset, ResearchPresetCreate
 from yowayowa.providers.base import ProviderPolicyError
 from yowayowa.providers.fred import FredClient
-from yowayowa.providers.yahoo_deep_research import YahooDeepResearchProvider
+from yowayowa.providers.yahoo_deep_research import (
+    ResearchUnavailable,
+    YahooDeepResearchProvider,
+)
 from yowayowa.providers.yahoo_research import YahooResearchProvider
 from yowayowa.providers.yahoo_screener import YahooScreenerProvider
 from yowayowa.research_models import (
@@ -31,6 +34,10 @@ from yowayowa.services.presets import (
     get_preset,
     list_presets,
     update_preset,
+)
+from yowayowa.vercel_observability import (
+    UPSTREAM_UNAVAILABLE_DETAIL,
+    log_upstream_exception,
 )
 
 router = APIRouter(prefix="/v1", dependencies=[Depends(require_api_token)])
@@ -130,7 +137,8 @@ def saved_news(
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/research/{symbol}", response_model=CompanyResearch)
@@ -152,6 +160,8 @@ def company_research(
         requested = [ResearchSection(token) for token in dict.fromkeys(raw)]
     try:
         return YahooDeepResearchProvider(settings).research(symbol, requested)
+    except ResearchUnavailable as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.as_detail()) from exc
     except ProviderPolicyError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LookupError as exc:
@@ -159,7 +169,8 @@ def company_research(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/options/{symbol}", response_model=OptionChainSnapshot)
@@ -175,7 +186,8 @@ def option_chain(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/discover/catalog")
@@ -198,7 +210,8 @@ def discover_screen(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/macro/fred/search")
@@ -217,7 +230,8 @@ def fred_search(
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/macro/fred/releases")
@@ -235,7 +249,8 @@ def fred_releases(
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc
 
 
 @router.get("/macro/fred/{series_id}")
@@ -269,4 +284,5 @@ def fred_series(
     except RuntimeError as exc:
         raise HTTPException(status_code=424, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        log_upstream_exception(exc)
+        raise HTTPException(status_code=502, detail=UPSTREAM_UNAVAILABLE_DETAIL) from exc

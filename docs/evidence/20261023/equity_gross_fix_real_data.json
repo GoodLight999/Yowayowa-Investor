@@ -1,0 +1,415 @@
+{
+ "schema": "equity-gross-fix-real-data-v1",
+ "task": "t_a2d67004",
+ "generated_at_utc": "2026-10-23T02:40:44.111998+00:00",
+ "what": "equity_gross was cost-rate compounding from 1.0 (market returns ignored); fixed to the daily chain that applies the same day-over-day equity changes and adds back only the costs charged per step (identity: gross/equity == prod(1 + cost_t/equity_t)).",
+ "code_path": "src/yowayowa/paperloop.py::_cost_accumulators (branch wt/t_a2d67004)",
+ "journal": {
+  "path": "data/demo-loop/journal.jsonl",
+  "sha256_unchanged": "5b746fdc33bf15785e4eaae612fc5985384483a07b516d31b7033d474e4ef859",
+  "lines": 267,
+  "note": "existing rows are never rewritten; their equity_gross stays the frozen pre-fix value, future rows chain correctly"
+ },
+ "books": {
+  "A": {
+   "n_mtm_rows": 16,
+   "last_mtm_date": "2026-10-23",
+   "equity": 0.966553196118262,
+   "equity_gross_stored_frozen": 1.0003489442731692,
+   "cost_drag_pp_stored_frozen": 3.3783959435737185,
+   "equity_gross_fixed_at_row": 0.9683493326289077,
+   "cost_drag_pp_fixed_at_row": 0.18548435467699284,
+   "equity_gross_fixed_now": 0.968412864141298,
+   "cost_drag_pp_fixed_now": 0.19203256089385404,
+   "rows": [
+    {
+     "mtm_date": "2026-10-10",
+     "equity": 1.0,
+     "equity_gross_stored_frozen": null,
+     "equity_gross_fixed": 1.0,
+     "cost_drag_pp_stored": null,
+     "cost_drag_pp_fixed": 0.0
+    },
+    {
+     "mtm_date": "2026-10-10",
+     "equity": 1.0,
+     "equity_gross_stored_frozen": null,
+     "equity_gross_fixed": 1.0,
+     "cost_drag_pp_stored": null,
+     "cost_drag_pp_fixed": 0.0
+    },
+    {
+     "mtm_date": "2026-10-10",
+     "equity": 1.0,
+     "equity_gross_stored_frozen": null,
+     "equity_gross_fixed": 1.0,
+     "cost_drag_pp_stored": null,
+     "cost_drag_pp_fixed": 0.0
+    },
+    {
+     "mtm_date": "2026-10-11",
+     "equity": 0.997365035907519,
+     "equity_gross_stored_frozen": null,
+     "equity_gross_fixed": 0.998865035907519,
+     "cost_drag_pp_stored": null,
+     "cost_drag_pp_fixed": 0.15017043805493907
+    },
+    {
+     "mtm_date": "2026-10-12",
+     "equity": 1.0081585571392127,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 1.0096787381548327,
+     "cost_drag_pp_stored": -0.8158557139212652,
+     "cost_drag_pp_fixed": 0.15056086239848077
+    },
+    {
+     "mtm_date": "2026-10-13",
+     "equity": 0.9790891092980176,
+     "equity_gross_stored_frozen": 1.000020185602349,
+     "equity_gross_fixed": 0.9805858379783069,
+     "cost_drag_pp_stored": 2.0930653806476687,
+     "cost_drag_pp_fixed": 0.15263617139067673
+    },
+    {
+     "mtm_date": "2026-10-14",
+     "equity": 0.9979133123785253,
+     "equity_gross_stored_frozen": 1.0000796840632549,
+     "equity_gross_fixed": 0.9994971588485329,
+     "cost_drag_pp_stored": 0.21661990731855807,
+     "cost_drag_pp_fixed": 0.1584643293866085
+    },
+    {
+     "mtm_date": "2026-10-15",
+     "equity": 0.9743105555611894,
+     "equity_gross_stored_frozen": 1.0001512993914743,
+     "equity_gross_fixed": 0.9759285130536838,
+     "cost_drag_pp_stored": 2.5836834732912184,
+     "cost_drag_pp_fixed": 0.16578647624832551
+    },
+    {
+     "mtm_date": "2026-10-16",
+     "equity": 0.9819362820462199,
+     "equity_gross_stored_frozen": 1.000216327155013,
+     "equity_gross_fixed": 0.983630354794329,
+     "cost_drag_pp_stored": 1.8276091493915583,
+     "cost_drag_pp_fixed": 0.1722265625346014
+    },
+    {
+     "mtm_date": "2026-10-17",
+     "equity": 0.9744742544785614,
+     "equity_gross_stored_frozen": 1.0002628405329272,
+     "equity_gross_fixed": 0.9762011950046791,
+     "cost_drag_pp_stored": 2.578180954980395,
+     "cost_drag_pp_fixed": 0.17690416022379302
+    },
+    {
+     "mtm_date": "2026-10-18",
+     "equity": 0.9695099958662674,
+     "equity_gross_stored_frozen": 1.0002861861534988,
+     "equity_gross_fixed": 0.9712509227503479,
+     "cost_drag_pp_stored": 3.0767385087639996,
+     "cost_drag_pp_fixed": 0.17924584093578694
+    },
+    {
+     "mtm_date": "2026-10-19",
+     "equity": 0.9747615877195582,
+     "equity_gross_stored_frozen": 1.0002914993379002,
+     "equity_gross_fixed": 0.9765171037220365,
+     "cost_drag_pp_stored": 2.5522471834700555,
+     "cost_drag_pp_fixed": 0.17977319555254367
+    },
+    {
+     "mtm_date": "2026-10-20",
+     "equity": 0.973255313604369,
+     "equity_gross_stored_frozen": 1.0003073352086371,
+     "equity_gross_fixed": 0.9750235762868714,
+     "cost_drag_pp_stored": 2.7043710119976074,
+     "cost_drag_pp_fixed": 0.18135588979667402
+    },
+    {
+     "mtm_date": "2026-10-21",
+     "equity": 0.9880808034901979,
+     "equity_gross_stored_frozen": 1.0003177992553398,
+     "equity_gross_fixed": 0.9898862014524484,
+     "cost_drag_pp_stored": 1.2233108092499634,
+     "cost_drag_pp_fixed": 0.18238439525689965
+    },
+    {
+     "mtm_date": "2026-10-22",
+     "equity": 0.9991907999986528,
+     "equity_gross_stored_frozen": 1.0003429620478395,
+     "equity_gross_fixed": 1.001041398117937,
+     "cost_drag_pp_stored": 0.11517670368050902,
+     "cost_drag_pp_fixed": 0.1848672914789976
+    },
+    {
+     "mtm_date": "2026-10-23",
+     "equity": 0.966553196118262,
+     "equity_gross_stored_frozen": 1.0003489442731692,
+     "equity_gross_fixed": 0.9683493326289077,
+     "cost_drag_pp_stored": 3.3783959435737185,
+     "cost_drag_pp_fixed": 0.18548435467699284
+    }
+   ]
+  },
+  "C": {
+   "n_mtm_rows": 5,
+   "last_mtm_date": "2026-10-23",
+   "equity": 1.0063441897797,
+   "equity_gross_stored_frozen": 1.0015008439609574,
+   "cost_drag_pp_stored_frozen": -0.48360876058647606,
+   "equity_gross_fixed_at_row": 1.0078389698499812,
+   "cost_drag_pp_fixed_at_row": 0.1483153673352841,
+   "equity_gross_fixed_now": 1.0078389698499812,
+   "cost_drag_pp_fixed_now": 0.1483153673352841,
+   "rows": [
+    {
+     "mtm_date": "2026-10-19",
+     "equity": 1.0,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 1.0,
+     "cost_drag_pp_stored": 0.0,
+     "cost_drag_pp_fixed": 0.0
+    },
+    {
+     "mtm_date": "2026-10-20",
+     "equity": 1.0,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 1.0,
+     "cost_drag_pp_stored": 0.0,
+     "cost_drag_pp_fixed": 0.0
+    },
+    {
+     "mtm_date": "2026-10-21",
+     "equity": 1.0,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 1.0,
+     "cost_drag_pp_stored": 0.0,
+     "cost_drag_pp_fixed": 0.0
+    },
+    {
+     "mtm_date": "2026-10-22",
+     "equity": 1.0098584498692853,
+     "equity_gross_stored_frozen": 1.0015008439609574,
+     "equity_gross_fixed": 1.0113584498692854,
+     "cost_drag_pp_stored": -0.8345081243539837,
+     "cost_drag_pp_fixed": 0.14831536733528322
+    },
+    {
+     "mtm_date": "2026-10-23",
+     "equity": 1.0063441897797,
+     "equity_gross_stored_frozen": 1.0015008439609574,
+     "equity_gross_fixed": 1.0078389698499812,
+     "cost_drag_pp_stored": -0.48360876058647606,
+     "cost_drag_pp_fixed": 0.1483153673352841
+    }
+   ]
+  },
+  "CRYPTO_1N": {
+   "n_mtm_rows": 16,
+   "last_mtm_date": "2026-10-23",
+   "equity": 0.9645580364049191,
+   "equity_gross_stored_frozen": 1.0,
+   "cost_drag_pp_stored_frozen": 3.5441963595080894,
+   "equity_gross_fixed_at_row": 0.9660086958951938,
+   "cost_drag_pp_fixed_at_row": 0.15017043805494512,
+   "equity_gross_fixed_now": 0.9660086958951938,
+   "cost_drag_pp_fixed_now": 0.15017043805494512,
+   "rows": [
+    {
+     "mtm_date": "2026-10-10",
+     "equity": 1.0,
+     "equity_gross_stored_frozen": null,
+     "equity_gross_fixed": 1.0,
+     "cost_drag_pp_stored": null,
+     "cost_drag_pp_fixed": 0.0
+    },
+    {
+     "mtm_date": "2026-10-10",
+     "equity": 1.0,
+     "equity_gross_stored_frozen": null,
+     "equity_gross_fixed": 1.0,
+     "cost_drag_pp_stored": null,
+     "cost_drag_pp_fixed": 0.0
+    },
+    {
+     "mtm_date": "2026-10-10",
+     "equity": 1.0,
+     "equity_gross_stored_frozen": null,
+     "equity_gross_fixed": 1.0,
+     "cost_drag_pp_stored": null,
+     "cost_drag_pp_fixed": 0.0
+    },
+    {
+     "mtm_date": "2026-10-11",
+     "equity": 0.997365035907519,
+     "equity_gross_stored_frozen": null,
+     "equity_gross_fixed": 0.998865035907519,
+     "cost_drag_pp_stored": null,
+     "cost_drag_pp_fixed": 0.15017043805493907
+    },
+    {
+     "mtm_date": "2026-10-12",
+     "equity": 1.0081334612272572,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 1.0096496565393025,
+     "cost_drag_pp_stored": -0.8133461227257222,
+     "cost_drag_pp_fixed": 0.15017043805494085
+    },
+    {
+     "mtm_date": "2026-10-13",
+     "equity": 0.978714524008267,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 0.9801864743305244,
+     "cost_drag_pp_stored": 2.1285475991733027,
+     "cost_drag_pp_fixed": 0.15017043805494223
+    },
+    {
+     "mtm_date": "2026-10-14",
+     "equity": 0.9967442947769457,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 0.9982433612053222,
+     "cost_drag_pp_stored": 0.3255705223054295,
+     "cost_drag_pp_fixed": 0.1501704380549505
+    },
+    {
+     "mtm_date": "2026-10-15",
+     "equity": 0.9726160767755034,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 0.9740788552594472,
+     "cost_drag_pp_stored": 2.7383923224496565,
+     "cost_drag_pp_fixed": 0.15017043805494612
+    },
+    {
+     "mtm_date": "2026-10-16",
+     "equity": 0.9800795803708326,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 0.9815535836871998,
+     "cost_drag_pp_stored": 1.9920419629167352,
+     "cost_drag_pp_fixed": 0.15017043805495284
+    },
+    {
+     "mtm_date": "2026-10-17",
+     "equity": 0.9726035584756559,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 0.9740663181325413,
+     "cost_drag_pp_stored": 2.739644152434406,
+     "cost_drag_pp_fixed": 0.15017043805494995
+    },
+    {
+     "mtm_date": "2026-10-18",
+     "equity": 0.9677310704049653,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 0.9691865020206192,
+     "cost_drag_pp_stored": 3.226892959503469,
+     "cost_drag_pp_fixed": 0.15017043805495595
+    },
+    {
+     "mtm_date": "2026-10-19",
+     "equity": 0.9729757032641186,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 0.974439022612955,
+     "cost_drag_pp_stored": 2.702429673588136,
+     "cost_drag_pp_fixed": 0.15017043805496225
+    },
+    {
+     "mtm_date": "2026-10-20",
+     "equity": 0.9714511568495287,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 0.972912183337136,
+     "cost_drag_pp_stored": 2.854884315047135,
+     "cost_drag_pp_fixed": 0.15017043805495206
+    },
+    {
+     "mtm_date": "2026-10-21",
+     "equity": 0.9861951544921805,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 0.9876783554050663,
+     "cost_drag_pp_stored": 1.3804845507819463,
+     "cost_drag_pp_fixed": 0.15017043805495717
+    },
+    {
+     "mtm_date": "2026-10-22",
+     "equity": 0.9974821039727866,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 0.9989822800388122,
+     "cost_drag_pp_stored": 0.25178960272134177,
+     "cost_drag_pp_fixed": 0.1501704380549482
+    },
+    {
+     "mtm_date": "2026-10-23",
+     "equity": 0.9645580364049191,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 0.9660086958951938,
+     "cost_drag_pp_stored": 3.5441963595080894,
+     "cost_drag_pp_fixed": 0.15017043805494512
+    }
+   ]
+  },
+  "EQUITY_EW": {
+   "n_mtm_rows": 1,
+   "last_mtm_date": "2026-10-23",
+   "equity": 1.0,
+   "equity_gross_stored_frozen": 1.0,
+   "cost_drag_pp_stored_frozen": 0.0,
+   "equity_gross_fixed_at_row": 1.0,
+   "cost_drag_pp_fixed_at_row": 0.0,
+   "equity_gross_fixed_now": 1.0,
+   "cost_drag_pp_fixed_now": 0.0,
+   "rows": [
+    {
+     "mtm_date": "2026-10-23",
+     "equity": 1.0,
+     "equity_gross_stored_frozen": 1.0,
+     "equity_gross_fixed": 1.0,
+     "cost_drag_pp_stored": 0.0,
+     "cost_drag_pp_fixed": 0.0
+    }
+   ]
+  }
+ },
+ "tests": {
+  "runner": "pytest (PYTHONPATH=src TZ=UTC, shared venv), each run judged by exit code",
+  "new_tests": [
+   "test_equity_gross_tracks_market_returns",
+   "test_equity_gross_adds_back_only_costs_on_a_flat_market",
+   "test_equity_gross_identity_gross_over_equity_is_cost_share_product",
+   "test_cost_drag_pp_reads_the_incurred_cost_not_the_market_move"
+  ],
+  "runs": [
+   {
+    "scope": "tests/test_paperloop.py -k 'equity_gross or cost_drag' (4 new tests)",
+    "exit_code": 0
+   },
+   {
+    "scope": "test_decide_fill_idempotency_and_mtm + 3 comparison-line tests",
+    "exit_code": 0
+   },
+   {
+    "scope": "test_dd20_is_warning_not_stop + test_chain_error_on_corrupt_journal + test_book_c_weekly_cadence_gate + test_milestone_judgment_fires_once_at_deadline",
+    "exit_code": 0
+   },
+   {
+    "scope": "TSUKUMO full tests/test_paperloop.py and tests/test_paperloop_v12.py (heavy suites, isolated clone of wt/t_a2d67004)",
+    "exit_code": 0,
+    "result": "test_paperloop.py: 34 passed (rc=0); test_paperloop_v12.py: 19 passed (rc=0); isolated clone of wt/t_a2d67004 (ec06a91) on TSUKUMO, shared TSUKUMO venv, PYTHONPATH=<clone>/src TZ=UTC"
+   }
+  ]
+ },
+ "paperloop_verify": {
+  "data": "copy of data/ (demo-loop + crypto-ohlcv + stock-ohlcv), patched code",
+  "window": [
+   "2026-10-10",
+   "2026-10-23"
+  ],
+  "exit_code": 0,
+  "chain_ok": true,
+  "anchors_ok": true,
+  "anchors_sha256_unchanged": "3f7e09e6ff984f35ff04184f6479f38008eb73b2045d2d98f3b7ff05ac872ef3",
+  "R1_match": "32/32",
+  "R2_match": "32/32",
+  "L1_L14": "all ok (legacy_v11_findings are the known frozen v1.1 rows)"
+ },
+ "commit": "ec06a91c14dc18d40dc51a0ff1b964528c7b670d",
+ "branch": "wt/t_a2d67004"
+}

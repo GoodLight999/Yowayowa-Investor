@@ -1,0 +1,53 @@
+F...F                                                                    [100%]
+=================================== FAILURES ===================================
+_____________ test_orderbook_routes_reject_missing_and_wrong_token _____________
+
+token_client = <starlette.testclient.TestClient object at 0x788b5f973ce0>
+orderbook_dir = PosixPath('/root/.hermes/profiles/worker-goat/cache/scratch/pytest-of-root/pytest-156/test_orderbook_routes_reject_m0/orderbooks')
+
+    def test_orderbook_routes_reject_missing_and_wrong_token(
+        token_client: TestClient, orderbook_dir: Path
+    ) -> None:
+        for method, url, body in orderbook_requests():
+            missing = token_client.request(method, url, json=body)
+>           assert missing.status_code == 401, f"{method} {url} without token"
+E           AssertionError: GET /v1/orderbook/7203 without token
+E           assert 200 == 401
+E            +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_orderbook_auth.py:87: AssertionError
+----------------------------- Captured stdout call -----------------------------
+{"level":"info","event":"http.request","request_id":"9efae14a8a9248f0bbe8898a22f3ec17","method":"GET","path":"/v1/orderbook/7203","status_code":200,"duration_ms":433.29,"package_version":"0.1.0","source_revision":null,"deployment_id":null,"environment":null,"region":null,"project_id":null,"production_url":null}
+________________ test_openapi_contract_pins_and_auth_parameter _________________
+
+    def test_openapi_contract_pins_and_auth_parameter() -> None:
+        """Operation ids stay stable; the five ops expose the auth header like the rest."""
+        schema = app.openapi()
+        paths = schema["paths"]
+    
+        expected_operations = {
+            "/v1/orderbook/{symbol}": ("get", "get_orderbook_snapshot"),
+            "/v1/orderbook/{symbol}/depth": ("get", "get_orderbook_depth_ladder"),
+            "/v1/orderbook/{symbol}/metrics": ("get", "get_orderbook_metrics"),
+            "/v1/orderbook/{symbol}/impact": ("post", "estimate_orderbook_execution_impact"),
+            "/v1/orderbook/{symbol}/snapshots": ("post", "record_orderbook_snapshot_endpoint"),
+        }
+        for path, (method, operation_id) in expected_operations.items():
+            operation = paths[path][method]
+            assert operation["operationId"] == operation_id
+            parameter_names = {param["name"] for param in operation.get("parameters", [])}
+            # Same optional header parameter the other guarded /v1 routers expose.
+>           assert "authorization" in parameter_names, path
+E           AssertionError: /v1/orderbook/{symbol}
+E           assert 'authorization' in {'symbol'}
+
+tests/test_orderbook_auth.py:152: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/starlette/testclient.py:53
+  /root/current-work/yowayowa-investor/.venv/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_orderbook_auth.py::test_orderbook_routes_reject_missing_and_wrong_token
+FAILED tests/test_orderbook_auth.py::test_openapi_contract_pins_and_auth_parameter

@@ -1,0 +1,196 @@
+{
+  "schema": "equity-gross-integration-v1",
+  "task": "t_44f99d2b",
+  "parent_task": "t_a2d67004",
+  "what": "Integrate the approved equity_gross fix (b6d5d66..2dcadf4, branch wt/t_a2d67004) into the canonical work tree /root/current-work/yowayowa-investor (agent/commercial-foundation) and prove the production import path and the mtm generation path now use the corrected calculation.",
+  "integrated_at_jst": "2026-10-23T12:14:09+09:00",
+  "method": "git cherry-pick -x (no merge, no reset, no copy of the old branch)",
+  "refs": {
+    "pre_apply_ref": "backup/t_44f99d2b/pre-apply-20261023-121403 = 75f67acdf784bb10929caa17eb20222f3607503a",
+    "pre_apply_head_before": "75f67ac",
+    "approved_commits": {
+      "ec06a91c14dc18d40dc51a0ff1b964528c7b670d": "fix(demo-loop): compound equity_gross through the observed equity chain",
+      "2dcadf4ffcd22cdb560f2bfd851cc76a7c20a674": "docs(demo-loop): record the TSUKUMO full-suite exit codes"
+    },
+    "integrated_commits": {
+      "1b6f28fc7c2ba5032581ec5c13c6b833746c4110": "cherry-pick of ec06a91",
+      "12b31866856b3bad08f7f1fd0e89e0e9ef803919": "cherry-pick of 2dcadf4 (= HEAD after integration)"
+    },
+    "branch": "agent/commercial-foundation",
+    "pushed": false
+  },
+  "diff_equality": {
+    "approved_diff_sha256": "234d4a6c8119ed3d3a6270f716b4c16f939c1b9f5c6e1b8ab3f7ee1173a608dc",
+    "applied_diff_sha256": "234d4a6c8119ed3d3a6270f716b4c16f939c1b9f5c6e1b8ab3f7ee1173a608dc",
+    "byte_identical": true,
+    "apply_stat": {
+      "docs/DEMO_LOOP_V1_OPS.md": "+8/-0",
+      "docs/MONETIZATION_READING_20261023.md": "+13/-6",
+      "docs/evidence/20261023/equity_gross_fix_real_data.json": "+415/-0 (new file)",
+      "src/yowayowa/paperloop.py": "+31/-14",
+      "tests/test_paperloop.py": "+128/-0"
+    },
+    "unrelated_changes_integrated": 0,
+    "files_outside_the_approved_set_touched": [],
+    "file_identity_vs_approved_branch": "all 5 files have identical git blobs on 12b3186 and wt/t_a2d67004"
+  },
+  "code_identity": {
+    "path": "src/yowayowa/paperloop.py",
+    "file_sha256": "035bdbc6b9a44674f32d8764c08c406e74c5155227c3ea1c114c7b50c09b300a",
+    "git_blob": "a2a29dca9d8c1487e0e4b7ea363875faca8cec18",
+    "func": "_cost_accumulators",
+    "func_source_sha256": "d5cc6453314103aa6e9ddb20850b9cdbd8492489693fa878ac75cab03c2e8673",
+    "func_has_chain_marker_cost_since_prev_mtm": true
+  },
+  "preserved": {
+    "pre_existing_dirty_worktree": "git diff before/after the apply is byte-identical (pyproject.toml, src/yowayowa/services/research_ask.py, src/yowayowa/services/research_brief.py); untracked files untouched",
+    "other_card_commits": "75f67ac (t_e2c98d2b P3 edge-lifetime gate docs + tests/test_cusum_watch.py) stays as the parent commit of the integration",
+    "t_dddae39e_dd_fix": "b6d5d66 and ecc694e untouched",
+    "journal_existing_rows": "append-only journal never rewritten",
+    "no_cron_no_order_no_external_send_no_push_no_billing": true
+  },
+  "inputs_unchanged": {
+    "data/demo-loop/journal.jsonl": {
+      "sha256": "5b746fdc33bf15785e4eaae612fc5985384483a07b516d31b7033d474e4ef859",
+      "lines": 267,
+      "mtime_jst": "2026-10-23T11:05:23+09:00"
+    },
+    "data/demo-loop/anchors.jsonl": {
+      "sha256": "3f7e09e6ff984f35ff04184f6479f38008eb73b2045d2d98f3b7ff05ac872ef3",
+      "mtime_jst": "2026-10-23T09:21:07+09:00",
+      "note": "identical to the anchors hash recorded by the parent approval"
+    },
+    "data/demo-loop/prereg.jsonl": {
+      "sha256": "d18a1dd0be26ec7a86f375d21e396f8c3d0d3183e54e3a24ba6e7b0fc4e57083",
+      "mtime_jst": "2026-10-23T09:21:06+09:00"
+    },
+    "note": "all three mtimes predate the 12:14 JST apply; the journal was read-only throughout (comparisons ran on copies)"
+  },
+  "production_import_path": {
+    "how_the_cron_runs_it": "/root/.hermes/profiles/worker-flash/scripts/demo_loop_fill.sh -> ops/demo-loop/fill_v2.sh; demo_loop_decide.sh -> ops/demo-loop/daily.sh; both set PYTHONPATH=$REPO/src and run $REPO/.venv/bin/yowayowa or .venv/bin/python -m yowayowa.loop_cli {decide,fill}",
+    "probe": "PYTHONPATH=<repo>/src TZ=UTC .venv/bin/python (same interpreter), imported yowayowa.paperloop",
+    "resolved_module_file": "/root/current-work/yowayowa-investor/src/yowayowa/paperloop.py",
+    "resolved_equals_repo_src": true,
+    "python": "3.12.3",
+    "next_cron_runs": {
+      "demo-loop-decide": "2026-10-24T09:20:00+09:00",
+      "demo-loop-fill": "2026-10-24T11:05:00+09:00",
+      "demo-loop-report-weekly": "2026-10-26T09:50:00+09:00"
+    }
+  },
+  "old_vs_new_on_fixed_journal": {
+    "input": "frozen copy of the live journal (sha256 5b746fdc…, 267 lines) into scratch; old code = paperloop.py @ b6d5d66 loaded as a separate module",
+    "at_row": "journal truncated at the book's last mtm row (seq 1..N), equity = that row's equity",
+    "now": "full journal (fills recorded after the last mtm row are added back per the fix)",
+    "books": {
+      "A": {
+        "equity": 0.966553196118262,
+        "old_gross": 1.0004145762934384,
+        "old_drag_pp": 3.3847347867154993,
+        "stored_frozen_row_gross": 1.0003489442731692,
+        "stored_frozen_row_drag_pp": 3.3783959435737185,
+        "new_gross_at_row": 0.9683493326289077,
+        "new_drag_pp_at_row": 0.18548435467699284,
+        "new_gross_now": 0.968412864141298,
+        "new_drag_pp_now": 0.19203256089385404,
+        "parent_approved_at_row": "0.9683493 / 0.18548pp",
+        "parent_approved_now": "0.9684129 / 0.19203pp",
+        "reproduced": true
+      },
+      "C": {
+        "equity": 1.0063441897797,
+        "old_gross": 1.0015008439609574,
+        "old_drag_pp": -0.48360876058647606,
+        "new_gross_at_row": 1.0078389698499812,
+        "new_drag_pp_at_row": 0.1483153673352841,
+        "parent_approved": "1.0078390 / 0.14832pp",
+        "reproduced": true
+      },
+      "CRYPTO_1N": {
+        "equity": 0.9645580364049191,
+        "old_gross": 1.0,
+        "old_drag_pp": 3.5441963595080894,
+        "new_gross_at_row": 0.9660086958951938,
+        "new_drag_pp_at_row": 0.15017043805494512,
+        "parent_approved": "0.9660087 / 0.15017pp",
+        "reproduced": true
+      },
+      "EQUITY_EW": {
+        "equity": 1.0,
+        "old_gross": 1.0,
+        "new_gross_at_row": 1.0,
+        "reproduced": true
+      }
+    },
+    "note_old_vs_stored": "A's old-code value (1.0004146) is not identical to the frozen row (1.0003489) because the old formula compounds every fill in the journal, including fills appended after that mtm row; the frozen row is the value as displayed when it was written. Both are pre-fix behavior; the new code reproduces the approved numbers exactly."
+  },
+  "generation_path_end_to_end": {
+    "what": "paperloop.run_daily_mtm() called on two independent copies of data/ (demo-loop + crypto-ohlcv + stock-ohlcv) with utc_now=2026-10-24T02:05Z — the next not-yet-marked day — once with the integrated code and once with the b6d5d66 module. The live journal was not written to.",
+    "rows_written": 4,
+    "new_code": {
+      "code_rev_in_rows": "12b31866856b+dirty",
+      "A": {"equity": 0.9664266342911033, "equity_gross": 0.9682860671255129, "cost_drag_pp": 0.19203341838115742},
+      "C": {"equity": 1.0063441897797, "equity_gross": 1.0078389698499812, "cost_drag_pp": 0.1483153673352841},
+      "CRYPTO_1N": {"equity": 0.9645580364049191, "equity_gross": 0.9660086958951938, "cost_drag_pp": 0.15017043805494512},
+      "EQUITY_EW": {"equity": 1.0, "equity_gross": 1.0, "cost_drag_pp": 0.0}
+    },
+    "old_code": {
+      "A": {"equity": 0.9664266342911033, "equity_gross": 1.0004145762934384, "cost_drag_pp": 3.3973857246524055},
+      "C": {"equity": 1.0063441897797, "equity_gross": 1.0015008439609574, "cost_drag_pp": -0.48360876058647606},
+      "CRYPTO_1N": {"equity": 0.9645580364049191, "equity_gross": 1.0, "cost_drag_pp": 3.5441963595080894},
+      "EQUITY_EW": {"equity": 1.0, "equity_gross": 1.0, "cost_drag_pp": 0.0}
+    },
+    "same_equity_both_sides": true,
+    "panel_agrees_with_formula": true,
+    "live_journal_after_probe": {"sha256": "5b746fdc33bf15785e4eaae612fc5985384483a07b516d31b7033d474e4ef859", "lines": 267}
+  },
+  "tests": {
+    "runner": "PYTHONPATH=<repo>/src TZ=UTC .venv/bin/python -m pytest on the VPS (focused only; the heavy full suite runs on TSUKUMO only)",
+    "new_regression_tests": {
+      "command": "pytest tests/test_paperloop.py -k 'equity_gross or cost_drag' -q",
+      "selected": 4,
+      "exit_code": 0,
+      "names": [
+        "test_equity_gross_tracks_market_returns",
+        "test_equity_gross_adds_back_only_costs_on_a_flat_market",
+        "test_equity_gross_identity_gross_over_equity_is_cost_share_product",
+        "test_cost_drag_pp_reads_the_incurred_cost_not_the_market_move"
+      ]
+    },
+    "neighbour_suite": {
+      "command": "pytest tests/test_cusum_watch.py -q",
+      "passed": 11,
+      "exit_code": 0,
+      "note": "the other card's CUSUM gate tests still pass on the integrated tree"
+    },
+    "ruff": {
+      "command": "ruff check src/yowayowa/paperloop.py tests/test_paperloop.py",
+      "errors": 5,
+      "note": "same count as the parent approval (pre-existing on the base; not introduced here)"
+    },
+    "paperloop_verify": {
+      "command": "python -m yowayowa.paperloop_verify --data-dir <copy of data/> --from 2026-10-10 --to 2026-10-23",
+      "data": "copy of data/ (demo-loop + crypto-ohlcv + stock-ohlcv), journal sha256 5b746fdc…",
+      "exit_code": 0,
+      "chain_ok": true,
+      "anchors_ok": true,
+      "rows": 267,
+      "R1": "32/32",
+      "R2": "32/32",
+      "L1_L14": "all ok",
+      "failed_checks": [],
+      "panel_hash": "ce8d797b2fa55414f985bdc0daedc178f6c7c4dd0dc3313e27f33482fa3c0876"
+    }
+  },
+  "not_performed": [
+    "No live-journal write of any kind (no probe rows, no re-stamp, no rewrite): every comparison and the end-to-end run used copies.",
+    "No push to origin, no PR update, no deployment.",
+    "Heavy full suite (tests/test_paperloop.py 34 + tests/test_paperloop_v12.py 19) not re-run on the VPS; the parent already ran it on TSUKUMO (rc=0, rc=0) against ec06a91.",
+    "No new cron, no ordering, no external send, no billing."
+  ],
+  "future_observations_pending": [
+    "2026-10-24 09:20 JST demo-loop-decide writes the first LIVE mtm rows with the corrected formula; expected equivalently A cost_drag_pp ~+0.19pp (not 3.3pp), C ~+0.15pp, CRYPTO_1N ~+0.15pp, EQUITY_EW 0pp. Rows written before 2026-10-23 stay frozen and must not be read for cost_drag_pp.",
+    "2026-10-24 11:05 JST fill pass appends fills after that mtm row; tomorrow's mtm row must add those costs back on its step.",
+    "2026-10-26 09:50 JST weekly verify re-checks the chain/anchors/L1-L14 on the live journal."
+  ]
+}

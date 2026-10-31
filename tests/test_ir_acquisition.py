@@ -896,3 +896,72 @@ def test_monitor_counts_unchanged_content_verified_and_seen_url_only(
     assert run2.unchanged_count == 4
     assert run2.seen_count == 8
     assert run2.timeline_entries == 0
+
+
+# ------------------------------------- corrupt-row observability (P5 audit 11-13)
+#
+# The row-level best-effort read is unchanged (one corrupt line never drops the
+# file). What is new is that the skip is countable and attributable.
+
+
+def test_fingerprint_clean_read_reports_no_corrupt_rows(tmp_path: Path) -> None:
+    store = FingerprintStore(root=tmp_path)
+    store.record(
+        "s",
+        [
+            {"url": "https://a/1.pdf", "sha256": "", "label": "one"},
+            {"url": "https://a/2.pdf", "sha256": "a" * 64, "label": "two"},
+        ],
+    )
+    diagnostics: dict[str, Any] = {}
+    keys = store.known_keys("s", diagnostics=diagnostics)
+    assert keys == {"https://a/1.pdf|", f"https://a/2.pdf|{'a' * 64}"}
+    assert diagnostics["row_count"] == 2
+    assert diagnostics["corrupt_rows"] == 0
+    assert diagnostics["corrupt_row_numbers"] == []
+    assert diagnostics["path"].endswith("fingerprints.jsonl")
+
+
+def test_fingerprint_corrupt_rows_are_counted_with_numbers_and_reasons(
+    tmp_path: Path,
+) -> None:
+    store = FingerprintStore(root=tmp_path)
+    store.record("s", [{"url": "https://a/1.pdf", "sha256": "", "label": "one"}])
+    path = tmp_path / "s" / "fingerprints.jsonl"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write('{"url": "https://a/2.pdf", "sha256": \n')  # broken JSON
+        handle.write('["https://a/3.pdf"]\n')  # valid JSON, wrong top-level type
+
+    for reader in (store.known_keys, store.known_content_urls, store.known_urls):
+        diagnostics: dict[str, Any] = {}
+        reader("s", diagnostics=diagnostics)
+        assert diagnostics["corrupt_rows"] == 2, reader.__name__
+        assert diagnostics["corrupt_row_numbers"] == [2, 3]
+        assert any("json_decode_error" in r for r in diagnostics["corrupt_reasons"])
+        assert any("not_a_json_object" in r for r in diagnostics["corrupt_reasons"])
+
+    # The readable row is still classified against, exactly as before.
+    documents = [DiscoveredDocument(url="https://a/1.pdf", label="one", kind="document")]
+    classified = classify_documents(documents, {}, store.known_keys("s"))
+    assert [item["status"] for item in classified] == ["seen"]
+
+
+def test_fingerprint_all_rows_corrupt_is_empty_and_fully_counted(tmp_path: Path) -> None:
+    store = FingerprintStore(root=tmp_path)
+    path = tmp_path / "s" / "fingerprints.jsonl"
+    path.parent.mkdir(parents=True)
+    # blank rows are neither counted nor corrupt; the other three are corrupt
+    path.write_text("{broken\n\n[1, 2]\n3\n", encoding="utf-8")
+    diagnostics = store.read_diagnostics("s")
+    assert store.known_keys("s") == set()
+    assert diagnostics["row_count"] == 3
+    assert diagnostics["corrupt_rows"] == 3
+    assert diagnostics["corrupt_row_numbers"] == [1, 3, 4]
+
+
+def test_fingerprint_missing_file_reports_reason_without_corruption(
+    tmp_path: Path,
+) -> None:
+    diagnostics = FingerprintStore(root=tmp_path).read_diagnostics("ghost")
+    assert diagnostics["corrupt_rows"] == 0
+    assert diagnostics["reason"] == "file_missing"

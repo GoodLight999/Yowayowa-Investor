@@ -34,6 +34,7 @@ from typing import Any
 from yowayowa.config import Settings
 from yowayowa.domain import LicenseClass, MarketQuote, MarketQuoteBatch, Provenance
 from yowayowa.providers.base import ProviderDescriptor, enforce_provider_policy
+from yowayowa.quote_currency import CURRENCY_REASON_NOT_PROVIDED
 
 MS2_QUOTES_DIR = "data/ms2/quotes"
 MS2_SOURCE_NAME = "Rakuten MARKET SPEED II RSS (operator Windows Node)"
@@ -174,6 +175,9 @@ class Ms2RssFileProvider:
             symbol=str(record["symbol"]).strip(),
             price=price,
             previous_close=None,
+            # The MS2 RSS export carries no currency field, so the quote cannot
+            # state one: null plus the machine-readable reason (P5 R4).
+            currency_reason=CURRENCY_REASON_NOT_PROVIDED,
             as_of=_parse_ts(record["as_of"]) or datetime.now(UTC),
         )
 

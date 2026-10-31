@@ -1,0 +1,132 @@
+{
+  "symbol": "7203",
+  "as_of": "2026-10-02T13:28:38.939638Z",
+  "bids": [
+    {
+      "price": 2849.0,
+      "size": 1250.0,
+      "order_count": 4
+    },
+    {
+      "price": 2848.0,
+      "size": 1500.0,
+      "order_count": 5
+    },
+    {
+      "price": 2847.0,
+      "size": 1750.0,
+      "order_count": 6
+    },
+    {
+      "price": 2846.0,
+      "size": 2000.0,
+      "order_count": 7
+    },
+    {
+      "price": 2845.0,
+      "size": 2250.0,
+      "order_count": 8
+    },
+    {
+      "price": 2844.0,
+      "size": 2500.0,
+      "order_count": 9
+    },
+    {
+      "price": 2843.0,
+      "size": 2750.0,
+      "order_count": 10
+    },
+    {
+      "price": 2842.0,
+      "size": 3000.0,
+      "order_count": 11
+    },
+    {
+      "price": 2841.0,
+      "size": 3250.0,
+      "order_count": 12
+    },
+    {
+      "price": 2840.0,
+      "size": 3500.0,
+      "order_count": 13
+    }
+  ],
+  "asks": [
+    {
+      "price": 2851.0,
+      "size": 1200.0,
+      "order_count": 3
+    },
+    {
+      "price": 2852.0,
+      "size": 1500.0,
+      "order_count": 4
+    },
+    {
+      "price": 2853.0,
+      "size": 1800.0,
+      "order_count": 5
+    },
+    {
+      "price": 2854.0,
+      "size": 2100.0,
+      "order_count": 6
+    },
+    {
+      "price": 2855.0,
+      "size": 2400.0,
+      "order_count": 7
+    },
+    {
+      "price": 2856.0,
+      "size": 2700.0,
+      "order_count": 8
+    },
+    {
+      "price": 2857.0,
+      "size": 3000.0,
+      "order_count": 9
+    },
+    {
+      "price": 2858.0,
+      "size": 3300.0,
+      "order_count": 10
+    },
+    {
+      "price": 2859.0,
+      "size": 3600.0,
+      "order_count": 11
+    },
+    {
+      "price": 2860.0,
+      "size": 3900.0,
+      "order_count": 12
+    }
+  ],
+  "metrics": {
+    "best_bid": 2849.0,
+    "best_ask": 2851.0,
+    "mid_price": 2850.0,
+    "spread": 2.0,
+    "spread_bps": 7.02,
+    "bid_depth_total": 23750.0,
+    "ask_depth_total": 25500.0,
+    "total_depth": 49250.0,
+    "order_flow_imbalance": -0.0355,
+    "micro_price": 2850.020408,
+    "hft_activity_indicator": "LOW"
+  },
+  "provenance": {
+    "provider": "jpx-tse-feed",
+    "source": "Yowayowa L2 Orderbook Provider",
+    "source_url": null,
+    "license_class": "official_public",
+    "retrieved_at": "2026-10-02T13:28:38.939638Z",
+    "as_of": null,
+    "notes": [
+      "Generated realistic multi-level market depth"
+    ]
+  }
+}

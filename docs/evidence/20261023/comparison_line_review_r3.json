@@ -1,0 +1,148 @@
+{
+  "card": "t_dddae39e",
+  "round": 3,
+  "reviewer": "audit-cld",
+  "review_point": "_cumulative_max_drawdown(since=base_day) filtered journal rows by mtm_date but reused the journal's drawdown column (measured from the peak since inception), so a strategy book with a pre-baseline high carried that drawdown into the comparison window while the benchmark started at its own baseline value.",
+  "fix": "Max drawdown in the comparison line is now recomputed from the mtm equity marks on/after the shared baseline (paperloop._max_drawdown_since); the running peak starts at the baseline day's equity. The journal's drawdown column and the -20% warning are untouched.",
+  "generated_at": "2026-10-23T02:01:47.481898+00:00",
+  "repo_head": "f360d48821df265f0d418ac788990f1a4fc2d9db docs(p5): executed dead-end audit of the five main lines (t_64253b31)",
+  "repo_head_note": "HEAD when this probe ran; the fix and docs were committed afterwards",
+  "round3_commits": {
+    "code_tests_docs": "94d9e0f",
+    "docs_and_evidence": "ecc694e"
+  },
+  "code_sha256": {
+    "paperloop_py_round3": "1379c2d571d8bfecf645b4b74db3a069f6519a6cca8d82be9d89dedafc7c8a2d",
+    "test_paperloop_py_round3": "b98bbf25c1840e20f6de7b8c0e13162c0f181f8c9f2e3b3d5a4b998819d7003b",
+    "paperloop_py_round2": "7f5e6589a294aa69d6a0129371ca3caa1e71b3d3ff0379e38ed086f70a92eace",
+    "test_paperloop_py_round2": "82a366496510fbcca53ac108328bb38f318cc7828e633f46d4b68c79c99c4218"
+  },
+  "real_data_comparison_week_end_2026_10_26": {
+    "A": {
+      "benchmark_book": "CRYPTO_1N",
+      "comparison_start": "2026-10-10",
+      "comparison_reason": null,
+      "cum_pnl": -0.03344680388173804,
+      "max_drawdown": -0.041268668233111594,
+      "benchmark_cum_pnl": -0.035441963595080894,
+      "benchmark_max_drawdown": -0.04322386519071719,
+      "vs_benchmark_pp_cum": 0.19951597133428534,
+      "dd_vs_benchmark_ratio": 0.9547658001204044,
+      "dd_ratio_reason": null,
+      "round2_rule_drawdowns": {
+        "book": -0.041268668233111594,
+        "benchmark": -0.04322386519071719
+      },
+      "round3_rule_drawdowns": {
+        "book": -0.041268668233111594,
+        "benchmark": -0.04322386519071719
+      }
+    },
+    "C": {
+      "benchmark_book": "EQUITY_EW",
+      "comparison_start": null,
+      "comparison_reason": "benchmark_has_no_fill",
+      "cum_pnl": null,
+      "max_drawdown": null,
+      "benchmark_cum_pnl": null,
+      "benchmark_max_drawdown": null,
+      "vs_benchmark_pp_cum": null,
+      "dd_vs_benchmark_ratio": null,
+      "dd_ratio_reason": null
+    }
+  },
+  "book_c_rule_divergence_by_candidate_baseline": {
+    "2026-10-19": {
+      "mark_equity": 1.0,
+      "round2_dd_journal_column": -0.0034799531459484,
+      "round3_dd_from_marks": -0.0034799531459484
+    },
+    "2026-10-20": {
+      "mark_equity": 1.0,
+      "round2_dd_journal_column": -0.0034799531459484,
+      "round3_dd_from_marks": -0.0034799531459484
+    },
+    "2026-10-21": {
+      "mark_equity": 1.0,
+      "round2_dd_journal_column": -0.0034799531459484,
+      "round3_dd_from_marks": -0.0034799531459484
+    },
+    "2026-10-22": {
+      "mark_equity": 1.0098584498692853,
+      "round2_dd_journal_column": -0.0034799531459484,
+      "round3_dd_from_marks": -0.0034799531459484
+    },
+    "2026-10-23": {
+      "mark_equity": 1.0063441897797,
+      "round2_dd_journal_column": -0.0034799531459484,
+      "round3_dd_from_marks": 0.0
+    }
+  },
+  "probe": "read-only weekly_summary on the real journal; nothing written under data/",
+  "hashes_unchanged": {
+    "before": {
+      "journal.jsonl": "ed12c32a717d730a6fccc983620cd6c70a4423216499585ad7605b57179c2428",
+      "anchors.jsonl": "3f7e09e6ff984f35ff04184f6479f38008eb73b2045d2d98f3b7ff05ac872ef3",
+      "prereg.jsonl": "d18a1dd0be26ec7a86f375d21e396f8c3d0d3183e54e3a24ba6e7b0fc4e57083"
+    },
+    "after": {
+      "journal.jsonl": "ed12c32a717d730a6fccc983620cd6c70a4423216499585ad7605b57179c2428",
+      "anchors.jsonl": "3f7e09e6ff984f35ff04184f6479f38008eb73b2045d2d98f3b7ff05ac872ef3",
+      "prereg.jsonl": "d18a1dd0be26ec7a86f375d21e396f8c3d0d3183e54e3a24ba6e7b0fc4e57083"
+    },
+    "unchanged": true
+  },
+  "paperloop_verify": {
+    "exit_code": 0,
+    "rows": 261,
+    "chain_ok": true,
+    "anchors_ok": true,
+    "failed_checks": [],
+    "R1": "32/32",
+    "R2": "32/32",
+    "R3_revised": 0,
+    "panel_hash": "1a275d0948bad6f07b2e40a1f16b84869f0c16b05f0891be03fc182b19304ed3",
+    "bench_fill_count": 2
+  },
+  "tests": {
+    "method": "VPS: one test at a time, judged by exit code (a full-file run exceeds 400s)",
+    "per_test_rc": {
+      "test_decide_fill_idempotency_and_mtm": 0,
+      "test_commit_before_fill_discards_early_bars": 0,
+      "test_chain_error_on_corrupt_journal": 0,
+      "test_mark_signed_shortfall": 0,
+      "test_sigma_prior_5sigma_halts": 0,
+      "test_zero_order_path_is_free": 0,
+      "test_engine_targets_reconcile": 0,
+      "test_dd20_is_warning_not_stop": 0,
+      "test_bench_dd_stop_hook_and_milestone26": 0,
+      "test_stock_fetch_pipeline_advances_bars": 0,
+      "test_book_c_weekly_cadence_gate": 0,
+      "test_comparison_line_is_null_while_benchmark_has_no_fill": 0,
+      "test_comparison_line_starts_at_the_shared_baseline_after_benchmark_fill": 0,
+      "test_comparison_max_drawdown_starts_its_peak_at_the_baseline": 0,
+      "test_milestone_judgment_fires_once_at_deadline": 0,
+      "test_milestone_judgment_boundary_27_of_28_days": 0,
+      "test_milestone_judgment_fails_on_missing_run_days": 0,
+      "test_milestone_judgment_counts_decision_only_days_as_loop_run": 0,
+      "test_milestone_judgment_never_falls_back_on_failed_run_days": 0,
+      "test_milestone_judgment_never_falls_back_on_crashed_run_days": 0,
+      "test_milestone_guard_replay_counts_slipped_through_violations": 0,
+      "test_milestone_no_judgment_without_decisions": 0,
+      "test_paperloop_v12.py": 0,
+      "test_G1_G9_guard": 0,
+      "test_C6_superseded_pending": 0,
+      "test_R3_revision_excluded_from_R2": 0
+    },
+    "counts": {
+      "tests/test_paperloop.py": 25,
+      "tests/test_paperloop_v12.py": 1
+    },
+    "v12_result": "19 passed",
+    "failed": []
+  },
+  "not_established": [
+    "Book C's comparison row still does not exist on real data (benchmark_has_no_fill); the baseline-aligned drawdown is exercised by the synthesized-journal tests only.",
+    "The heavy full-suite run was not moved to TSUKUMO; tests were run one at a time on the VPS."
+  ]
+}

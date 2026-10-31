@@ -4,7 +4,15 @@ from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
+
+VOLATILITY_TARGET_SYMBOL = "SPY"
 
 BacktestSignal = Literal[
     "momentum_12_1",
@@ -14,6 +22,9 @@ BacktestSignal = Literal[
     "value_fundamental",
     "kiyohara_value",
     "crypto_trend_dual_ma",
+    "vol_target_defensive",
+    "defensive_rotation",
+    "garp_momentum_hybrid",
 ]
 RebalanceFrequency = Literal["daily", "weekly", "monthly"]
 ExecutionPrice = Literal["next_open"]
@@ -30,6 +41,16 @@ class BacktestStrategyDefinition(BaseModel):
     weighting: Literal["equal", "inverse_volatility"] = "equal"
     execution: ExecutionPrice = "next_open"
     lookback: int | None = Field(default=None, ge=2, le=1000)
+    target_volatility: float | None = Field(default=None, gt=0, le=1)
+
+    @model_serializer(mode="wrap")
+    def serialize_strategy(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # Preserve existing API and persisted runner output when the additive
+        # parameter is unused; explicit targets remain visible in S-02 output.
+        result: dict[str, Any] = handler(self)
+        if self.target_volatility is None:
+            result.pop("target_volatility", None)
+        return result
 
     @model_validator(mode="after")
     def validate_universe(self) -> BacktestStrategyDefinition:
@@ -39,6 +60,12 @@ class BacktestStrategyDefinition(BaseModel):
         if len(set(normalized)) != len(normalized):
             raise ValueError("universe symbols must be unique")
         self.universe = normalized
+        if self.signal == "vol_target_defensive" and VOLATILITY_TARGET_SYMBOL not in normalized:
+            raise ValueError(
+                f"vol_target_defensive requires {VOLATILITY_TARGET_SYMBOL} in universe"
+            )
+        if self.signal == "defensive_rotation" and VOLATILITY_TARGET_SYMBOL not in normalized:
+            raise ValueError(f"defensive_rotation requires {VOLATILITY_TARGET_SYMBOL} in universe")
         return self
 
 

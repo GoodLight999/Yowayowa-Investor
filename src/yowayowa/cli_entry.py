@@ -39,6 +39,7 @@ from yowayowa.private_source_cli import app as private_source_app
 from yowayowa.rate_cli import app as rate_app
 from yowayowa.research_cli import latest_research_brief, research_ask, research_brief
 from yowayowa.screening_cli import screening_candidates, screening_run
+from yowayowa.sizing_cli import sizing_idea
 from yowayowa.stock_cli import stock_fetch, stock_ohlcv
 
 app.add_typer(events_app, name="events")
@@ -59,6 +60,7 @@ app.command(name="crypto-ohlcv")(crypto_ohlcv)
 app.command(name="stock-fetch")(stock_fetch)
 app.command(name="stock-ohlcv")(stock_ohlcv)
 app.command(name="ohlcv-audit")(ohlcv_audit)
+app.command(name="sizing-idea")(sizing_idea)
 app.command(name="screening-run")(screening_run)
 app.command(name="screening-candidates")(screening_candidates)
 app.command(name="research-brief")(research_brief)
@@ -247,14 +249,12 @@ def portfolio_risk(
         _percent(payload.get("expected_shortfall_95")),
     )
     summary.add_row("Benchmark", payload["benchmark"])
-    summary.add_row(
-        "Benchmark correlation",
-        (
-            "—"
-            if payload.get("benchmark_correlation") is None
-            else f"{payload['benchmark_correlation']:.3f}"
-        ),
-    )
+    if payload.get("benchmark_correlation") is None:
+        reason = payload.get("benchmark_correlation_missing_reason")
+        benchmark_display = f"— ({reason})" if reason else "—"
+    else:
+        benchmark_display = f"{payload['benchmark_correlation']:.3f}"
+    summary.add_row("Benchmark correlation", benchmark_display)
     print(summary)
 
     positions = Table(

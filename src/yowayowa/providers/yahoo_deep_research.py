@@ -15,6 +15,83 @@ from yowayowa.research_models import CompanyResearch, OptionChainSnapshot, Resea
 from yowayowa.symbols import normalize_symbol
 
 
+class ResearchUnavailable(Exception):
+    """Base for a research lookup that produced no usable data (fail closed).
+
+    The provider still isolates per-section failures, but an answer where every
+    section is empty must not be presented as a successful lookup: "no data",
+    "wrong ticker", and "provider down" would otherwise be indistinguishable.
+    """
+
+    status_code = 502
+    code = "research_unavailable"
+    reason = "no_usable_data"
+    empty_phrase = "every requested section was empty"
+
+    def __init__(
+        self,
+        symbol: str,
+        requested: list[ResearchSection],
+        errors: dict[str, str],
+    ) -> None:
+        self.symbol = symbol
+        self.sections_requested = [section.value for section in requested]
+        self.section_errors = dict(errors)
+        failed = ", ".join(
+            f"{name} ({error.split(':', 1)[0]})" for name, error in sorted(errors.items())
+        )
+        message = (
+            f"{self.code}: no usable Yahoo research data for {symbol}; "
+            f"{self.empty_phrase} [{', '.join(self.sections_requested)}]"
+        )
+        if failed:
+            message += f"; failed sections: {failed}"
+        super().__init__(message)
+
+    def as_detail(self) -> dict[str, Any]:
+        """Machine-readable payload for the API error body."""
+
+        return {
+            "code": self.code,
+            "symbol": self.symbol,
+            "message": str(self),
+            "reason": self.reason,
+            "sections_requested": self.sections_requested,
+            "sections_failed": self.section_errors,
+        }
+
+
+class ResearchSymbolUnavailable(ResearchUnavailable, LookupError):
+    """At least one module answered, but every requested section was empty."""
+
+    status_code = 404
+    code = "research_symbol_unavailable"
+    reason = "every_requested_section_empty"
+
+
+class ResearchUpstreamUnavailable(ResearchUnavailable):
+    """Every requested section raised: an upstream failure, not a bad ticker."""
+
+    status_code = 502
+    code = "research_upstream_unavailable"
+    reason = "every_requested_section_failed"
+    empty_phrase = "every requested section failed"
+
+
+def section_has_data(value: Any) -> bool:
+    """True when a normalised section carries at least one non-empty value."""
+
+    if value is None:
+        return False
+    if isinstance(value, dict):
+        return any(section_has_data(item) for item in value.values())
+    if isinstance(value, (list, tuple, set)):
+        return any(section_has_data(item) for item in value)
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
 class YahooDeepResearchProvider:
     """High-density personal research data exposed by yfinance's public API.
 
@@ -144,8 +221,13 @@ class YahooDeepResearchProvider:
                 payload[section.value] = self._jsonable(loaders[section](ticker))
             except Exception as exc:
                 errors[section.value] = f"{type(exc).__name__}: {exc}"
-        if not payload and errors:
-            raise LookupError(f"No Yahoo research data available for {normalized}")
+        usable = {name: value for name, value in payload.items() if section_has_data(value)}
+        if not usable:
+            # ``payload`` is only filled for sections that returned; an empty
+            # payload therefore means every requested section raised.
+            if not payload:
+                raise ResearchUpstreamUnavailable(normalized, requested, errors)
+            raise ResearchSymbolUnavailable(normalized, requested, errors)
         now = datetime.now(UTC)
         return CompanyResearch(
             symbol=normalized,

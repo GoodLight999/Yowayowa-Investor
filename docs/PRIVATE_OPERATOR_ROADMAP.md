@@ -41,7 +41,7 @@ stacked paragraphs.
 | Broker / execution plane | 20% | CODE-COMPLETE / REAL-SESSION BLOCKED (20%) | Order domain, interlocks, audited submission transport, order-status inquiry, cancel design all code-complete; every write-side and selector step awaits the first real authenticated Rakuten session (see docs/BROKER_ACCEPTANCE_MATRIX.md) |
 | Private data advantage / Japan edge | 15% | DONE-equivalent for code paths (65%) | P1A acquisition toolkit, P1B Rakuten read connector (selectors unverified), P1C IR pipeline, P1D mailbox, JPX margin, credit-margin weekly, machine screening, crypto/US OHLCV, MS2 RSS bridge; Rakuten read URLs remain real-session blocked |
 | Reliability / API / agent parity | 15% | DONE-equivalent (80%) | FastAPI/OpenAPI with CI-pinned core machine paths + agent tool catalog (CG-003), CLI parity, contract tests, real-Chrome E2E in CI |
-| Product closure / UX audit | 5% | IN PROGRESS (50%) | P5-A research surfaces shipped; full workflow dead-end audit not started |
+| Product closure / UX audit | 5% | IN PROGRESS (60%) | P5-A research surfaces shipped; workflow dead-end audit done twice — full static pass (2026-09-28, `docs/WORKFLOW_DEADEND_AUDIT.md`) and an executed API/CLI pass over the five main lines (2026-10-23, `docs/P5_DEADEND_AUDIT_20261023.md`, 10 dead-ends open: P0 3 / P1 6 / P2 1, plus one usability friction item; one closed) |
 
 Human-blocked items (explicit, not counted as complete):
 - ChatGPT hosted Codex: one real device-code authorization + one tool-calling
@@ -49,7 +49,11 @@ Human-blocked items (explicit, not counted as complete):
 - Rakuten Web: catalog URL/selector confirmation, first authenticated read,
   preview, submit, status, cancel, fill reconciliation
   (CG-004 matrix, NEED-HUMAN for every real-write row);
-- JPX daily margin: live production format inspection (starts 2026-09-28).
+- JPX daily margin: live machine-readable daily file — format contract now
+  verified (2026-10-23) and the ingest path proven on the official package; the
+  remaining block is an **operator cost/contract decision** (paid TMI / J-Quants
+  Pro feed vs. a reader for the free public daily PDF). See
+  `docs/P1D_JPX_MARGIN_DAILY_EVIDENCE.md`.
 
 ---
 
@@ -493,6 +497,157 @@ append-only and none of them can execute or mutate an order:
 
 Never silently overwrite historical scoring semantics. New calibrated rules become new scoring versions.
 
+#### Profitability & Monetization Evaluation Checkpoint (Task t_af2b0af6, 2026-10-19)
+
+- State: **EVALUATED & RETAINED IN PILOT / FORMAL LIVE ADOPTION PENDING MILESTONES**.
+- Context & Evidence:
+  - Dividend accounting fix (v6, x23-ledger-3) approved by audit-argus R6 (`t_c707cb4c`, TSUKUMO `results_v6`).
+  - Demo forward loop v1.3 canonical flip verified and operational (`t_1c3cd673`, commit `3a48814`).
+  - Full evidence and provenance ledger: `/root/.hermes/kanban/workspaces/t_af2b0af6/EVIDENCE_T_AF2B0AF6.md` and `monetization_summary_20261019.json`.
+- Strategy Adoption & PnL Status (after 15 bps commission + slippage, 1M JPY base):
+  - **S-01 (crypto_trend_dual_ma, SMA200 daily)**: Backtest (2023-2026, 3.75y) CAGR +21.85% (+1,097,400 JPY / 1M JPY base), MaxDD -39.75% (vs Buy&Hold -60.15%, +20.40pp shallower). OOS CAGR +36.33% / MaxDD -5.64%. Deployed as Book A in forward demo loop v1.3: 10 calendar days (14 decision sessions, 40 decisions, 38 fills), cumulative return -2.52% (-25,240 JPY / 1M base) vs Benchmark -2.70% (-27,020 JPY), outperforming by +0.18pp (+1,780 JPY). Drawdown -3.31% vs Benchmark -3.49%. CUSUM edge-lifetime monitor S_w = 0.1308 < 4.8. Retained in demo loop; live adoption deferred until 4w / 12w / 26w design milestones (`SHORT_TERM_STRATEGY_DESIGN.md` §4) are reached (today's decision count does not prove forward profitability).
+  - **S-02 (vol_target_15% weekly, US Equity + Cash)**: Backtest (2021-2026, 5.71y, results_v6) CAGR +8.94% (+631,196 JPY / 1M base), Sharpe 0.839, MaxDD -14.68% (vs EW -18.76%). OOS CAGR +14.75%, OOS Sharpe 1.325, OOS MaxDD -10.28% (vs EW -13.15%). Passed all 4 backtest adoption criteria. Awaiting deployment into demo loop as Book C (paper trading parallel run).
+  - **S-03 (garp_momentum_hybrid)**: REJECTED (Full MaxDD worsened to -36.17% vs baseline -31.00%, failing condition c).
+  - **S-05 (defensive_rotation)**: REJECTED (Full MaxDD -26.30% vs same-universe momentum -24.88%, failing condition b).
+  - **P3 Equity Baselines (Momentum 12-1 etc.)**: REJECTED as standalone (Momentum collapsed in OOS to -6.91%; bootstrap CIs cross zero).
+- Concrete Next Step for Live Operational Decision:
+  - Complete S-01 demo loop milestone 1 (4 weeks: 2026-11-07) with zero HALT incidents and verified cost ratios.
+  - Activate Book C (S-02 equity vol-target) in the forward demo loop for paper parallel tracking.
+
+#### Book C (S-02 US Equity Vol-Target 15% Defensive) Demo-Loop Paper Parallel Deployment Checkpoint (Task t_feb3aa55, 2026-10-19)
+
+- State: **DEPLOYED IN PAPER PARALLEL (DEMO-LOOP v1.3)**.
+- Preconditions Verification (`SHORT_TERM_STRATEGY_DESIGN.md` §4):
+  - **Deployment Timing**: Monday open deployment (2026-10-19 JST / UTC morning), aligned with weekly rebalance cadence.
+  - **Execution & Cost Assumed**: 15 bps one-way fee model (`COST_RATE_BPS = 15.0`) identical to backtest baseline. Zero live broker orders / zero paid APIs.
+  - **Capital Base**: Initialized with virtual 1.0 capital (`cash: 1.0`, `equity: 1.0`, `peak_equity: 1.0`, `drawdown: 0.0`).
+  - **Preregistration**: Preregistered in `prereg.jsonl` with author `worker-agy:t_feb3aa55`, hypothesis `"S-02 (frozen US equity vol target 15% weekly) controls drawdown vs EW"`, judgment rule `"design §4 milestones at 4/12/26 weeks"`, and spec hash `10ba65cac72a7d5d6ed763b0268f6d3f46e97e6339dcf3fff0688733aedbf434`.
+  - **Errata E1-E4 Documentation & Scope Clarity**:
+    - **E1 (Weekend Data Freshness Gap)**: Handled equity market close calendar (`max_fresh = 3` on Mondays to accommodate Friday close -> Monday open).
+    - **E2 (Asset Universe)**: Fixed `EQUITY_UNIVERSE = ("SPY", "IWM", "JNJ", "PG")` per frozen S-02 specification.
+    - **E3 (Strategy & Signal Engine)**: Evaluated through frozen backtest engine `vol_target_defensive` (lookback=21, target_vol=0.15, weekly cadence) with counterfactual raw weights and guard checks.
+    - **E4 (Milestone Schedule Independence)**: S-01 (Book A) 4-week milestone remains fixed at 2026-11-07; Book C paper milestones are independently tracked from deployment date (2026-10-19) at 4 weeks (2026-11-16), 12 weeks (2027-01-11), and 26 weeks (2027-04-19).
+- Live Demo-Loop Ledger Execution:
+  - Run ID: `20261019T045750-602560` (Seq 175-182 in `data/demo-loop/journal.jsonl`).
+  - Seq 176: `halt_check` for Book C recorded (`action: none`, `halted_before: false`, `halted_after: false`, `margin_min: -4.467`).
+  - Seq 177-180: Initial decisions recorded for SPY (target 0.25, RISK_ON), IWM (target 0.25, RISK_OFF), JNJ (target 0.25, RISK_ON), PG (target 0.25, RISK_ON).
+  - Seq 181: Initial `mtm` recorded for Book C (`cash: 1.0`, `equity: 1.0`, `peak: 1.0`, `drawdown: 0.0`, `price_bar_date: 2026-10-16`).
+  - Seq 182: `run` end recorded (`rows_written: 4`, `ok: true`).
+- Verification & Test Results:
+  - `paperloop_verify` exited with code 0 (`chain_ok: true`, `anchors_ok: true`, rows: 182, failed_checks: 0, L1-L14 all green).
+  - All 31 paperloop unit and integration tests passing (`tests/test_paperloop*.py`).
+  - Weekly report (`loop_cli report`) extended to include Book C in `eval_by_book` alongside Book A and CRYPTO_1N.
+
+#### Book C Deployment Review Round 1 Remediation & Clarifications (Task t_feb3aa55, Round 2)
+
+- State: **REMEDIATED (D1/D2 DEFECTS RESOLVED & ERRATA CLARIFIED)**.
+- Remediation of Blocking Defects (Review Round 1 by `audit-argus`):
+  - **D1 (Equity Data Feed Pipeline Integration)**: Integrated `stock-fetch SPY IWM JNJ PG --days 5` into `ops/demo-loop/daily.sh` preceding `mark` and `decide`. Daily cron `9b64eaec1cb9` (UTC 00:20 / JST 09:20) now continuously refreshes equity bars, preventing Tuesday lag from exceeding the 72h staleness threshold and averting false HALT trips.
+  - **D2 (Book C Weekly Cadence Gate)**: Gated Book C decision and rebalancing execution in `paperloop.py::run_daily_decide` to Mondays (`weekday() == 0`). On non-rebalance days (Tuesday through Sunday), Book C generates zero new trade decisions, preserving the frozen backtest weekly rebalancing design and eliminating 15 bps daily turnover drift. Daily mark-to-market (`run_daily_mtm`) remains active every calendar day.
+  - **Automated Regression Tests**: Added `test_stock_fetch_pipeline_advances_bars` (D1) and `test_book_c_weekly_cadence_gate` (D2) to `tests/test_paperloop.py`, with all 33 paperloop tests passing.
+- Errata N1 Clarification (Parent Task `t_af2b0af6` vs Deployment Clarifications):
+  - The four items previously labeled E1–E4 above were four implementation design points (D-E1 weekend freshness, D-E2 equity universe, D-E3 signal engine, D-E4 milestone schedule).
+  - The actual parent task `t_af2b0af6` review errata are clarified as follows (informational, non-blocking):
+    - **Parent E1**: Fill attribution in demo-loop v1.3 is Book A = 20, CRYPTO_1N = 18 (total 38 fills).
+    - **Parent E2**: Metric key in `aggregate_monetization_metrics.py` is `sharpe_ratio` (value 0.72497 rounded to 0.725; fixed key reference).
+    - **Parent E3**: Cumulative `fill_rejected` count across journal is 6 (2 for Book A, 4 for CRYPTO_1N).
+    - **Parent E4**: `weekly_summary.jsonl` last anchor sequence reference is seq 167 (not 168).
+- Provenance & Author: Round 2 changes committed by `worker-agy` (remediating N2).
+
+#### Book C Comparison Wiring — EQUITY_EW Benchmark Enabled (Task t_dddae39e, 2026-10-23)
+
+- State: **COMPARISON BASE WIRED (no strategy/parameter change, no orders).**
+- Defect closed: `EQUITY_EW` (4-asset equal-weight buy-and-hold) was preregistered
+  (`BOOK_SPEC_HASHES`), had weights and equity branches, but was missing from
+  `BOOKS_ENABLED` — so Book C's frozen hypothesis ("controls drawdown vs EW") had no
+  comparison book and `vs_benchmark_pp_cum` / `dd_vs_benchmark_ratio` stayed null.
+- Changes (4 points):
+  - `BOOKS_ENABLED` now includes `BENCH_EQUITY_BOOK`; it buys 1/N once and holds (D7).
+  - The Book C Monday cadence gate now covers `EQUITY_EW` as well (same strategy, so
+    the comparison line is not a different regime).
+  - `EQUITY_EW`'s prereg row is attributed to `worker-go:t_dddae39e` (the task that
+    enabled the equity side); the registered row is not rewritten.
+  - `weekly_summary` adds per-strategy comparison fields (`benchmark_book`, `cum_pnl`,
+    `max_drawdown`, `benchmark_cum_pnl`, `benchmark_max_drawdown`,
+    `vs_benchmark_pp_cum`, `dd_vs_benchmark_ratio`); missing data stays null.
+    Review round 2: the line is measured from the first mtm date both books share
+    on/after the benchmark's first fill (`comparison_start`), and every number is null
+    with `comparison_reason` until then — a benchmark still in cash is never reported
+    as a 0% comparison.
+- Measured: old-vs-new `weekly_summary` on the same journal copy is byte-identical for
+  every pre-existing field of A / CRYPTO_1N / C (only the `EQUITY_EW` entry and the
+  additive comparison fields differ). `paperloop_verify` 247 rows, L1–L14 clean,
+  R1 30/30. Paperloop tests pass individually (23 + 19; the full file exceeds 400 s on
+  this host, so tests were run one by one and judged by exit code).
+- Not established: Book C's benchmark difference cannot exist before `EQUITY_EW`'s
+  first decision (2026-10-26) and first fill (2026-10-27); equity mtm marks are one
+  session stale (newest SPY bar 2026-10-20 at the 2026-10-22 run) — recorded, not fixed.
+- Review round 2 (audit-cld, 2026-10-23): the round-1 line compared Book C against a
+  benchmark that held only cash (vs_benchmark_pp_cum 0.634pp, benchmark_cum_pnl 0.0).
+  Fixed by the shared-baseline rule above; with the same journal the fixed code returns
+  null + `benchmark_has_no_fill` for C, Book A's comparison is bit-identical (baseline
+  2026-10-10, both books at equity 1.0) and every pre-existing field is unchanged.
+  Two tests cover the null case and the aligned case (`test_comparison_line_*`).
+  Evidence: `docs/evidence/20261023/comparison_line_review_r2.json`, §8 of
+  `docs/MONETIZATION_READING_20261023.md`.
+- Evidence: `docs/MONETIZATION_READING_20261023.md`.
+
+#### Edge-Lifetime Verdict Wired Into the Next Decision (Task t_e2c98d2b, 2026-10-23)
+
+- State: **JUDGMENT → NEXT SIGNAL CONNECTED (recorded verdict now gates the next
+  decision; no strategy/parameter/cost change, no orders).**
+- Open link closed: the preregistered weekly CUSUM monitor
+  (`ops/demo-loop/weekly.sh` → `yowayowa.cusum_watch`) appended
+  `action: "PAUSE" | "continue"` to `data/demo-loop/cusum_A.jsonl`, and **nothing
+  read it** — `run_daily_decide` never consulted the verdict. The judgment was
+  recorded but never reached the next signal.
+- Changes (one link, additive):
+  - `paperloop.cusum_edge_verdict(root)` reads the monitor's log and answers
+    `continue` / `pause` / `unreadable` / `absent`. A recorded alarm is
+    **latched** (prereg: "S is never reset after an alarm" — a later lower S_w
+    does not reopen the gate). It recomputes nothing and never writes to the
+    monitor's log.
+  - For the monitored book only (`CUSUM_GATED_BOOK = "A"`) a `pause` (or an
+    untrusted verdict — `unreadable` is never read as alive) adds a book-scope
+    HALT trigger, so the existing machinery writes `halt_check.action="halt"` and
+    `regime_state=HALT` / `halt_flag=true` / `fill_status=skipped` decision rows
+    with `halt_reason=cusum_pause` (or `cusum_verdict_unreadable`).
+  - `halt_check` rows carry `edge_lifetime` (`status`/`week`/`S`/`h_star`/`alarm`/
+    `action`/`row_hash`/`why`) so which verdict held the gate is auditable; books
+    without a registered monitor carry `null`. No schema bump: the change adds one
+    key and one trigger name; existing key semantics are unchanged.
+  - `absent` (the monitor has not written yet) records the fact and does not gate,
+    so pre-monitor journals and fresh environments are not bricked.
+- Measured on the real journal (copy, production untouched: journal sha256
+  `ed12c32a…` and monitor-log sha256 `1185d9f0…` unchanged before/after):
+  - gate-open run at 2026-10-23T00:20Z with the real verdict (2026-W42,
+    S=0.1307876, h*=4.8) wrote 4 decisions **identical to the 4 production wrote
+    that morning (13 fields compared, 0 mismatches)**;
+  - the same run with one synthetic PAUSE row appended to the copy changed only
+    Book A's 2 decisions to HALT/skipped and left CRYPTO_1N untouched;
+  - `paperloop_verify` on the 261-row copy: exit 0, chain/anchors ok, L1–L14
+    clean, R1 26/26, R2 26/26.
+- After-cost reading as of the 2026-10-23 mtm (virtual capital 1.0 = ¥1,000,000,
+  assumed 15 bps/side): Book A −3.3447% (−¥33,446.80), max DD −4.1269%, vs
+  CRYPTO_1N +0.1995 pp; Book C +0.6344% (+¥6,344.19), max DD −0.3480%, benchmark
+  difference still null (`EQUITY_EW` has no fill). Not evidence of profitability.
+- Not established: the real monitor has never alarmed (S=0.131 vs 4.8 over 2
+  complete weeks) — the closed-gate evidence uses a synthetic verdict on real
+  inputs; 4-week milestones are still ahead (A 2026-11-07, C 2026-11-16);
+  12/26-week milestones stay unwired (`MILESTONE_WEEKS_CONNECTED=(4,)`).
+- Evidence: `docs/P3_LOOP_20261023.md`,
+  `docs/evidence/20261023/p3_edge_gate_real_data.json`,
+  `docs/evidence/20261023/p3_edge_gate_probe.py`,
+  `docs/evidence/20261023/p3_loop_verify_new_code.json`.
+- Attribution: the gate implementation landed in commit
+  `94d9e0f` ("fix(demo-loop): measure comparison drawdown from the shared
+  baseline (t_dddae39e)") because both cards shared one working tree — the
+  cusum hunks in that commit are this card's scope and need their own review;
+  the docs/evidence of this card are committed separately. It is already live
+  in the real loop (the 2026-10-23 02:05Z fill job ran on
+  `b6d5d664fc52+dirty`; the 2026-W42 verdict is `continue`, so nothing was
+  blocked).
+
 ### Exit criteria
 
 The system can answer:
@@ -518,31 +673,45 @@ The system can answer:
 
 JPX began daily all-issue publication on 2026-09-28.
 
-**Status: IMPLEMENTED on the current integration branch — real free-production
-PDF/XLSX formats inspected, parser/persistence/API/CLI and deterministic
-supply-demand scans implemented; CI acceptance remains the delivery gate.**
+**Status (2026-10-23): weekly credit-margin scraping DONE
+(parser/persistence/API/CLI + `yowayowa-alpaca`-style weekly cron); the daily
+all-issue ingestion code (parser/persistence/API/CLI) is DONE and verified
+against the current official specification and the unchanged official sample
+package; the live machine-readable feed is contract-gated (TMI / J-Quants Pro,
+401 without a token, no credential configured), so no real business day has been
+ingested yet. Evidence: `docs/P1D_JPX_MARGIN_DAILY_EVIDENCE.md`.**
 
-Implemented:
-- ingest the free all-issue 01 PDF into the existing canonical JPX daily
-  balance history without collapsing exact five-character local codes;
-- preserve general vs standardized balances, JPY values, source-reported
-  changes and listed-share ratios;
-- ingest 日々公表 flags/balances, 品貸料, and same-day 信用取引売買比率;
-- cross-check same-date 日々公表 rows against the all-issue canonical balance;
-- content-address raw downloads and retain source / as-of / published-at /
-  retrieved-at provenance;
-- expose detail/flow/premium/watch reads plus transparent scans through API
-  and CLI;
-- fail closed on document-count drift, duplicate identifiers, arithmetic
-  identity failure and malformed/missing required values;
-- compute previous-day deltas correctly even when the caller asks for only the
-  latest point.
+Two ways forward, both requiring an operator decision:
+1. contract the paid feed (from 100,000円/month 税抜 for 総合取引参加者向け,
+   250,000円 for その他法人向け) and keep the existing ingest path;
+2. read the free public daily PDF (all issues, ~1 week of dates, 修正版は `_01`)
+   — same business data, needs its own parser/fixtures/tests.
 
-Remaining product work:
-- instrument-page supply/demand visualization;
-- optional integration of JPX signals into the general screener/comparison
-  and AI evidence packet;
-- accumulate point-in-time history for forward outcome validation.
+Already done:
+- actual format and semantics inspected (spec §3.2.3 verified, real-value
+  identity confirmed on the free public daily table: 4,249 issues, 2026-10-21);
+- ingest path (parse → persist → CLI → API) verified end-to-end on the official
+  distribution bytes with provenance and per-date replacement semantics.
+
+Still open:
+- ingest real daily history (needs 1 or 2 above);
+- persist sell/buy balances and changes (implemented, waiting for real data);
+- capture negotiable/general vs standardized/system-margin breakdowns
+  (implemented, waiting for real data);
+- capture balance values and listed-share ratios where provided (values
+  implemented; listed-share ratios are not in this dataset's issue file);
+- add instrument-page supply/demand history;
+- add screener/comparison fields;
+- add abrupt-change alerts;
+- snapshot values for later forward validation.
+
+Update (2026-10-31 merge): the integration branch's free-publication
+surfaces — daily all-issue PDF/XLSX ingest with content-addressed raw
+downloads and the transparent supply/demand screens
+(`src/yowayowa/services/jpx_margin_signals.py`) — are also in this tree now;
+their contract is preserved in `docs/JPX_DAILY_MARGIN.md` (§ Free official
+publications integration). CI acceptance remains the delivery gate for that
+lane.
 
 ### Additional private Japan sources
 
@@ -556,8 +725,19 @@ Japanese equities have a meaningful information advantage over the generic Yahoo
 
 ## P5 — Product-completion audit
 
-**Status (2026-09-26): IN PROGRESS — P5-A (AI-led research surfaces) is
-shipped; the workflow-dead-end audit itself is NOT STARTED.**
+**Status (2026-10-23): IN PROGRESS — P5-A (AI-led research surfaces) is
+shipped and the workflow-dead-end audit now exists in two recorded passes:
+a full static walk of all nine workflow steps (2026-09-28,
+`docs/WORKFLOW_DEADEND_AUDIT.md`) and an executed API/CLI pass over the five
+main lines — research → screening → valuation → portfolio → morning brief
+(2026-10-23, `docs/P5_DEADEND_AUDIT_20261023.md`). That second pass re-measured
+the first one's 23 findings, closed one dead-end (screening candidate lookup by
+code across CLI/API/agent), and records 10 still open (P0 3 / P1 6 / P2 1) plus
+one non-dead-end usability friction item.
+Closed since that pass: R4 — quote/valuation price currency and the
+company-name degeneration it exposed (2026-10-23,
+`docs/P5_R4_QUOTE_CURRENCY_20261023.md`).
+P5 is not complete while any P0 dead-end stands.**
 
 Shipped under P5-A:
 - cited research Q&A (`research_ask`): deterministic evidence packet +

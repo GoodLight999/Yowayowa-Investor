@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -21,6 +22,34 @@ from yowayowa.services.edinet import document_list, normalize_security_code
 _MAX_SYNC_DAYS = 31
 _MAX_SEARCH_DAYS = 3660
 _JST = ZoneInfo("Asia/Tokyo")
+# One EDINET fetch attempt per second, matching the house JSONL collector's
+# sleep(1.0) between days (/root/.hermes/scripts/yowayowa_edinet_daily.sh) and
+# the t_2c4b6154 card constraint: never shorten this interval.
+_MIN_FETCH_INTERVAL_SECONDS = 1.0
+
+
+class _FetchPacer:
+    """Keep consecutive EDINET fetch attempts at least one interval apart.
+
+    The interval is anchored on the previous attempt's completion time, so the
+    measured gap between two fetches (including a failed attempt, whose request
+    still reached the network) can never drop below the interval. The final
+    attempt of a run sleeps nothing afterwards.
+    """
+
+    def __init__(self, interval: float = _MIN_FETCH_INTERVAL_SECONDS) -> None:
+        self._interval = interval
+        self._last_completion_at: float | None = None
+
+    def wait_before_fetch(self) -> None:
+        if self._last_completion_at is None:
+            return
+        elapsed = time.monotonic() - self._last_completion_at
+        if elapsed < self._interval:
+            time.sleep(self._interval - elapsed)
+
+    def mark_attempt_finished(self) -> None:
+        self._last_completion_at = time.monotonic()
 
 
 def _date_span(start_date: date, end_date: date, *, max_days: int) -> list[date]:
@@ -139,7 +168,9 @@ def sync_filing_index(
     failures: list[EdinetIndexFailure] = []
     documents_upserted = 0
     days_synced = 0
+    pacer = _FetchPacer()
     for filing_date in days:
+        pacer.wait_before_fetch()
         try:
             documents_upserted += sync_filing_day(session, client, filing_date)
             days_synced += 1
@@ -151,6 +182,8 @@ def sync_filing_index(
                     error=type(exc).__name__,
                 )
             )
+        finally:
+            pacer.mark_attempt_finished()
     return EdinetIndexSyncResult(
         start_date=start_date,
         end_date=end_date,
@@ -215,7 +248,9 @@ def maintain_recent_filing_index(
     failures: list[EdinetIndexFailure] = []
     documents_upserted = 0
     days_synced = 0
+    pacer = _FetchPacer()
     for filing_date in missing_dates:
+        pacer.wait_before_fetch()
         try:
             documents_upserted += sync_filing_day(session, client, filing_date)
             days_synced += 1
@@ -227,6 +262,8 @@ def maintain_recent_filing_index(
                     error=type(exc).__name__,
                 )
             )
+        finally:
+            pacer.mark_attempt_finished()
 
     indexed_days = session.scalar(
         select(func.count())

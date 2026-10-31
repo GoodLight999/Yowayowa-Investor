@@ -104,14 +104,22 @@ class BrokerOrderReceipt(BaseModel):
 
 
 class BrokerOrder(BaseModel):
+    """One normalized broker order; quantities that could not be read stay None.
+
+    ``quantity``/``filled_quantity`` are ``None`` when the source row did not
+    yield a parsable number. ``None`` means "unknown" and must not be filled
+    with 0 or a previous value: 0 is a real filled quantity, so conflating the
+    two turns an unreadable row into "nothing was filled".
+    """
+
     broker: str
     client_order_id: str | None = None
     transport_order_id: str | None = None
     broker_order_id: str
     symbol: str
     side: BrokerOrderSide
-    quantity: int
-    filled_quantity: int = 0
+    quantity: int | None
+    filled_quantity: int | None = 0
     average_fill_price: Decimal | None = None
     status: BrokerOrderStatus
 
@@ -132,9 +140,11 @@ class BrokerExecution(BaseModel):
 
 
 class BrokerPosition(BaseModel):
+    """One normalized holding; an unreadable quantity stays None (unknown)."""
+
     broker: str
     symbol: str
-    quantity: Decimal
+    quantity: Decimal | None
     average_cost: Decimal | None = None
     market_price: Decimal | None = None
     market_value: Decimal | None = None

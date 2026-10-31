@@ -1,0 +1,32 @@
+== 1. static router dependencies: 185 operations, 150 with require_api_token ==
+  GET   /v1/orderbook/{symbol}                       deps=[]
+  GET   /v1/orderbook/{symbol}/depth                 deps=[]
+  GET   /v1/orderbook/{symbol}/metrics               deps=[]
+  POST  /v1/orderbook/{symbol}/impact                deps=[]
+  POST  /v1/orderbook/{symbol}/snapshots             deps=[]
+  control (must keep require_api_token, unchanged by this card):
+  POST  /v1/screening/run                            deps=['require_api_token']
+  GET   /v1/portfolios                               deps=['require_api_token', 'db_session']
+  POST  /v1/portfolios                               deps=['require_api_token', 'db_session']
+
+== 2. OpenAPI parameters ==
+  GET   /v1/orderbook/7203                     params=['symbol']
+  GET   /v1/orderbook/7203/depth               params=['symbol', 'max_levels']
+  GET   /v1/orderbook/7203/metrics             params=['symbol']
+  POST  /v1/orderbook/7203/impact              params=['symbol']
+  POST  /v1/orderbook/7203/snapshots           params=['symbol']
+  GET   /v1/portfolios                         params=['authorization']
+
+== 3. live statuses with api_token configured (no-token / wrong-token / valid) ==
+  GET   /v1/orderbook/7203                     200 / 200 / 200
+  GET   /v1/orderbook/7203/depth?max_levels=5  200 / 200 / 200
+  GET   /v1/orderbook/7203/metrics             200 / 200 / 200
+  POST  /v1/orderbook/7203/impact              200 / 200 / 200
+  POST  /v1/orderbook/7203/snapshots           200 / 200 / 200
+
+== 4. live statuses with api_token unset (deps.py fail-open, unchanged) ==
+  GET   /v1/orderbook/7203                     200
+  GET   /v1/orderbook/7203/depth?max_levels=5  200
+  GET   /v1/orderbook/7203/metrics             200
+  POST  /v1/orderbook/7203/impact              200
+  POST  /v1/orderbook/7203/snapshots           200

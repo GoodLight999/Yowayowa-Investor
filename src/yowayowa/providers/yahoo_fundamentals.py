@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import pandas as pd
 import yfinance as yf
@@ -12,7 +14,97 @@ import yfinance as yf
 from yowayowa.config import Settings
 from yowayowa.domain import Fundamentals, LicenseClass, MetricPoint, MetricSeries, Provenance
 from yowayowa.providers.base import ProviderDescriptor, enforce_provider_policy
-from yowayowa.symbols import normalize_symbol
+from yowayowa.symbols import InputValidationError, normalize_currency, normalize_symbol
+
+
+def _describe_exception(exc: BaseException) -> str:
+    """Exception type plus message, so a recorded failure keeps its own reason."""
+
+    message = str(exc).strip()
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+
+
+@dataclass(frozen=True, slots=True)
+class StatementFrameFailure:
+    """One statement frame that yfinance raised on (outage, rate limit, schema)."""
+
+    statement: str
+    frequency: str
+    reason: str
+
+    def describe(self) -> str:
+        return f"{self.statement}/{self.frequency}: {self.reason}"
+
+
+@dataclass(slots=True)
+class _StatementSample:
+    """Loaded statement frames plus everything that kept a frame from being used.
+
+    Failures, empty frames and unusable-schema frames are counted separately so
+    "Yahoo did not answer" can never be reported as "this issuer has no
+    financial statements" (AGENTS.md invariant 2: missing data is not zero).
+    """
+
+    frames: dict[str, list[pd.DataFrame]] = field(
+        default_factory=lambda: {"yearly": [], "quarterly": []}
+    )
+    failures: list[StatementFrameFailure] = field(default_factory=list)
+    attempted: int = 0
+    empty_frames: int = 0
+    schema_frames: int = 0
+    unmapped_frames: int = 0
+
+    @property
+    def total_frames(self) -> int:
+        """Every frame that was requested, including the ones that loaded."""
+
+        return self.attempted
+
+
+class YahooStatementFetchError(RuntimeError):
+    """yfinance raised while one statement frame was being loaded."""
+
+    def __init__(self, statement: str, frequency: str, cause: BaseException) -> None:
+        self.statement = statement
+        self.frequency = frequency
+        self.cause = cause
+        super().__init__(f"{statement}/{frequency}: {_describe_exception(cause)}")
+
+
+class YahooStatementsUnavailableError(RuntimeError):
+    """Statements could not be obtained in usable form: outage or schema break.
+
+    Deliberately not a ``LookupError``. ``LookupError`` means "this issuer has
+    no financial statements" and becomes HTTP 404; this error means "Yahoo did
+    not deliver usable statements" and must surface as an upstream failure
+    (HTTP 502) instead of an issuer that looks statement-less.
+    """
+
+    def __init__(
+        self,
+        symbol: str,
+        *,
+        failures: Sequence[StatementFrameFailure],
+        total_frames: int,
+        empty_frames: int,
+        schema_frames: int,
+        unmapped_frames: int,
+    ) -> None:
+        self.symbol = symbol
+        self.failures = tuple(failures)
+        self.total_frames = total_frames
+        self.empty_frames = empty_frames
+        self.schema_frames = schema_frames
+        self.unmapped_frames = unmapped_frames
+        reasons = "; ".join(item.describe() for item in self.failures[:4])
+        counts = (
+            f"{len(self.failures)}/{total_frames} raised"
+            f", {schema_frames}/{total_frames} had no period columns"
+            f", {unmapped_frames}/{total_frames} had no recognized line item"
+            f", {empty_frames}/{total_frames} were empty"
+        )
+        detail = f" ({reasons})" if reasons else ""
+        super().__init__(f"Yahoo statements unavailable for {symbol}: {counts}{detail}")
 
 
 class YahooFundamentalsProvider:
@@ -84,6 +176,12 @@ class YahooFundamentalsProvider:
         ".T": "JPY",
     }
 
+    STATEMENT_LOADERS: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("income_statement", "get_income_stmt"),
+        ("balance_sheet", "get_balance_sheet"),
+        ("cash_flow", "get_cash_flow"),
+    )
+
     def __init__(self, settings: Settings) -> None:
         enforce_provider_policy(
             self.descriptor,
@@ -96,7 +194,9 @@ class YahooFundamentalsProvider:
         normalized = normalize_symbol(symbol)
         ticker = yf.Ticker(normalized)
         metadata = self._safe_history_metadata(ticker)
-        currency = str(metadata.get("currency") or self._currency_hint(normalized)).upper()
+        currency = self._statement_currency(
+            metadata.get("currency") or self._currency_hint(normalized)
+        )
         company_name = str(
             metadata.get("longName")
             or metadata.get("shortName")
@@ -105,10 +205,13 @@ class YahooFundamentalsProvider:
         )
 
         metrics: dict[str, MetricSeries] = {}
-        frames = self._statement_frames(ticker)
-        for frequency, statements in frames.items():
+        sample = self._statement_frames(ticker)
+        for frequency, statements in sample.frames.items():
             for frame in statements:
-                self._merge_frame(metrics, frame, frequency, currency)
+                if self._merge_frame(metrics, frame, frequency, currency) == 0:
+                    # A frame that loaded but matched no known row label is the
+                    # row-level twin of a missing column: Yahoo changed shape.
+                    sample.unmapped_frames += 1
 
         for series in metrics.values():
             dedup: dict[tuple[date, str | None, Decimal], MetricPoint] = {}
@@ -116,10 +219,19 @@ class YahooFundamentalsProvider:
                 dedup[(point.period_end, point.fiscal_period, point.value)] = point
             series.points = sorted(dedup.values(), key=lambda item: item.period_end)
 
-        self._fill_fiscal_years(metrics, self._yearly_period_ends(frames))
+        self._fill_fiscal_years(metrics, self._yearly_period_ends(sample.frames))
         self._derive_eps_diluted(metrics, currency)
 
         if not metrics:
+            if sample.failures or sample.schema_frames or sample.unmapped_frames:
+                raise YahooStatementsUnavailableError(
+                    normalized,
+                    failures=sample.failures,
+                    total_frames=sample.total_frames,
+                    empty_frames=sample.empty_frames,
+                    schema_frames=sample.schema_frames,
+                    unmapped_frames=sample.unmapped_frames,
+                )
             raise LookupError(f"No Yahoo financial statements available for {normalized}")
 
         now = datetime.now(UTC)
@@ -152,6 +264,7 @@ class YahooFundamentalsProvider:
                         "available; metadata failure does not invalidate otherwise usable "
                         "statements."
                     ),
+                    *self._degradation_notes(sample),
                     (
                         "Capital expenditure is normalized to a positive cash outflow before "
                         "FCF calculations."
@@ -177,35 +290,125 @@ class YahooFundamentalsProvider:
         )
 
     @staticmethod
+    def _statement_currency(raw: object) -> str:
+        """Statement currency as an ISO-style code, or ``""`` when unusable.
+
+        Yahoo's metadata value is accepted only after the same validation the
+        quote path applies (``normalize_currency``): stripped, upper-cased and
+        three letters long. A blank, malformed or non-ISO value degrades to an
+        empty unit instead of becoming a metric unit, so a bad metadata field
+        can never silently mislabel every statement amount (F4).
+        """
+
+        if raw is None:
+            return ""
+        text = str(raw).strip().upper()
+        if not text:
+            return ""
+        try:
+            return normalize_currency(text)
+        except InputValidationError:
+            return ""
+
+    @staticmethod
     def _safe_history_metadata(ticker: yf.Ticker) -> dict[str, Any]:
         try:
             value = ticker.get_history_metadata()
         except Exception:
             return {}
-        return value if isinstance(value, dict) else {}
+        # yfinance 1.7 returns a ``HistoryMetadata`` Mapping, not a dict; testing
+        # ``isinstance(value, dict)`` discarded a perfectly good payload, which
+        # silently degraded company_name to the symbol and the statement
+        # currency to a suffix guess (P5 R4).
+        return dict(value) if isinstance(value, Mapping) else {}
 
     @staticmethod
-    def _safe_frame(loader: Any, frequency: str) -> pd.DataFrame:
+    def _load_frame(
+        loader: Any,
+        frequency: str,
+        statement: str,
+    ) -> pd.DataFrame:
+        """Load one statement frame or raise with the reason it could not be read.
+
+        Older yfinance releases accepted ``frequency=`` instead of ``freq=``, so a
+        ``TypeError``/``ValueError`` retries the other keyword. A retry that also
+        fails, a non-``DataFrame`` payload, or any other exception is raised as
+        :class:`YahooStatementFetchError`: an outage never becomes an empty frame
+        that later reads as "this issuer has no statements"
+        (docs/SILENT_FAILURE_AUDIT_20261023.md §3 #6/#7).
+        """
+
         try:
             frame = loader(freq=frequency)
         except (TypeError, ValueError):
             try:
                 frame = loader(frequency=frequency)
-            except Exception:
-                return pd.DataFrame()
-        except Exception:
-            return pd.DataFrame()
-        return frame if isinstance(frame, pd.DataFrame) else pd.DataFrame()
+            except Exception as exc:
+                raise YahooStatementFetchError(statement, frequency, exc) from exc
+        except Exception as exc:
+            raise YahooStatementFetchError(statement, frequency, exc) from exc
+        if not isinstance(frame, pd.DataFrame):
+            raise YahooStatementFetchError(
+                statement,
+                frequency,
+                TypeError(f"yfinance returned {type(frame).__name__}, not a DataFrame"),
+            )
+        return frame
 
-    def _statement_frames(self, ticker: yf.Ticker) -> dict[str, list[pd.DataFrame]]:
-        result: dict[str, list[pd.DataFrame]] = {"yearly": [], "quarterly": []}
-        loaders = (ticker.get_income_stmt, ticker.get_balance_sheet, ticker.get_cash_flow)
-        for frequency in result:
-            for loader in loaders:
-                frame = self._safe_frame(loader, frequency)
-                if not frame.empty:
-                    result[frequency].append(frame)
-        return result
+    @staticmethod
+    def _frame_state(frame: pd.DataFrame) -> Literal["ok", "empty", "schema"]:
+        """Classify a loaded frame as usable, genuinely empty, or a shape break.
+
+        An empty frame means Yahoo reported no statement for that period: no data.
+        A frame with rows but no period columns (or columns but no rows) is a
+        format change we cannot read, and must not be reported as "no financials".
+        """
+
+        has_index = len(frame.index) > 0
+        has_columns = len(frame.columns) > 0
+        if has_index and has_columns:
+            return "ok"
+        if not has_index and not has_columns:
+            return "empty"
+        return "schema"
+
+    def _statement_frames(self, ticker: yf.Ticker) -> _StatementSample:
+        """Load every statement frame, keeping failures apart from empty frames."""
+
+        sample = _StatementSample()
+        for frequency in ("yearly", "quarterly"):
+            for statement, attribute in self.STATEMENT_LOADERS:
+                sample.attempted += 1
+                loader = getattr(ticker, attribute, None)
+                if loader is None:
+                    sample.failures.append(
+                        StatementFrameFailure(
+                            statement,
+                            frequency,
+                            f"AttributeError: yfinance ticker has no {attribute}",
+                        )
+                    )
+                    continue
+                try:
+                    frame = self._load_frame(loader, frequency, statement)
+                except YahooStatementFetchError as exc:
+                    sample.failures.append(
+                        StatementFrameFailure(
+                            statement,
+                            frequency,
+                            _describe_exception(exc.cause),
+                        )
+                    )
+                    continue
+                state = self._frame_state(frame)
+                if state == "empty":
+                    sample.empty_frames += 1
+                    continue
+                if state == "schema":
+                    sample.schema_frames += 1
+                    continue
+                sample.frames[frequency].append(frame)
+        return sample
 
     @classmethod
     def _merge_frame(
@@ -214,10 +417,17 @@ class YahooFundamentalsProvider:
         frame: pd.DataFrame,
         frequency: str,
         currency: str,
-    ) -> None:
+    ) -> int:
+        """Merge one statement frame and return how many row aliases it matched.
+
+        A zero return means nothing in the frame was recognized: the caller keeps
+        that count so a Yahoo row-label change cannot pass as "no data".
+        """
+
         if frame.empty:
-            return
+            return 0
         normalized_index = {cls._normalize_row_name(item): item for item in frame.index}
+        matched = 0
         for key, aliases in cls.ROW_ALIASES.items():
             source_row = next(
                 (
@@ -229,6 +439,7 @@ class YahooFundamentalsProvider:
             )
             if source_row is None:
                 continue
+            matched += 1
             row = frame.loc[source_row]
             if isinstance(row, pd.DataFrame):
                 row = row.iloc[0]
@@ -241,6 +452,39 @@ class YahooFundamentalsProvider:
                     MetricSeries(key=key, label=cls.LABELS.get(key, key), points=[]),
                 )
                 series.points.append(point)
+        return matched
+
+    @staticmethod
+    def _degradation_notes(sample: _StatementSample) -> list[str]:
+        """Provenance lines for a partially usable statement load.
+
+        Returned through the existing ``Provenance.notes`` field, so an operator
+        or agent can see how many frames were missing and why without any new
+        response key. Frames Yahoo returned empty are not listed: an empty frame
+        is Yahoo reporting no statement, which is plain absence of data.
+        """
+
+        notes: list[str] = []
+        total = sample.total_frames
+        if sample.failures:
+            reasons = "; ".join(item.describe() for item in sample.failures)
+            notes.append(
+                f"{len(sample.failures)} of {total} Yahoo statement frames could not be "
+                f"retrieved ({reasons}); metrics cover only the frames that loaded, so a "
+                "missing metric is an upstream failure rather than a reported zero."
+            )
+        if sample.schema_frames:
+            notes.append(
+                f"{sample.schema_frames} of {total} Yahoo statement frames had no period "
+                "columns and were not used (possible Yahoo statement-format change)."
+            )
+        if sample.unmapped_frames:
+            notes.append(
+                f"{sample.unmapped_frames} of {total} Yahoo statement frames contained no "
+                "recognized line item and contributed no metrics (possible Yahoo row-label "
+                "change)."
+            )
+        return notes
 
     @staticmethod
     def _yearly_period_ends(frames: dict[str, list[pd.DataFrame]]) -> list[date]:
@@ -410,6 +654,11 @@ class YahooFundamentalsProvider:
             fiscal_period=fiscal_period,
             value=Decimal(str(number)),
             unit=unit,
+            # ``currency`` stays None on purpose: the provider gives the
+            # listing's *price* currency here, not the statement's reporting
+            # currency (Yahoo's ``financialCurrency``), and stamping the former
+            # would let the valuation currency gate compare the wrong thing.
+            # Follow-up recorded in docs/P5_R4_QUOTE_CURRENCY_20261023.md.
             accession=None,
             filed=None,
             form="Yahoo normalized statement",
