@@ -20,15 +20,18 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 INFO_URL_MAINNET = "https://api.hyperliquid.xyz/info"
 INFO_URL_TESTNET = "https://api.hyperliquid-testnet.xyz/info"
+TESTNET_API_URL = "https://api.hyperliquid-testnet.xyz"
 USER_AGENT = "yowayowa-hl-exec/0.1 (read-only)"
 
 _EVM_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
@@ -141,6 +144,12 @@ class HyperliquidInfoClient:
         raw = self._post({"type": "openOrders", "user": user})
         return self._require_list(raw, what="openOrders")
 
+    def user_fills(self, user: str) -> list[Any]:
+        """約定履歴一覧（照合用・新規約定0件の証明に使う）。"""
+        _validate_address(user)
+        raw = self._post({"type": "userFills", "user": user})
+        return self._require_list(raw, what="userFills")
+
     def l2_book(self, coin: str = "BTC") -> dict[str, Any]:
         """板情報（L2）。生応答をそのまま返す。"""
         if not isinstance(coin, str) or not coin:
@@ -208,3 +217,97 @@ class HyperliquidInfoClient:
             "order cancellation is intentionally not implemented in phase 1; "
             "kill switch runs with an injected cancel callback instead"
         )
+
+
+class HyperliquidExchangeClient:
+    """Hyperliquid 取引所送信クライアント（第4段: テストネット注文往復用）。
+
+    制約契約:
+      * メインネット（api.hyperliquid.xyz）への接続は厳格に禁止（即時例外）。
+      * 秘密鍵はメモリ内のみで保持し、ログ・文字列表現（__repr__）には絶対に出力しない。
+      * 発注前に killswitch が設定されている場合は ensure_may_trade() で遮断する。
+    """
+
+    def __init__(
+        self,
+        account_address: str,
+        agent_key: str | Path,
+        *,
+        base_url: str = TESTNET_API_URL,
+        killswitch: Any | None = None,
+        exchange: Any | None = None,
+    ) -> None:
+        _validate_address(account_address)
+        if "api.hyperliquid.xyz" in base_url and "testnet" not in base_url:
+            raise ValueError(f"Mainnet endpoint is strictly forbidden: {base_url}")
+        self._account_address = account_address
+        self._base_url = base_url
+        self._killswitch = killswitch
+
+        if exchange is not None:
+            self._exchange = exchange
+        else:
+            try:
+                if isinstance(agent_key, Path) or (
+                    isinstance(agent_key, str) and (os.path.exists(agent_key) or "/" in agent_key)
+                ):
+                    key_str = Path(agent_key).read_text(encoding="utf-8").strip()
+                else:
+                    key_str = agent_key
+                from eth_account import Account
+                from hyperliquid.exchange import Exchange  # type: ignore[import-untyped]
+
+                account = Account.from_key(key_str)
+                self._exchange = Exchange(
+                    account, base_url=self._base_url, account_address=self._account_address
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Failed to initialize Hyperliquid exchange client: {type(exc).__name__}"
+                ) from None
+
+    @property
+    def account_address(self) -> str:
+        return self._account_address
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    def __repr__(self) -> str:
+        return (
+            f"HyperliquidExchangeClient(account_address={self._account_address!r}, "
+            f"base_url={self._base_url!r})"
+        )
+
+    def order(
+        self,
+        coin: str,
+        is_buy: bool,
+        sz: float,
+        px: float,
+        order_type: dict[str, Any],
+        *,
+        cloid: str | None = None,
+    ) -> dict[str, Any]:
+        """注文を発注する。発注前にキルスイッチの取引可否を検証する。"""
+        if self._killswitch is not None:
+            self._killswitch.ensure_may_trade()
+        res: Any = self._exchange.order(coin, is_buy, sz, px, order_type, cloid=cloid)
+        if not isinstance(res, dict):
+            raise HLError(f"unexpected exchange order response: {type(res).__name__}")
+        return res
+
+    def cancel(self, coin: str, oid: int) -> dict[str, Any]:
+        """oid で未約定注文を取り消す。"""
+        res: Any = self._exchange.cancel(coin, oid)
+        if not isinstance(res, dict):
+            raise HLError(f"unexpected exchange cancel response: {type(res).__name__}")
+        return res
+
+    def cancel_by_cloid(self, coin: str, cloid: str) -> dict[str, Any]:
+        """cloid で未約定注文を取り消す。"""
+        res: Any = self._exchange.cancel_by_cloid(coin, cloid)
+        if not isinstance(res, dict):
+            raise HLError(f"unexpected exchange cancel_by_cloid response: {type(res).__name__}")
+        return res

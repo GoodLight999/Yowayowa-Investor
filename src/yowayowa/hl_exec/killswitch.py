@@ -159,3 +159,29 @@ class KillSwitch:
             os.fsync(fh.fileno())
         os.replace(tmp_path, self._lock_path)
         _fsync_dir(self._lock_path.parent)
+
+    def disengage(self) -> bool:
+        """キルスイッチのロックを解除する（正常終了解放・運用再開・疎通テスト用）。
+
+        ファイルが存在して削除できたら True、元々存在しなければ False。
+        削除後は親ディレクトリを fsync し、ファイルシステムの整合を保証する。
+        """
+        if self._lock_path.exists():
+            self._lock_path.unlink()
+            _fsync_dir(self._lock_path.parent)
+            return True
+        return False
+
+    def acquire_lock(self, *, reason: str, now: _dt.datetime | None = None) -> bool:
+        """発注前の排他ロックを取得する。
+
+        既にロック済みの場合は False、新規にロック取得できた場合は True を返す。
+        """
+        if self.is_engaged():
+            return False
+        self._persist_lock(reason=reason, now=now)
+        return True
+
+    def release_lock(self) -> bool:
+        """正常終了時にロックを解放する（disengage のエイリアス）。"""
+        return self.disengage()

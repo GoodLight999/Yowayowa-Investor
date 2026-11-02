@@ -25,10 +25,21 @@
 
 from __future__ import annotations
 
+import json
 import re
+import time
+from collections.abc import Callable
 from decimal import ROUND_DOWN, Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
+from yowayowa.hl_exec.client import (
+    TESTNET_API_URL,
+    HyperliquidExchangeClient,
+    HyperliquidInfoClient,
+)
+from yowayowa.hl_exec.journal import ExecutionJournal, verify_chain
+from yowayowa.hl_exec.killswitch import KillSwitch
 from yowayowa.hl_exec.risk import MIN_NOTIONAL_USDC, POSITION_NOTIONAL_CAP_USDC
 
 PRICE_SIGNIFICANT_FIGURES = 5
@@ -389,3 +400,308 @@ def build_entry_bundle(
             max_decimals=max_decimals,
         )
     return {"entry": entry, "sl": sl, "tp": tp}
+
+
+# ------------------------------------------------------------------ 注文往復（第4段）
+def run_order_roundtrip(
+    *,
+    account_address: str,
+    agent_key_path: str | Path,
+    coin: str = "BTC",
+    size: float = 0.0002,
+    price_ratio: float = 0.99,
+    tif: str = "Gtc",
+    base_url: str = TESTNET_API_URL,
+    journal_path: str | Path | None = None,
+    raw_log_path: str | Path | None = None,
+    killswitch_lock_path: str | Path | None = None,
+    exchange_client: HyperliquidExchangeClient | None = None,
+    info_client: HyperliquidInfoClient | None = None,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> dict[str, Any]:
+    """テストネット最小注文の往復（発注→照会→取消→照合）を完全自動実行する。
+
+    受入条件:
+      1. BTC 買い指値（サイズ 0.0002・価格=最良買値×0.99切捨て）を発注し oid を受領。
+      2. 発注直後の照会（openOrders）で 1件・oid一致 を確認。
+      3. 取消を実行して success を受領し、取消後 未約定注文0件 を確認。
+      4. 前後の clearinghouseState で accountValue が同一維持・建玉0・新規約定0 を証明。
+      5. 三段ログ（SIGNAL/INTENT/ORDER）が journal.py 経由で JSONL に改ざん不能チェーンで記録。
+      6. キルスイッチ疎通: 発注前にロック取得、正常終了で解放をログで実証。
+    """
+    if "api.hyperliquid.xyz" in base_url and "testnet" not in base_url:
+        raise ValueError(f"Mainnet endpoint is strictly forbidden: {base_url}")
+
+    default_ks = Path("/root/.secrets/HL_KILL_SWITCH")
+    ks_path = Path(killswitch_lock_path) if killswitch_lock_path else default_ks
+    ks = KillSwitch(ks_path)
+    info = info_client if info_client is not None else HyperliquidInfoClient(f"{base_url}/info")
+    ex = (
+        exchange_client
+        if exchange_client is not None
+        else HyperliquidExchangeClient(
+            account_address=account_address,
+            agent_key=agent_key_path,
+            base_url=base_url,
+            killswitch=ks,
+        )
+    )
+
+    default_j = Path("data/execution_logs/hl_testnet_roundtrip.jsonl")
+    j_path = Path(journal_path) if journal_path else default_j
+    journal = ExecutionJournal(j_path)
+    raw_events: list[dict[str, Any]] = []
+
+    def _record_raw(stage: str, **kwargs: Any) -> None:
+        ev = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00", time.gmtime()),
+            "stage": stage,
+            **kwargs,
+        }
+        raw_events.append(ev)
+
+    # 1. キルスイッチ経路の疎通（受入条件6: 発注前にロック取得、正常終了で解放）
+    # 1a. キルスイッチ自体のロック取得と解放の疎通テスト
+    ks_lock_ok = ks.acquire_lock(reason="pre-trade-connectivity-test")
+    if not ks_lock_ok:
+        raise RuntimeError(f"Failed to acquire kill switch lock before trade: {ks.lock_path}")
+    if not ks.is_engaged():
+        raise RuntimeError(
+            f"Kill switch lock reported acquired but is_engaged() is False: {ks.lock_path}"
+        )
+    _record_raw("killswitch_lock_acquired", lock_path=str(ks.lock_path), engaged=True)
+
+    ks_released = ks.release_lock()
+    if not ks_released:
+        raise RuntimeError(f"Failed to release kill switch lock: {ks.lock_path}")
+    if ks.is_engaged():
+        raise RuntimeError(
+            f"Kill switch lock reported released but is_engaged() is True: {ks.lock_path}"
+        )
+    _record_raw("killswitch_lock_released", lock_path=str(ks.lock_path), engaged=False)
+
+    # 1b. 実行中排他ロックを取得（fail-closed: 異常停止時にロックが残り次回発注を阻止）
+    trade_lock_path = ks.lock_path.with_name(ks.lock_path.name + "_ROUNDTRIP_EXEC")
+    trade_lock = KillSwitch(trade_lock_path)
+    if not trade_lock.acquire_lock(reason="roundtrip_in_progress"):
+        raise RuntimeError(f"Execution lock already held: {trade_lock_path}")
+    _record_raw("execution_lock_acquired", lock_path=str(trade_lock_path))
+
+    try:
+        # 2. 事前状態確認（Pre-state）
+        pre_state = info.clearinghouse_state(account_address)
+        pre_account_value = str(pre_state["marginSummary"]["accountValue"])
+        pre_positions = len(pre_state.get("assetPositions", []))
+        tob = info.top_of_book(coin)
+        bid = float(tob["bid"])
+        ask = float(tob["ask"])
+        pre_fills = info.user_fills(account_address)
+        initial_fills_count = len(pre_fills)
+
+        _record_raw(
+            "pre_state",
+            accountValue=pre_account_value,
+            openPositions=pre_positions,
+            bid=bid,
+            ask=ask,
+        )
+
+        signal_entry = journal.log_decision({
+            "action": "ORDER_ROUNDTRIP_SIGNAL",
+            "stage": "pre_state",
+            "account_address": account_address,
+            "coin": coin,
+            "accountValue": pre_account_value,
+            "openPositions": pre_positions,
+            "bid": bid,
+            "ask": ask,
+            "initial_fills_count": initial_fills_count,
+        })
+
+        # 3. 価格・サイズ丸めと注文組立
+        meta = info.asset_meta(coin)
+        sz_decimals = int(meta["szDecimals"])
+        asset_index = int(meta["asset_index"])
+        rounded_px = round_price(bid * price_ratio, sz_decimals=sz_decimals)
+        rounded_sz = round_size(size, sz_decimals=sz_decimals)
+
+        assembled = build_limit_order(
+            asset_index=asset_index,
+            coin=coin,
+            is_buy=True,
+            size=rounded_sz,
+            price=rounded_px,
+            sz_decimals=sz_decimals,
+            tif=tif,
+        )
+
+        intent_entry = journal.log_intent(
+            signal_entry.event_id,
+            {
+                "action": "ORDER_INTENT",
+                "stage": "intent",
+                "coin": coin,
+                "is_buy": True,
+                "price": rounded_px,
+                "size": rounded_sz,
+                "tif": tif,
+                "wire": assembled["wire"],
+            },
+        )
+
+        # 4. 発注（受入条件1: oid を受領）
+        ks.ensure_may_trade()
+        place_resp = ex.order(
+            coin,
+            is_buy=True,
+            sz=rounded_sz,
+            px=rounded_px,
+            order_type={"limit": {"tif": tif}},
+        )
+        _record_raw("place", resp=place_resp)
+
+        statuses = place_resp.get("response", {}).get("data", {}).get("statuses") or [{}]
+        resting = statuses[0].get("resting")
+        if not resting or "oid" not in resting:
+            raise RuntimeError(f"Order placement did not return resting oid: {place_resp}")
+        oid = int(resting["oid"])
+
+        journal.log_order(
+            intent_entry.event_id,
+            {
+                "substage": "place",
+                "oid": oid,
+                "resp": place_resp,
+            },
+        )
+
+        # 5. 発注直後の照会（受入条件2: 1件・oid一致）
+        sleep_fn(2.0)
+        open_orders = info.open_orders(account_address)
+        _record_raw(
+            "query_open_orders",
+            count=len(open_orders),
+            orders=[
+                {
+                    "oid": o.get("oid"),
+                    "coin": o.get("coin"),
+                    "side": o.get("side"),
+                    "sz": o.get("sz"),
+                    "px": o.get("px"),
+                }
+                for o in open_orders
+            ],
+        )
+
+        if len(open_orders) != 1:
+            raise RuntimeError(
+                f"Expected exactly 1 open order, found {len(open_orders)}: {open_orders}"
+            )
+        matched_order = open_orders[0]
+        if int(matched_order.get("oid", -1)) != oid:
+            raise RuntimeError(
+                f"Open order oid mismatch: expected {oid}, got {matched_order.get('oid')}"
+            )
+        if matched_order.get("coin") != coin or matched_order.get("side") != "B":
+            raise RuntimeError(f"Open order attributes mismatch: {matched_order}")
+
+        journal.log_order(
+            intent_entry.event_id,
+            {
+                "substage": "query_open_orders",
+                "count": len(open_orders),
+                "matched_oid": oid,
+                "orders": open_orders,
+            },
+        )
+
+        # 6. 取消（受入条件3: success を受領し、取消後 未約定注文0件）
+        cancel_resp = ex.cancel(coin, oid)
+        _record_raw("cancel", oid=oid, resp=cancel_resp)
+
+        cancel_statuses = cancel_resp.get("response", {}).get("data", {}).get("statuses") or []
+        if not cancel_statuses or cancel_statuses[0] != "success":
+            raise RuntimeError(f"Cancel request failed or unexpected response: {cancel_resp}")
+
+        sleep_fn(2.0)
+        post_cancel_orders = info.open_orders(account_address)
+        _record_raw("post_cancel_open_orders", count=len(post_cancel_orders))
+
+        if len(post_cancel_orders) != 0:
+            raise RuntimeError(
+                f"Expected 0 open orders after cancel, found {len(post_cancel_orders)}"
+            )
+
+        journal.log_order(
+            intent_entry.event_id,
+            {
+                "substage": "cancel",
+                "oid": oid,
+                "resp": cancel_resp,
+                "post_cancel_open_orders_count": len(post_cancel_orders),
+            },
+        )
+
+        # 7. 事後照合（受入条件4: 前後の clearinghouseState で accountValue 維持・建玉0・新規約定0）
+        post_state = info.clearinghouse_state(account_address)
+        post_account_value = str(post_state["marginSummary"]["accountValue"])
+        post_positions = len(post_state.get("assetPositions", []))
+        post_fills = info.user_fills(account_address)
+        new_fills_count = len(post_fills) - initial_fills_count
+
+        _record_raw(
+            "post_state",
+            accountValue=post_account_value,
+            openPositions=post_positions,
+            fills=new_fills_count,
+        )
+
+        if post_account_value != pre_account_value:
+            raise RuntimeError(
+                f"accountValue changed: pre={pre_account_value}, post={post_account_value}"
+            )
+        if post_positions != 0:
+            raise RuntimeError(f"Expected 0 open positions, found {post_positions}")
+        if new_fills_count != 0:
+            raise RuntimeError(f"Expected 0 new fills, found {new_fills_count}")
+
+        journal.log_order(
+            intent_entry.event_id,
+            {
+                "substage": "post_state",
+                "accountValue": post_account_value,
+                "openPositions": post_positions,
+                "new_fills": new_fills_count,
+            },
+        )
+
+    finally:
+        # 8. 正常終了・異常終了にかかわらず実行排他ロックの解放
+        trade_lock.release_lock()
+        _record_raw("execution_lock_released", lock_path=str(trade_lock_path))
+
+    # 9. 三段ログのハッシュチェーン検証（受入条件5）
+    chain_result = verify_chain(j_path)
+    if not chain_result.ok:
+        raise RuntimeError(f"Journal hash chain verification failed: {chain_result.reason}")
+
+    # 10. raw_log_path が指定されていれば生ログ（JSONL）も保存
+    if raw_log_path:
+        out_p = Path(raw_log_path)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_p, "w", encoding="utf-8") as fh:
+            for ev in raw_events:
+                fh.write(json.dumps(ev, ensure_ascii=False) + "\n")
+
+    return {
+        "status": "ok",
+        "oid": oid,
+        "pre_account_value": pre_account_value,
+        "post_account_value": post_account_value,
+        "pre_positions": pre_positions,
+        "post_positions": post_positions,
+        "new_fills": new_fills_count,
+        "journal_path": str(j_path),
+        "journal_line_count": chain_result.line_count,
+        "raw_events": raw_events,
+    }
