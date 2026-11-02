@@ -42,9 +42,15 @@
    - **出金権限のプロトコル的遮断**: Agent Wallet には `order`（発注）, `cancel`（取消）, `scheduleCancel`（時限取消）, `updateLeverage`（レバレッジ変更）, `updateIsolatedMargin`（分離証拠金変更）の権限のみが付与される。`withdraw`（外部出金）や `usdSend`（内部送金）、新たな `approveAgent`（エージェント追加）の権限はプロトコル仕様上持たない。万一VPSが侵害されても資金外部流出は原理的に不可能である。
    - 出典: Authentication & Agent API (https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/authentication)
 
-3. **テストネット資金（mock USDC）調達の前提（実測知見）**:
-   - テストネットの Faucet（`https://app.hyperliquid-testnet.xyz/drip`）から取引用 mock USDC（1,000 USDC）を受け取るには、取引所の Sybil 攻撃対策仕様により**「同一アドレスでメインネットに入金実績（$5以上のデポジット等）」が必須**である（実測証跡: `/root/hyperliquid-trader/FAUCET_REQUIREMENT.md`）。
-   - 段取り: マスターがメインウォレットで本番少額入金後、テストネットUIで Faucet を請求し、テストネット用 Agent Wallet へ送金または Agent 承認を行う。
+3. **テストネット資金（mock USDC）調達とマスター作業最小化原則（実測知見反映）**:
+   - **フォーセット仕様の実測証跡（2026-11-02 COO実測）**:
+     - エンドポイント `POST https://api.hyperliquid-testnet.xyz/info`（body: `{"type":"claimDrip","user":"<address>"}`）は、Sybil攻撃排除のため「同一アドレスのメインネット入金実績」を要求する。新規アドレスは HTTP 500 / `null` で拒否され、入金実績アドレスのみ 1,000 mock USDC が付与される。
+   - **調達方針の優先順位**:
+     - **第一候補（推奨）**: **メインネット入金実績のあるマスターアドレスをテストネットでも使用**。追加実費0円、マスター作業はブラウザ上での `approveAgent` 1回のみ。
+     - **次点**: 使い捨てアドレスにメインネット $5 入金（実費・一度きり）。
+   - **マスター作業最小化原則**:
+     - Agent 署名鍵はシステム側で自動生成し `/root/.secrets/`（600）に配置する。
+     - マスターに求める作業は **(a) アドレスの承認（`approveAgent`）** と **(b) 入金するか否かの判断** の2点のみに局所化し、鍵の値はカードにもログにも一切書かない。
 
 ---
 
@@ -102,17 +108,28 @@
      - 現在価格から清算価格までの距離が **$15.0\%$** 未満に接近した場合は異常事態として即時成行決済・プロセス終了。
    - **総損失の条件付き管理**: 清算時の損失枠は $(L_{iso} + C_{ext}) \times R_{fx}$（$L_{iso} \le 20 \text{ USDC}$、枠外費用 $C_{ext}$、実換算レート $R_{fx}$）。固定円や法的保証ではなく、為替・枠外費用を含めた動的監視を行う。
 
-2. **キルスイッチ（Kill Switch）の仕様**:
-   - **ファイル判定キルスイッチ**:
+2. **キルスイッチ（Kill Switch）と緊急停止契約（Emergency Shutdown Contract）**:
+   - **ファイル判定キルスイッチ（最優先ローカル遮断）**:
      - 監視パス: `/root/.secrets/HL_KILL_SWITCH`
-     - ファイルが存在（`os.path.exists`）する場合、稼働中の全プロセスが次回ループ・次回発注直前に即座に新規発注を完全停止。
-   - **コマンド1つでの緊急全停止（Emergency Shutdown CLI）**:
+     - ファイルが存在（`os.path.exists`）する場合、稼働中の全プロセスが次回ループ・次回発注直前に即座に新規発注を完全停止（ローカルロック）。
+   - **コマンド1つでの緊急停止契約（Emergency Shutdown Sequence）**:
      - 実行コマンド: `python3 -m yowayowa.execution.hl_kill --env mainnet`（または `--env testnet`）
-     - 動作シーケンス:
-       1. 取引所へ全未約定注文の即時キャンセル送信（`cancelAll` / `scheduleCancel`）。
-       2. 保有中の全ポジションに対して `reduceOnly: true` の成行決済を発行。
-       3. `/root/.secrets/HL_KILL_SWITCH` を作成して以降の自動発注を恒久遮断。
-       4. Telegram / ログへ緊急停止完了レポートを発報。
+     - **厳格な実行シーケンス（Fail-Safe 優先順序）**:
+       1. **Step 1: 新規発注禁止の確定（通信前アトミックロック）**: 取引所とのネットワーク通信を行う前に、まずローカルのキルスイッチファイル `/root/.secrets/HL_KILL_SWITCH` をアトミックに作成し、システム全体の新規発注・更新ルーチンを物理遮断する。以降の通信が切断・例外停止した場合でもロック状態は確実に維持される。
+       2. **Step 2: 公式取消操作による未約定注文の即時一括取消**:
+          - 取引所公式の取消アクション（`cancel` / `cancelByCloid`、複数時は bulk cancel）を実行し、板上の指値注文を即時取消する。
+          - ※公式の `scheduleCancel` は「現在時刻から最低5秒後の予約取消（デッドマンズスイッチ）」であり即時取消とは異なるため、緊急停止時の主操作には用いず、通信断絶時の二次バックストップ（保険）としてのみ予約併用する。
+       3. **Step 3: 保有建玉の全決済（`reduceOnly: true`）**:
+          - ポジションが存在する場合、スリッページ許容幅を広げた `reduceOnly: true` の指値IOCまたは成行注文を発行し、建玉を全決済中立化する。
+       4. **Step 4: 注文0件・建玉0件の読取照合（Reconciliation）**:
+          - 公開API（`POST /info`）より `openOrders` および `clearinghouseState` を読み取り、**「未約定注文数 == 0」かつ「建玉数量 == 0 BTC」** であることを機械的に照合確認する。
+       5. **Step 5: 完了判定と通知分岐**:
+          - **全停止完了（Shutdown Complete）**: Step 4 で注文0件・建玉0件が照合確認された場合のみ、「全停止完了」としてログ記録および Telegram 正常終了通知を発報。
+          - **停止要求済み／未解決（Shutdown Unresolved）**: Step 2〜4 において通信断絶・API拒否・部分約定・タイムアウト・照合不一致等が発生した場合は、**発注ロック（`/root/.secrets/HL_KILL_SWITCH`）を恒久維持したまま「全停止未解決・要手動介入（Shutdown Unresolved）」** として管理者へ緊急アラートを発報。結果不明のまま「全停止完了」とみなすことは厳格に禁止する。
+   - 出典:
+     - Exchange Endpoint (Cancel / Schedule cancel): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint
+     - Info Endpoint (openOrders): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint
+     - Perpetuals Clearinghouse State: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint/perpetuals
 
 ---
 
