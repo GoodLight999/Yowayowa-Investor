@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -116,7 +117,7 @@ class MockInfoTransport:
                         "coin": "BTC",
                         "side": "B",
                         "sz": "0.0002",
-                        "px": "76765.0",
+                        "limitPx": "76765.0",
                     }
                 ]
             # 照会2回目: 取消後（0件）
@@ -190,8 +191,12 @@ def test_roundtrip_full_lifecycle(tmp_path: Path) -> None:
     # SIGNAL + INTENT + ORDER(place) + ORDER(query) + ORDER(cancel) + ORDER(post)
     assert chain_check.line_count >= 5
 
-    # 6. 生ログファイルの存在
+    # 6. 生ログファイルの存在と照会ログの limitPx 検証
     assert raw_file.exists()
+    raw_lines = [json.loads(line) for line in raw_file.read_text(encoding="utf-8").splitlines()]
+    query_log = next(r for r in raw_lines if r.get("stage") == "query_open_orders")
+    assert query_log["count"] == 1
+    assert query_log["orders"][0]["limitPx"] == "76765.0"
 
 
 def test_roundtrip_forbids_mainnet(tmp_path: Path) -> None:

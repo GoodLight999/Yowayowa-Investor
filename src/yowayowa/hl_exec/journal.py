@@ -41,6 +41,10 @@ class JournalIntegrityError(RuntimeError):
     """ログのチェーンが壊れている（追記拒否・読み込み側は検出結果を返す）。"""
 
 
+def _default_clock() -> _dt.datetime:
+    return _dt.datetime.now(_dt.UTC)
+
+
 def _utc_iso(now: _dt.datetime) -> str:
     if now.tzinfo is None:
         now = now.replace(tzinfo=_dt.UTC)
@@ -176,7 +180,7 @@ class ExecutionJournal:
 
     def __init__(self, path: str | Path, *, clock: Clock | None = None) -> None:
         self._path = Path(path)
-        self._clock: Clock = clock if clock is not None else _dt.datetime.now
+        self._clock: Clock = clock if clock is not None else _default_clock
 
     # ------------------------------------------------------------------ 書き込み
     def log_decision(self, payload: dict[str, Any]) -> JournalEntry:

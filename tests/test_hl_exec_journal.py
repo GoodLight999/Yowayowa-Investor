@@ -141,3 +141,19 @@ def test_default_log_path_rejects_bad_env() -> None:
         default_log_path("../evil")
     with pytest.raises(ValueError):
         default_log_path("a b")
+
+
+def test_default_clock_uses_utc_timezone(tmp_path: Path) -> None:
+    """既定Clockがナイーブ本地時ではなくUTCで記録されることを確認する回帰テスト。"""
+    journal = ExecutionJournal(tmp_path / "default_clock.jsonl")
+    before = _dt.datetime.now(_dt.UTC)
+    entry = journal.log_decision({"action": "TEST_UTC"})
+    after = _dt.datetime.now(_dt.UTC)
+
+    assert entry.ts.endswith("+00:00")
+    parsed = _dt.datetime.fromisoformat(entry.ts)
+    assert parsed.tzinfo is not None
+    # JST等の本地時がそのまま+00:00と誤ラベルされた場合（9時間差）、
+    # このアサーションで検知される
+    assert before - _dt.timedelta(seconds=2) <= parsed <= after + _dt.timedelta(seconds=2)
+

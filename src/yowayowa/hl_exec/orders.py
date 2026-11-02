@@ -581,16 +581,7 @@ def run_order_roundtrip(
         _record_raw(
             "query_open_orders",
             count=len(open_orders),
-            orders=[
-                {
-                    "oid": o.get("oid"),
-                    "coin": o.get("coin"),
-                    "side": o.get("side"),
-                    "sz": o.get("sz"),
-                    "px": o.get("px"),
-                }
-                for o in open_orders
-            ],
+            orders=open_orders,
         )
 
         if len(open_orders) != 1:
