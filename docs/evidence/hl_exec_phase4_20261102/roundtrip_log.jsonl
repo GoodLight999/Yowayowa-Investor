@@ -1,0 +1,6 @@
+{"ts": "2026-11-02T03:32:56.868000+00:00", "stage": "pre_state", "accountValue": "100.0", "openPositions": 0, "bid": 77541.0, "ask": 77695.0}
+{"ts": "2026-11-02T03:32:57.658514+00:00", "stage": "place", "resp": {"status": "ok", "response": {"type": "order", "data": {"statuses": [{"resting": {"oid": 64295258088}}]}}}}
+{"ts": "2026-11-02T03:32:59.745639+00:00", "stage": "query_open_orders", "count": 1, "orders": [{"oid": 64295258088, "coin": "BTC", "side": "B", "sz": "0.0002", "px": null}]}
+{"ts": "2026-11-02T03:33:01.284715+00:00", "stage": "cancel", "oid": 64295258088, "resp": {"status": "ok", "response": {"type": "cancel", "data": {"statuses": ["success"]}}}}
+{"ts": "2026-11-02T03:33:03.384322+00:00", "stage": "post_cancel_open_orders", "count": 0}
+{"ts": "2026-11-02T03:33:03.557256+00:00", "stage": "post_state", "accountValue": "100.0", "openPositions": 0, "fills": 0}
