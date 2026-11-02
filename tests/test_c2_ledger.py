@@ -75,3 +75,58 @@ def test_c2_ledger_chaining_and_tamper_detection(tmp_path: Path) -> None:
     is_valid_after, issues_after = verify_hash_chain(ledger_file)
     assert is_valid_after is False
     assert any("prev_line_sha256 mismatch" in iss for iss in issues_after)
+
+
+def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch) -> None:
+    """Verify that calling run_daily_cycle multiple times is strictly idempotent and does not multiply equity."""
+    from datetime import date
+    from scripts.paper_c2 import c2_runner
+
+    state_file = tmp_path / "state.json"
+    mtm_file = tmp_path / "mtm_history.jsonl"
+    ledger_file = tmp_path / "decisions.jsonl"
+    monkeypatch.setattr(c2_runner, "STATE_FILE", state_file)
+    monkeypatch.setattr(c2_runner, "MTM_FILE", mtm_file)
+
+    class MockAlpaca:
+        def get_account(self):
+            class Acct:
+                equity = 100000.0
+            return Acct()
+
+    monkeypatch.setattr(c2_runner, "AlpacaPaperClient", MockAlpaca)
+
+    # Initial state
+    st = c2_runner.load_state()
+    assert st["current_equity_10"] == 100000.0
+    assert st["current_equity_15"] == 100000.0
+
+    # First daily run on 2026-11-03
+    d1 = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), ledger_path=ledger_file)
+    assert d1["status"] == "success"
+    eq10_first = d1["mtm_record"]["equity_10"]
+    eq15_first = d1["mtm_record"]["equity_15"]
+
+    # Read MTM file lines
+    lines1 = mtm_file.read_text().splitlines()
+    assert len(lines1) == 1
+
+    # Second daily run on the SAME date 2026-11-03 (should be idempotent no-op)
+    d2 = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), ledger_path=ledger_file)
+    assert d2["status"] == "already_executed"
+    assert round(d2["equity_10"], 2) == eq10_first
+    assert round(d2["equity_15"], 2) == eq15_first
+
+    # Third daily run on the SAME date 2026-11-03
+    d3 = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), ledger_path=ledger_file)
+    assert d3["status"] == "already_executed"
+
+    # Verify MTM file still only has 1 line (not 3!)
+    lines2 = mtm_file.read_text().splitlines()
+    assert len(lines2) == 1
+
+    # State equity did not drop or multiply
+    st_final = c2_runner.load_state()
+    assert round(st_final["current_equity_10"], 2) == eq10_first
+    assert round(st_final["current_equity_15"], 2) == eq15_first
+

@@ -179,6 +179,20 @@ class AlpacaPaperClient:
             return {s: [] for s in symbols}
         return {s: bars_dict.get(s, []) for s in symbols}
 
+    def cancel_all_orders(self) -> list[dict[str, Any]]:
+        """Cancel all open orders in the paper account."""
+        self._enforce_safety_invariants()
+        res = self._request(f"{self.base_url}/orders", method="DELETE")
+        return res if isinstance(res, list) else []
+
+    def close_all_positions(self, cancel_orders: bool = True) -> list[dict[str, Any]]:
+        """Liquidate all open positions (Kill switch emergency liquidation)."""
+        self._enforce_safety_invariants()
+        params = "?cancel_orders=true" if cancel_orders else ""
+        res = self._request(f"{self.base_url}/positions{params}", method="DELETE")
+        logger.warning("Emergency close_all_positions executed: %s", res)
+        return res if isinstance(res, list) else []
+
     def submit_paper_order(
         self,
         symbol: str,

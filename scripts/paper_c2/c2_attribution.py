@@ -273,6 +273,11 @@ def format_attribution_markdown(summary: dict[str, Any]) -> str:
         f"**{tot.get('effective_sharpe', 0):.2f}** | **{tot.get('cum_return_contrib_pct', 0):+.3f}%** | **{tot.get('max_dd_contrib_pct', 0):+.3f}%** |"
     )
 
+    avoided_dd_str = (
+        "N/A（LLM上書き実績0件）"
+        if ass.get("overwrite_count", 0) == 0
+        else f"{ass.get('avoided_drawdown_pt', 0.0):+.3f} pt"
+    )
     lines.extend(
         [
             "",
@@ -281,7 +286,7 @@ def format_attribution_markdown(summary: dict[str, Any]) -> str:
             f"- **上書き件数**: {ass.get('overwrite_count', 0)} 件（全体比率 {ass.get('overwrite_ratio_pct', 0.0):.1f}% / 上限 ≤30.0%: {'PASS' if ass.get('criteria_pass_cap30') else 'FAIL'}）",
             f"- **上書き平均アルファ（差分: LLM - RULE）**: {ass.get('mean_overwrite_alpha_pct', 0.0):+.3f}%",
             f"- **上書き成功率（勝率）**: {ass.get('overwrite_success_rate_pct', 0.0):.1f}%（基準 ≥50.0%: {'PASS' if ass.get('criteria_pass_wr50') else 'FAIL'}）",
-            f"- **回避されたドローダウン**: {ass.get('avoided_drawdown_pt', 0.0):+.3f} pt",
+            f"- **回避されたドローダウン**: {avoided_dd_str}",
             "",
         ]
     )

@@ -137,3 +137,69 @@ def test_kill_switch_all_nominal() -> None:
     assert res.trigger_type is None
     assert res.action == "PROCEED"
     assert res.verdict == "OK"
+
+
+def test_kill_switch_liquidation_and_halt_integration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that when kill switch triggers, runner halts and calls close_all_positions."""
+    from scripts.paper_c2 import c2_runner
+
+    state_file = tmp_path / "state.json"
+    mtm_file = tmp_path / "mtm_history.jsonl"
+    monkeypatch.setattr(c2_runner, "STATE_FILE", state_file)
+    monkeypatch.setattr(c2_runner, "MTM_FILE", mtm_file)
+
+    initial_state = {
+        "peak_equity_10": 100000.0,
+        "peak_equity_15": 100000.0,
+        "current_equity_10": 100000.0,
+        "current_equity_15": 84000.0,  # -16.0% DD -> triggers MAXDD_LIMIT_KILL
+        "alpaca_paper_equity": 84000.0,
+        "current_weights_10": {"USD": 1.0, "SPY": 0.0, "IWM": 0.0, "JNJ": 0.0, "PG": 0.0},
+        "current_weights_15": {"USD": 0.0, "SPY": 0.25, "IWM": 0.25, "JNJ": 0.25, "PG": 0.25},
+        "consecutive_api_failures": 0,
+        "last_decision_date": None,
+        "last_mtm_date": None,
+        "last_mtm_bar_date": None,
+        "kill_switch_triggered": False,
+        "kill_switch_event": None,
+        "missed_trading_days": 0,
+        "missed_rebalance_days": 0,
+        "completed_trading_days": [],
+    }
+    c2_runner.save_state(initial_state)
+
+    closed_positions = []
+    cancelled_orders = []
+
+    class MockAlpacaClient:
+        def get_account(self):
+            class Acct:
+                equity = 84000.0
+            return Acct()
+
+        def cancel_all_orders(self):
+            cancelled_orders.append(True)
+            return []
+
+        def close_all_positions(self, cancel_orders=True):
+            closed_positions.append(True)
+            return [{"status": "closed_all"}]
+
+    monkeypatch.setattr(c2_runner, "AlpacaPaperClient", MockAlpacaClient)
+
+    # Run daily cycle on 2026-11-03
+    from datetime import date
+    d_res = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3))
+    assert d_res["kill_switch_eval"].triggered is True
+    assert len(cancelled_orders) == 1
+    assert len(closed_positions) == 1
+
+    # Verify state updated with kill switch trigger
+    st = c2_runner.load_state()
+    assert st["kill_switch_triggered"] is True
+    assert st["kill_switch_event"]["trigger_type"] == "MAXDD_LIMIT_KILL"
+
+    # Subsequent run must be immediately halted
+    halted_res = c2_runner.run_weekly_cycle(as_of_date=date(2026, 11, 9))
+    assert halted_res["status"] == "halted_by_kill_switch"
+

@@ -103,7 +103,11 @@ def call_llm_decider(
     timeout_seconds: int = 40,
     force_rule_only: bool = False,
 ) -> LLMDecisionResult:
-    """Execute LLM decision step with fail-closed safety."""
+    """Execute LLM decision step with fail-closed safety.
+
+    Uses permitted subscription routes (zai Coding Plan or agy).
+    Distinguishes active HOLD_RULE (called=True) from failures (called=False).
+    """
     summary_text = context.to_summary_text()
 
     if force_rule_only:
@@ -128,72 +132,99 @@ def call_llm_decider(
     )
 
     api_key = _get_zai_api_key()
-    if not api_key:
-        logger.warning("ZAI_API_KEY not found; falling back to HOLD_RULE safely.")
+    raw_output = ""
+    used_model = model
+    success = False
+
+    # 1. Try zai Coding Plan if key exists
+    if api_key:
+        payload = json.dumps(
+            {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are a quantitative portfolio risk officer. You must respond in valid JSON only.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.1,
+                "max_tokens": 4096,
+            }
+        )
+        try:
+            proc = subprocess.run(
+                [
+                    "curl",
+                    "-s",
+                    "-m",
+                    str(timeout_seconds),
+                    ZAI_API_URL,
+                    "-H",
+                    f"Authorization: Bearer {api_key}",
+                    "-H",
+                    "Content-Type: application/json",
+                    "-d",
+                    payload,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds + 5,
+            )
+            raw = proc.stdout.strip()
+            # Check for error response (e.g. code 1308 usage limit)
+            if raw and '"error"' not in raw:
+                raw_output = raw
+                success = True
+            else:
+                logger.warning("zai API returned error or empty (%s); trying agy subscription route.", raw[:120])
+        except Exception as exc:
+            logger.warning("zai curl failed (%s); trying agy subscription route.", exc)
+
+    # 2. Try agy subscription route if zai did not succeed
+    if not success:
+        try:
+            proc_agy = subprocess.run(
+                ["agy", "-p", prompt],
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds + 10,
+            )
+            raw_agy = proc_agy.stdout.strip()
+            if raw_agy and proc_agy.returncode == 0:
+                raw_output = raw_agy
+                used_model = "agy-gemini"
+                success = True
+            else:
+                logger.warning("agy -p returned non-zero or empty (%s)", proc_agy.stderr[:120])
+        except Exception as exc:
+            logger.warning("agy invocation failed: %s", exc)
+
+    if not success or not raw_output:
         return LLMDecisionResult(
             called=False,
-            model=model,
+            model=used_model,
             prompt_template_sha256=PROMPT_TEMPLATE_SHA256,
             prompt_input_summary=summary_text,
-            raw_response="[ERROR: ZAI_API_KEY missing]",
-            parsed_intent="HOLD_RULE",
+            raw_response=raw_output or "[ERROR: LLM endpoints unavailable or rate-limited]",
+            parsed_intent="LLM_UNAVAILABLE_FALLBACK_RULE",
             weight_scale=1.0,
             attribution_label="RULE",
-            reasoning="Fallback to rule: API key not configured.",
+            reasoning="Fail-closed fallback: LLM APIs unavailable / rate-limited. Rule weights maintained.",
         )
 
-    payload = json.dumps(
-        {
-            "model": model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a quantitative portfolio risk officer. You must respond in valid JSON only.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.1,
-            "max_tokens": 4096,
-        }
-    )
-
+    # 3. Parse JSON response
     try:
-        proc = subprocess.run(
-            [
-                "curl",
-                "-s",
-                "-m",
-                str(timeout_seconds),
-                ZAI_API_URL,
-                "-H",
-                f"Authorization: Bearer {api_key}",
-                "-H",
-                "Content-Type: application/json",
-                "-d",
-                payload,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds + 5,
-        )
-        raw_output = proc.stdout.strip()
-    except Exception as exc:
-        logger.error("LLM curl execution failed: %s", exc)
-        return LLMDecisionResult(
-            called=True,
-            model=model,
-            prompt_template_sha256=PROMPT_TEMPLATE_SHA256,
-            prompt_input_summary=summary_text,
-            raw_response=f"[EXCEPTION: {exc}]",
-            parsed_intent="HOLD_RULE",
-            weight_scale=1.0,
-            attribution_label="RULE",
-            reasoning=f"Fail-closed fallback: LLM request error ({exc}). Rule weights maintained.",
-        )
+        # If response wrapped in choices (OpenAI / zai format)
+        try:
+            wrapper = json.loads(raw_output)
+            if isinstance(wrapper, dict) and "choices" in wrapper:
+                content = wrapper["choices"][0]["message"]["content"].strip()
+            else:
+                content = raw_output
+        except Exception:
+            content = raw_output
 
-    try:
-        data = json.loads(raw_output)
-        content = data["choices"][0]["message"]["content"].strip()
         cleaned = content
         if "```" in cleaned:
             parts = cleaned.split("```")
@@ -219,7 +250,7 @@ def call_llm_decider(
 
         return LLMDecisionResult(
             called=True,
-            model=model,
+            model=used_model,
             prompt_template_sha256=PROMPT_TEMPLATE_SHA256,
             prompt_input_summary=summary_text,
             raw_response=raw_output,
@@ -232,15 +263,15 @@ def call_llm_decider(
     except Exception as exc:
         logger.error("Failed to parse LLM response (%s): %s", exc, raw_output[:200])
         return LLMDecisionResult(
-            called=True,
-            model=model,
+            called=False,
+            model=used_model,
             prompt_template_sha256=PROMPT_TEMPLATE_SHA256,
             prompt_input_summary=summary_text,
             raw_response=raw_output,
-            parsed_intent="HOLD_RULE",
+            parsed_intent="LLM_PARSE_ERROR_FALLBACK_RULE",
             weight_scale=1.0,
             attribution_label="RULE",
-            reasoning="Fail-closed fallback: Failed to parse LLM JSON response. Rule weights maintained.",
+            reasoning=f"Fail-closed fallback: Failed to parse LLM response ({exc}). Rule weights maintained.",
         )
 
 

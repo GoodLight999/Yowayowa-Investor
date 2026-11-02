@@ -31,6 +31,7 @@ ANNUALIZATION_FACTOR = math.sqrt(252)
 @dataclass(frozen=True)
 class C2MarketContext:
     as_of_date: str
+    last_bar_date: str
     spy_close: float
     spy_sma200: float
     spy_sma200_dev: float
@@ -47,6 +48,7 @@ class C2MarketContext:
     def to_inputs_dict(self) -> dict[str, Any]:
         return {
             "as_of_date": self.as_of_date,
+            "last_bar_date": self.last_bar_date,
             "spy_close": round(self.spy_close, 4),
             "spy_sma200": round(self.spy_sma200, 4),
             "spy_sma200_dev_pct": round(self.spy_sma200_dev * 100, 2),
@@ -66,7 +68,7 @@ class C2MarketContext:
             f"{s}: {v * 100:+.2f}%" for s, v in self.universe_daily_returns.items()
         )
         return (
-            f"As-of Date: {self.as_of_date}\n"
+            f"As-of Date: {self.as_of_date} (Last Bar: {self.last_bar_date})\n"
             f"SPY Close: ${self.spy_close:.2f} (SMA200: ${self.spy_sma200:.2f}, Dev: {self.spy_sma200_dev * 100:+.2f}%)\n"
             f"SPY 21-Day Vol (Annualized): {self.spy_sigma21_annualized * 100:.2f}% (Daily σ: {self.spy_sigma21_daily * 100:.3f}%)\n"
             f"SPY ATR14: ${self.spy_atr14:.2f}\n"
@@ -105,6 +107,8 @@ def compute_features(
 
     spy_closes = [float(b["c"]) for b in spy_bars]
     spy_close = spy_closes[-1]
+    last_bar_d = _extract_date(spy_bars[-1])
+    last_bar_date_str = last_bar_d.isoformat() if last_bar_d else target_date.isoformat()
 
     # 1. 21-day volatility
     returns = []
@@ -160,6 +164,7 @@ def compute_features(
 
     return C2MarketContext(
         as_of_date=target_date.isoformat(),
+        last_bar_date=last_bar_date_str,
         spy_close=spy_close,
         spy_sma200=sma200,
         spy_sma200_dev=sma200_dev,
