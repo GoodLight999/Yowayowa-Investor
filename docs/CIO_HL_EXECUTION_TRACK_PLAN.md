@@ -85,9 +85,15 @@
 2. **価格・サイズの丸め規則と制約（数値）**:
    - **最小数量刻み（`szDecimals`）**: BTC Perp は **`szDecimals = 5`**（最小単位 $0.00001 \text{ BTC}$、約 $0.78 \sim 0.90 \text{ USDC}$ 相当）。切捨て処理 `math.floor(sz * 1e5) / 1e5` を強制。
    - **最小発注額（Min Notional）**: 全パーペチュアル共通で **$10.0 \text{ USDC}$**。$P \times sz \ge 10.0$ を満たさない発注はローカル事前バリデーションで即時拒否。
-   - **価格刻み（Tick Size & 有効桁数）**: 有効数字最大 **5桁（5 significant figures）** かつ BTC は小数点以下1桁（例: `78012.1`）。取引所公式の価格丸め規則に厳格準拠。
+   - **価格刻み（Tick Size & 有効桁数・公式丸め契約）**:
+     - 取引所公式仕様に厳格準拠: **価格は「有効数字最大 5 桁（$\le 5$ significant figures）」AND「小数点以下最大 $6 - \text{szDecimals}$ 桁」** を同時に満たす必要がある。ただし、**「整数価格（Integer prices）は有効数字の桁数に関係なく常に許可」** される。
+     - BTC Perp は $\text{szDecimals} = 5$ のため、小数点以下は最大 $6 - 5 = 1$ 桁まで。
+     - **具体例の区別**:
+       - **無効例**: `78012.1`（有効数字が 6 桁となり「有効数字最大 5 桁」に違反するため取引所 API で無効 tick として拒否される）。
+       - **有効例**: `78012`（整数価格のため有効数字の桁数に関係なく許可）、`78010`（5桁以下整数）、`7801.2`（有効数字 5 桁かつ小数第 1 位のため許可）。
+     - 発注前バリデーションにおいて、現在価格が 10,000 以上の銘柄（BTC等）では整数丸め（`round(px)`）または有効数字 5 桁への正規化を強制し、`78012.1` のような無効 tick 指値を物理遮断する。
    - **1注文の上限額**: マイクロ実弾フェーズ3における1注文上限は **60.0 USDC**（約 $0.00077 \text{ BTC}$）。誤発注防止のため、60 USDC を超える発注はローカルバリデーションで即時遮断。
-   - 出典: Tick and Lot Sizes (https://hyperliquid.gitbook.io/hyperliquid-docs/trading/tick-and-lot-sizes)
+   - 出典: Tick and Lot Size (https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size)
 
 ---
 
@@ -239,7 +245,7 @@ flowchart TD
 - [3] Exchange Endpoint: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint
 - [4] Authentication (Agent API): https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/authentication
 - [5] Order Types: https://hyperliquid.gitbook.io/hyperliquid-docs/trading/orders
-- [6] Tick and Lot Sizes: https://hyperliquid.gitbook.io/hyperliquid-docs/trading/tick-and-lot-sizes
+- [6] Tick and Lot Size: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size
 - [7] Margining & Leverage: https://hyperliquid.gitbook.io/hyperliquid-docs/trading/margining
 - [8] Liquidations: https://hyperliquid.gitbook.io/hyperliquid-docs/trading/liquidations
 - [9] Hyperliquid Python SDK: https://github.com/hyperliquid-dex/hyperliquid-python-sdk
