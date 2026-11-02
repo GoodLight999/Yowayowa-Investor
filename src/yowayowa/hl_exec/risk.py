@@ -7,7 +7,8 @@
 
 境界規約（このモジュール全体で統一）:
   * 上限系（証拠金・建玉数・名目額・レバレッジ）: 上限ちょうどは許可、
-    超えたら拒否（``value > cap`` で違反）。
+    超えたら拒否（``value > cap`` で違反）。隔離証拠金は絶対額上限（20.0 USDC）と
+    比率上限（当日開始残高の10.0%・1セント切り下げ）の小さい側を実効 cap とする。
   * 下限系（最小発注額・清算距離・事前残高）: ちょうどは許可、
     満たさなければ拒否。
   * 損失停止系（日次損失・DD）: 「閾値に達した瞬間」に発動（``<= 閾値``）。
@@ -18,6 +19,7 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 
 # ---------------------------------------------------------------- 設計書の数値
 MICRO_PILOT_EQUITY_CAP_USDC = 200.0
@@ -58,22 +60,35 @@ def _check(ok: bool, rule: str, value: float, limit: float, reason: str) -> Risk
 def check_isolated_margin(
     margin_usdc: float,
     *,
-    cap: float = ISOLATED_MARGIN_PER_POSITION_CAP_USDC,
+    equity_usdc: float,
 ) -> RiskCheck:
     """1建玉あたりの隔離証拠金上限（20.0 USDC・口座の10.0%）。
 
     分離（is_cross=False）モードで清算枠を物理隔離し、auto-margin は禁止
-    という設計の入口となる数値上限。
+    という設計の入口となる数値上限。実効 cap は min(20.0, 0.10 * equity_usdc)
+    を1セント単位で切り下げて適用する。
     """
     if margin_usdc <= 0:
         raise RiskInputError("isolated margin must be positive")
-    ok = margin_usdc <= cap
+    if not (math.isfinite(equity_usdc) and equity_usdc > 0):
+        raise RiskInputError("equity_usdc must be finite and positive")
+    effective_cap = (
+        math.floor(
+            min(
+                ISOLATED_MARGIN_PER_POSITION_CAP_USDC,
+                ISOLATED_MARGIN_FRACTION_OF_EQUITY * equity_usdc,
+            )
+            * 100.0
+        )
+        / 100.0
+    )
+    ok = margin_usdc <= effective_cap
     return _check(
         ok,
         rule="isolated_margin_per_position",
         value=margin_usdc,
-        limit=cap,
-        reason="" if ok else f"isolated margin {margin_usdc} exceeds cap {cap}",
+        limit=effective_cap,
+        reason="" if ok else f"isolated margin {margin_usdc} exceeds cap {effective_cap}",
     )
 
 
@@ -221,6 +236,7 @@ def evaluate_entry_gates(
     isolated_margin_usdc: float,
     open_position_count: int,
     notional_usdc: float,
+    equity_usdc: float,
 ) -> tuple[RiskCheck, ...]:
     """新規エントリー前に通すべき静的ゲートの集約（順序固定）。
 
@@ -229,7 +245,7 @@ def evaluate_entry_gates(
     ここでは1注文の組立に関わる静的上限を一括判定する。
     """
     return (
-        check_isolated_margin(isolated_margin_usdc),
+        check_isolated_margin(isolated_margin_usdc, equity_usdc=equity_usdc),
         check_concurrent_positions(open_position_count),
         check_position_notional(notional_usdc),
         check_min_notional(notional_usdc),

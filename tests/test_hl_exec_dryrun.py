@@ -110,6 +110,7 @@ def test_full_dry_run_pipeline_reaches_order_stage_without_sending(tmp_path: Pat
         isolated_margin_usdc=isolated_margin,
         open_position_count=0,
         notional_usdc=notional,
+        equity_usdc=200.0,
     )
     assert all(g.ok for g in gates), [g.reason for g in gates if not g.ok]
 

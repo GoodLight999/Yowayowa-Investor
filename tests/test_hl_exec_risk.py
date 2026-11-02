@@ -27,15 +27,70 @@ from yowayowa.hl_exec.risk import (
 
 
 def test_isolated_margin_boundary_at_cap() -> None:
-    assert check_isolated_margin(20.0).ok is True
-    assert check_isolated_margin(19.99).ok is True
-    assert check_isolated_margin(20.0001).ok is False
+    # 裁定文書 docs/HL_EXEC_RISK_MARGIN_CAP_CONTRACT_20261102.md の境界表に準拠
+    # 1. equity=50.00: 比率側 5.00 が効く（小さい equity で比率側が効く実測）
+    assert check_isolated_margin(5.00, equity_usdc=50.0).ok is True
+    assert check_isolated_margin(5.01, equity_usdc=50.0).ok is False
+
+    # 2. equity=100.00: 比率側 10.00 が効く
+    assert check_isolated_margin(10.00, equity_usdc=100.0).ok is True
+    assert check_isolated_margin(9.99, equity_usdc=100.0).ok is True
+    assert check_isolated_margin(10.01, equity_usdc=100.0).ok is False
+
+    # 3. equity=150.00: 比率側 15.00 が効く
+    assert check_isolated_margin(15.00, equity_usdc=150.0).ok is True
+    assert check_isolated_margin(15.01, equity_usdc=150.0).ok is False
+
+    # 4. equity=200.00: 絶対側と比率側が同値（20.00 USDC・設計想定口座）
+    assert check_isolated_margin(20.00, equity_usdc=200.0).ok is True
+    assert check_isolated_margin(19.99, equity_usdc=200.0).ok is True
+    assert check_isolated_margin(20.01, equity_usdc=200.0).ok is False
+
+    # 5. equity=300.00: 絶対側 20.00 が効く
+    assert check_isolated_margin(20.00, equity_usdc=300.0).ok is True
+    assert check_isolated_margin(20.01, equity_usdc=300.0).ok is False
+
+
+def test_isolated_margin_rounding_and_drift() -> None:
+    # 裁定文書 §丸め規約: E=0.70 では 0.10 * 0.70 = 0.06999999999999999
+    # floor による切下げで実効 cap は 0.06 になり、真値より大きくならず拒否側（安全側）に倒れる
+    check_pass = check_isolated_margin(0.06, equity_usdc=0.70)
+    assert check_pass.ok is True
+    assert check_pass.limit == 0.06
+    check_fail = check_isolated_margin(0.07, equity_usdc=0.70)
+    assert check_fail.ok is False
+
+    # equity=100.00 でグリッド外の 10.005 は 10.00 を超えるため拒否
+    assert check_isolated_margin(10.005, equity_usdc=100.0).ok is False
+
+
+def test_isolated_margin_equity_validation() -> None:
+    # equity_usdc 未指定は TypeError（fail-closed）
+    with pytest.raises(TypeError):
+        check_isolated_margin(10.0)  # type: ignore[call-arg]
+
+    # 0 または負の equity_usdc は RiskInputError
+    with pytest.raises(RiskInputError):
+        check_isolated_margin(10.0, equity_usdc=0.0)
+    with pytest.raises(RiskInputError):
+        check_isolated_margin(10.0, equity_usdc=-50.0)
+
+    # min(20.0, nan) == 20.0 の fail-open 回帰テスト: nan は min の前に落とす
+    with pytest.raises(RiskInputError):
+        check_isolated_margin(10.0, equity_usdc=float("nan"))
+
+    # inf / -inf も検証で落とす
+    with pytest.raises(RiskInputError):
+        check_isolated_margin(10.0, equity_usdc=float("inf"))
+    with pytest.raises(RiskInputError):
+        check_isolated_margin(10.0, equity_usdc=float("-inf"))
 
 
 def test_isolated_margin_reason_and_rule_names() -> None:
-    check = check_isolated_margin(21.0)
+    check = check_isolated_margin(21.0, equity_usdc=200.0)
     assert check.rule == "isolated_margin_per_position"
     assert "exceeds cap" in check.reason
+    assert check.limit == 20.0
 
 
 def test_concurrent_positions_cap_is_one() -> None:
@@ -102,6 +157,7 @@ def test_evaluate_entry_gates_all_pass() -> None:
         isolated_margin_usdc=20.0,
         open_position_count=1,
         notional_usdc=60.0,
+        equity_usdc=200.0,
     )
     assert all(c.ok for c in checks)
     assert [c.rule for c in checks] == [
@@ -117,24 +173,50 @@ def test_evaluate_entry_gates_flags_margin_breach_only() -> None:
         isolated_margin_usdc=25.0,
         open_position_count=1,
         notional_usdc=60.0,
+        equity_usdc=200.0,
     )
     failed = [c for c in checks if not c.ok]
     assert len(failed) == 1
     assert failed[0].rule == "isolated_margin_per_position"
 
 
+def test_evaluate_entry_gates_ratio_cap_breach() -> None:
+    # equity=100.00 では実効 cap は 10.00。margin=15.00 は絶対額 20.0 未満でも比率側で拒否
+    checks = evaluate_entry_gates(
+        isolated_margin_usdc=15.0,
+        open_position_count=1,
+        notional_usdc=45.0,
+        equity_usdc=100.0,
+    )
+    failed = [c for c in checks if not c.ok]
+    assert len(failed) == 1
+    assert failed[0].rule == "isolated_margin_per_position"
+    assert failed[0].limit == 10.0
+
+
+def test_evaluate_entry_gates_requires_equity() -> None:
+    with pytest.raises(TypeError):
+        evaluate_entry_gates(  # type: ignore[call-arg]
+            isolated_margin_usdc=10.0,
+            open_position_count=1,
+            notional_usdc=30.0,
+        )
+
+
 @pytest.mark.parametrize(
-    ("fn", "args"),
+    ("fn", "args", "kwargs"),
     [
-        (check_isolated_margin, (0.0,)),
-        (check_position_notional, (-1.0,)),
-        (check_min_notional, (0.0,)),
-        (check_leverage, (10.0, 0.0)),
+        (check_isolated_margin, (0.0,), {"equity_usdc": 200.0}),
+        (check_position_notional, (-1.0,), {}),
+        (check_min_notional, (0.0,), {}),
+        (check_leverage, (10.0, 0.0), {}),
     ],
 )
-def test_invalid_inputs_rejected(fn: object, args: tuple) -> None:
+def test_invalid_inputs_rejected(
+    fn: object, args: tuple[object, ...], kwargs: dict[str, object]
+) -> None:
     with pytest.raises(RiskInputError):
-        fn(*args)  # type: ignore[operator]
+        fn(*args, **kwargs)  # type: ignore[operator]
 
 
 def test_drawdown_rejects_nonpositive_peak() -> None:
