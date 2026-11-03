@@ -60,6 +60,7 @@ def load_state() -> dict[str, Any]:
         "peak_equity_15": 100000.0,
         "current_equity_10": 100000.0,
         "current_equity_15": 100000.0,
+        "initial_paper_equity": 100000.0,
         "alpaca_paper_equity": 100000.0,
         "current_weights_10": {"USD": 1.0, "SPY": 0.0, "IWM": 0.0, "JNJ": 0.0, "PG": 0.0},
         "current_weights_15": {"USD": 1.0, "SPY": 0.0, "IWM": 0.0, "JNJ": 0.0, "PG": 0.0},
@@ -148,6 +149,23 @@ def run_weekly_cycle(
             "status": "skipped_before_phase_start",
             "as_of_date": as_of_date.isoformat(),
             "phase_start_date": PHASE_START_DATE.isoformat(),
+        }
+
+    # 1b. Execution Timing Guard: Do not execute cycle prior to decision session date
+    # Prevents writing decisions/state in a prior session, which would consume the decision
+    # and trigger idempotency early-return on the actual decision date.
+    current_utc_date = datetime.now(UTC).date()
+    if current_utc_date < as_of_date:
+        logger.info(
+            "Current execution date %s is prior to decision session date %s. "
+            "Skipping cycle without writing decisions or state to allow execution on decision date.",
+            current_utc_date,
+            as_of_date,
+        )
+        return {
+            "status": "skipped_prior_to_decision_date",
+            "current_utc_date": current_utc_date.isoformat(),
+            "as_of_date": as_of_date.isoformat(),
         }
 
     # 2. Idempotency Check
@@ -260,6 +278,16 @@ def run_weekly_cycle(
 
     # 10. Alpaca Paper Order Execution (Primary 15% strategy with slippage guard and delta-rebalance)
     orders_placed = []
+    current_utc_date = datetime.now(UTC).date()
+    if current_utc_date < PHASE_START_DATE:
+        logger.info(
+            "Current date %s is prior to forward phase start date %s. "
+            "Skipping broker order submission to Alpaca.",
+            current_utc_date,
+            PHASE_START_DATE,
+        )
+        dry_run = True
+
     if not dry_run:
         try:
             acct = client.get_account()
@@ -269,6 +297,12 @@ def run_weekly_cycle(
                 acct.equity,
                 acct.cash,
             )
+            # Anchor initial paper equity baseline if not yet locked
+            if state.get("initial_paper_equity") is None or not state.get("completed_trading_days"):
+                state["initial_paper_equity"] = acct.equity
+                state["current_equity_15"] = acct.equity
+                state["peak_equity_15"] = max(state.get("peak_equity_15", acct.equity), acct.equity)
+                state["alpaca_paper_equity"] = acct.equity
             # Fetch existing positions for delta rebalancing
             positions_list = client.get_positions()
             current_positions: dict[str, float] = {
@@ -303,6 +337,7 @@ def run_weekly_cycle(
                     qty=qty,
                     side=side,
                     order_type="limit",
+                    time_in_force="day",
                     limit_price=limit_price,
                     client_order_id=f"c2_{sym}_{side}_{seq_date}",
                 )
@@ -313,6 +348,7 @@ def run_weekly_cycle(
                     "side": side,
                     "qty": qty,
                     "order_type": "limit",
+                    "time_in_force": "day",
                     "reference_price": sym_price,
                     "limit_price": limit_price,
                     "slippage_tolerance_bps": SLIPPAGE_TOLERANCE_BPS,
@@ -333,6 +369,7 @@ def run_weekly_cycle(
 
         except Exception as exc:
             logger.warning("Paper order submission encountered: %s", exc)
+            state["missed_rebalance_days"] = state.get("missed_rebalance_days", 0) + 1
 
     # 11. Update state
     state["last_decision_date"] = seq_date
@@ -354,6 +391,8 @@ def run_weekly_cycle(
 def run_daily_cycle(
     as_of_date: date,
     ledger_path: Path = DEFAULT_LEDGER_PATH,
+    override_history: dict[str, list[dict[str, Any]]] | None = None,
+    client: AlpacaPaperClient | None = None,
 ) -> dict[str, Any]:
     """Execute daily post-close batch: MTM update, attribution join, kill switch evaluation."""
     logger.info("Starting C2 daily post-close cycle for date: %s", as_of_date)
@@ -384,26 +423,54 @@ def run_daily_cycle(
             "phase_start_date": PHASE_START_DATE.isoformat(),
         }
 
-    client = AlpacaPaperClient()
+    if client is None:
+        client = AlpacaPaperClient()
 
     # 2. Query Paper Account
     paper_equity = state.get("alpaca_paper_equity", 100000.0)
     try:
         acct = client.get_account()
         paper_equity = acct.equity
+        # Anchor initial paper equity baseline if not yet locked
+        if state.get("initial_paper_equity") is None:
+            state["initial_paper_equity"] = acct.equity
         state["consecutive_api_failures"] = 0
     except Exception as exc:
         logger.warning("Failed to query Alpaca paper account in daily cycle: %s", exc)
         state["consecutive_api_failures"] = state.get("consecutive_api_failures", 0) + 1
         state["missed_trading_days"] = state.get("missed_trading_days", 0) + 1
 
-    # 3. Market Features and Bar Date
-    history = load_local_history()
-    context = compute_features(history, as_of_date)
+    # 3. Market Features and Bar Date (post-close includes session date bar)
+    history = override_history if override_history is not None else load_local_history()
+    context = compute_features(history, as_of_date, include_target_date=True)
 
-    # 4. Idempotency Check: if this bar has already been applied, do not duplicate!
+    # 4. Bar Freshness & Strict Date Match Check
+    # Invariant: The bar date must exactly equal the session date being recorded (last_bar == seq_date).
+    # Invariant: No record may ever be created with last_bar_date < PHASE_START_DATE (2026-11-03).
+    # Stale or missing bars are treated as missed trading days and skipped safely without MTM entry.
     seq_date = as_of_date.isoformat()
     last_bar = context.last_bar_date
+    phase_start_str = PHASE_START_DATE.isoformat()
+
+    if last_bar is None or last_bar != seq_date or last_bar < phase_start_str:
+        logger.warning(
+            "Daily cycle skipped for session %s: bar date mismatch (last_bar=%s, required=%s, phase_start=%s). "
+            "Recording as missed trading day.",
+            seq_date,
+            last_bar,
+            seq_date,
+            phase_start_str,
+        )
+        state["missed_trading_days"] = state.get("missed_trading_days", 0) + 1
+        save_state(state)
+        return {
+            "status": "skipped_stale_or_missing_bar",
+            "as_of_date": seq_date,
+            "last_bar_date": last_bar,
+            "missed_trading_days": state["missed_trading_days"],
+        }
+
+    # 4b. Idempotency Check: if this date/bar has already been applied, do not duplicate!
     if state.get("last_mtm_date") == seq_date or state.get("last_mtm_bar_date") == last_bar:
         logger.info(
             "Daily cycle already processed for date %s (bar %s). Returning existing MTM (idempotent).",
@@ -421,7 +488,8 @@ def run_daily_cycle(
 
     # 5. Daily MTM tracking for 10% and 15%
     # 15% series uses Alpaca Paper broker equity as primary benchmark
-    prev_eq_15 = state["current_equity_15"]
+    # Baseline is observed paper equity at start of phase (or previous day)
+    prev_eq_15 = state.get("current_equity_15", state.get("initial_paper_equity", 100000.0))
     new_eq_15 = paper_equity
     ret_day_15 = (new_eq_15 / prev_eq_15 - 1.0) if prev_eq_15 > 0 else 0.0
 
