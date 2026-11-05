@@ -337,7 +337,9 @@ make split-coverage                                       # 上記と同じ
 
 ### 11.4 変更ファイルとロールバック
 
-- `src/yowayowa/backtest_models.py`（data_quality フィールド追加） /
+- コミット: **`5d9bdab`**（ブランチ `agent/commercial-foundation` 上・t_4cfb36d0 と同じ
+  作業ブランチ。10 ファイル +8,096/−5,983。push は CTO のみ）。
+- 変更ファイル: `src/yowayowa/backtest_models.py`（data_quality フィールド追加） /
   `src/yowayowa/services/backtest.py`（閾値定数＋degraded 判定） /
   `scripts/check_split_coverage.py`（corporate-actions 照合） /
   `tests/test_backtest.py`・`tests/test_split_coverage.py`（テスト追加） /
