@@ -147,6 +147,12 @@ def test_kill_switch_liquidation_and_halt_integration(tmp_path: Path, monkeypatc
     mtm_file = tmp_path / "mtm_history.jsonl"
     monkeypatch.setattr(c2_runner, "STATE_FILE", state_file)
     monkeypatch.setattr(c2_runner, "MTM_FILE", mtm_file)
+    # run_daily_cycle also writes attribution/orders via module-level constants that are
+    # bound to the live data/paper_c2 dir at import time; redirect them or the test
+    # overwrites production reports.
+    monkeypatch.setattr(c2_runner, "ATTRIBUTION_JSON", tmp_path / "attribution_summary.json")
+    monkeypatch.setattr(c2_runner, "ATTRIBUTION_MD", tmp_path / "attribution_summary.md")
+    monkeypatch.setattr(c2_runner, "ORDERS_FILE", tmp_path / "orders.jsonl")
 
     initial_state = {
         "peak_equity_10": 100000.0,
@@ -187,9 +193,16 @@ def test_kill_switch_liquidation_and_halt_integration(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(c2_runner, "AlpacaPaperClient", MockAlpacaClient)
 
-    # Run daily cycle on 2026-11-03
+    # Run daily cycle on 2026-11-03 with 2026-11-03 bar in history
     from datetime import date
-    d_res = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3))
+    base_hist = c2_runner.load_local_history()
+    mock_hist = {}
+    for s, bars in base_hist.items():
+        b_list = list(bars)
+        b_list.append({"t": "2026-11-03T04:00:00Z", "o": 100.0, "h": 100.0, "l": 100.0, "c": 100.0, "v": 1000.0})
+        mock_hist[s] = b_list
+
+    d_res = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), override_history=mock_hist)
     assert d_res["kill_switch_eval"].triggered is True
     assert len(cancelled_orders) == 1
     assert len(closed_positions) == 1

@@ -87,6 +87,11 @@ def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch
     ledger_file = tmp_path / "decisions.jsonl"
     monkeypatch.setattr(c2_runner, "STATE_FILE", state_file)
     monkeypatch.setattr(c2_runner, "MTM_FILE", mtm_file)
+    # Redirect the attribution/orders outputs too: they are module-level constants bound
+    # to data/paper_c2 at import time, so run_daily_cycle would overwrite production files.
+    monkeypatch.setattr(c2_runner, "ATTRIBUTION_JSON", tmp_path / "attribution_summary.json")
+    monkeypatch.setattr(c2_runner, "ATTRIBUTION_MD", tmp_path / "attribution_summary.md")
+    monkeypatch.setattr(c2_runner, "ORDERS_FILE", tmp_path / "orders.jsonl")
 
     class MockAlpaca:
         def get_account(self):
@@ -101,8 +106,16 @@ def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch
     assert st["current_equity_10"] == 100000.0
     assert st["current_equity_15"] == 100000.0
 
+    # Provide mock 2026-11-03 bar for session 2026-11-03 run
+    base_hist = c2_runner.load_local_history()
+    mock_hist = {}
+    for s, bars in base_hist.items():
+        b_list = list(bars)
+        b_list.append({"t": "2026-11-03T04:00:00Z", "o": 100.0, "h": 100.0, "l": 100.0, "c": 100.0, "v": 1000.0})
+        mock_hist[s] = b_list
+
     # First daily run on 2026-11-03
-    d1 = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), ledger_path=ledger_file)
+    d1 = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), ledger_path=ledger_file, override_history=mock_hist)
     assert d1["status"] == "success"
     eq10_first = d1["mtm_record"]["equity_10"]
     eq15_first = d1["mtm_record"]["equity_15"]
@@ -112,13 +125,13 @@ def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch
     assert len(lines1) == 1
 
     # Second daily run on the SAME date 2026-11-03 (should be idempotent no-op)
-    d2 = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), ledger_path=ledger_file)
+    d2 = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), ledger_path=ledger_file, override_history=mock_hist)
     assert d2["status"] == "already_executed"
     assert round(d2["equity_10"], 2) == eq10_first
     assert round(d2["equity_15"], 2) == eq15_first
 
     # Third daily run on the SAME date 2026-11-03
-    d3 = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), ledger_path=ledger_file)
+    d3 = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), ledger_path=ledger_file, override_history=mock_hist)
     assert d3["status"] == "already_executed"
 
     # Verify MTM file still only has 1 line (not 3!)
