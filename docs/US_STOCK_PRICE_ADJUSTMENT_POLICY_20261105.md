@@ -193,3 +193,23 @@ make split-coverage                                       # 上記と同じ
   さらに悪化させる。加えて稼働経路の価格基準が変わる。TR は配当を明示入力にした
   別レイヤで扱う（S-05 の TR 込み判定はその時に再評価する）。
 - **旧 JSON の上書き再生成（案 a）**: 監査証跡（補正前の数値）を消すため却下。
+
+---
+
+## 8. 変更点とロールバック
+
+- コミット: `6b3fb15`（ブランチ `fix/us-stock-price-adjustment-policy-t_4cfb36d0`、
+  作業ブランチ `agent/commercial-foundation` 上に1コミット。9 ファイル・+868/−2）
+- 変更ファイル: 本 doc / `scripts/check_split_coverage.py` /
+  `tests/test_split_coverage.py` / `Makefile` / `run_backtests_p3.py` /
+  `backtest_results_{p3,s03,s03_supplied,s05}.json`（`_stale` の 9 行追加のみ）
+- **稼働経路のファイルは 1 バイトも触っていない**（`src/yowayowa/paperloop.py`,
+  `paperloop_verify.py`, `scripts/paper_c2/*`）。コミットにも含まれない。
+- ロールバック: `git revert 6b3fb15` で全て戻る（データ側の変更は
+  `data/research/split-adjusted-20261105/` の追加のみで、凍結入力は不変）。
+- 検証: `pytest tests/test_backtest.py tests/test_stock_ohlcv.py
+  tests/test_split_coverage.py` = 86 passed / `mypy src/yowayowa` = 0 error /
+  `ruff check`（新規 2 ファイル）= clean / `make split-coverage` = PASS。
+  `ruff check src tests` の 30 件は本コミット対象外の既存ワーキングツリー差分
+  （`paperloop.py`, `tests/test_c2_*`）に由来し、本タスク以前から存在する。
+
