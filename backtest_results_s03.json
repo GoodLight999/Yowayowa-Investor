@@ -1,4 +1,13 @@
 {
+  "_stale": {
+    "stale": true,
+    "reason": "Generated before the split-calendar correction existed: zero 'Split adjustment applied' warnings, and the assumption text still says splits are not modeled. Figures understate returns for split-affected symbols (see docs/US_STOCK_PRICE_ADJUSTMENT_POLICY_20261105.md).",
+    "decided_by": "t_4cfb36d0",
+    "decided_at": "2026-11-05",
+    "superseded_by": "data/research/split-adjusted-20261105/backtest_results_s03.json",
+    "policy": "docs/US_STOCK_PRICE_ADJUSTMENT_POLICY_20261105.md",
+    "do_not_cite": true
+  },
   "primary_strategy_id": "s03_garp_momentum_hybrid",
   "evaluation_window": [
     "2021-01-04",

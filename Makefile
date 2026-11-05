@@ -16,7 +16,7 @@
 V := $(CURDIR)/.venv
 export PYTHONPATH := $(CURDIR)/src
 
-.PHONY: install bootstrap dev test lint typecheck openapi openapi-check openapi-baseline verify
+.PHONY: install bootstrap dev test lint typecheck openapi openapi-check openapi-baseline verify split-coverage
 
 # One-time tool-venv construction (initial setup only; do not re-run before
 # every verification). Never installs this project itself. Re-run this once
@@ -57,3 +57,11 @@ openapi-baseline: | bootstrap
 	$(V)/bin/python scripts/check_openapi_baseline.py --write
 
 verify: lint typecheck test openapi openapi-check
+
+# Operational guard for the price-adjustment policy
+# (docs/US_STOCK_PRICE_ADJUSTMENT_POLICY_20261105.md): prices are persisted raw
+# and the engine applies the SEC split calendar, so a calendar hole or an
+# already-adjusted series must fail here instead of skewing a backtest.
+# Not part of `verify`: it reads the gitignored real store under data/.
+split-coverage: | bootstrap
+	$(V)/bin/python scripts/check_split_coverage.py

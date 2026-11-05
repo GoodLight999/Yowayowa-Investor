@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 from datetime import date
 from pathlib import Path
@@ -8,6 +9,15 @@ from yowayowa.backtest_models import BacktestRunRequest
 from yowayowa.services.backtest import run_backtest
 from yowayowa.services.backtest_definitions import get_strategy, list_strategies
 from yowayowa.stock_acquisition import default_store
+
+_parser = argparse.ArgumentParser(description="Run the P3 multi-strategy backtests.")
+_parser.add_argument(
+    "--output",
+    type=Path,
+    default=Path(__file__).with_name("backtest_results_p3.json"),
+    help="Destination JSON (default: the tracked backtest_results_p3.json)",
+)
+_args = _parser.parse_args()
 
 store = default_store()
 strategies = list_strategies()
@@ -98,7 +108,8 @@ for result in results:
         }
     )
 output = {"coverage": coverage, "results": summary}
-result_path = Path(__file__).with_name("backtest_results_p3.json")
+result_path = _args.output
+result_path.parent.mkdir(parents=True, exist_ok=True)
 result_path.write_text(json.dumps(output, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 print(
     f"saved={result_path} strategies={len(summary)} statuses="
