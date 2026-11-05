@@ -38,6 +38,7 @@ TR は別レイヤ（配当オーバーレイ）として後日扱う。
 | 行に調整基準の記録 | なし（`source_url` に `adjustment` の記載 0 件、vintage 列なし） | `grep -c adjustment data/stock-ohlcv/*/ohlcv.jsonl` = 0 |
 | カレンダー | 7 イベント / 10 銘柄（SEC accession 付き） | `data/fundamentals/pbr/split-calendar.json` |
 | エンジンの補正条件 | 分割日当日の open 比・close 比が期待係数の ±15% 以内 | `src/yowayowa/services/backtest.py:656-657` |
+| 既存の設計規約 | 「adjustment=raw を明示」「分割調整値・配当調整値と raw 値を混ぜない」「調整後値を過去時点に遡及適用しない」 | `docs/STOCKS.md:53-56` |
 | 稼働経路の株式ユニバース | SPY / IWM / JNJ / PG（Book C = `paperloop.EQUITY_UNIVERSE`、C2 = `C2_UNIVERSE`） | `src/yowayowa/paperloop.py:349`, `scripts/paper_c2/c2_features.py:23` |
 
 カレンダーに登録されている 7 イベントは AAPL 2020-08-31(4:1)、NVDA 2021-07-20(4:1)、
@@ -212,4 +213,24 @@ make split-coverage                                       # 上記と同じ
   `ruff check`（新規 2 ファイル）= clean / `make split-coverage` = PASS。
   `ruff check src tests` の 30 件は本コミット対象外の既存ワーキングツリー差分
   （`paperloop.py`, `tests/test_c2_*`）に由来し、本タスク以前から存在する。
+
+---
+
+## 9. 残存リスク（本カードで閉じていないもの）
+
+1. **カレンダー欠落時は fail-open。** `_load_split_calendar()` はカレンダーが無い/壊れて
+   いる場合 `split calendar unavailable: ...; splits not adjusted` を warning に積むだけで
+   バックテストを続行する（`src/yowayowa/services/backtest.py:76-91`）。監視
+   （§5）を回していれば検出できるが、API を直接叩く経路では静かに過小評価になり得る。
+   fail-closed 化（例外化）は既存テスト `test_stock_split_missing_or_corrupt_calendar_warns`
+   の契約変更を伴うため、本カードでは実施していない。
+2. **C2 の取得は `adjustment` を明示していない。** `scripts/paper_c2/alpaca_paper_client.py:156`
+   `get_daily_bars()` は `adjustment` を params に含めず Alpaca の既定値に依存する。
+   `docs/STOCKS.md:53` の「adjustment=raw を明示」規約からは外れており、既定値が変わると
+   C2 の価格基準が黙って切り替わる。live path のため本カードでは触らず、別カードに切った。
+3. **配当・TR は未モデル。** 本決定はプライスリターンであり、S-05 の TR 込み判定
+   （`t_2fc44a51` で「TR 込みでは再未達」）は未解決のまま別レイヤ扱い。
+4. **カレンダーは 10 銘柄のみ。** 新規上場銘柄・新規分割は `scripts/fetch_sec_pbr.py` の
+   再生成とユニバース追加が要る（`unexplained_jump` がその検出器）。
+
 
