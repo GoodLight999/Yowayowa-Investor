@@ -218,19 +218,136 @@ make split-coverage                                       # 上記と同じ
 
 ## 9. 残存リスク（本カードで閉じていないもの）
 
-1. **カレンダー欠落時は fail-open。** `_load_split_calendar()` はカレンダーが無い/壊れて
-   いる場合 `split calendar unavailable: ...; splits not adjusted` を warning に積むだけで
-   バックテストを続行する（`src/yowayowa/services/backtest.py:76-91`）。監視
-   （§5）を回していれば検出できるが、API を直接叩く経路では静かに過小評価になり得る。
-   fail-closed 化（例外化）は既存テスト `test_stock_split_missing_or_corrupt_calendar_warns`
-   の契約変更を伴うため、本カードでは実施していない。
+1. ~~**カレンダー欠落時は fail-open。**~~ → **t_abaea291 追補（2026-11-05 午後）で解消。**
+   `Uncorroborated price discontinuity` が分割スケール（±35% 以上）のとき
+   `data_quality="degraded"` を応答に載せる fail-closed 化と、Alpaca
+   corporate-actions ↔ カレンダー照合（欠落＝失敗）を追加した。詳細は §10・§11。
 2. **C2 の取得は `adjustment` を明示していない。** `scripts/paper_c2/alpaca_paper_client.py:156`
    `get_daily_bars()` は `adjustment` を params に含めず Alpaca の既定値に依存する。
    `docs/STOCKS.md:53` の「adjustment=raw を明示」規約からは外れており、既定値が変わると
-   C2 の価格基準が黙って切り替わる。live path のため本カードでは触らず、別カードに切った。
+   C2 の価格基準が黙って切り替わる。live path のため本カードでは触らず、別カードに切った
+   （t_f2717dff）。
 3. **配当・TR は未モデル。** 本決定はプライスリターンであり、S-05 の TR 込み判定
    （`t_2fc44a51` で「TR 込みでは再未達」）は未解決のまま別レイヤ扱い。
 4. **カレンダーは 10 銘柄のみ。** 新規上場銘柄・新規分割は `scripts/fetch_sec_pbr.py` の
-   再生成とユニバース追加が要る（`unexplained_jump` がその検出器）。
+   再生成とユニバース追加が要る（`unexplained_jump` と §11 の corporate-actions 照合が
+   その検出器）。
+
+---
+
+## 10. basis 明示の規約（全レポート・全成果物に適用・t_abaea291）
+
+本ポリシーの下で米国株の価格 basis は 3 種あり得る。**すべてのバックテスト結果
+（JSON・レポート・docs・Kanban 報告）は、数値の根拠となった basis を明示しなければ
+ならない。basis 未明記の数値は引用してはいけない。**
+
+| basis の表記 | 意味 | 現在の所在 |
+|---|---|---|
+| `raw+sec_calendar`（**既定**） | 保存は raw。`run_backtest` が `split-calendar.json` で後方補正。約定価格（Alpaca paper/実弾の fill）と同一基準 | エンジンの唯一の正。応答 JSON の `assumptions[0]` に自動記載される |
+| `raw`（無補正） | カレンダー適用なし。2026-10-23 以前の旧 JSON・ON/OFF 比較の OFF 側 | 引用時は必ず「無補正」と明記（旧 4 JSON は `_stale` 済） |
+| `TR`（total return・配当込み） | G1 の tr2 ミラー等、リポジトリ外の配当オーバーレイ | 配当は未モデルなので、TR 数値は必ず「TR 込み」と明記（S-05 の(b)が反転する） |
+
+- `adjustment=splits` / `all` の取得系 basis は存在しない（§7 で却下）。もし将来導入
+  される場合は、この表にbasisを追加し、保存行の区別方法（vintage 列等）を実装した上で
+  本 doc を更新すること。混在系列は禁止のまま。
+- 応答 JSON は `assumptions[0]`（raw+カレンダー補正の明示）と、t_abaea291 追補で
+  追加した `data_quality`（`ok` / `degraded`）を必ず一緒に読む。
+  **`data_quality="degraded"` の結果を、その旨の記載なしに単体で引用してはいけない**
+  （未登録分割または破損データが系列に残っている＝数値が信用できない状態）。
+
+---
+
+## 11. fail-closed 化と corporate-actions 照合（追補・t_abaea291・2026-11-05）
+
+親監査 `t_2fc44a51` §6 と本 doc §9-1 を受け、**決定は案 B（raw 維持）のまま**、
+「カレンダー外の無防備」を2つのガードで閉じた。データの書換は発生していない
+（案 B のためロールバック対象データなし。コードは本追補のコミットを revert で戻る）。
+
+### 11.1 エンジンの fail-closed 化（`data_quality` フィールド）
+
+- `BacktestRunResponse` に `data_quality: Literal["ok", "degraded"] = "ok"` を追加した
+  （`src/yowayowa/backtest_models.py`）。
+- `run_backtest` は `Uncorroborated price discontinuity` を検出したとき、その overnight
+  open ギャップが **±35% 以上（分割スケール）なら `data_quality="degraded"`** を応答に
+  載せる（`src/yowayowa/services/backtest.py` の `_UNCORROBORATED_SPLIT_SCALE`）。
+  `status` は従来どおり `complete` / `insufficient` のまま（計算は可能だがデータが
+  信用できない、という区別）。warning の文面・15% 超えの発火条件は不変。
+- **なぜ実行失敗（raise）ではなく degraded か。** 15〜35% の未裏付けギャップは実データ
+  に実在する決算ギャップ（監視 `check_split_coverage` の watch 27 件と同じ帯域）であり、
+  raise すると実データの全 runs が合法的な決算日で死ぬ。一方 ±35% 以上は「2:1 以上の
+  分割なら必ず −50% 以下」という事実から、未登録分割か破損データ以外に説明がなく、
+  数値が実際に信用できない状態である。監視スクリプトの
+  `unexplained_jump`(35%・FAIL) / `watch_jump`(15%・watch) の二線と同じ値を採った。
+  カレンダー全体が欠落した場合は全分割がこの経路で ±50% 級のギャップとして検出され、
+  やはり degraded になる（フェイルセーフの連鎖）。
+
+### 11.2 Alpaca corporate-actions ↔ カレンダー照合（欠落＝失敗）
+
+- `scripts/check_split_coverage.py` に corporate-actions 照合を追加した。
+  - `--corporate-actions <snapshot.json>`: 記録済みスナップショット（オフライン・
+    認証情報不要）を照合。`make split-coverage-ca` がこの形式。
+  - `--corporate-actions-live`: `data.alpaca.markets/v1/corporate-actions` から
+    ストア＋カレンダー全銘柄分を取得して照合（認証情報は
+    `YOWAYOWA_ALPACA_KEY_ID/SECRET_KEY` 環境変数 → リポジトリ `.env` →
+    `/root/.secrets/alpaca_paper.env` → `/root/.hermes/.env` の順で解決）。
+  - 失敗種別: `corporate_action_missing_from_calendar`（カレンダーに無い分割＝
+    監査基準の「欠落＝失敗」）と `corporate_action_ratio_mismatch`（比率不一致＝
+    エンジンが補正を skip する状態）。いずれも exit 1。
+    逆方向（カレンダーだけにあるイベント）は SEC が Alpaca の上位集合であり得るため
+    `[info]` 通知のみで失敗にしない。
+- スナップショット `tests/fixtures/corporate_actions_snapshot_20261105.json`
+  （出所・取得窓を `_provenance` に記録。監査 t_2fc44a51 の `alpaca_splits.json` と同一）。
+- **実測（2026-11-05 15:4x JST・VPS）**: スナップショット照合と live 取得照合の両方で
+  **7 イベントすべてカレンダーに存在・比率一致・failures 0（verdict: PASS）**。
+  watch_jump 27 件は従来どおり情報表示（決算ギャップ帯）。
+
+### 11.3 テストと検証結果
+
+- 新規テスト 11 件: `tests/test_split_coverage.py` に 8 件
+  （normalize 3 形状／スナップショット完全網羅／load_calendar のメタキー skip／
+  実カレンダーとの照合／欠落で失敗／比率不一致で失敗／逆方向は info／
+  build_report 結線）、`tests/test_backtest.py` に 3 件
+  （分割スケールで degraded／決算帯は warning のまま ok／カレンダー補正ありは ok）。
+- **既存ピンの追測定（t_3b044506/t_a261a85a の先例に従う）**:
+  `tests/test_defensive_rotation.py::test_existing_eight_full_responses_match_preimplementation_head`
+  の 8 ピンは応答全文の sha256 を固定しており、`data_quality` フィールド追加で全部失敗した。
+  HEAD 直下の pristine worktree で旧ピン 8/8 再現を確認した上で、両ツリーの応答
+  `model_dump_json` をフィールド単位で突き合わせ、**`data_quality` 以外の全フィールドが
+  完全一致**（本格 8 件中これ以外の差分 0・新値はすべて `ok`）であることを実測し、
+  新ハッシュに追測定して分類コメントを追記した。数値の変化は 0。
+- `pytest tests/test_backtest.py tests/test_split_coverage.py` = **39 passed**
+  （既存の分割関連テストを含む・2026-11-05 VPS 実測）。
+  `pytest tests/test_defensive_rotation.py` = **52 passed**（追測定後）。
+- **全件走査（`make test` 相当・pytest --cov=yowayowa）実測（2026-11-05 VPS・47:01）**:
+  当初 3594 passed / 10 failed / 2 skipped。失敗の内訳は (a) 上記応答ハッシュピン 8 件
+  （本追補のフィールド追加が原因→追測定で解消済み）と (b) `tests/test_db_units.py` の
+  2 件（positions 一意制約マイグレーション系）。(b) は pristine worktree（本追補適用前の
+  HEAD）でも同 2 件が失敗することを実測しており**本追補以前からの既存失敗**で、
+  分割・価格調整と無関係のため本カードでは触らない（別カード起票を推奨）。
+- `mypy src/yowayowa` = **0 error**（259 files）。`make split-coverage` = PASS、
+  `make split-coverage-ca` = PASS。
+- `make verify` 相当（lint / typecheck / test / openapi / openapi-check）は本ワーク
+  ツリーで実行。ただし並行カードの未コミット差分（`paperloop.py`・`tests/test_c2_*` 等）
+  が `ruff check src tests` に既存 30 件を残しているため、`lint` の全体パスは
+  ワークツリー都合で判定不能。本追補が触ったファイルに限定した ruff は clean。
+  openapi baseline は `--write` で再生成し `openapi-check` は PASS（161 operations）。
+  再生成差分には本追補の `data_quality` 加え、**HEAD で既に発生していた JPX public
+  ルート（コミット c928ebd・ベースライン最終更新 dd7c85a より前で未反映）の契約差分も
+  一括で取り込まれた**。JPX 契約の正が baseline に反映されたことを意味する。
+
+### 11.4 変更ファイルとロールバック
+
+- `src/yowayowa/backtest_models.py`（data_quality フィールド追加） /
+  `src/yowayowa/services/backtest.py`（閾値定数＋degraded 判定） /
+  `scripts/check_split_coverage.py`（corporate-actions 照合） /
+  `tests/test_backtest.py`・`tests/test_split_coverage.py`（テスト追加） /
+  `tests/fixtures/corporate_actions_snapshot_20261105.json`（新規） /
+  `Makefile`（split-coverage-ca）/ `docs/openapi_baseline.json`（再生成） / 本 doc。
+- 稼働経路（`paperloop.py`・`paperloop_verify.py`・`scripts/paper_c2/*`）は
+  **1 バイトも変更していない**。ストア・カレンダー等の凍結データも不変。
+- ロールバック: 本追補のコミットを `git revert` すれば全て戻る
+  （`data_quality` はデフォルト `ok` の追加フィールドなので、応答 JSON の既存消費者への
+  破壊的変更はない）。
+- 実発注 0・入出金 0。
 
 

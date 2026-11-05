@@ -356,6 +356,103 @@ def test_stock_split_genuine_crash_is_not_adjusted_negative_test() -> None:
     assert not any("Split adjustment applied for AAA" in w for w in result.warnings)
 
 
+def test_split_scale_gap_marks_run_degraded_fail_closed() -> None:
+    """Fail-closed (t_abaea291): a split-scale gap with no calendar corroboration
+    must flag the run data_quality="degraded" instead of passing as clean while
+    keeping status="complete" (the run itself is computable, the data is not
+    trustworthy)."""
+
+    start = date(2025, 1, 6)
+    strategy = _small_strategy().model_copy(
+        update={"rebalance": "monthly", "signal": "equal_weight"}
+    )
+    histories = {symbol: _rows(start, 20, growth=0.0) for symbol in strategy.universe}
+
+    # Uncorroborated -50% crash on AAA at index 5 (2025-01-13): split scale.
+    for i in range(5, len(histories["AAA"])):
+        for k in ("open", "high", "low", "close"):
+            histories["AAA"][i][k] = 50.0
+
+    request = BacktestRunRequest(
+        strategy_id=strategy.id,
+        start=start,
+        end=date(2025, 1, 31),
+        commission_bps=0,
+        slippage_bps=0,
+        bootstrap_samples=0,
+    )
+    result = run_backtest(request, strategy, histories, _include_oos=False)
+
+    assert result.status == "complete"
+    assert result.data_quality == "degraded"
+    assert any(
+        "Uncorroborated price discontinuity on AAA at 2025-01-13" in w for w in result.warnings
+    )
+
+
+def test_earnings_scale_gap_warns_but_keeps_data_quality_ok() -> None:
+    """A 15-35% uncorroborated gap is real price action (earnings gap band):
+    warn, but do not mark the run degraded."""
+
+    start = date(2025, 1, 6)
+    strategy = _small_strategy().model_copy(
+        update={"rebalance": "monthly", "signal": "equal_weight"}
+    )
+    histories = {symbol: _rows(start, 20, growth=0.0) for symbol in strategy.universe}
+
+    # -20% overnight gap on AAA at index 5 (2025-01-13): below split scale.
+    for i in range(5, len(histories["AAA"])):
+        for k in ("open", "high", "low", "close"):
+            histories["AAA"][i][k] = 80.0
+
+    request = BacktestRunRequest(
+        strategy_id=strategy.id,
+        start=start,
+        end=date(2025, 1, 31),
+        commission_bps=0,
+        slippage_bps=0,
+        bootstrap_samples=0,
+    )
+    result = run_backtest(request, strategy, histories, _include_oos=False)
+
+    assert result.data_quality == "ok"
+    assert any(
+        "Uncorroborated price discontinuity on AAA at 2025-01-13" in w for w in result.warnings
+    )
+
+
+def test_corroborated_calendar_split_keeps_data_quality_ok() -> None:
+    """A calendar-corroborated split must not degrade the run."""
+
+    start = date(2025, 1, 6)
+    strategy = _small_strategy().model_copy(
+        update={"rebalance": "monthly", "signal": "equal_weight"}
+    )
+    histories = {symbol: _rows(start, 20, growth=0.0) for symbol in strategy.universe}
+
+    # 2:1 split on AAA on day 5 (2025-01-13), corroborated by the calendar.
+    for i in range(5, len(histories["AAA"])):
+        histories["AAA"][i]["open"] = round(histories["AAA"][i]["open"] / 2.0, 2)
+        histories["AAA"][i]["close"] = round(histories["AAA"][i]["close"] / 2.0, 2)
+
+    request = BacktestRunRequest(
+        strategy_id=strategy.id,
+        start=start,
+        end=date(2025, 1, 31),
+        commission_bps=0,
+        slippage_bps=0,
+        bootstrap_samples=0,
+    )
+    split_calendar = {"AAA": [{"effective_date": "2025-01-13", "ratio": 2.0}]}
+    result = run_backtest(
+        request, strategy, histories, _include_oos=False, split_calendar=split_calendar
+    )
+
+    assert result.data_quality == "ok"
+    assert any("Split adjustment applied for AAA" in w for w in result.warnings)
+    assert not any("Uncorroborated price discontinuity" in w for w in result.warnings)
+
+
 def test_stock_split_continuous_factor_is_not_applied_twice_negative_test() -> None:
     """Negative test 2: split_factor on continuous raw prices must NOT be applied twice."""
     start = date(2025, 1, 6)

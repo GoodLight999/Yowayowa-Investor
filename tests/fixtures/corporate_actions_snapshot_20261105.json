@@ -1,0 +1,36 @@
+{
+  "_provenance": {
+    "source": "https://data.alpaca.markets/v1/corporate-actions",
+    "types": "forward_split,reverse_split",
+    "window": "2019-01-01..2026-11-05",
+    "recorded_at": "2026-11-05",
+    "recorded_by": "t_2fc44a51 audit probe (alpaca_splits.json)",
+    "shape": "{SYMBOL: [[ex_date, old_rate, new_rate], ...]}; keys starting with _ are metadata"
+  },
+  "AAPL": [
+    ["2020-08-31", 1, 4]
+  ],
+  "AMZN": [
+    ["2022-06-06", 1, 20]
+  ],
+  "GOOGL": [
+    ["2022-07-18", 1, 20]
+  ],
+  "IWM": [],
+  "JNJ": [],
+  "JPM": [],
+  "META": [],
+  "MSFT": [],
+  "NVDA": [
+    ["2021-07-20", 1, 4],
+    ["2024-06-10", 1, 10]
+  ],
+  "PG": [],
+  "QQQ": [],
+  "SPY": [],
+  "TSLA": [
+    ["2020-08-31", 1, 5],
+    ["2022-08-25", 1, 3]
+  ],
+  "XOM": []
+}

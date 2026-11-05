@@ -11,9 +11,34 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.check_split_coverage import build_report, load_calendar, render
+from scripts.check_split_coverage import (
+    CorporateAction,
+    build_report,
+    compare_corporate_actions,
+    load_calendar,
+    normalize_corporate_actions,
+    render,
+)
 
 CALENDAR = {"AAA": [{"effective_date": "2025-01-13", "ratio": 2.0}]}
+
+# The recorded Alpaca corporate-actions snapshot (t_2fc44a51 audit,
+# fetched 2026-11-05): every split Alpaca reported for the 14 stored symbols.
+SNAPSHOT_FIXTURE = Path(__file__).parent / "fixtures" / "corporate_actions_snapshot_20261105.json"
+
+FULL_CALENDAR = {
+    "AAPL": [{"effective_date": "2020-08-31", "ratio": 4.0}],
+    "AMZN": [{"effective_date": "2022-06-06", "ratio": 20.0}],
+    "GOOGL": [{"effective_date": "2022-07-18", "ratio": 20.0}],
+    "NVDA": [
+        {"effective_date": "2021-07-20", "ratio": 4.0},
+        {"effective_date": "2024-06-10", "ratio": 10.0},
+    ],
+    "TSLA": [
+        {"effective_date": "2020-08-31", "ratio": 5.0},
+        {"effective_date": "2022-08-25", "ratio": 3.0},
+    ],
+}
 
 
 def _write_store(root: Path, symbol: str, rows: list[tuple[str, float, float]]) -> None:
@@ -211,3 +236,149 @@ def test_missing_store_reports_cannot_run(tmp_path: Path) -> None:
         assert "stock OHLCV store not found" in str(exc)
     else:  # pragma: no cover - the guard must raise
         raise AssertionError("missing store must raise FileNotFoundError")
+
+
+# --- corporate-actions cross-check (audit criterion t_abaea291: missing = fail) ---
+
+
+def _load_snapshot() -> list[CorporateAction]:
+    payload = json.loads(SNAPSHOT_FIXTURE.read_text(encoding="utf-8"))
+    return normalize_corporate_actions(payload)
+
+
+def test_normalize_accepts_snapshot_api_and_flat_shapes() -> None:
+    snapshot = normalize_corporate_actions(
+        {"AAA": [["2025-01-13", 1, 2]], "_provenance": {"source": "x"}}
+    )
+    api = normalize_corporate_actions(
+        {
+            "corporate_actions": {
+                "forward_splits": [
+                    {
+                        "symbol": "BBB",
+                        "ex_date": "2025-02-03",
+                        "old_rate": 1,
+                        "new_rate": 10,
+                    }
+                ]
+            }
+        }
+    )
+    flat = normalize_corporate_actions(
+        [{"symbol": "CCC", "ex_date": "2025-03-03", "old_rate": 1, "new_rate": 3}]
+    )
+
+    assert snapshot == [CorporateAction(symbol="AAA", ex_date="2025-01-13", ratio=2.0)]
+    assert api == [CorporateAction(symbol="BBB", ex_date="2025-02-03", ratio=10.0)]
+    assert flat == [CorporateAction(symbol="CCC", ex_date="2025-03-03", ratio=3.0)]
+
+
+def test_recorded_snapshot_fully_covered_by_calendar() -> None:
+    """The 2026-11-05 snapshot: 7 Alpaca events, all 7 present with equal ratios."""
+
+    actions = _load_snapshot()
+    assert len(actions) == 7
+
+    failures, notices = compare_corporate_actions(actions, FULL_CALENDAR)
+    assert failures == []
+    assert notices == []
+
+
+def test_snapshot_calendar_shape_also_loads_cleanly() -> None:
+    """load_calendar skips the snapshot's _provenance metadata block; the
+    [ex_date, old, new] triple shape is corporate-actions-only and yields
+    empty event maps there (that is normalize_corporate_actions' job)."""
+
+    calendar = load_calendar(SNAPSHOT_FIXTURE)
+    assert "_PROVENANCE" not in calendar
+    assert set(calendar) == {
+        "AAPL",
+        "AMZN",
+        "GOOGL",
+        "IWM",
+        "JNJ",
+        "JPM",
+        "META",
+        "MSFT",
+        "NVDA",
+        "PG",
+        "QQQ",
+        "SPY",
+        "TSLA",
+        "XOM",
+    }
+    assert all(events == {} for events in calendar.values())
+
+
+def test_snapshot_also_matches_the_live_calendar_file() -> None:
+    """Same cross-check against the repo's real split-calendar.json (no store)."""
+
+    repo_calendar = (
+        Path(__file__).parent.parent / "data" / "fundamentals" / "pbr" / "split-calendar.json"
+    )
+    if not repo_calendar.is_file():  # gitignored store absent (fresh clone)
+        return
+    failures, _ = compare_corporate_actions(_load_snapshot(), load_calendar(repo_calendar))
+    assert failures == []
+
+
+def test_missing_corporate_action_fails() -> None:
+    calendar = {
+        "NVDA": [
+            {"effective_date": "2021-07-20", "ratio": 4.0},
+            # 2024-06-10 10:1 deliberately absent
+        ]
+    }
+
+    failures, _ = compare_corporate_actions(_load_snapshot(), calendar)
+
+    missing = [item for item in failures if item.kind == "corporate_action_missing_from_calendar"]
+    assert len(missing) == 6  # everything except NVDA 2021-07-20
+    nvda_2024 = next(
+        item for item in missing if item.symbol == "NVDA" and item.session == "2024-06-10"
+    )
+    assert nvda_2024.observed == 10.0
+
+
+def test_ratio_mismatch_fails() -> None:
+    calendar = {"NVDA": [{"effective_date": "2024-06-10", "ratio": 5.0}]}
+
+    failures, _ = compare_corporate_actions(_load_snapshot(), calendar)
+
+    mismatches = [item for item in failures if item.kind == "corporate_action_ratio_mismatch"]
+    assert len(mismatches) == 1
+    assert mismatches[0].symbol == "NVDA"
+    assert mismatches[0].expected == 5.0
+    assert mismatches[0].observed == 10.0
+
+
+def test_calendar_only_event_is_notice_not_failure() -> None:
+    actions = [CorporateAction(symbol="AAA", ex_date="2025-01-13", ratio=2.0)]
+    calendar = {
+        "AAA": [{"effective_date": "2025-01-13", "ratio": 2.0}],
+        "BBB": [{"effective_date": "2019-05-01", "ratio": 10.0}],
+    }
+
+    failures, notices = compare_corporate_actions(actions, calendar)
+
+    assert failures == []
+    assert len(notices) == 1
+    assert "BBB 2019-05-01" in notices[0]
+
+
+def test_build_report_wires_corporate_action_failures(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    calendar_path = data_dir / "fundamentals" / "pbr" / "split-calendar.json"
+    _write_calendar(calendar_path, {})
+    _write_store(data_dir, "AAA", _flat(3))
+
+    report = build_report(
+        data_dir=data_dir,
+        calendar_path=calendar_path,
+        corporate_actions=[CorporateAction(symbol="AAA", ex_date="2025-01-13", ratio=2.0)],
+    )
+
+    assert not report.ok
+    assert report.corporate_actions_checked == 1
+    assert [item.kind for item in report.failures] == ["corporate_action_missing_from_calendar"]
+    assert "corporate_action_missing_from_calendar AAA 2025-01-13" in render(report)

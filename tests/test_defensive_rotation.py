@@ -401,19 +401,19 @@ def test_diagnostics_carried_sleeve_not_hypothetical_daily_R(runner: ModuleType)
 @pytest.mark.parametrize(
     "signal, expected",
     [
-        ("momentum_12_1", "fcf97389b5f1f566ffcde967cf6deac23c10f2c4d9a38af1156dd128f4a180d6"),
-        ("low_volatility", "82056cbd5dcaf9d74bf6986a587d6bd43721669c56d909994c969a98139f2a34"),
-        ("mean_reversion_20", "6f0bb498bdaed751a1ba295456be289ce43049bae1c224e8d9653cd62c80d137"),
-        ("equal_weight", "db8715444afebff8d352c2706425ec97f1748f6d60aa23a7263e28e6091ae600"),
-        ("value_fundamental", "bf0389bada6bf47b6729b9b80a55e9194940dfe798162588036d71eb8342f900"),
-        ("kiyohara_value", "93820bfef5ea6d7fefa13746fe0aa5770f2fe2abcb8899998172924b174e2488"),
+        ("momentum_12_1", "48b6b2610b09161d98c7c950e8eee746f4decf77a15cce649215a8151693cdf0"),
+        ("low_volatility", "b8f6c1268cfa622f63fcf92eb2bae7f13768a8c85b940347ea549d526138ddbd"),
+        ("mean_reversion_20", "37d99a1760625b684dcb48d5eb31ad1eac518a7f02437ca2a376db334e82d2aa"),
+        ("equal_weight", "54eb0c7e28de6c6315420c6a2f25a48d9ee519a40adc7c42c1626452b95388f0"),
+        ("value_fundamental", "e1c8bc60e9b866311ebf539e2c986bbbf9503992747a1cd048a7cc04e44f6de4"),
+        ("kiyohara_value", "a6e7a33fb2cede5923f26f3197637024aa1843b6fa6822e720c84b3e92e3c3a8"),
         (
             "crypto_trend_dual_ma",
-            "a3014314a9849cf5d00b5556c8c8cbfea268c307d92709cfdad21b93916f6fad",
+            "3bb6408362e6e9e0c295ce2f733f15ff6317e5edf7cf4019fe66040793982d67",
         ),
         (
             "vol_target_defensive",
-            "586f9f138a0eb476b60197733d0a9b476b52a98cde5ee87a49bd60361d9935ee",
+            "7a563b97f6399b9aec9020942fb04c656d09ff42454ae59ab903110853b625ae",
         ),
     ],
 )
@@ -424,7 +424,13 @@ def test_existing_eight_full_responses_match_preimplementation_head(
     # (t_a84ba708): the only change in the whole response is the $.assumptions
     # disclosure wording ("Raw OHLCV is adjusted for stock splits..."), every
     # numeric field is byte-identical, so this is an intentional wording change,
-    # not a regression (t_3b044506, classification in t_a261a85a). The run passes
+    # not a regression (t_3b044506, classification in t_a261a85a). Re-measured at
+    # t_abaea291 (2026-11-05): BacktestRunResponse gained the fail-closed
+    # $.data_quality field ("ok"/"degraded", see
+    # docs/US_STOCK_PRICE_ADJUSTMENT_POLICY_20261105.md §11.1); payloads from a
+    # pristine pre-change checkout were diffed field by field and every field
+    # except the added key is identical (data_quality="ok" here), so this again
+    # is an intentional contract addition, not a regression. The run passes
     # split_calendar={} explicitly so the git-ignored split-calendar.json cannot
     # alter the warnings text (or the hash) on a different checkout.
     prices = [100.0 + i + (5 if i % 7 == 0 else 0) for i in range(1100)]

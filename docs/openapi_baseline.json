@@ -965,6 +965,15 @@
             "title": "Assumptions",
             "type": "array"
           },
+          "data_quality": {
+            "default": "ok",
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "title": "Data Quality",
+            "type": "string"
+          },
           "end": {
             "format": "date",
             "title": "End",
@@ -6396,6 +6405,329 @@
         "title": "JpxMarginBalancePoint",
         "type": "object"
       },
+      "JpxMarginDailyDetail": {
+        "properties": {
+          "application_date": {
+            "format": "date",
+            "title": "Application Date",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "isin": {
+            "title": "Isin",
+            "type": "string"
+          },
+          "issue": {
+            "title": "Issue",
+            "type": "string"
+          },
+          "long_listed_ratio_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Listed Ratio Pct"
+          },
+          "long_negotiable_source_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Negotiable Source Change"
+          },
+          "long_negotiable_value_source_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Negotiable Value Source Change"
+          },
+          "long_source_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Source Change"
+          },
+          "long_standardized_source_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Standardized Source Change"
+          },
+          "long_standardized_value_source_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Standardized Value Source Change"
+          },
+          "long_value_source_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Value Source Change"
+          },
+          "margin_marker": {
+            "title": "Margin Marker",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "retrieved_at": {
+            "format": "date-time",
+            "title": "Retrieved At",
+            "type": "string"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          },
+          "short_listed_ratio_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Listed Ratio Pct"
+          },
+          "short_negotiable_source_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Negotiable Source Change"
+          },
+          "short_negotiable_value_source_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Negotiable Value Source Change"
+          },
+          "short_source_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Source Change"
+          },
+          "short_standardized_source_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Standardized Source Change"
+          },
+          "short_standardized_value_source_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Standardized Value Source Change"
+          },
+          "short_value_source_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Value Source Change"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "unit_marker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Marker"
+          }
+        },
+        "required": [
+          "application_date",
+          "code",
+          "issue",
+          "section",
+          "margin_marker",
+          "isin",
+          "published_at",
+          "retrieved_at",
+          "source_sha256",
+          "provenance"
+        ],
+        "title": "JpxMarginDailyDetail",
+        "type": "object"
+      },
+      "JpxMarginFlow": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "margin_marker": {
+            "title": "Margin Marker",
+            "type": "string"
+          },
+          "new_purchase_ratio_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Purchase Ratio Pct"
+          },
+          "new_sales_ratio_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Sales Ratio Pct"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "purchase_star": {
+            "default": false,
+            "title": "Purchase Star",
+            "type": "boolean"
+          },
+          "retrieved_at": {
+            "format": "date-time",
+            "title": "Retrieved At",
+            "type": "string"
+          },
+          "sales_star": {
+            "default": false,
+            "title": "Sales Star",
+            "type": "boolean"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "status_marker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Marker"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "code",
+          "company_name",
+          "section",
+          "margin_marker",
+          "published_at",
+          "retrieved_at",
+          "source_sha256",
+          "provenance"
+        ],
+        "title": "JpxMarginFlow",
+        "type": "object"
+      },
       "JpxMarginSeries": {
         "description": "Time series for one code, oldest first, with per-point provenance.",
         "properties": {
@@ -6415,6 +6747,482 @@
           "code"
         ],
         "title": "JpxMarginSeries",
+        "type": "object"
+      },
+      "JpxMarginSignal": {
+        "properties": {
+          "as_of_date": {
+            "format": "date",
+            "title": "As Of Date",
+            "type": "string"
+          },
+          "available_at": {
+            "format": "date-time",
+            "title": "Available At",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Metrics",
+            "type": "object"
+          },
+          "provenance": {
+            "items": {
+              "$ref": "#/components/schemas/Provenance"
+            },
+            "title": "Provenance",
+            "type": "array"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "signal": {
+            "enum": [
+              "crowded-long",
+              "crowded-short",
+              "long-unwind",
+              "short-cover",
+              "borrow-stress",
+              "flow-buy",
+              "flow-sell",
+              "buy-flow-divergence",
+              "sell-flow-divergence",
+              "squeeze-watch",
+              "watch-flags"
+            ],
+            "title": "Signal",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal",
+          "as_of_date",
+          "code",
+          "reason",
+          "available_at"
+        ],
+        "title": "JpxMarginSignal",
+        "type": "object"
+      },
+      "JpxMarginWatch": {
+        "properties": {
+          "application_date": {
+            "format": "date",
+            "title": "Application Date",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "isin": {
+            "title": "Isin",
+            "type": "string"
+          },
+          "jsf_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jsf Status"
+          },
+          "long_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Change"
+          },
+          "long_listed_ratio_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Listed Ratio Pct"
+          },
+          "long_negotiable": {
+            "title": "Long Negotiable",
+            "type": "integer"
+          },
+          "long_negotiable_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Negotiable Change"
+          },
+          "long_standardized": {
+            "title": "Long Standardized",
+            "type": "integer"
+          },
+          "long_standardized_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Standardized Change"
+          },
+          "long_total": {
+            "title": "Long Total",
+            "type": "integer"
+          },
+          "margin_marker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Margin Marker"
+          },
+          "primary_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Status"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "retrieved_at": {
+            "format": "date-time",
+            "title": "Retrieved At",
+            "type": "string"
+          },
+          "sale_purchase_ratio_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sale Purchase Ratio Pct"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          },
+          "short_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Change"
+          },
+          "short_listed_ratio_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Listed Ratio Pct"
+          },
+          "short_negotiable": {
+            "title": "Short Negotiable",
+            "type": "integer"
+          },
+          "short_negotiable_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Negotiable Change"
+          },
+          "short_standardized": {
+            "title": "Short Standardized",
+            "type": "integer"
+          },
+          "short_standardized_change": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Standardized Change"
+          },
+          "short_total": {
+            "title": "Short Total",
+            "type": "integer"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "unit_marker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Marker"
+          }
+        },
+        "required": [
+          "application_date",
+          "code",
+          "isin",
+          "short_total",
+          "long_total",
+          "short_negotiable",
+          "short_standardized",
+          "long_negotiable",
+          "long_standardized",
+          "published_at",
+          "retrieved_at",
+          "source_sha256",
+          "provenance"
+        ],
+        "title": "JpxMarginWatch",
+        "type": "object"
+      },
+      "JpxPremiumCharge": {
+        "properties": {
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "exchange": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange"
+          },
+          "maximum_premium_charge": {
+            "title": "Maximum Premium Charge",
+            "type": "number"
+          },
+          "over_lent_shares": {
+            "title": "Over Lent Shares",
+            "type": "integer"
+          },
+          "premium_charge": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Premium Charge"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "resolved_jpx_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Jpx Code"
+          },
+          "retrieved_at": {
+            "format": "date-time",
+            "title": "Retrieved At",
+            "type": "string"
+          },
+          "source_code": {
+            "title": "Source Code",
+            "type": "string"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trade_date",
+          "source_code",
+          "over_lent_shares",
+          "maximum_premium_charge",
+          "published_at",
+          "retrieved_at",
+          "source_sha256",
+          "provenance"
+        ],
+        "title": "JpxPremiumCharge",
+        "type": "object"
+      },
+      "JpxPublicIngestResult": {
+        "properties": {
+          "as_of_dates": {
+            "items": {
+              "format": "date",
+              "type": "string"
+            },
+            "title": "As Of Dates",
+            "type": "array"
+          },
+          "cached_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cached Path"
+          },
+          "kind": {
+            "enum": [
+              "balance",
+              "watch",
+              "premium",
+              "flow"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "row_count",
+          "source_url",
+          "source_sha256"
+        ],
+        "title": "JpxPublicIngestResult",
         "type": "object"
       },
       "KpiHistoryResponse": {
@@ -18003,6 +18811,493 @@
           }
         },
         "summary": "Get Jpx Margin History"
+      }
+    },
+    "/v1/jpx/public/details/{code}": {
+      "get": {
+        "operationId": "margin_details_v1_jpx_public_details__code__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 250,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JpxMarginDailyDetail"
+                  },
+                  "title": "Response Margin Details V1 Jpx Public Details  Code  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Margin Details"
+      }
+    },
+    "/v1/jpx/public/flow/{code}": {
+      "get": {
+        "operationId": "margin_flow_v1_jpx_public_flow__code__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 250,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JpxMarginFlow"
+                  },
+                  "title": "Response Margin Flow V1 Jpx Public Flow  Code  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Margin Flow"
+      }
+    },
+    "/v1/jpx/public/premium/{source_code}": {
+      "get": {
+        "operationId": "premium_history_v1_jpx_public_premium__source_code__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_code",
+            "required": true,
+            "schema": {
+              "title": "Source Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 250,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JpxPremiumCharge"
+                  },
+                  "title": "Response Premium History V1 Jpx Public Premium  Source Code  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Premium History"
+      }
+    },
+    "/v1/jpx/public/signals/{signal}": {
+      "get": {
+        "operationId": "margin_signals_v1_jpx_public_signals__signal__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "signal",
+            "required": true,
+            "schema": {
+              "enum": [
+                "crowded-long",
+                "crowded-short",
+                "long-unwind",
+                "short-cover",
+                "borrow-stress",
+                "flow-buy",
+                "flow-sell",
+                "buy-flow-divergence",
+                "sell-flow-divergence",
+                "squeeze-watch",
+                "watch-flags"
+              ],
+              "title": "Signal",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 250,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "long_ratio_threshold",
+            "required": false,
+            "schema": {
+              "default": 10.0,
+              "minimum": 0,
+              "title": "Long Ratio Threshold",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "short_ratio_threshold",
+            "required": false,
+            "schema": {
+              "default": 2.0,
+              "minimum": 0,
+              "title": "Short Ratio Threshold",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unwind_threshold",
+            "required": false,
+            "schema": {
+              "default": 0.1,
+              "maximum": 1,
+              "minimum": 0,
+              "title": "Unwind Threshold",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "flow_buy_threshold",
+            "required": false,
+            "schema": {
+              "default": 40.0,
+              "maximum": 100,
+              "minimum": 0,
+              "title": "Flow Buy Threshold",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "flow_sell_threshold",
+            "required": false,
+            "schema": {
+              "default": 20.0,
+              "maximum": 100,
+              "minimum": 0,
+              "title": "Flow Sell Threshold",
+              "type": "number"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JpxMarginSignal"
+                  },
+                  "title": "Response Margin Signals V1 Jpx Public Signals  Signal  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Margin Signals"
+      }
+    },
+    "/v1/jpx/public/sync": {
+      "post": {
+        "description": "Fetch and atomically ingest the latest official JPX publications.",
+        "operationId": "sync_public_margin_v1_jpx_public_sync_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kinds",
+            "required": false,
+            "schema": {
+              "default": "balance,watch,premium,flow",
+              "title": "Kinds",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JpxPublicIngestResult"
+                  },
+                  "title": "Response Sync Public Margin V1 Jpx Public Sync Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Public Margin"
+      }
+    },
+    "/v1/jpx/public/watch/{code}": {
+      "get": {
+        "operationId": "margin_watch_v1_jpx_public_watch__code__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 250,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JpxMarginWatch"
+                  },
+                  "title": "Response Margin Watch V1 Jpx Public Watch  Code  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Margin Watch"
       }
     },
     "/v1/licensing/sources": {

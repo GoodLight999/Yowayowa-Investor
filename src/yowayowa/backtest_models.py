@@ -151,6 +151,7 @@ class BacktestRunResponse(BaseModel):
     end: date
     annualization_days: int = Field(default=252, ge=1, le=366)
     status: Literal["complete", "insufficient"]
+    data_quality: Literal["ok", "degraded"] = "ok"
     metrics: BacktestMetrics
     in_sample_metrics: BacktestMetrics | None = None
     oos_metrics: BacktestMetrics | None = None

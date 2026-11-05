@@ -16,7 +16,7 @@
 V := $(CURDIR)/.venv
 export PYTHONPATH := $(CURDIR)/src
 
-.PHONY: install bootstrap dev test lint typecheck openapi openapi-check openapi-baseline verify split-coverage
+.PHONY: install bootstrap dev test lint typecheck openapi openapi-check openapi-baseline verify split-coverage split-coverage-ca
 
 # One-time tool-venv construction (initial setup only; do not re-run before
 # every verification). Never installs this project itself. Re-run this once
@@ -65,3 +65,11 @@ verify: lint typecheck test openapi openapi-check
 # Not part of `verify`: it reads the gitignored real store under data/.
 split-coverage: | bootstrap
 	$(V)/bin/python scripts/check_split_coverage.py
+
+# Audit criterion (t_abaea291): every Alpaca corporate action must exist in the
+# split calendar; a missing entry fails. Offline mode cross-checks the recorded
+# provider snapshot (no network, no credentials). For an ops run against the
+# live API: scripts/check_split_coverage.py --corporate-actions-live
+# (needs Alpaca credentials; reads the gitignored real store under data/).
+split-coverage-ca: | bootstrap
+	$(V)/bin/python scripts/check_split_coverage.py --corporate-actions tests/fixtures/corporate_actions_snapshot_20261105.json

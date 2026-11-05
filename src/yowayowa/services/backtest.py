@@ -41,6 +41,15 @@ _SPLIT_FACTORS = tuple(
     + [float(divisor) for divisor in (2, 3, 4, 5, 10, 20)]
 )
 _SPLIT_TOLERANCE = 0.08
+# Fail-closed threshold for uncorroborated price discontinuities: an overnight
+# open gap at or beyond this magnitude flips the run to data_quality="degraded"
+# instead of passing with a warning only. A genuine >=2:1 split is <= -50%, so a
+# gap this size with no calendar corroboration is an unregistered split or
+# corrupt data and the numbers cannot be trusted. The 15-35% band stays
+# warning-only because real earnings gaps live there. Mirrors the jump/watch
+# thresholds of scripts/check_split_coverage.py
+# (docs/US_STOCK_PRICE_ADJUSTMENT_POLICY_20261105.md).
+_UNCORROBORATED_SPLIT_SCALE = 0.35
 __all__ = ["get_strategy", "list_strategies", "run_backtest"]
 
 
@@ -578,6 +587,7 @@ def run_backtest(
     rows_by_symbol: dict[str, dict[date, Mapping[str, Any]]] = {}
     provenance: list[BacktestProvenance] = []
     warnings: list[str] = []
+    data_quality_degraded = False
     cal_by_symbol, cal_warnings = _load_split_calendar(
         split_calendar=split_calendar, calendar_path=split_calendar_path
     )
@@ -707,12 +717,19 @@ def run_backtest(
                         f"ratio={ratio_val:g}, basis={basis}"
                     )
                 else:
-                    if abs(ratio_open - 1.0) > 0.15:
+                    unexplained_gap = abs(ratio_open - 1.0)
+                    if unexplained_gap > 0.15:
                         warnings.append(
                             f"Uncorroborated price discontinuity on {symbol} at {session_date}: "
                             f"overnight open ratio {ratio_open:.4f}, close ratio "
                             f"{ratio_close:.4f} (no adjustment applied)"
                         )
+                        if unexplained_gap >= _UNCORROBORATED_SPLIT_SCALE:
+                            # Fail-closed: a split-scale gap with no corroborated
+                            # calendar entry means the series carries an
+                            # unregistered split or corrupt data; the run must not
+                            # present itself as clean (data_quality="degraded").
+                            data_quality_degraded = True
 
         rows: dict[date, Mapping[str, Any]] = {_date(r["as_of"]): r for r in raw_rows}
         rows_by_symbol[symbol] = rows
@@ -1055,6 +1072,7 @@ def run_backtest(
         start=request.start,
         end=request.end,
         status=status,
+        data_quality="degraded" if data_quality_degraded else "ok",
         annualization_days=request.annualization_days,
         metrics=metrics,
         in_sample_metrics=is_metrics if _include_oos else None,
