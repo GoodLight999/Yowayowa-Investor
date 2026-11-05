@@ -1,7 +1,9 @@
 # P3 バックテスト実測レポート — 4 戦略比較
 
-実行日: 2026-09-30 (JST)  
-データ: 永続化済み Alpaca SIP 米国株日足 OHLCV（raw prices、USD、シンボルごとの provenance を保持）  
+**価格 basis（2026-11-05 更新）**: 本文書の数値は、raw保存データに SEC法人格 split カレンダー（`data/fundamentals/pbr/split-calendar.json`・7イベント）で**分割のみ補正**した価格での再実行値（配当は含まない・TRではない）。raw（未補正）由来の旧値は git 履歴（コミット `83699e3`）と `docs/BACKTEST_PRICE_BASIS_20261105.md` で参照。窓・コスト・seed は旧実行と同一。分割補正により full の順位とシグナル選定は変わるが、OOS 数値は全戦略で不変。共有basis差分一覧は同文書 §3。
+
+実行日: 初回 2026-09-30 / 分割補正済み再実行 2026-11-05 (JST)  
+データ: 永続化済み Alpaca SIP 米国株日足 OHLCV（raw保存値に splitカレンダーの分割補正を適用、USD、シンボルごとの provenance を保持）  
 エンジン: P2 `run_backtest`  
 評価期間: 2021-01-04〜2026-09-28（各 1,440 観測）  
 想定売買コスト: 片道 15 bps（commission 10 bps + slippage 5 bps、売買元本に適用）  
@@ -13,23 +15,23 @@ CAGR、Sharpe、Sortino、Calmar、hit rate、turnover は年率化を含む P2 
 
 | 戦略 | CAGR | Sharpe | Sortino | MaxDD | Calmar | Hit rate | 年間 turnover | OOS CAGR | OOS Sharpe | OOS MaxDD | OOS 観測数 | purge |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 12–1 momentum | 13.72% | 0.616 | 0.835 | -34.64% | 0.396 | 53.47% | 4.45x | -6.60% | -0.310 | -14.38% | 180 | 253 |
-| inverse-volatility / low-volatility | 13.54% | 0.773 | 1.042 | -35.41% | 0.382 | 55.76% | 2.79x | 35.37% | 2.087 | -7.25% | 372 | 61 |
-| 20-session mean reversion | 16.84% | 0.722 | 1.043 | -45.89% | 0.367 | 53.75% | 12.76x | 16.73% | 0.724 | -28.74% | 412 | 21 |
-| equal-weight 1/N baseline | 16.27% | 0.735 | 1.030 | -50.21% | 0.324 | 53.96% | 0.96x | 20.00% | 0.933 | -24.27% | 433 | 0 |
+| 12–1 momentum | 20.24% | 0.827 | 1.219 | -31.13% | 0.650 | 53.54% | 4.01x | -6.60% | -0.310 | -14.38% | 180 | 253 |
+| inverse-volatility / low-volatility | 16.85% | 0.984 | 1.431 | -23.63% | 0.713 | 55.76% | 2.90x | 35.37% | 2.087 | -7.25% | 372 | 61 |
+| 20-session mean reversion | 16.96% | 0.726 | 1.050 | -45.89% | 0.370 | 53.89% | 12.69x | 16.73% | 0.724 | -28.74% | 412 | 21 |
+| equal-weight 1/N baseline | 25.37% | 1.078 | 1.588 | -35.50% | 0.715 | 54.10% | 0.85x | 20.00% | 0.933 | -24.27% | 433 | 0 |
 
-同じ 1,007 観測の in-sample CAGR / Sharpe は momentum 16.32% / 0.696、low-volatility 10.41% / 0.605、mean reversion 16.93% / 0.720、equal-weight 14.35% / 0.652 でした。
+同じ 1,007 観測の in-sample CAGR / Sharpe は momentum 26.11% / 1.020、low-volatility 15.04% / 0.880、mean reversion 17.11% / 0.727、equal-weight 27.36% / 1.124 でした。
 
 P2 の分割実装は、全期間の先頭 70% を IS とし、その境界後に最大シグナル lookback 分を purge して残りを OOS とする単一の時系列 holdout です。これは複数窓を繰り返す rolling walk-forward 検証ではありません。OOS 開始日は最大 lookback/purge によって異なります: momentum 2026-01-09、low-volatility 2025-04-04、mean reversion 2025-02-06、equal-weight 2025-01-06。
 
 | 戦略 | full-period CAGR の IID-bootstrap 95% 区間 | OOS Sortino | OOS 年間 turnover |
 |---|---:|---:|---:|
-| 12–1 momentum | -8.23%〜40.73% | -0.421 | 8.06x |
-| inverse-volatility / low-volatility | -4.15%〜31.07% | 3.483 | 3.41x |
-| 20-session mean reversion | -5.32%〜42.88% | 1.093 | 11.10x |
-| equal-weight 1/N baseline | -5.20%〜41.00% | 1.414 | 1.23x |
+| 12–1 momentum | -2.00%〜47.49% | -0.421 | 8.06x |
+| inverse-volatility / low-volatility | +1.15%〜34.19% | 3.483 | 3.41x |
+| 20-session mean reversion | -5.31%〜42.80% | 1.093 | 11.10x |
+| equal-weight 1/N baseline | +3.60%〜50.22% | 1.414 | 1.23x |
 
-4 戦略すべての bootstrap 区間はゼロをまたぎます。これは IID 再標本化による幅の大きい記述的区間であり、将来予測区間でも、将来収益が正である証拠でもありません。特に momentum は full-period CAGR が正でも OOS CAGR は負でした。Low-volatility の高い OOS 数値も、この固定ユニバースにおける一度の過去期間に限られ、独立した将来検証を意味しません。
+bootstrap 区間がゼロをまたぐのは momentum（−2.00%〜47.49%）と mean reversion（−5.31%〜42.80%）の 2 戦略です。low-volatility（+1.15%〜34.19%）と equal-weight（+3.60%〜50.22%）はゼロを下回らなくなりました（raw 由来の旧値では 4 戦略すべてがゼロをまたいでいました）。ただし IID 再標本化による幅の大きい記述的区間であり、将来予測区間でも、将来収益が正である証拠でもありません。特に momentum は full-period CAGR が正でも OOS CAGR は負でした。Low-volatility の高い OOS 数値も、この固定ユニバースにおける一度の過去期間に限られ、独立した将来検証を意味しません。full 期間の CAGR 順位は equal-weight 25.37% > momentum 20.24% > mean reversion 16.96% > low-volatility 16.85% です（raw 由来の旧値では mean reversion > equal-weight > momentum > low-volatility）。
 
 ## データ coverage / provenance
 
@@ -55,7 +57,7 @@ Value/quality（低 PER/PBR + 高 ROE）および清原モードは、この価�
 その他の主要制約:
 
 - ユニバースは現在の固定銘柄集合であり、point-in-time 構成銘柄でないため survivorship bias が残ります。
-- raw OHLCV であり、配当・分割・その他 corporate actions はモデル化していません。
+- 分割は `split-calendar.json` の7イベントで補正済みですが、配当・その他 corporate actions はモデル化していません（TR basis ではない）。
 - 税、market impact、borrow cost、delisting return、流動性制約は未モデル化です。
 - 独立した市場指数ベンチマークはこの比較に入れていません。Equal-weight は戦略ベースラインで、指数ベンチマークではありません。
 - コスト感度、alternate rebalance frequency、パラメータ探索は未実施です。コストは単一の明示した仮定です。
@@ -63,9 +65,10 @@ Value/quality（低 PER/PBR + 高 ROE）および清原モードは、この価�
 
 ## 再現ファイル
 
-- 実測データ、全指標、sample counts、OOS/IS 値、assumptions、provenance coverage: `backtest_results_p3.json`
+- 実測データ、全指標、sample counts、OOS/IS 値、assumptions、provenance coverage: `backtest_results_p3.json`（sha256 `dde6e7d27844dab36b6808caf9c3e5812d12cfdf5f7b3e022476f1519cb6c5dd`、2026-11-05 分割補正済み再実行分）
 - 実走スクリプト: `run_backtests_p3.py`（P2 ソースツリーとプロジェクト venv のある環境で実行）
-- 再実行（P2 worktree をカレントにしてその保存データを読む）:
-  `cd <P2-worktree> && PYTHONPATH=src <project-venv>/bin/python <P3-worktree>/run_backtests_p3.py`
+- 2026-11-05 再実行コマンド（窓凍結済み保存データ複製 `data_trunc`、basis・旧sha一覧は `docs/BACKTEST_PRICE_BASIS_20261105.md` §4/§5）:
+  `cd <data_truncを./data配下に置いた実行ディレクトリ> && PYTHONPATH=src <project-venv>/bin/python <P2-worktree>/run_backtests_p3.py --output <出力先>/backtest_results_p3.json`
+- raw（未補正）旧版: sha256 `5da1c44951ffdcc4c705d3c4594041bd3c2b15f382200ce05e2a62406b7632eb`（コミット `83699e3`）
 
 Notion ミラーは未反映です。このワーカー環境では `ntn whoami` が `No workspace selected` を返し、Notion integration token も設定されていないため、既存の伝言板を特定して書き込むことができません。Notion workspace 認証/選択後にこの Markdown をミラーする必要があります。

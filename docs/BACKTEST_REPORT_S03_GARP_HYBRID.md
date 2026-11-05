@@ -1,9 +1,12 @@
 # S-03 GARP momentum / PBR hybrid — 実測レポート
 
+**価格 basis（2026-11-05 更新）**: 本文書の実測数値は「分割補正済み」basis に統一更新した。raw保存データに `data/fundamentals/pbr/split-calendar.json`（7イベント）で**分割のみ補正**（配当なし・TRではない）して再実行した `run_backtests_garp_momentum_hybrid.py`（p3-reference も補正済み再実行版）の出力（窓・コスト・seed凍結）。raw（未補正）由来の旧値は git 履歴（コミット `d1541f6`）と `docs/BACKTEST_PRICE_BASIS_20261105.md` で参照。OOS 数値は分割日を含まないため全戦略で不変。
+
 ## 結論
 
+追記（2026-11-05・分割補正済み再実行）: `backtest_results_s03.json`（供給なし・momentum-only fallback）は momentum 基準と厳密一致（`p3_baseline_equality` 全15カテゴリ True）。full CAGR 20.2421% / Sharpe 0.827402 / MaxDD −31.1307%、IS−OOS CAGRギャップ 32.7123pp、full CI [−2.00%, 47.49%]。
 追記（供給完了）: SEC実PBR供給とXOM新旧CIK併合を完了。供給後の実測は [S-03 PBR supply](BACKTEST_REPORT_S03_PBR_SUPPLY.md) / `backtest_results_s03_supplied.json` を参照。以下は供給なし初回baselineの記録で、`backtest_results_s03.json` は回帰基準として不変。
-供給後の(a) OOS Sharpe 0.309216 > −0.310141、(b) IS–OOS CAGR差9.1948% < 22.9203%、(d) full CI下限−9.4416%は達成、(c) full DD −54.9811% vs −34.6371%は未達（OOS DDは改善）のため **採用未承認**。生価格分割損益の制約は継続。
+供給後の(a) OOS Sharpe 0.309216 > −0.310141、(b) IS–OOS CAGR差16.4985% < 32.7123%、(d) full CI下限−2.8365%は達成、(c) full DD −36.8628% vs −31.1307%は未達（OOS DDは改善）のため **採用未承認**。本basisは配当を含まない（TRではない）ため、実運用のtotal-returnとは一致しない。
 
 二段階ランキングと A/B 計測器の実装は完了。PBR/disclosure_date の実入力は全10銘柄・全行欠損であり、実データでは GARP は全リバランスで momentum-only にフォールバックする。full/IS/OOS の metrics・equity_curve・trades が必須 baseline と完全一致し、全指標と bootstrap CI の差は厳密に0。これは実装/フォールバックの検証であって、PBR フィルタの効用の検証ではない。合格目安(a)–(d)はすべて「PBR供給なしのため評価不能」。合成PBRによる実行結果は含めていない。
 
@@ -17,7 +20,7 @@
 - 最終ツリーの `make verify`: exit 0、`1887 passed, 2 skipped, 1 warning in 360.28s (0:06:00)`。ruff check/format、mypy（227 source files）、全既存テスト、OpenAPI export完了。ログはタスクの `make_verify.log`。初回の検証は専用テスト4件追加中だったため中断し、最終ツリーで最初から再実行した結果を採用。
 - 追加のrunner検証: `.venv/bin/mypy src/yowayowa run_backtests_garp_momentum_hybrid.py` は228 source filesでエラーなし、runner単独ruff check/formatもpass。診断price predicateの同値な型調整後、専用59テストと実データJSON byte再生成/独立127決定オラクルを再実行して一致を確認。
 - 再現コマンド: `.venv/bin/python run_backtests_garp_momentum_hybrid.py`。既存storeのみ使用、ライブfetch・SEC/EDGAR補充・入力書換えなし。JSONは indent 2/ensure_ascii=False/allow_nan=False。JSON全精度が正本、以下は表示丸め。
-- S03 JSONの独立再生成はbyte一致。GARP helperを使用しない実データ価格順位オラクルでfull/IS/OOS合計127決定のmomentum top8、選択top5、全10キーweight、fallbackを再計算し一致。再生成SHA-256は `7da48a967068f188339e7564b732343917616c81c5372572da87a935087daa08`。
+- S03 JSONの独立再生成はbyte一致。GARP helperを使用しない実データ価格順位オラクルでfull/IS/OOS合計127決定のmomentum top8、選択top5、全10キーweight、fallbackを再計算し一致。再生成SHA-256は raw basis 旧版 `7da48a967068f188339e7564b732343917616c81c5372572da87a935087daa08` → 2026-11-05 分割補正済み再実行版 `83e89f1b659f03693e00a03b87b2fa3bbbda8255889c6cd20e50d03e0b44d682`。
 
 ## 評価窓・コスト
 
@@ -30,14 +33,14 @@
 
 | 戦略 | 区間 | CAGR | Sharpe | Sortino | MaxDD | Calmar | hit rate | 年turnover | IID CAGR 95% CI |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| s03_garp_momentum_hybrid | full | 13.72% | 0.6161 | 0.8351 | -34.64% | 0.3962 | 53.47% | 4.4525x | [-8.23%, 40.73%] |
-| s03_garp_momentum_hybrid | IS | 16.32% | 0.6957 | 0.9162 | -34.64% | 0.4712 | 52.93% | 4.0315x | [-11.43%, 51.37%] |
+| s03_garp_momentum_hybrid | full | 20.2421% | 0.827402 | 1.219168 | -31.1307% | 0.650229 | 53.54% | 4.010656x | [-2.00%, 47.49%] |
+| s03_garp_momentum_hybrid | IS | 26.1138% | 1.020049 | 1.501332 | -30.2914% | 0.862005 | 52.93% | 3.483766x | [-3.55%, 59.46%] |
 | s03_garp_momentum_hybrid | OOS | -6.60% | -0.3101 | -0.4208 | -14.38% | -0.4589 | 53.33% | 8.0573x | [-40.05%, 47.12%] |
-| s03_baseline_momentum_12_1 | full | 13.72% | 0.6161 | 0.8351 | -34.64% | 0.3962 | 53.47% | 4.4525x | [-8.23%, 40.73%] |
-| s03_baseline_momentum_12_1 | IS | 16.32% | 0.6957 | 0.9162 | -34.64% | 0.4712 | 52.93% | 4.0315x | [-11.43%, 51.37%] |
+| s03_baseline_momentum_12_1 | full | 20.2421% | 0.827402 | 1.219168 | -31.1307% | 0.650229 | 53.54% | 4.010656x | [-2.00%, 47.49%] |
+| s03_baseline_momentum_12_1 | IS | 26.1138% | 1.020049 | 1.501332 | -30.2914% | 0.862005 | 52.93% | 3.483766x | [-3.55%, 59.46%] |
 | s03_baseline_momentum_12_1 | OOS | -6.60% | -0.3101 | -0.4208 | -14.38% | -0.4589 | 53.33% | 8.0573x | [-40.05%, 47.12%] |
-| s03_reference_ew | full | 16.27% | 0.7351 | 1.0301 | -50.21% | 0.3240 | 53.96% | 0.9573x | [-5.20%, 41.00%] |
-| s03_reference_ew | IS | 14.35% | 0.6519 | 0.8931 | -50.21% | 0.2858 | 54.02% | 1.0927x | [-11.87%, 46.41%] |
+| s03_reference_ew | full | 25.3700% | 1.078366 | 1.587726 | -35.4982% | 0.714681 | 54.10% | 0.847451x | [+3.60%, 50.22%] |
+| s03_reference_ew | IS | 27.3628% | 1.124263 | 1.639103 | -35.4982% | 0.770822 | 54.22% | 0.935641x | [-0.84%, 59.39%] |
 | s03_reference_ew | OOS | 18.04% | 1.0696 | 1.5715 | -11.24% | 1.6052 | 52.22% | 2.0526x | [-20.72%, 78.14%] |
 
 すべてstatus=complete、各数値metricはavailable。ただしcompleteは価格指標の可用性であり、財務入力充足や戦略の投資適格性を意味しない。
@@ -85,7 +88,7 @@ Fundamental data unavailable for portfolio: no valid candidate PBR; momentum-onl
 | IS | True | True | True | 7指標すべて0.0 | [0.0, 0.0] |
 | OOS | True | True | True | 7指標すべて0.0 | [0.0, 0.0] |
 
-IS−OOS CAGRギャップはGARP/baselineとも22.92pp。縮小Δ=0。full取引数は両方397件。JSONには9組の決定的field SHA-256を保存し、同一run条件の実データ出力で比較。PBR効果はまだ一度も働いていないため、差ゼロをalpha不在の証拠や改善判定に使わない。
+IS−OOS CAGRギャップはGARP/baselineとも32.7123pp（raw basis では22.92pp）。縮小Δ=0。full取引数は両方392件（raw basis では397件）。JSONには9組の決定的field SHA-256を保存し、同一run条件の実データ出力で比較。PBR効果はまだ一度も働いていないため、差ゼロをalpha不在の証拠や改善判定に使わない。
 
 ## OOS重点分析
 
@@ -131,16 +134,18 @@ OOSは180日/9決定すべてmomentum-only。switchはリバランス時の選�
 | 指標 | CIO参照 | 同条件momentum実測 | 実測−参照（pp） |
 |---|---:|---:|---:|
 | oos_cagr | -6.60% | -6.59851% | 0.00149 |
-| full_max_drawdown | -34.64% | -34.63711% | 0.00289 |
+| full_max_drawdown | -34.64% | -31.13069% | +3.51 |
+
+注: CIO参照値（−34.64%）は raw basis で取得された外部参照値であり、本basis（分割補正済み）の実測とはbasisが異なる。実測のfull DDが浅いのは主にbasis差の寄与なので、この比較を品質評価に使わない。
 
 ## 合格目安(a)–(d)
 
 | 条件 | 判定 | 理由 |
 |---|---|---|
 | (a) OOS Sharpe改善 | 評価不能 | PBR供給なし、momentum自己比較 |
-| (b) IS−OOS CAGRギャップ縮小 | 評価不能 | PBR供給なし、同一22.92ppギャップ |
+| (b) IS−OOS CAGRギャップ縮小 | 評価不能 | PBR供給なし、同一32.7123ppギャップ（raw basis では22.92pp） |
 | (c) MaxDD軽減 | 評価不能 | PBR供給なし、full/OOSともbaseline一致 |
-| (d) full CI下限 ≥ −15% | 評価不能 | 観測full下限は−8.23%だがPBR戦略の検証として合格扱いしない（OOS CI下限は−40.05%） |
+| (d) full CI下限 ≥ −15% | 評価不能 | 観測full下限は−2.00%（raw basis では−8.23%）だがPBR戦略の検証として合格扱いしない（OOS CI下限は−40.05%） |
 
 ## 旧4 runner回帰・P3照合
 
@@ -159,7 +164,7 @@ S03 baseline とP3 momentumのfield-by-field照合: 15カテゴリすべてTrue�
 
 - CTO承認の読み替え以外に設計逸脱なし。§9の本数は3、fallbackキー集合は正規化して比較。engine実行結果は厳密一致。P3のみstaleのため実装前再生成byteオラクルを使用。
 - 初回実装時にはPBR供給を別カードへ分離したが、現在は別成果物として完了（上記相互参照）。SPYはETFで構造的PBR欠損を維持し、偽PBRは追加しない。
-- METAの近似・ticker履歴問題、raw OHLCVの分割リーク/未調整価格問題は未処理。分割修正、配当、税、FX、market impact、delisting、point-in-time universeはモデル化していない。取得済み価格の不備を戦略alphaと誤認しない。
+- METAの近似・ticker履歴問題は未処理。価格basisは分割補正済み（2026-11-05再実行）だが、配当、税、FX、market impact、delisting、point-in-time universeはモデル化していない。取得済み価格の不備を戦略alphaと誤認しない。
 - 高PBR銘柄を避けるという仮説はまだ測定不能。PBRは金融/IT等の業種構造差の影響を受けるため、供給後もセクター偏りの独立評価が必要。IID bootstrapは系列依存を扱わず将来予測区間ではない。
 
 実ポートフォリオの「S&P500約54%集中」はCIO取得時点の楽天証券口座内比率であり、現時点の全資産比率ではない。今回の固定米株10銘柄GARPはS&P500ファンド全体や実口座を再現せず、指数集中を直接ヘッジするoverlayでもない。PBR供給後にgrowth/value偏重を変える可能性はあるが、現状はmomentumと同一でOOS損失も同一。54%集中の緩和、推奨配分、実売買をこの結果から導かない。

@@ -1,10 +1,16 @@
 # S-05 Defensive rotation 実測評価
 
+**価格 basis（2026-11-05 更新）**: 本文書の実測数値は「分割補正済み」basis に統一更新した。raw保存データに `data/fundamentals/pbr/split-calendar.json`（7イベント）で**分割のみ補正**（配当なし・TRではない）して既存 `run_backtests_defensive_rotation.py` を再実行した出力（窓・コスト・seed凍結）。raw（未補正）由来の旧値は git 履歴（コミット `b6f2915`）と `docs/BACKTEST_PRICE_BASIS_20261105.md` で参照。分割補正の影響は保有銘柄（NVDA/AAPL）の full・IS区間に集中し、OOS 数値（分割日を含まない）は全5本で不変。low-volatility は分割銘柄を保有しないので full 数値も不変。TR込み（G1 `results_v6`）の数値は**別basis**であり本表と一致しない。
+
 ## 1. 結論
 
-凍結設計の実装と実測評価は完了。ただし採用目安の必須条件(b)を満たさないため、戦略採用は不合格。正のOOS収益だけで採用・防御効果を主張しない。
+凍結設計の実装と実測評価は完了。採用目安の判定はbasis依存のため、basisを明示して扱う:
 
-monthlyのOOS CAGRは+7.47%で(a)正転合格、Sharpe 0.6078>0.5。一方、同一ユニバースmomentumのOOS CAGR +15.70%より-8.2238pp低い。full MaxDD -28.09%は同momentum -27.72%より深く、必須(b)未達。
+- **分割のみ補正の本basis**: 必須条件(b)は full MaxDD −22.01% vs 同一universe momentum −25.13% で**達成に反転**（raw basis では −28.09% vs −27.72% で未達）。主criteriaは(a)(b)(c)(d)すべて合格。
+- **配当込みTR basis（G1 `results_v6`）**: full DD −26.30% vs momentum −24.88% で**(b)は再び未達**。さらにG2のW1窓勝率 57.1% < 60% で不合格。
+- 採否の結論は **TR basis 由来の「不採用」を維持**。本basisでの反転を単独の採用根拠にしない。正のOOS収益だけで採用・防御効果を主張しない。
+
+monthlyのOOS CAGRは+7.47%で(a)正転合格、Sharpe 0.6078>0.5。一方、同一ユニバースmomentumのOOS CAGR +15.70%より-8.2238pp低い。
 
 ## 2. 凍結条件・再現方法
 
@@ -18,10 +24,11 @@ monthlyのOOS CAGRは+7.47%で(a)正転合格、Sharpe 0.6078>0.5。一方、同
 - 全銘柄キーを常に明示。非選択0.0、空dict禁止。generic weighting/max_positionsを無視、無利息USD cash・レバなし。warmup/purge253は防御側の61-close時点の選択を禁止する一律取引待ちではない。
 - monthlyはセッション月初（OOS初日も独立初回リバランス）、dailyは全銘柄の毎日再選択/再配分。dailyは片方向の緊急退出ではなくA/B診断用。
 
-再実行（作業root `/root/current-work/yowayowa-investor`、このsrcを参照する既存tool venv）:
+再実行（2026-11-05 時点。窓を 2026-09-28 で打ち切った保存データ複製 `data_trunc` を `--data-dir` に渡して旧実行と同一窓・コスト・seed を凍結）:
 
 ```sh
-.venv/bin/python run_backtests_defensive_rotation.py --data-dir data
+.venv/bin/python run_backtests_defensive_rotation.py --data-dir <data_truncへのパス> --output <出力先>/backtest_results_s05.json
+# 出力 sha256 7349e1e48f2e278bbdce9ae34f9be24750df59298fb25da7dffe7a40ec62a212（旧raw版 0fe82a6de1b27a24c1c5a0e8675aa568b604f5d6bbfec82ff39ea8aa9d4e3088）
 .venv/bin/pytest tests/test_defensive_rotation.py -q -o addopts=
 make verify
 ```
@@ -34,21 +41,21 @@ make verify
 
 | strategy_id | CAGR | Sharpe | Sortino | MaxDD | Calmar | hit rate | turnover x | 95% CAGR CI |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| s05_defensive_rotation | +4.43% | 0.3250 | 0.4163 | -28.09% | 0.1578 | +53.68% | 9.3164 | [-12.53%, +21.50%] |
-| s05_defensive_rotation_daily | -2.39% | -0.0353 | -0.0443 | -38.18% | -0.0625 | +52.92% | 46.2893 | [-17.25%, +13.37%] |
-| s05_baseline_momentum_12_1 | +10.08% | 0.5722 | 0.7515 | -27.72% | 0.3637 | +54.24% | 3.5402 | [-7.89%, +29.99%] |
+| s05_defensive_rotation | +13.25% | 0.8023 | 1.1579 | -22.01% | 0.6019 | +54.17% | 9.2286 | [-2.75%, +29.58%] |
+| s05_defensive_rotation_daily | +4.00% | 0.3172 | 0.4429 | -30.98% | 0.1292 | +53.47% | 46.0870 | [-10.87%, +19.52%] |
+| s05_baseline_momentum_12_1 | +17.67% | 0.8856 | 1.2896 | -25.13% | 0.7032 | +54.72% | 3.2939 | [-0.30%, +38.75%] |
 | s05_baseline_low_volatility | +8.64% | 0.6794 | 0.9776 | -23.20% | 0.3725 | +52.36% | 3.7954 | [-3.27%, +20.40%] |
-| s05_baseline_ew | +16.84% | 0.9875 | 1.4027 | -24.16% | 0.6970 | +55.07% | 0.7280 | [+1.12%, +33.39%] |
+| s05_baseline_ew | +20.48% | 1.2030 | 1.7814 | -24.16% | 0.8477 | +55.21% | 0.6840 | [+4.97%, +36.90%] |
 
 ### IS
 
 | strategy_id | CAGR | Sharpe | Sortino | MaxDD | Calmar | hit rate | turnover x | 95% CAGR CI |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| s05_defensive_rotation | +2.95% | 0.2477 | 0.3131 | -28.09% | 0.1051 | +53.03% | 9.5022 | [-16.74%, +25.16%] |
-| s05_defensive_rotation_daily | -7.44% | -0.2801 | -0.3449 | -38.18% | -0.1949 | +51.44% | 44.2604 | [-24.32%, +13.35%] |
-| s05_baseline_momentum_12_1 | +8.65% | 0.4916 | 0.6309 | -23.51% | 0.3678 | +53.33% | 3.6921 | [-12.73%, +33.93%] |
+| s05_defensive_rotation | +15.02% | 0.8566 | 1.2569 | -22.01% | 0.6821 | +53.53% | 9.3746 | [-3.67%, +36.40%] |
+| s05_defensive_rotation_daily | +1.13% | 0.1521 | 0.2139 | -30.98% | 0.0365 | +52.14% | 43.7486 | [-15.20%, +20.28%] |
+| s05_baseline_momentum_12_1 | +19.18% | 0.9407 | 1.3645 | -25.13% | 0.7632 | +53.92% | 3.4173 | [-2.55%, +46.39%] |
 | s05_baseline_low_volatility | +6.73% | 0.5489 | 0.7771 | -23.20% | 0.2900 | +52.23% | 3.5631 | [-6.28%, +20.59%] |
-| s05_baseline_ew | +14.74% | 0.8491 | 1.1849 | -24.16% | 0.6099 | +54.52% | 0.8237 | [-3.63%, +35.47%] |
+| s05_baseline_ew | +19.88% | 1.1370 | 1.6713 | -24.16% | 0.8228 | +54.72% | 0.7607 | [+0.69%, +40.44%] |
 
 ### OOS
 
@@ -77,16 +84,16 @@ make verify
 
 | variant | segment | net CAGR | zero-cost CAGR | CAGR cost drag (pp) | annualized sum-rate drag | cost rate sum |
 | --- | --- | --- | --- | --- | --- | --- |
-| s05_defensive_rotation | full | +4.43% | +5.90% | 1.4712 | +1.40% | +7.99% |
-| s05_defensive_rotation | IS | +2.95% | +4.43% | 1.4794 | +1.43% | +5.70% |
+| s05_defensive_rotation | full | +13.25% | +14.83% | 1.5803 | +1.38% | +7.91% |
+| s05_defensive_rotation | IS | +15.02% | +16.65% | 1.6304 | +1.41% | +5.62% |
 | s05_defensive_rotation | OOS | +7.47% | +9.42% | 1.9477 | +1.79% | +1.28% |
-| s05_defensive_rotation_daily | full | -2.39% | +4.64% | 7.0253 | +6.94% | +39.68% |
-| s05_defensive_rotation_daily | IS | -7.44% | -1.08% | 6.3596 | +6.64% | +26.53% |
+| s05_defensive_rotation_daily | full | +4.00% | +11.45% | 7.4514 | +6.91% | +39.50% |
+| s05_defensive_rotation_daily | IS | +1.13% | +8.00% | 6.8658 | +6.56% | +26.22% |
 | s05_defensive_rotation_daily | OOS | +14.88% | +26.65% | 11.7673 | +9.74% | +6.96% |
 
 cost rate sumは毎日equityに課した率の総和（ドル手数料総額ではない）。年率sum-rateは観測数/252で除した診断、CAGR cost dragは0bpsで同戦略を実際に再実行したCAGR差。compound factorもJSONに別保存。
 
-fullではdailyのゼロコストCAGRもmonthlyを下回り、費用増加だけでなくシグナル/取引頻度の劣後がある。OOS dailyはmonthlyよりCAGR/Sharpe改善・DD浅いが、同一momentumより依然DDが深く、full CAGRは負、full DDも大幅悪化。dailyへの事後差替え採用はしない。
+fullではdailyのゼロコストCAGR（+11.45%）もmonthly（+14.83%）を下回り、費用増加だけでなくシグナル/取引頻度の劣後がある。OOS dailyはmonthlyよりCAGR/Sharpe改善・DD浅いが、同一momentumより依然DDが深く、full CAGR（+4.00%）はmonthly（+13.25%）を大きく下回る。dailyへの事後差替え採用はしない。
 
 ## 5. OOS重点分析（2026-01-09〜）
 
@@ -160,19 +167,19 @@ fullではdailyのゼロコストCAGRもmonthlyを下回り、費用増加だけ
 
 | reference | universe | OOS CAGR | full MaxDD |
 | --- | --- | --- | --- |
-| CIO P3 external | 旧P3 10銘柄 | -6.60% | -34.64% |
-| S05 momentum | S05同一10銘柄 | +15.70% | -27.72% |
-| S05 monthly primary | S05同一10銘柄 | +7.47% | -28.09% |
+| CIO P3 external | 旧P3 10銘柄 | -6.60% | -34.64%（raw basis の外部参照値） |
+| S05 momentum | S05同一10銘柄 | +15.70% | -25.13%（raw basis では -27.72%） |
+| S05 monthly primary | S05同一10銘柄 | +7.47% | -22.01%（raw basis では -28.09%） |
 
 | criterion | verdict | evidence |
 | --- | --- | --- |
-| (a) OOS CAGR ≥0 / [-2%,0) | 正転合格 | +7.47%; same-universe Δ -8.2238pp |
-| (b) full DD shallower than same-universe momentum (必須) | 未達 | -28.09% vs -27.72% |
-| (b) CIO -34.64% external | 浅い（主合否ではない） | -28.09% |
+| (a) OOS CAGR ≥0 / [-2%,0) | 正転合格 | +7.47%; same-universe Δ -8.2238pp（OOSは補正前後で不変） |
+| (b) full DD shallower than same-universe momentum (必須) | **達成（本basis・分割のみ補正）** | -22.01% vs -25.13%（raw basis では -28.09% vs -27.72% で未達。TR込み basis では再未達） |
+| (b) CIO -34.64% external | 浅い（主合否ではない） | -22.01%（CIO参照値はraw basis・別basis） |
 | (c) OOS switches/retreat/DD report | 記録済み | 4 switches / 65 defensive sessions; DD worse than momentum |
 | (c) OOS Sharpe >0.5 | 合格 | 0.6078 |
-| (d) full CI lower ≥-15% (参考) | 合格 | -12.53% |
-| 総合採用目安 | 不合格 | 必須(b)未達。実装完了とは区別する。 |
+| (d) full CI lower ≥-15% (参考) | 合格 | -2.75%（raw basis では -12.53%） |
+| 総合採用目安 | **不採用（TR basis 優先）** | 本basis（分割のみ補正）では必須(b)達成に反転するが、配当込みTR basis（G1 `results_v6`: −26.30% vs −24.88%）では再未達、G2 W1も未達。TR評価専用の判断として不採用を維持。実装完了とは区別する。 |
 
 ### 実ポートフォリオとの関係
 
@@ -191,7 +198,7 @@ CIOの2026-10-02取得snapshotでは楽天証券口座内のS&P500ファンド�
 | backtest_results_s02.json | byte一致 | 9aa2228bb511580814fb6ab9d39ee8e9c36b77110139b1cd5f6abd3eef28f7dd | 一致・git diff空 |
 
 - P3 tracked JSONは開始時点でstale。許可された方式に従い「開始HEADのコードから再生成した退避版」対「実装後の再生成」のbyte一致を証明し、tracked原本を戻した。既存結果JSON3本は差分ゼロ。
-- S05 final runnerは同一入力で二度実行しbyte一致、SHA256 `21da050b10c6b72b356fe34005bce96fbe2383ab937265afefe2fcd0b5262795`、5583079 bytes。
+- S05 final runnerは同一入力で二度実行しbyte一致、raw basis のSHA256 `21da050b10c6b72b356fe34005bce96fbe2383ab937265afefe2fcd0b5262795`、5583079 bytes（旧版・git履歴 `b6f2915`）。trackedの現行 `backtest_results_s05.json` は2026-11-05 分割補正済み再実行版（sha256 `7349e1e48f2e278bbdce9ae34f9be24750df59298fb25da7dffe7a40ec62a212`・5,582,311 bytes）。
 - 変更対象は本ブリーフ7ファイルのみ（新規4+既存3）。catalog、data、OpenAPI frozen export、keirin-ai等のfrozen contractには差分なし。既存未追跡CIO/STATE文書、.worktrees/.coverage.*は追加しない。push禁止を遵守。
 - 添付ブリーフは存在せずカード本文D1-D7を受入正本とした。実装仕様からの逸脱なし。曖昧なgrowth候補不足は「各20%」を固定し不足slotを現金、全5本OOSは比較可能性のためshared253、native baseline splitは併記する明示解釈を採用。IS=1007は既存実装の実測を維持した結果である。
 
@@ -199,7 +206,7 @@ CIOの2026-10-02取得snapshotでは楽天証券口座内のS&P500ファンド�
 
 - S05とP3は異なるユニバース。旧P3のGOOGL/AMZN/META/TSLAをQQQ/IWM/JNJ/PGに入れ替えている。CIO -6.60%/-34.64%との差はこの変更とレジームルールの混合で、momentumのOOS崩壊を救済した証拠にはならない。主比較を同一S05 momentumに限定した結果、OOS収益もDDも優位性なし。
 - 現在の固定10銘柄はpoint-in-time membershipでなくsurvivorship biasがある。品質fundamentalsを検証する戦略ではなく、名称上のdefensiveは固定サブセットという代理仮説。XOM/JPMは無リスクではない。
-- raw OHLCV。配当/分割調整/税/impact/為替/上場廃止リターンをモデル化しない。固定bpsコストとfractional weightの理想化、月次急落対応の遅れがある。
+- 価格basisは分割補正済み（2026-11-05再実行・`split-calendar.json` 7イベント）。ただし配当/税/impact/為替/上場廃止リターンはモデル化しない（TRではない）。固定bpsコストとfractional weightの理想化、月次急落対応の遅れがある。
 - OOSは180観測の一本の時系列holdout。繰り返しrolling walk-forwardではなく、2026後半を見て戦略を設計しているため完全な未見future検証ではない。IID bootstrapは自己相関を保存せずCIは予測区間ではない。
 - cashは無利息USDだが今回は実績でcash退避ゼロ。レジーム切替は3防御株へのfull exposureで、市場betaをゼロにする仕組みではない。切替と相対成績の因果を断定しない。
 

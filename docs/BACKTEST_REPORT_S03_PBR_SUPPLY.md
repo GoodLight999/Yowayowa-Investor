@@ -1,12 +1,14 @@
 # S-03 SEC point-in-time PBR supply — 実測レポート
 
+**価格 basis（2026-11-05 更新）**: 本文書の通時的な実測数値は「分割補正済み」basis に統一更新した。raw保存データに `data/fundamentals/pbr/split-calendar.json`（7イベント）で**分割のみ補正**（配当なし・TRではない）して再実行した `run_backtests_garp_momentum_hybrid.py` 出力（窓・コスト・seed凍結）。raw（未補正）由来の旧値（初回供給カード・コミット `0a05a17`）は git 履歴と `docs/BACKTEST_PRICE_BASIS_20261105.md` で参照。OOS 数値は分割日を含まないため全戦略で不変。TR込み（G1 `results_v6`）の数値は**別basis**のためここでは併記しない。
+
 初回供給の開始 HEAD: `d1541f642e7322d687e7af7e78aeabcae6d2a21d`。品質強化カード `t_417ebaca` は `f97abbd` に積み上げた。ローカル実装フェーズの結果であり、CTOの独立受入承認を意味しない。push は行わない。供給なしの初回レポートは [S-03 GARP hybrid](BACKTEST_REPORT_S03_GARP_HYBRID.md)、供給後の結果は `backtest_results_s03_supplied.json`。
 
 ## 結論
 
 SEC実取得から9株式に 15,258 行のPBRを供給し、S-03が full の69回すべてでPBRフィルタを使用した。momentum-only fallback は full/IS/OOS とも0回。価格入力・バックテストエンジン・凍結契約は変更していない。
 
-(a) OOS Sharpe改善、(b) IS–OOS CAGRギャップ縮小、(d) full bootstrap CI下限 ≥ −15% は達成。(c) OOS DDは改善するがfull DDが悪化するため、**全基準達成ではなく、採用承認不可**。特にエンジンは生価格の分割損失を引き続き計上するため、これを実運用収益の改善と解釈しない。
+(a) OOS Sharpe改善、(b) IS–OOS CAGRギャップ縮小、(d) full bootstrap CI下限 ≥ −15% は達成。(c) OOS DDは改善するがfull DDが悪化するため（−36.8628% vs momentum −31.1307%）、**全基準達成ではなく、採用承認不可**。本basisは分割のみ補正で配当を含まないため（TRではない）、実運用のtotal-returnと同一視しない。TR込み評価の G1/G2（別basis）ではS-03の承認判断がさらに厳しいことを `docs/G1_GATE_20261102.md` / `docs/G2_GATE_20261102.md` に譲る。
 
 ## 再現手順
 
@@ -21,6 +23,8 @@ make verify
 ```
 
 初回のみSEC取得。ticker-mapとCIKごとのraw envelope（取得時刻、HTTP status、未切り詰めpayload）は `data/fundamentals/sec-raw/` に保存し、以後は既存snapshotを使用する。`--offline` は欠けたsnapshotがあると失敗し、ネットワークへ逃げない。HTTP404は欠損としてcacheし、403等は中断して返す。User-Agent/rateはSettings経由。既存 `.env` はコミットしない。
+
+2026-11-05 の再実行では窓を 2026-09-28 で打ち切った保存データ複製（監査 t_2fc44a51 の `data_trunc`）を `--data-dir` に渡して窓・コスト・seedを凍結した。出力 `backtest_results_s03_supplied.json` sha256 `85f5d8aa236047f497ff42bf58d74f7a5f819e479d8c3b227aece12a071b689d`（旧raw版 `d9a71c688844633a97c5f2c7827509d77e83a79db2bb50b496a85990cf325682`）。一覧は `docs/BACKTEST_PRICE_BASIS_20261105.md` §4/§5。
 
 `--pbr-dir` は明示opt-in。指定なしなら、供給ストアが存在しても旧S-03出力が維持される。供給はGARP入力だけに適用し、A/Bのmomentum・EW参照は元の価格履歴のまま。新結果は `backtest_results_s03_supplied.json`、初回検証は `docs/S03_PBR_SUPPLY_VERIFICATION.json`、今回の品質強化検証は `docs/S03_PBR_HARDENING_VERIFICATION.json`。既存P3結果はstaleなので、P3 runnerを別作業ディレクトリへコピーして同じdataから実走し、その出力を `--p3-reference` に渡す（追跡済み旧JSONは上書きしない）。
 
@@ -94,15 +98,15 @@ TSLA 2020-08-31は当日上昇によりclose比4.441724となる。open基準で
 
 | 区間 | GARP CAGR | momentum CAGR | GARP Sharpe | momentum Sharpe | GARP MaxDD | momentum MaxDD |
 |---|---:|---:|---:|---:|---:|---:|
-| full | 13.4436% | 13.7242% | 0.635160 | 0.616090 | -54.9811% | -34.6371% |
-| IS | 13.0821% | 16.3218% | 0.603330 | 0.695652 | -54.9811% | -34.6371% |
+| full | 17.7308% | 20.2421% | 0.789078 | 0.827402 | -36.8628% | -31.1307% |
+| IS | 20.3858% | 26.1138% | 0.881140 | 1.020049 | -36.8628% | -30.2914% |
 | OOS | 3.8873% | -6.5985% | 0.309216 | -0.310141 | -9.7087% | -14.3790% |
 
-- (a) OOS Sharpe: 0.309216 > -0.310141: pass。
-- (b) absolute IS–OOS CAGR gap: GARP 9.1948%、momentum 22.9203%: pass。
-- (c) full MaxDD -54.9811% vs -34.6371%: **not_met**。OOS -9.7087% vs -14.3790%: pass。full/OOS両方の軽減を満たさない。
-- (d) full IID bootstrap CAGR 95% CI: [-9.4416%, 38.2961%]、下限≥−15%: pass。momentumは[-8.2287%, 40.7288%]で、GARP下限がbaselineより優れるという意味ではない。
-- EW参照OOS CAGR 18.0446%、Sharpe 1.069561。GARPはEWに優越していない。
+- (a) OOS Sharpe: 0.309216 > -0.310141: pass（OOSは分割日を含まないため不変）。
+- (b) absolute IS–OOS CAGR gap: GARP 16.4985%、momentum 32.7123%: pass（raw basis では 9.1948% vs 22.9203%）。
+- (c) full MaxDD -36.8628% vs -31.1307%: **not_met**（raw basis では -54.9811% vs -34.6371%）。OOS -9.7087% vs -14.3790%: pass。full/OOS両方の軽減を満たさない。
+- (d) full IID bootstrap CAGR 95% CI: [-2.8365%, 42.9144%]、下限≥−15%: pass（raw basis では [-9.4416%, 38.2961%]）。momentumは[-2.00%, 47.49%]で、GARP下限がbaselineより優れるという意味ではない。
+- EW参照OOS CAGR 18.0446%、Sharpe 1.069561（不変）。GARPはEWに優越していない。
 - full/IS/OOS rebalanceは69/49/9、fallback・no-momentum・full-cashは各区間すべて0。OOSの9回のみで一般化しない。
 
 ## 初回供給の検証と回帰（f97abbd時点）
@@ -134,7 +138,7 @@ TSLA 2020-08-31は当日上昇によりclose比4.441724となる。open基準で
 
 ## 限界
 
-PBRの株数単位は修正したが、エンジンのraw価格momentum・損益には分割不連続が残る。供給あり診断ではAMZNの2022-06-06分割直前（06-01決定）とGOOGLの2022-07-18分割直前（07-01決定）にそれぞれ20%のscheduled targetがあり、価格だけ約1/20になる窓に保有していた。full DDは生価格分割による人工的損失を含み、分割調整済みtotal-returnバックテストではない。エンジンを変更しないという契約を守った結果であり、このまま資金配分判断に用いない。
+PBRの株数単位は修正したが、本basisの評価価格は**分割のみ補正済み**であり、配当を含まない（TRではない）。分割不連続の artificial 損失（raw basis では momentum保有銘柄の分割日に約−75〜−90%の偽下落が計上されていた）は本basisでは計上されない。ただし配当込み total-return バックテストではないので、TR評価（G1 `results_v6`）とは数値も判定も一致しない。供給あり診断ではAMZNの2022-06-06分割直前（06-01決定）とGOOGLの2022-07-18分割直前（07-01決定）にそれぞれ20%のscheduled targetがある。エンジンの分割補正は「前日終値比±15%一致のSECタグ裏付け」が取れたイベントに限るため、カレンダー外のイベント・銘柄は警告付きで未補正のまま通る点は既存のまま残留リスク。
 
 SEC確認必須でも、タグの日付はannouncement/会計期末であり厳密なaction dateではない。180日窓内の同率の別ショックを完全に識別するものではない。重複historicalタグで連続ショックを承認しないよう、同率イベントは180日内に2回採用しない（実際に短期間に同率分割を繰り返した場合は手動確認が必要）。小さな変化（open比の1からの差≤15%）は分割として採用しない。SECタグ不在/確認が180日超の場合も保守的に不採用で、完全なcorporate-action feedではない。今回の既存7イベントはすべて維持。株数は提出間の実際の買戻し/増資を反映せず、METAは期中平均近似。GAAP株数のpresentation-basis判定は同一提出の分割タグを根拠にするが、特殊な複数クラス再編すべてを解釈するものではない。
 

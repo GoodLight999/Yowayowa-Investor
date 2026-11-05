@@ -1,13 +1,4 @@
 {
-  "_stale": {
-    "stale": true,
-    "reason": "Generated before the split-calendar correction existed: zero 'Split adjustment applied' warnings, and the assumption text still says splits are not modeled. Figures understate returns for split-affected symbols (see docs/US_STOCK_PRICE_ADJUSTMENT_POLICY_20261105.md).",
-    "decided_by": "t_4cfb36d0",
-    "decided_at": "2026-11-05",
-    "superseded_by": "data/research/split-adjusted-20261105/backtest_results_s03.json",
-    "policy": "docs/US_STOCK_PRICE_ADJUSTMENT_POLICY_20261105.md",
-    "do_not_cite": true
-  },
   "primary_strategy_id": "s03_garp_momentum_hybrid",
   "evaluation_window": [
     "2021-01-04",
@@ -47,9 +38,9 @@
   },
   "coverage": {
     "AAPL": {
-      "row_count": 1696,
+      "row_count": 1695,
       "first": "2019-12-30",
-      "last": "2026-09-29",
+      "last": "2026-09-28",
       "pbr_nonnull_count": 0,
       "disclosure_date_nonnull_count": 0,
       "valid_pbr_rebalances": 0,
@@ -60,9 +51,9 @@
       }
     },
     "MSFT": {
-      "row_count": 1696,
+      "row_count": 1695,
       "first": "2019-12-30",
-      "last": "2026-09-29",
+      "last": "2026-09-28",
       "pbr_nonnull_count": 0,
       "disclosure_date_nonnull_count": 0,
       "valid_pbr_rebalances": 0,
@@ -73,9 +64,9 @@
       }
     },
     "NVDA": {
-      "row_count": 1696,
+      "row_count": 1695,
       "first": "2019-12-30",
-      "last": "2026-09-29",
+      "last": "2026-09-28",
       "pbr_nonnull_count": 0,
       "disclosure_date_nonnull_count": 0,
       "valid_pbr_rebalances": 0,
@@ -210,28 +201,28 @@
         "2026-09-28"
       ],
       "sessions": 1440,
-      "trades": 397,
+      "trades": 392,
       "purged_sessions": 253,
       "oos_start": "2026-01-09",
       "engine_native_purged_sessions": 253,
       "engine_native_oos_start": "2026-01-09",
       "metrics": {
-        "cagr": 0.1372421354608373,
-        "sharpe_ratio": 0.6160904354113548,
-        "sortino_ratio": 0.8351051386015457,
-        "max_drawdown": -0.34637112481330035,
-        "calmar_ratio": 0.3962285699618091,
-        "hit_rate": 0.5347222222222222,
-        "annual_turnover": 4.452535864724431
+        "cagr": 0.2024207001581939,
+        "sharpe_ratio": 0.8274020499553492,
+        "sortino_ratio": 1.219167990680011,
+        "max_drawdown": -0.31130688178144417,
+        "calmar_ratio": 0.6502287999540762,
+        "hit_rate": 0.5354166666666667,
+        "annual_turnover": 4.010655815825628
       },
       "is_metrics": {
-        "cagr": 0.16321832152260307,
-        "sharpe_ratio": 0.6956523172250626,
-        "sortino_ratio": 0.916157837210555,
-        "max_drawdown": -0.34637112481330035,
-        "calmar_ratio": 0.47122381119552154,
+        "cagr": 0.2611137108233319,
+        "sharpe_ratio": 1.0200485370747694,
+        "sortino_ratio": 1.5013320025078816,
+        "max_drawdown": -0.3029144256789449,
+        "calmar_ratio": 0.8620048722938107,
         "hit_rate": 0.5292949354518371,
-        "annual_turnover": 4.031542319849742
+        "annual_turnover": 3.4837663315943663
       },
       "oos_metrics": {
         "cagr": -0.06598513251792171,
@@ -243,8 +234,8 @@
         "annual_turnover": 8.057297721426819
       },
       "bootstrap_ci_95": [
-        -0.0822865051139815,
-        0.4072877712338403
+        -0.01995703890070033,
+        0.4748609291273571
       ],
       "segment_metrics": {
         "full": {
@@ -257,43 +248,43 @@
           "metrics": {
             "annualization_days": 252,
             "cagr": {
-              "value": 0.1372421354608373,
+              "value": 0.2024207001581939,
               "sample_count": 1440,
               "status": "available"
             },
             "sharpe_ratio": {
-              "value": 0.6160904354113548,
+              "value": 0.8274020499553492,
               "sample_count": 1440,
               "status": "available"
             },
             "sortino_ratio": {
-              "value": 0.8351051386015457,
+              "value": 1.219167990680011,
               "sample_count": 1440,
               "status": "available"
             },
             "max_drawdown": {
-              "value": -0.34637112481330035,
+              "value": -0.31130688178144417,
               "sample_count": 1440,
               "status": "available"
             },
             "calmar_ratio": {
-              "value": 0.3962285699618091,
+              "value": 0.6502287999540762,
               "sample_count": 1440,
               "status": "available"
             },
             "hit_rate": {
-              "value": 0.5347222222222222,
+              "value": 0.5354166666666667,
               "sample_count": 1440,
               "status": "available"
             },
             "annual_turnover": {
-              "value": 4.452535864724431,
+              "value": 4.010655815825628,
               "sample_count": 1440,
               "status": "available"
             },
             "bootstrap_ci_95": [
-              -0.0822865051139815,
-              0.4072877712338403
+              -0.01995703890070033,
+              0.4748609291273571
             ],
             "bootstrap_status": "available"
           }
@@ -308,27 +299,27 @@
           "metrics": {
             "annualization_days": 252,
             "cagr": {
-              "value": 0.16321832152260307,
+              "value": 0.2611137108233319,
               "sample_count": 1007,
               "status": "available"
             },
             "sharpe_ratio": {
-              "value": 0.6956523172250626,
+              "value": 1.0200485370747694,
               "sample_count": 1007,
               "status": "available"
             },
             "sortino_ratio": {
-              "value": 0.916157837210555,
+              "value": 1.5013320025078816,
               "sample_count": 1007,
               "status": "available"
             },
             "max_drawdown": {
-              "value": -0.34637112481330035,
+              "value": -0.3029144256789449,
               "sample_count": 1007,
               "status": "available"
             },
             "calmar_ratio": {
-              "value": 0.47122381119552154,
+              "value": 0.8620048722938107,
               "sample_count": 1007,
               "status": "available"
             },
@@ -338,13 +329,13 @@
               "status": "available"
             },
             "annual_turnover": {
-              "value": 4.031542319849742,
+              "value": 3.4837663315943663,
               "sample_count": 1007,
               "status": "available"
             },
             "bootstrap_ci_95": [
-              -0.11430977374145646,
-              0.5136894145289597
+              -0.03548767727446889,
+              0.5945654506020053
             ],
             "bootstrap_status": "available"
           }
@@ -494,16 +485,30 @@
         }
       ],
       "warnings": [
-        "Fundamental data unavailable for AAPL: missing or invalid point-in-time PBR; rebalance dates 2021-09-01 through 2026-09-01 (53 affected decisions). Missing inputs are not imputed.",
-        "Fundamental data unavailable for AMZN: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-09-01 (45 affected decisions). Missing inputs are not imputed.",
-        "Fundamental data unavailable for GOOGL: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-09-01 (54 affected decisions). Missing inputs are not imputed.",
-        "Fundamental data unavailable for JPM: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-09-01 (67 affected decisions). Missing inputs are not imputed.",
-        "Fundamental data unavailable for META: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-04-01 (57 affected decisions). Missing inputs are not imputed.",
-        "Fundamental data unavailable for MSFT: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-09-01 (62 affected decisions). Missing inputs are not imputed.",
-        "Fundamental data unavailable for NVDA: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-09-01 (47 affected decisions). Missing inputs are not imputed.",
-        "Fundamental data unavailable for SPY: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-09-01 (67 affected decisions). Missing inputs are not imputed.",
-        "Fundamental data unavailable for TSLA: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-08-03 (50 affected decisions). Missing inputs are not imputed.",
-        "Fundamental data unavailable for XOM: missing or invalid point-in-time PBR; rebalance dates 2021-04-01 through 2026-09-01 (50 affected decisions). Missing inputs are not imputed.",
+        "Split adjustment applied for AAPL on 2020-08-31: ratio=4, basis=sec_calendar",
+        "Split adjustment applied for NVDA on 2021-07-20: ratio=4, basis=sec_calendar",
+        "Uncorroborated price discontinuity on NVDA at 2023-05-25: overnight open ratio 1.2615, close ratio 1.2437 (no adjustment applied)",
+        "Split adjustment applied for NVDA on 2024-06-10: ratio=10, basis=sec_calendar",
+        "Split adjustment applied for GOOGL on 2022-07-18: ratio=20, basis=sec_calendar",
+        "Split adjustment applied for AMZN on 2022-06-06: ratio=20, basis=sec_calendar",
+        "Uncorroborated price discontinuity on META at 2022-02-03: overnight open ratio 0.7574, close ratio 0.7361 (no adjustment applied)",
+        "Uncorroborated price discontinuity on META at 2022-04-28: overnight open ratio 1.1599, close ratio 1.1759 (no adjustment applied)",
+        "Uncorroborated price discontinuity on META at 2022-10-27: overnight open ratio 0.7547, close ratio 0.7544 (no adjustment applied)",
+        "Uncorroborated price discontinuity on META at 2023-02-02: overnight open ratio 1.1976, close ratio 1.2328 (no adjustment applied)",
+        "Uncorroborated price discontinuity on META at 2024-02-02: overnight open ratio 1.1642, close ratio 1.2032 (no adjustment applied)",
+        "Split adjustment applied for TSLA on 2020-08-31: ratio=5, basis=sec_calendar",
+        "Split adjustment applied for TSLA on 2022-08-25: ratio=3, basis=sec_calendar",
+        "Uncorroborated price discontinuity on JPM at 2020-03-16: overnight open ratio 0.8199, close ratio 0.8504 (no adjustment applied)",
+        "Fundamental data unavailable for AAPL: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-09-01 (59 affected decisions). Missing inputs are not imputed.",
+        "Fundamental data unavailable for AMZN: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-09-01 (47 affected decisions). Missing inputs are not imputed.",
+        "Fundamental data unavailable for GOOGL: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-09-01 (65 affected decisions). Missing inputs are not imputed.",
+        "Fundamental data unavailable for JPM: missing or invalid point-in-time PBR; rebalance dates 2021-04-01 through 2026-09-01 (57 affected decisions). Missing inputs are not imputed.",
+        "Fundamental data unavailable for META: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-04-01 (48 affected decisions). Missing inputs are not imputed.",
+        "Fundamental data unavailable for MSFT: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-09-01 (54 affected decisions). Missing inputs are not imputed.",
+        "Fundamental data unavailable for NVDA: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-09-01 (67 affected decisions). Missing inputs are not imputed.",
+        "Fundamental data unavailable for SPY: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-09-01 (65 affected decisions). Missing inputs are not imputed.",
+        "Fundamental data unavailable for TSLA: missing or invalid point-in-time PBR; rebalance dates 2021-01-04 through 2026-08-03 (49 affected decisions). Missing inputs are not imputed.",
+        "Fundamental data unavailable for XOM: missing or invalid point-in-time PBR; rebalance dates 2021-07-01 through 2026-09-01 (41 affected decisions). Missing inputs are not imputed.",
         "Fundamental data unavailable for portfolio: no valid candidate PBR; momentum-only fallback; rebalance dates 2021-01-04 through 2026-09-01 (69 affected decisions). Missing inputs are not imputed."
       ],
       "assumptions": [
@@ -515,7 +520,7 @@
         "Overnight returns use previous weights; intraday returns use post-rebalance weights.",
         "Weights drift between rebalances; turnover and costs use gross buys plus sells.",
         "Costs: 10 bps commission + 5 bps slippage, charged on one-way traded notional.",
-        "Raw OHLCV is used; dividends, split adjustments, taxes, market impact, borrow costs, and delisting returns are not modeled.",
+        "Raw OHLCV is adjusted for stock splits when corroborated by SEC split calendar or explicit provider metadata; dividends, taxes, market impact, borrow costs, and delisting returns are not modeled.",
         "The configured universe is fixed, not point-in-time; survivorship bias may remain.",
         "Bootstrap: IID daily-return resampling, 95% percentile interval, seed 20260930; not a forecast interval."
       ]
@@ -552,28 +557,28 @@
         "2026-09-28"
       ],
       "sessions": 1440,
-      "trades": 397,
+      "trades": 392,
       "purged_sessions": 253,
       "oos_start": "2026-01-09",
       "engine_native_purged_sessions": 253,
       "engine_native_oos_start": "2026-01-09",
       "metrics": {
-        "cagr": 0.1372421354608373,
-        "sharpe_ratio": 0.6160904354113548,
-        "sortino_ratio": 0.8351051386015457,
-        "max_drawdown": -0.34637112481330035,
-        "calmar_ratio": 0.3962285699618091,
-        "hit_rate": 0.5347222222222222,
-        "annual_turnover": 4.452535864724431
+        "cagr": 0.2024207001581939,
+        "sharpe_ratio": 0.8274020499553492,
+        "sortino_ratio": 1.219167990680011,
+        "max_drawdown": -0.31130688178144417,
+        "calmar_ratio": 0.6502287999540762,
+        "hit_rate": 0.5354166666666667,
+        "annual_turnover": 4.010655815825628
       },
       "is_metrics": {
-        "cagr": 0.16321832152260307,
-        "sharpe_ratio": 0.6956523172250626,
-        "sortino_ratio": 0.916157837210555,
-        "max_drawdown": -0.34637112481330035,
-        "calmar_ratio": 0.47122381119552154,
+        "cagr": 0.2611137108233319,
+        "sharpe_ratio": 1.0200485370747694,
+        "sortino_ratio": 1.5013320025078816,
+        "max_drawdown": -0.3029144256789449,
+        "calmar_ratio": 0.8620048722938107,
         "hit_rate": 0.5292949354518371,
-        "annual_turnover": 4.031542319849742
+        "annual_turnover": 3.4837663315943663
       },
       "oos_metrics": {
         "cagr": -0.06598513251792171,
@@ -585,8 +590,8 @@
         "annual_turnover": 8.057297721426819
       },
       "bootstrap_ci_95": [
-        -0.0822865051139815,
-        0.4072877712338403
+        -0.01995703890070033,
+        0.4748609291273571
       ],
       "segment_metrics": {
         "full": {
@@ -599,43 +604,43 @@
           "metrics": {
             "annualization_days": 252,
             "cagr": {
-              "value": 0.1372421354608373,
+              "value": 0.2024207001581939,
               "sample_count": 1440,
               "status": "available"
             },
             "sharpe_ratio": {
-              "value": 0.6160904354113548,
+              "value": 0.8274020499553492,
               "sample_count": 1440,
               "status": "available"
             },
             "sortino_ratio": {
-              "value": 0.8351051386015457,
+              "value": 1.219167990680011,
               "sample_count": 1440,
               "status": "available"
             },
             "max_drawdown": {
-              "value": -0.34637112481330035,
+              "value": -0.31130688178144417,
               "sample_count": 1440,
               "status": "available"
             },
             "calmar_ratio": {
-              "value": 0.3962285699618091,
+              "value": 0.6502287999540762,
               "sample_count": 1440,
               "status": "available"
             },
             "hit_rate": {
-              "value": 0.5347222222222222,
+              "value": 0.5354166666666667,
               "sample_count": 1440,
               "status": "available"
             },
             "annual_turnover": {
-              "value": 4.452535864724431,
+              "value": 4.010655815825628,
               "sample_count": 1440,
               "status": "available"
             },
             "bootstrap_ci_95": [
-              -0.0822865051139815,
-              0.4072877712338403
+              -0.01995703890070033,
+              0.4748609291273571
             ],
             "bootstrap_status": "available"
           }
@@ -650,27 +655,27 @@
           "metrics": {
             "annualization_days": 252,
             "cagr": {
-              "value": 0.16321832152260307,
+              "value": 0.2611137108233319,
               "sample_count": 1007,
               "status": "available"
             },
             "sharpe_ratio": {
-              "value": 0.6956523172250626,
+              "value": 1.0200485370747694,
               "sample_count": 1007,
               "status": "available"
             },
             "sortino_ratio": {
-              "value": 0.916157837210555,
+              "value": 1.5013320025078816,
               "sample_count": 1007,
               "status": "available"
             },
             "max_drawdown": {
-              "value": -0.34637112481330035,
+              "value": -0.3029144256789449,
               "sample_count": 1007,
               "status": "available"
             },
             "calmar_ratio": {
-              "value": 0.47122381119552154,
+              "value": 0.8620048722938107,
               "sample_count": 1007,
               "status": "available"
             },
@@ -680,13 +685,13 @@
               "status": "available"
             },
             "annual_turnover": {
-              "value": 4.031542319849742,
+              "value": 3.4837663315943663,
               "sample_count": 1007,
               "status": "available"
             },
             "bootstrap_ci_95": [
-              -0.11430977374145646,
-              0.5136894145289597
+              -0.03548767727446889,
+              0.5945654506020053
             ],
             "bootstrap_status": "available"
           }
@@ -835,7 +840,22 @@
           "as_of_end": "2026-09-28"
         }
       ],
-      "warnings": [],
+      "warnings": [
+        "Split adjustment applied for AAPL on 2020-08-31: ratio=4, basis=sec_calendar",
+        "Split adjustment applied for NVDA on 2021-07-20: ratio=4, basis=sec_calendar",
+        "Uncorroborated price discontinuity on NVDA at 2023-05-25: overnight open ratio 1.2615, close ratio 1.2437 (no adjustment applied)",
+        "Split adjustment applied for NVDA on 2024-06-10: ratio=10, basis=sec_calendar",
+        "Split adjustment applied for GOOGL on 2022-07-18: ratio=20, basis=sec_calendar",
+        "Split adjustment applied for AMZN on 2022-06-06: ratio=20, basis=sec_calendar",
+        "Uncorroborated price discontinuity on META at 2022-02-03: overnight open ratio 0.7574, close ratio 0.7361 (no adjustment applied)",
+        "Uncorroborated price discontinuity on META at 2022-04-28: overnight open ratio 1.1599, close ratio 1.1759 (no adjustment applied)",
+        "Uncorroborated price discontinuity on META at 2022-10-27: overnight open ratio 0.7547, close ratio 0.7544 (no adjustment applied)",
+        "Uncorroborated price discontinuity on META at 2023-02-02: overnight open ratio 1.1976, close ratio 1.2328 (no adjustment applied)",
+        "Uncorroborated price discontinuity on META at 2024-02-02: overnight open ratio 1.1642, close ratio 1.2032 (no adjustment applied)",
+        "Split adjustment applied for TSLA on 2020-08-31: ratio=5, basis=sec_calendar",
+        "Split adjustment applied for TSLA on 2022-08-25: ratio=3, basis=sec_calendar",
+        "Uncorroborated price discontinuity on JPM at 2020-03-16: overnight open ratio 0.8199, close ratio 0.8504 (no adjustment applied)"
+      ],
       "assumptions": [
         "Annualization: 252 observations per year for CAGR, Sharpe, Sortino, turnover and bootstrap CAGR; Calmar uses annualized CAGR.",
         "Signals use only data dated before execution; orders execute at next session open.",
@@ -845,7 +865,7 @@
         "Overnight returns use previous weights; intraday returns use post-rebalance weights.",
         "Weights drift between rebalances; turnover and costs use gross buys plus sells.",
         "Costs: 10 bps commission + 5 bps slippage, charged on one-way traded notional.",
-        "Raw OHLCV is used; dividends, split adjustments, taxes, market impact, borrow costs, and delisting returns are not modeled.",
+        "Raw OHLCV is adjusted for stock splits when corroborated by SEC split calendar or explicit provider metadata; dividends, taxes, market impact, borrow costs, and delisting returns are not modeled.",
         "The configured universe is fixed, not point-in-time; survivorship bias may remain.",
         "Bootstrap: IID daily-return resampling, 95% percentile interval, seed 20260930; not a forecast interval."
       ]
@@ -888,22 +908,22 @@
       "engine_native_purged_sessions": 0,
       "engine_native_oos_start": "2025-01-06",
       "metrics": {
-        "cagr": 0.16269107698019103,
-        "sharpe_ratio": 0.7351447741455137,
-        "sortino_ratio": 1.0300660682151892,
-        "max_drawdown": -0.5020565435502563,
-        "calmar_ratio": 0.32404931091970823,
-        "hit_rate": 0.5395833333333333,
-        "annual_turnover": 0.9573039590603071
+        "cagr": 0.2536989965219947,
+        "sharpe_ratio": 1.0783658939721161,
+        "sortino_ratio": 1.5877264794521642,
+        "max_drawdown": -0.3549819173477975,
+        "calmar_ratio": 0.7146814643897206,
+        "hit_rate": 0.5409722222222222,
+        "annual_turnover": 0.8474511802991468
       },
       "is_metrics": {
-        "cagr": 0.1435114493756029,
-        "sharpe_ratio": 0.6519246168476315,
-        "sortino_ratio": 0.8931163337465061,
-        "max_drawdown": -0.5020565435502563,
-        "calmar_ratio": 0.2858471843843965,
-        "hit_rate": 0.5402184707050646,
-        "annual_turnover": 1.0927292747633446
+        "cagr": 0.2736279310642944,
+        "sharpe_ratio": 1.1242626281777004,
+        "sortino_ratio": 1.63910332577383,
+        "max_drawdown": -0.3549819173477975,
+        "calmar_ratio": 0.7708221678125773,
+        "hit_rate": 0.5422045680238332,
+        "annual_turnover": 0.9356408920264322
       },
       "oos_metrics": {
         "cagr": 0.1804463398618692,
@@ -915,8 +935,8 @@
         "annual_turnover": 2.052598425670702
       },
       "bootstrap_ci_95": [
-        -0.05196690209887678,
-        0.40999059423641393
+        0.03602863514815602,
+        0.502230610737366
       ],
       "segment_metrics": {
         "full": {
@@ -929,43 +949,43 @@
           "metrics": {
             "annualization_days": 252,
             "cagr": {
-              "value": 0.16269107698019103,
+              "value": 0.2536989965219947,
               "sample_count": 1440,
               "status": "available"
             },
             "sharpe_ratio": {
-              "value": 0.7351447741455137,
+              "value": 1.0783658939721161,
               "sample_count": 1440,
               "status": "available"
             },
             "sortino_ratio": {
-              "value": 1.0300660682151892,
+              "value": 1.5877264794521642,
               "sample_count": 1440,
               "status": "available"
             },
             "max_drawdown": {
-              "value": -0.5020565435502563,
+              "value": -0.3549819173477975,
               "sample_count": 1440,
               "status": "available"
             },
             "calmar_ratio": {
-              "value": 0.32404931091970823,
+              "value": 0.7146814643897206,
               "sample_count": 1440,
               "status": "available"
             },
             "hit_rate": {
-              "value": 0.5395833333333333,
+              "value": 0.5409722222222222,
               "sample_count": 1440,
               "status": "available"
             },
             "annual_turnover": {
-              "value": 0.9573039590603071,
+              "value": 0.8474511802991468,
               "sample_count": 1440,
               "status": "available"
             },
             "bootstrap_ci_95": [
-              -0.05196690209887678,
-              0.40999059423641393
+              0.03602863514815602,
+              0.502230610737366
             ],
             "bootstrap_status": "available"
           }
@@ -980,43 +1000,43 @@
           "metrics": {
             "annualization_days": 252,
             "cagr": {
-              "value": 0.1435114493756029,
+              "value": 0.2736279310642944,
               "sample_count": 1007,
               "status": "available"
             },
             "sharpe_ratio": {
-              "value": 0.6519246168476315,
+              "value": 1.1242626281777004,
               "sample_count": 1007,
               "status": "available"
             },
             "sortino_ratio": {
-              "value": 0.8931163337465061,
+              "value": 1.63910332577383,
               "sample_count": 1007,
               "status": "available"
             },
             "max_drawdown": {
-              "value": -0.5020565435502563,
+              "value": -0.3549819173477975,
               "sample_count": 1007,
               "status": "available"
             },
             "calmar_ratio": {
-              "value": 0.2858471843843965,
+              "value": 0.7708221678125773,
               "sample_count": 1007,
               "status": "available"
             },
             "hit_rate": {
-              "value": 0.5402184707050646,
+              "value": 0.5422045680238332,
               "sample_count": 1007,
               "status": "available"
             },
             "annual_turnover": {
-              "value": 1.0927292747633446,
+              "value": 0.9356408920264322,
               "sample_count": 1007,
               "status": "available"
             },
             "bootstrap_ci_95": [
-              -0.11872197359537517,
-              0.46413025227993154
+              -0.008449463457914752,
+              0.5939148675158343
             ],
             "bootstrap_status": "available"
           }
@@ -1165,7 +1185,22 @@
           "as_of_end": "2026-09-28"
         }
       ],
-      "warnings": [],
+      "warnings": [
+        "Split adjustment applied for AAPL on 2020-08-31: ratio=4, basis=sec_calendar",
+        "Split adjustment applied for NVDA on 2021-07-20: ratio=4, basis=sec_calendar",
+        "Uncorroborated price discontinuity on NVDA at 2023-05-25: overnight open ratio 1.2615, close ratio 1.2437 (no adjustment applied)",
+        "Split adjustment applied for NVDA on 2024-06-10: ratio=10, basis=sec_calendar",
+        "Split adjustment applied for GOOGL on 2022-07-18: ratio=20, basis=sec_calendar",
+        "Split adjustment applied for AMZN on 2022-06-06: ratio=20, basis=sec_calendar",
+        "Uncorroborated price discontinuity on META at 2022-02-03: overnight open ratio 0.7574, close ratio 0.7361 (no adjustment applied)",
+        "Uncorroborated price discontinuity on META at 2022-04-28: overnight open ratio 1.1599, close ratio 1.1759 (no adjustment applied)",
+        "Uncorroborated price discontinuity on META at 2022-10-27: overnight open ratio 0.7547, close ratio 0.7544 (no adjustment applied)",
+        "Uncorroborated price discontinuity on META at 2023-02-02: overnight open ratio 1.1976, close ratio 1.2328 (no adjustment applied)",
+        "Uncorroborated price discontinuity on META at 2024-02-02: overnight open ratio 1.1642, close ratio 1.2032 (no adjustment applied)",
+        "Split adjustment applied for TSLA on 2020-08-31: ratio=5, basis=sec_calendar",
+        "Split adjustment applied for TSLA on 2022-08-25: ratio=3, basis=sec_calendar",
+        "Uncorroborated price discontinuity on JPM at 2020-03-16: overnight open ratio 0.8199, close ratio 0.8504 (no adjustment applied)"
+      ],
       "assumptions": [
         "Annualization: 252 observations per year for CAGR, Sharpe, Sortino, turnover and bootstrap CAGR; Calmar uses annualized CAGR.",
         "Signals use only data dated before execution; orders execute at next session open.",
@@ -1175,7 +1210,7 @@
         "Overnight returns use previous weights; intraday returns use post-rebalance weights.",
         "Weights drift between rebalances; turnover and costs use gross buys plus sells.",
         "Costs: 10 bps commission + 5 bps slippage, charged on one-way traded notional.",
-        "Raw OHLCV is used; dividends, split adjustments, taxes, market impact, borrow costs, and delisting returns are not modeled.",
+        "Raw OHLCV is adjusted for stock splits when corroborated by SEC split calendar or explicit provider metadata; dividends, taxes, market impact, borrow costs, and delisting returns are not modeled.",
         "The configured universe is fixed, not point-in-time; survivorship bias may remain.",
         "Bootstrap: IID daily-return resampling, 95% percentile interval, seed 20260930; not a forecast interval."
       ]
@@ -9026,16 +9061,16 @@
       },
       "field_sha256": {
         "metrics": {
-          "garp": "d6b30c996d64926a44d6d73b013f8f3e4763594b77170ece2bfc65f6fd20378e",
-          "baseline": "d6b30c996d64926a44d6d73b013f8f3e4763594b77170ece2bfc65f6fd20378e"
+          "garp": "bab1934d2d58470511fe523f2c760bf30324728d453b01c343262802946cfca5",
+          "baseline": "bab1934d2d58470511fe523f2c760bf30324728d453b01c343262802946cfca5"
         },
         "equity_curve": {
-          "garp": "b29d77f079ae2e0f3475e69c298c70bd86feb16e189d2fd46c1d5c7cd9761c2a",
-          "baseline": "b29d77f079ae2e0f3475e69c298c70bd86feb16e189d2fd46c1d5c7cd9761c2a"
+          "garp": "56334b40ee27bc1dd55499a5fbfdb3651c33cf56b4017c18dbffa9d143881a4d",
+          "baseline": "56334b40ee27bc1dd55499a5fbfdb3651c33cf56b4017c18dbffa9d143881a4d"
         },
         "trades": {
-          "garp": "8f6ed3be0a14827deb9860eaffdc9772563a797b94feb7ca9796669fae31303a",
-          "baseline": "8f6ed3be0a14827deb9860eaffdc9772563a797b94feb7ca9796669fae31303a"
+          "garp": "a8a9f9ea67e86718d6dae6f2c7c8598920e865a293857b7b1e7f7774a87a5d2c",
+          "baseline": "a8a9f9ea67e86718d6dae6f2c7c8598920e865a293857b7b1e7f7774a87a5d2c"
         }
       }
     },
@@ -9060,16 +9095,16 @@
       },
       "field_sha256": {
         "metrics": {
-          "garp": "9d4a58254fec24f2cc310274dd4a0b8f3336e37f2cdcb2c91b432a7b87539e79",
-          "baseline": "9d4a58254fec24f2cc310274dd4a0b8f3336e37f2cdcb2c91b432a7b87539e79"
+          "garp": "5e264082cac85d1872ac7cee1bbd67eea8e6d87799a435ee5f2f967f5f8f049b",
+          "baseline": "5e264082cac85d1872ac7cee1bbd67eea8e6d87799a435ee5f2f967f5f8f049b"
         },
         "equity_curve": {
-          "garp": "ef7aa3e35ec3eacea44a2aedc20704040255b117ab4a167209043135619007b3",
-          "baseline": "ef7aa3e35ec3eacea44a2aedc20704040255b117ab4a167209043135619007b3"
+          "garp": "736ced380e65cfdfde177e55dd0781f26bd93e5cf667d408983b3097c572163c",
+          "baseline": "736ced380e65cfdfde177e55dd0781f26bd93e5cf667d408983b3097c572163c"
         },
         "trades": {
-          "garp": "3467fb14fbe37388d0afe8c5390933bc8e9ee05c097b4b24acacf6e4924c3193",
-          "baseline": "3467fb14fbe37388d0afe8c5390933bc8e9ee05c097b4b24acacf6e4924c3193"
+          "garp": "aeff0f223e2fbf4729a33ad2a3e48503650c14cf096ff9c0ccd94c2c28e96dd1",
+          "baseline": "aeff0f223e2fbf4729a33ad2a3e48503650c14cf096ff9c0ccd94c2c28e96dd1"
         }
       }
     },
@@ -9134,8 +9169,8 @@
     },
     "full_max_drawdown": {
       "reference": -0.3464,
-      "measured_baseline": -0.34637112481330035,
-      "delta": 2.887518669963951e-05
+      "measured_baseline": -0.31130688178144417,
+      "delta": 0.03509311821855582
     }
   },
   "primary_criteria": {
