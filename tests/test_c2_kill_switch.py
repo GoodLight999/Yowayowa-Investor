@@ -193,16 +193,32 @@ def test_kill_switch_liquidation_and_halt_integration(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(c2_runner, "AlpacaPaperClient", MockAlpacaClient)
 
-    # Run daily cycle on 2026-11-03 with 2026-11-03 bar in history
+    # Run daily cycle on 2026-11-03 with 2026-11-03 bar in history.
+    # Bootstrap history comes from the frozen synthetic fixture, never from the live
+    # data/stock-ohlcv store: the live store advances daily, so reading it made the
+    # "SPY has >= 22 bars / latest bar is 2026-10-30" premise depend on retention.
     from datetime import date
-    base_hist = c2_runner.load_local_history()
+
+    from tests.c2_synthetic_history import detached_copy, synthetic_base_history
+
+    base_hist = synthetic_base_history()
+    # Keep the default history source isolated too: if run_daily_cycle ever ignored the
+    # explicit override it would otherwise fall back to the production store.
+    monkeypatch.setattr(c2_runner, "load_local_history", lambda: detached_copy(base_hist))
+
     mock_hist = {}
     for s, bars in base_hist.items():
         b_list = list(bars)
         b_list.append({"t": "2026-11-03T04:00:00Z", "o": 100.0, "h": 100.0, "l": 100.0, "c": 100.0, "v": 1000.0})
         mock_hist[s] = b_list
 
-    d_res = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), override_history=mock_hist)
+    # The ledger lives in data/paper_c2 by default; point it at tmp_path so the run opens
+    # no production file (attribution joins the ledger passed here).
+    d_res = c2_runner.run_daily_cycle(
+        as_of_date=date(2026, 11, 3),
+        ledger_path=tmp_path / "decisions.jsonl",
+        override_history=mock_hist,
+    )
     assert d_res["kill_switch_eval"].triggered is True
     assert len(cancelled_orders) == 1
     assert len(closed_positions) == 1

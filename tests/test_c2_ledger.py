@@ -106,8 +106,16 @@ def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch
     assert st["current_equity_10"] == 100000.0
     assert st["current_equity_15"] == 100000.0
 
-    # Provide mock 2026-11-03 bar for session 2026-11-03 run
-    base_hist = c2_runner.load_local_history()
+    # Provide mock 2026-11-03 bar for session 2026-11-03 run.
+    # Bootstrap history comes from the frozen synthetic fixture, never from the live
+    # data/stock-ohlcv store (it advances daily, which made the >= 22 bar premise decay).
+    from tests.c2_synthetic_history import detached_copy, synthetic_base_history
+
+    base_hist = synthetic_base_history()
+    # Keep the default history source isolated too: a fallback to load_local_history()
+    # would otherwise read the production OHLCV store.
+    monkeypatch.setattr(c2_runner, "load_local_history", lambda: detached_copy(base_hist))
+
     mock_hist = {}
     for s, bars in base_hist.items():
         b_list = list(bars)
