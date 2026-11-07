@@ -83,8 +83,14 @@ def compute_features(
     history_by_symbol: dict[str, list[dict[str, Any]]],
     as_of_date: date | str,
     dgs1_override: float | None = None,
+    include_target_date: bool = False,
 ) -> C2MarketContext:
-    """Compute all C2 indicators as of given decision date using prior closed bars."""
+    """Compute all C2 indicators as of given decision date using prior closed bars.
+
+    If include_target_date is True (e.g. for post-close daily MTM evaluation),
+    bars with date <= target_date are included.
+    If False (e.g. for weekly pre-market decisions), bars with date < target_date are included.
+    """
     target_date = date.fromisoformat(str(as_of_date)[:10])
 
     # Filter bars prior to target_date (or up to latest completed bar)
@@ -94,8 +100,11 @@ def compute_features(
         valid = []
         for b in bars:
             d = _extract_date(b)
-            if d is not None and d < target_date:
-                valid.append(b)
+            if d is not None:
+                if include_target_date and d <= target_date:
+                    valid.append(b)
+                elif not include_target_date and d < target_date:
+                    valid.append(b)
         valid.sort(key=lambda x: _extract_date(x) or date.min)
         filtered[sym] = valid
 
