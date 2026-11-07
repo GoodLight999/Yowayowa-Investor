@@ -128,6 +128,10 @@ known-first-party = ["yowayowa"]
 "tests/test_research_brief.py" = ["RUF001", "RUF002"]
 "tests/test_research_ask_adversarial.py" = ["RUF001", "RUF002"]
 "tests/test_research_ask_prompt_budget.py" = ["RUF001", "RUF002"]
+# C2 gap watchdog: the S-07 item-5 findings are Japanese operator-facing
+# one-liners delivered to the ops chat with fullwidth punctuation; they are
+# notification content, not source-data typos.
+"scripts/paper_c2/c2_gap_watch.py" = ["RUF001", "RUF003"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
