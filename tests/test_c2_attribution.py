@@ -88,3 +88,12 @@ def test_attribution_matrix_and_overwrite_assessment() -> None:
     assert "`RULE`" in md
     assert "`LLM`" in md
     assert "`HYBRID`" in md
+
+
+def test_attribution_matrix_zero_cases_render_na() -> None:
+    # Test completely empty or unmatured decisions render N/A without contradiction
+    summary = compute_attribution_matrix([])
+    md = format_attribution_markdown(summary)
+    assert "N/A（上書き実績0件）" in md
+    assert "N/A" in md
+    assert "0.0%（基準 ≥50.0%: PASS）" not in md

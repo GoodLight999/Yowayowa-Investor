@@ -177,6 +177,7 @@ def compute_attribution_matrix(joined: list[JoinedDecision]) -> dict[str, Any]:
             {
                 "label": cat,
                 "count": cnt,
+                "matured_count": len(matured_rets),
                 "ratio_pct": round(ratio, 2),
                 "mean_5d_return_pct": round(mean_ret * 100.0, 3),
                 "win_rate_5d_pct": round(win_rate, 2),
@@ -202,6 +203,7 @@ def compute_attribution_matrix(joined: list[JoinedDecision]) -> dict[str, Any]:
     total_row = {
         "label": "TOTAL",
         "count": total_count,
+        "matured_count": len(all_matured),
         "ratio_pct": 100.0,
         "mean_5d_return_pct": round(tot_mean * 100.0, 3),
         "win_rate_5d_pct": round(tot_wr, 2),
@@ -220,8 +222,7 @@ def compute_attribution_matrix(joined: list[JoinedDecision]) -> dict[str, Any]:
             alpha = it.ret_5d_actual - it.ret_5d_counterfactual
             overwrite_alphas.append(alpha)
             # Avoided DD: if counterfactual had worse DD than actual
-            # (e.g. counterfactual fell 3% while actual fell 1%, avoided 2%)
-            avoided = 0.0  # calculated when detailed window available
+            avoided = 0.0
             avoided_dds.append(avoided)
 
     n_alpha = len(overwrite_alphas)
@@ -232,6 +233,7 @@ def compute_attribution_matrix(joined: list[JoinedDecision]) -> dict[str, Any]:
 
     assessment = {
         "overwrite_count": n_llm,
+        "matured_overwrite_count": n_alpha,
         "overwrite_ratio_pct": round((n_llm / total_count * 100.0) if total_count > 0 else 0.0, 2),
         "mean_overwrite_alpha_pct": round(mean_alpha * 100.0, 3),
         "overwrite_success_rate_pct": round(alpha_win_rate, 2),
@@ -262,30 +264,69 @@ def format_attribution_markdown(summary: dict[str, Any]) -> str:
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for r in rows:
+        cnt = r.get("count", 0)
+        matured = r.get("matured_count", 0)
+        if matured == 0:
+            mean_str = "N/A"
+            wr_str = "N/A"
+            sharpe_str = "N/A"
+            cum_str = "N/A"
+            dd_str = "N/A"
+        else:
+            mean_str = f"{r['mean_5d_return_pct']:+.3f}%"
+            wr_str = f"{r['win_rate_5d_pct']:.1f}%"
+            sharpe_str = f"{r['effective_sharpe']:.2f}"
+            cum_str = f"{r['cum_return_contrib_pct']:+.3f}%"
+            dd_str = f"{r['max_dd_contrib_pct']:+.3f}%"
+
         lines.append(
-            f"| **`{r['label']}`** | {r['count']} | {r['ratio_pct']:.1f}% | "
-            f"{r['mean_5d_return_pct']:+.3f}% | {r['win_rate_5d_pct']:.1f}% | "
-            f"{r['effective_sharpe']:.2f} | {r['cum_return_contrib_pct']:+.3f}% | {r['max_dd_contrib_pct']:+.3f}% |"
+            f"| **`{r['label']}`** | {cnt} | {r['ratio_pct']:.1f}% | "
+            f"{mean_str} | {wr_str} | {sharpe_str} | {cum_str} | {dd_str} |"
         )
+
+    tot_matured = tot.get("matured_count", 0)
+    if tot_matured == 0:
+        tot_mean = "N/A"
+        tot_wr = "N/A"
+        tot_sharpe = "N/A"
+        tot_cum = "N/A"
+        tot_dd = "N/A"
+    else:
+        tot_mean = f"{tot.get('mean_5d_return_pct', 0):+.3f}%"
+        tot_wr = f"{tot.get('win_rate_5d_pct', 0):.1f}%"
+        tot_sharpe = f"{tot.get('effective_sharpe', 0):.2f}"
+        tot_cum = f"{tot.get('cum_return_contrib_pct', 0):+.3f}%"
+        tot_dd = f"{tot.get('max_dd_contrib_pct', 0):+.3f}%"
+
     lines.append(
         f"| **`{tot.get('label', 'TOTAL')}`** | **{tot.get('count', 0)}** | **{tot.get('ratio_pct', 100):.1f}%** | "
-        f"**{tot.get('mean_5d_return_pct', 0):+.3f}%** | **{tot.get('win_rate_5d_pct', 0):.1f}%** | "
-        f"**{tot.get('effective_sharpe', 0):.2f}** | **{tot.get('cum_return_contrib_pct', 0):+.3f}%** | **{tot.get('max_dd_contrib_pct', 0):+.3f}%** |"
+        f"**{tot_mean}** | **{tot_wr}** | **{tot_sharpe}** | **{tot_cum}** | **{tot_dd}** |"
     )
 
-    avoided_dd_str = (
-        "N/A（LLM上書き実績0件）"
-        if ass.get("overwrite_count", 0) == 0
-        else f"{ass.get('avoided_drawdown_pt', 0.0):+.3f} pt"
-    )
+    n_overwrite = ass.get("overwrite_count", 0)
+    n_alpha = ass.get("matured_overwrite_count", 0)
+    if n_overwrite == 0:
+        wr_status = "N/A（上書き実績0件）"
+        mean_alpha_str = "N/A（上書き実績0件）"
+        avoided_dd_str = "N/A（上書き実績0件）"
+    elif n_alpha == 0:
+        wr_status = "N/A（成熟実績0件）"
+        mean_alpha_str = "N/A（成熟実績0件）"
+        avoided_dd_str = "N/A（成熟実績0件）"
+    else:
+        pass_fail = "PASS" if ass.get("criteria_pass_wr50") else "FAIL"
+        wr_status = f"{ass.get('overwrite_success_rate_pct', 0.0):.1f}%（基準 ≥50.0%: {pass_fail}）"
+        mean_alpha_str = f"{ass.get('mean_overwrite_alpha_pct', 0.0):+.3f}%"
+        avoided_dd_str = f"{ass.get('avoided_drawdown_pt', 0.0):+.3f} pt"
+
     lines.extend(
         [
             "",
             "## 2. LLM 上書き分析表（LLM Overwrite Assessment）",
             "",
-            f"- **上書き件数**: {ass.get('overwrite_count', 0)} 件（全体比率 {ass.get('overwrite_ratio_pct', 0.0):.1f}% / 上限 ≤30.0%: {'PASS' if ass.get('criteria_pass_cap30') else 'FAIL'}）",
-            f"- **上書き平均アルファ（差分: LLM - RULE）**: {ass.get('mean_overwrite_alpha_pct', 0.0):+.3f}%",
-            f"- **上書き成功率（勝率）**: {ass.get('overwrite_success_rate_pct', 0.0):.1f}%（基準 ≥50.0%: {'PASS' if ass.get('criteria_pass_wr50') else 'FAIL'}）",
+            f"- **上書き件数**: {n_overwrite} 件（全体比率 {ass.get('overwrite_ratio_pct', 0.0):.1f}% / 上限 ≤30.0%: {'PASS' if ass.get('criteria_pass_cap30') else 'FAIL'}）",
+            f"- **上書き平均アルファ（差分: LLM - RULE）**: {mean_alpha_str}",
+            f"- **上書き成功率（勝率）**: {wr_status}",
             f"- **回避されたドローダウン**: {avoided_dd_str}",
             "",
         ]
