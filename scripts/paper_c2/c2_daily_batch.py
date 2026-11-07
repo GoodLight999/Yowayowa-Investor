@@ -60,8 +60,9 @@ def main() -> None:
 
     if session_date < PHASE_START_DATE:
         print(
-            f"[{now_str}] C2 Daily Batch: Target session date ({session_date}) is before forward phase start "
-            f"date ({PHASE_START_DATE}). Skipping execution safely (no chain pollution)."
+            f"[{now_str}] C2 Daily Batch: Target session date ({session_date}) is before "
+            f"forward phase start date ({PHASE_START_DATE}). "
+            "Skipping execution safely (no chain pollution)."
         )
         return
 

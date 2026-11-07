@@ -100,11 +100,15 @@ def compute_features(
         valid = []
         for b in bars:
             d = _extract_date(b)
-            if d is not None:
-                if include_target_date and d <= target_date:
+            if d is None:
+                continue
+            # post-close daily MTM includes the session's own bar; the weekly
+            # pre-market decision only sees bars strictly before the date.
+            if include_target_date:
+                if d <= target_date:
                     valid.append(b)
-                elif not include_target_date and d < target_date:
-                    valid.append(b)
+            elif d < target_date:
+                valid.append(b)
         valid.sort(key=lambda x: _extract_date(x) or date.min)
         filtered[sym] = valid
 

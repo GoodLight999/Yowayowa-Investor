@@ -132,6 +132,9 @@ known-first-party = ["yowayowa"]
 # one-liners delivered to the ops chat with fullwidth punctuation; they are
 # notification content, not source-data typos.
 "scripts/paper_c2/c2_gap_watch.py" = ["RUF001", "RUF003"]
+# C2 attribution: the assertions pin the operator-facing N/A labels that
+# format_attribution_markdown emits (Japanese fullwidth punctuation).
+"tests/test_c2_attribution.py" = ["RUF001", "RUF002"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
