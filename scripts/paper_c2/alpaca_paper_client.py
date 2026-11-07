@@ -18,7 +18,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +29,7 @@ DEFAULT_PAPER_BASE_URL = "https://paper-api.alpaca.markets/v2"
 DEFAULT_DATA_BASE_URL = "https://data.alpaca.markets/v2"
 SECRET_ENV_PATH = Path("/root/.secrets/alpaca_paper.env")
 HERMES_ENV_PATH = Path("/root/.hermes/.env")
+PHASE_START_DATE = date(2026, 11, 3)
 
 
 @dataclass(frozen=True)
@@ -193,6 +194,12 @@ class AlpacaPaperClient:
         logger.warning("Emergency close_all_positions executed: %s", res)
         return res if isinstance(res, list) else []
 
+    def get_orders(self, status: str = "open") -> list[dict[str, Any]]:
+        """Fetch orders with given status ('open', 'closed', 'all')."""
+        self._enforce_safety_invariants()
+        res = self._request(f"{self.base_url}/orders?status={status}")
+        return res if isinstance(res, list) else []
+
     def submit_paper_order(
         self,
         symbol: str,
@@ -205,10 +212,33 @@ class AlpacaPaperClient:
     ) -> dict[str, Any]:
         """Submit an order to Alpaca Paper Trading API.
 
-        If paper account rejects new orders (e.g. 40310000 'new orders rejected by user request'),
-        gracefully record the rejection and return fallback theoretical execution dict.
+        Enforces:
+        - Date guard: Cannot submit orders prior to PHASE_START_DATE (2026-11-03).
+        - If paper account rejects new orders (e.g. 40310000 'new orders rejected by user request'),
+          gracefully record the rejection and return fallback theoretical execution dict.
         """
         self._enforce_safety_invariants()
+
+        # Strict Date Guard: Pre-phase start order submission is rejected
+        current_date = datetime.now(UTC).date()
+        if current_date < PHASE_START_DATE:
+            logger.warning(
+                "ORDER REJECTED: Current UTC date %s is prior to forward phase start %s. "
+                "No live broker orders may be submitted before phase start.",
+                current_date,
+                PHASE_START_DATE,
+            )
+            return {
+                "status": "rejected_before_phase_start",
+                "client_order_id": client_order_id,
+                "symbol": symbol,
+                "qty": qty,
+                "side": side,
+                "current_date": current_date.isoformat(),
+                "phase_start_date": PHASE_START_DATE.isoformat(),
+                "timestamp_utc": datetime.now(UTC).isoformat(),
+            }
+
         payload: dict[str, Any] = {
             "symbol": symbol,
             "qty": str(round(qty, 4)),
