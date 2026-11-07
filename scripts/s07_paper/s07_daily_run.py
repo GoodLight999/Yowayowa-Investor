@@ -163,6 +163,75 @@ def _run(args, data_dir: Path) -> int:
         print("SKIP: 前回実行がまだ動いている（ロック取得失敗）")
         return 0
 
+    # --- 【B1】HL 上位20銘柄ファンディング観測（t_00e2c1d7・2026-11-04 追記） ---
+    # S-07 本体の取得/ランナー/ゲート・health・Telegram通知には一切影響させない best-effort ステップ。
+    # 失敗してもこの観測専用の health（funding_top20/health.json）に記録して続行する。
+    # 読み取りのみ・注文0（hl_funding_top20.py の docstring に定義式と殺す基準を明記）。
+    try:
+        rc_f, out_f, _err_f = run_step(
+            [sys.executable, str(HERE / "hl_funding_top20.py"), "--data-dir", str(data_dir), "--json"],
+            420,
+        )
+        if rc_f == 0 and out_f.strip():
+            print(f"funding_top20 OK: {out_f.strip().splitlines()[-1]}")
+        else:
+            print(f"funding_top20 FAIL rc={rc_f}（S-07本体には影響なし・詳細は {data_dir}/funding_top20/health.json）")
+    except Exception as exc:  # noqa: BLE001
+        print(f"funding_top20 FAIL unexpected: {type(exc).__name__}: {exc}（S-07本体には影響なし）")
+
+    # --- 【J1】円建て価格差観測（bitFlyer/bitbank vs Binance×USDJPY・カード t_aa251cce・2026-11-06 追記） ---
+    # S-07 本体・B1・B2 には一切影響させない best-effort ステップ。公開APIの読み取りのみ・注文0・署名なし。
+    # 失敗してもこの観測専用の health（jpy_premium/health.json）に記録して続行する。
+    # 15分ループは flock 二重起動なしで確保され、毎UTC日 00:52 に自己終了する（B2のOIループと同一様式）。
+    try:
+        rc_j, out_j, _err_j = run_step(
+            [sys.executable, str(HERE / "jpy_premium_obs.py"), "--daily-hook",
+             "--data-dir", str(data_dir)],
+            180,
+        )
+        if rc_j == 0 and out_j.strip():
+            print(f"jpy_premium OK: {out_j.strip().splitlines()[-1]}")
+        else:
+            print(f"jpy_premium FAIL rc={rc_j}（S-07本体には影響なし・詳細は {data_dir}/jpy_premium/health.json）")
+    except Exception as exc:  # noqa: BLE001
+        print(f"jpy_premium FAIL unexpected: {type(exc).__name__}: {exc}（S-07本体には影響なし）")
+
+    # --- 【項目5】前向き局面損益（凍結仕様・カード t_d4fdcfc4・2026-11-07 追記） ---
+    # 既存 days/*.json には書かない（新規 funding_top20/fwd_item5/ だけに追記する）。
+    # 入力は前向き収集の candles_1m/（読み取りのみ）・実弾0・入金0・注文0・署名なし。
+    # S-07 本体・B1・B2・J1・health・Telegram通知には一切影響させない best-effort ステップ。
+    try:
+        rc_p, out_p, _err_p = run_step(
+            [sys.executable, str(HERE / "fwd_item5_pnl.py"), "--daily-hook",
+             "--data-dir", str(data_dir)],
+            300,
+        )
+        if rc_p == 0 and out_p.strip():
+            print(f"fwd_item5 OK: {out_p.strip().splitlines()[-1]}")
+        else:
+            print(f"fwd_item5 FAIL rc={rc_p}（S-07本体には影響なし・{data_dir}/funding_top20/fwd_item5/ を確認）")
+    except Exception as exc:  # noqa: BLE001
+        print(f"fwd_item5 FAIL unexpected: {type(exc).__name__}: {exc}（S-07本体には影響なし）")
+
+    # --- 【項目5】判定用ワンページ生成（カード t_437a9f72・2026-11-07 追記） ---
+    # 直前に更新された fwd_item5/ の確定局面だけを読み、判定ページを1枚出す（読み取り->decision_* のみ）。
+    # 「データが届いた時点」で評価するため evaluated_at_utc と latency_hours を decision_ledger.json に残す。
+    # 実弾0・入金0・注文0・署名なし。cron の追加・間隔変更はしない。失敗しても本体は続行する。
+    try:
+        rc_d, out_d, _err_d = run_step(
+            [sys.executable, str(HERE / "decision_page.py"),
+             "--data-dir", str(data_dir)],
+            60,
+        )
+        if rc_d == 0 and out_d.strip():
+            verdict = [ln for ln in out_d.strip().splitlines() if ln.startswith("**判定:")]
+            print(f"decision_page OK: {verdict[0] if verdict else out_d.strip().splitlines()[0]}")
+        else:
+            print(f"decision_page FAIL rc={rc_d}（S-07本体には影響なし・"
+                  f"{data_dir}/funding_top20/fwd_item5/ を確認）")
+    except Exception as exc:  # noqa: BLE001
+        print(f"decision_page FAIL unexpected: {type(exc).__name__}: {exc}（S-07本体には影響なし）")
+
     py = sys.executable
     steps = []
     if not args.skip_fetch:
