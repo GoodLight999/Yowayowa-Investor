@@ -441,8 +441,13 @@ def test_input_missing_when_all_five_inputs_absent(tmp_path: Path) -> None:
     assert "必須入力の欠損" in verdict.reason
     assert "期間未達（判定営業日" not in verdict.reason  # the old fail-open wording
     assert len(verdict.missing_inputs) >= 5
-    for name in ("state.json", "mtm_history.jsonl", "decisions.jsonl", "orders.jsonl",
-                 "attribution_summary.json"):
+    for name in (
+        "state.json",
+        "mtm_history.jsonl",
+        "decisions.jsonl",
+        "orders.jsonl",
+        "attribution_summary.json",
+    ):
         assert any(name in item for item in verdict.missing_inputs), name
     payload = verdict.to_dict()
     assert payload["verdict"] == "INPUT_MISSING"
@@ -465,8 +470,12 @@ def test_input_missing_when_state_json_only_absent(tmp_path: Path) -> None:
     assert not any(
         other in item
         for item in verdict.missing_inputs
-        for other in ("mtm_history.jsonl", "decisions.jsonl", "orders.jsonl",
-                      "attribution_summary.json")
+        for other in (
+            "mtm_history.jsonl",
+            "decisions.jsonl",
+            "orders.jsonl",
+            "attribution_summary.json",
+        )
     )
     assert "0 営業日目" not in verdict.reason
     assert verdict.judged_business_days == 0
@@ -489,9 +498,7 @@ def test_input_missing_when_design_doc_absent(tmp_path: Path) -> None:
     """Design doc absence is INPUT_MISSING (not a silent pass, not 期間未達)."""
     data_dir = write_required_inputs(tmp_path / "paper_c2", STATE_4_DAYS)
 
-    verdict = evaluate_c2_gate(
-        data_dir=data_dir, design_doc_path=tmp_path / "missing_design.md"
-    )
+    verdict = evaluate_c2_gate(data_dir=data_dir, design_doc_path=tmp_path / "missing_design.md")
 
     assert verdict.verdict == INPUT_MISSING_VERDICT
     assert any("設計書" in item for item in verdict.missing_inputs)
@@ -500,9 +507,7 @@ def test_input_missing_when_design_doc_absent(tmp_path: Path) -> None:
 def test_input_missing_when_state_lacks_completed_days_key(tmp_path: Path) -> None:
     """A state.json without completed_trading_days must not be read as day 0."""
     data_dir = write_required_inputs(tmp_path / "paper_c2")
-    (data_dir / "state.json").write_text(
-        json.dumps({"missed_trading_days": 0}), encoding="utf-8"
-    )
+    (data_dir / "state.json").write_text(json.dumps({"missed_trading_days": 0}), encoding="utf-8")
 
     verdict = evaluate_c2_gate(data_dir=data_dir)
 
