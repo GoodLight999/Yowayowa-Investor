@@ -30,9 +30,20 @@ import pytest
 WRAPPER = Path("/root/.hermes/scripts/yowayowa_brief_daily.sh")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+
+def _wrapper_deployed() -> bool:
+    # Path.exists() raises PermissionError on hosts where /root is not
+    # traversable (e.g. GitHub Actions runners), which aborts collection
+    # before the skip below can apply. Treat that as "not deployed".
+    try:
+        return WRAPPER.exists()
+    except OSError:
+        return False
+
+
 pytestmark = [
     pytest.mark.skipif(
-        not WRAPPER.exists(),
+        not _wrapper_deployed(),
         reason="brief-daily wrapper is not deployed on this host",
     ),
 ]
