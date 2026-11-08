@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -987,7 +988,18 @@ def test_milestone_judgment_fires_once_at_deadline(tmp_path: Path, monkeypatch) 
 
     # deadline - 1 day: no early judgment, ever
     out_early = pl.weekly_summary(_data_dir, deadline - timedelta(days=1))
-    assert "milestone" not in out_early
+    # v1.11 (t_264e0692): A_HALF has a SECOND frozen gate — the pre-registered
+    # 20-business-day window (its first 20 weekdays, ~27 calendar days) — and
+    # that window can close BEFORE the 4-week deadline. Its own record-once
+    # record may then appear early; what may NOT appear before the deadline is
+    # the WEEKLY milestone block (the "weeks" slots), and A/C must stay silent.
+    early_milestone = out_early.get("milestone")
+    if early_milestone is not None:
+        assert set(early_milestone) == {pl.BOOK_A_HALF}, sorted(early_milestone)
+        assert "weeks" not in early_milestone[pl.BOOK_A_HALF]
+        assert "20bd" in early_milestone[pl.BOOK_A_HALF]
+    else:
+        assert "milestone" not in out_early
     assert len(pl._rows_from_jsonl(pl.summary_path(root))) == summary_rows + 1
 
     # at the deadline: one judgment per strategy book, on the frozen gates
@@ -997,7 +1009,7 @@ def test_milestone_judgment_fires_once_at_deadline(tmp_path: Path, monkeypatch) 
     # carries its own 4-week judgment (same run rows, its own equity/cost).
     assert set(out["milestone"]) == set(pl.STRATEGY_BOOKS)
     assert set(out["milestone"]) >= {pl.S01_BOOK, pl.BOOK_C_BOOK}
-    a = out["milestone"][pl.S01_BOOK]
+    a = out["milestone"][pl.S01_BOOK]["weeks"][4]
     assert a["weeks"] == 4
     assert a["start_date"] == first_day.isoformat()
     assert a["milestone_date"] == deadline.isoformat()
@@ -1022,7 +1034,7 @@ def test_milestone_judgment_fires_once_at_deadline(tmp_path: Path, monkeypatch) 
 
     # Book C never filled (no equity tape): missing facts -> INSUFFICIENT,
     # never back-filled; the global daily runs still pass its loop criterion.
-    c = out["milestone"][pl.BOOK_C_BOOK]
+    c = out["milestone"][pl.BOOK_C_BOOK]["weeks"][4]
     assert c["verdict"] == "INSUFFICIENT"
     assert set(c["insufficient_criteria"]) == {"observed_cost_bps_mean", "recompute_match_rate"}
     assert c["criteria"]["loop_success_rate"]["pass"] is True
@@ -1035,7 +1047,7 @@ def test_milestone_judgment_fires_once_at_deadline(tmp_path: Path, monkeypatch) 
     all_rows = pl._rows_from_jsonl(pl.summary_path(root))
     assert len(all_rows) == summary_rows + 3
     judged = [
-        row["milestone"][pl.S01_BOOK]
+        row["milestone"][pl.S01_BOOK]["weeks"]["4"]
         for row in all_rows
         if isinstance(row.get("milestone"), dict) and pl.S01_BOOK in row["milestone"]
     ]
@@ -1048,7 +1060,7 @@ def test_milestone_judgment_boundary_27_of_28_days(tmp_path: Path, monkeypatch) 
     _milestone_drive_days(root, _data_dir, first_day, 27)  # design §4: 1 missing day allowed
     deadline = _milestone_start(root, pl.S01_BOOK) + timedelta(days=28)
     out = pl.weekly_summary(_data_dir, deadline)
-    a = out["milestone"][pl.S01_BOOK]
+    a = out["milestone"][pl.S01_BOOK]["weeks"][4]
     assert a["run_ok_dates"] == 27
     assert abs(a["criteria"]["loop_success_rate"]["value"] - 27 / 28) < 1e-12
     assert a["criteria"]["loop_success_rate"]["pass"] is True
@@ -1061,7 +1073,7 @@ def test_milestone_judgment_fails_on_missing_run_days(tmp_path: Path, monkeypatc
     _milestone_drive_days(root, _data_dir, first_day, 26)  # 2 missing days: below 95%
     deadline = _milestone_start(root, pl.S01_BOOK) + timedelta(days=28)
     out = pl.weekly_summary(_data_dir, deadline)
-    a = out["milestone"][pl.S01_BOOK]
+    a = out["milestone"][pl.S01_BOOK]["weeks"][4]
     assert a["verdict"] == "FAIL"
     assert a["failed_criteria"] == ["loop_success_rate"]
     assert abs(a["criteria"]["loop_success_rate"]["value"] - 26 / 28) < 1e-12
@@ -1105,7 +1117,7 @@ def test_milestone_judgment_counts_decision_only_days_as_loop_run(
         pl.mark_up(root, stamp + timedelta(hours=2))
     deadline = _milestone_start(root, pl.S01_BOOK) + timedelta(days=28)
     out = pl.weekly_summary(_data_dir, deadline)
-    a = out["milestone"][pl.S01_BOOK]
+    a = out["milestone"][pl.S01_BOOK]["weeks"][4]
     assert a["verdict"] == "PASS"
     assert a["criteria"]["loop_success_rate"]["value"] == 1.0
     assert a["run_ok_dates"] == 28
@@ -1168,7 +1180,7 @@ def test_milestone_judgment_never_falls_back_on_failed_run_days(
         pl.mark_up(root, stamp + timedelta(hours=2))
     deadline = _milestone_start(root, pl.S01_BOOK) + timedelta(days=28)
     out = pl.weekly_summary(_data_dir, deadline)
-    a = out["milestone"][pl.S01_BOOK]
+    a = out["milestone"][pl.S01_BOOK]["weeks"][4]
     assert a["run_ok_dates"] == 27
     assert abs(a["criteria"]["loop_success_rate"]["value"] - 27 / 28) < 1e-12
     assert a["run_ok_dates_by_decision_fallback"] == [first_day.isoformat()]
@@ -1225,7 +1237,7 @@ def test_milestone_judgment_never_falls_back_on_crashed_run_days(
         pl.mark_up(root, stamp + timedelta(hours=2))
     deadline = _milestone_start(root, pl.S01_BOOK) + timedelta(days=28)
     out = pl.weekly_summary(_data_dir, deadline)
-    a = out["milestone"][pl.S01_BOOK]
+    a = out["milestone"][pl.S01_BOOK]["weeks"][4]
     assert a["run_ok_dates"] == 26
     assert abs(a["criteria"]["loop_success_rate"]["value"] - 26 / 28) < 1e-12
     # the crashed days carry decisions, yet are never back-filled
@@ -1322,6 +1334,2654 @@ def test_milestone_no_judgment_without_decisions(tmp_path: Path, monkeypatch) ->
     # no start date -> nothing to judge, no crash
     out = pl.weekly_summary(_data_dir, now.date() + timedelta(days=28))
     assert "milestone" not in out
+
+
+# --- 12/26-week milestone wiring (t_0be71b95) ---------------------------------
+
+
+def _long_milestone_row(root: Path, day: date, **row: object) -> None:
+    """One hash-chained journal row with a sane UTC recorded_at."""
+
+    row.setdefault("recorded_at", f"{day.isoformat()}T04:00:00+00:00")
+    pl._append_row(root, row)  # type: ignore[arg-type]
+
+
+def _long_milestone_journal(
+    root: Path,
+    *,
+    start: date,
+    run_days: int,
+    book_marks: dict[int, float],
+    bench_marks: dict[int, float] | None = None,
+    shortfalls: dict[int, float] | None = None,
+    book: str = pl.S01_BOOK,
+    asset: str = "BTC",
+    flip_every: int | None = None,
+) -> None:
+    """Synthetic journal for the long-horizon milestone tests: daily
+    non-backfill decisions (stable RISK_ON, or alternating every
+    ``flip_every`` days to manufacture regime flips) + ok daily run rows,
+    mtm equity marks for the book and its benchmark, and mark rows with the
+    given signed shortfalls."""
+
+    for offset in range(run_days):
+        day = start + timedelta(days=offset)
+        if flip_every is not None:
+            regime = "RISK_ON" if (offset // flip_every) % 2 == 0 else "RISK_OFF"
+        else:
+            regime = "RISK_ON"
+        prev_regime = regime
+        if flip_every is not None and offset % flip_every == 0 and offset > 0:
+            prev_regime = "RISK_OFF" if regime == "RISK_ON" else "RISK_ON"
+        _long_milestone_row(
+            root,
+            day,
+            event="decision",
+            book=book,
+            decision_id=f"{book}:{asset}:{day.isoformat()}",
+            decision_date=day.isoformat(),
+            asset=asset,
+            regime_state=regime,
+            prev_regime_state=prev_regime,
+            backfill=False,
+        )
+        _long_milestone_row(root, day, event="run", job="daily", phase="end", ok=True)
+    for offset, equity in book_marks.items():
+        day = start + timedelta(days=offset)
+        _long_milestone_row(
+            root,
+            day,
+            event="mtm",
+            book=book,
+            mtm_date=day.isoformat(),
+            equity=equity,
+            cash=0.0,
+            drawdown=-0.05,
+            peak_equity=1.0,
+        )
+    bench = pl.BOOK_BENCHMARK.get(book)
+    if bench_marks and bench:
+        for offset, equity in bench_marks.items():
+            day = start + timedelta(days=offset)
+            _long_milestone_row(
+                root,
+                day,
+                event="mtm",
+                book=bench,
+                mtm_date=day.isoformat(),
+                equity=equity,
+                cash=0.0,
+                drawdown=-0.15,
+                peak_equity=1.0,
+            )
+    for offset, shortfall in (shortfalls or {}).items():
+        day = start + timedelta(days=offset)
+        _long_milestone_row(
+            root,
+            day,
+            event="mark",
+            book=book,
+            decision_id=f"{book}:{asset}:{day.isoformat()}",
+            asset=asset,
+            bt_fill_price=100.0,
+            recompute_match=True,
+            turnover=0.0,
+            shortfall_bps=shortfall,
+        )
+
+
+_DEEP_BENCH_MARKS = {
+    0: 1.0,
+    7: 0.95,
+    14: 0.85,
+    21: 0.86,
+    28: 0.88,
+    35: 0.9,
+    42: 0.92,
+    49: 0.94,
+    56: 0.95,
+    63: 0.96,
+    70: 0.96,
+    77: 0.97,
+    83: 0.965,
+    84: 0.97,
+}
+# 26-week windows need marks at their own frozen endpoints (0 and day 181):
+# the rev2 dd gate compares the SAME frozen period on both sides, so a bench
+# that stops at day 84 defers a 26-week judgment instead of grading a
+# 12-week-long benchmark span under the 26-week label.
+_DEEP_BENCH_MARKS_26W = {
+    0: 1.0,
+    7: 0.95,
+    14: 0.85,
+    83: 0.87,
+    90: 0.85,
+    175: 0.9,
+    181: 0.86,
+}
+
+
+def test_milestone_12w_and_4w_record_in_one_summary_row(tmp_path: Path, monkeypatch) -> None:
+    """(a) One weekly run past BOTH deadlines keeps 4w AND 12w in the same row;
+    (b) the weekly run before the 12-week deadline judges no 12w (t_0be71b95).
+
+    Weekly runs were paused between the two deadlines: the first run after the
+    pause sits past day 84. The old single ``out[book]`` slot kept only the
+    LAST judgment of the run, so the 4-week record vanished; the
+    ``{"weeks": {...}}`` block keeps both — on the returned row and on the
+    disk row (JSON stringifies the week keys) — and the next run dedupes both.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 6, 1)
+    book_marks = {
+        offset: (1.0 if offset < 28 else (0.97 if offset < 56 else 1.02))
+        for offset in range(0, 85, 7)
+    }
+    # rev2 dd/cum gates compare the FULL frozen window: the book's last
+    # in-window mark must sit on the window's last day (day 83), not day 77
+    book_marks[83] = 1.02
+
+    def build(root: Path) -> None:
+        _long_milestone_journal(
+            root,
+            start=start,
+            run_days=84,
+            book_marks=book_marks,
+            bench_marks=_DEEP_BENCH_MARKS,
+            shortfalls={offset: 0.0 for offset in range(0, 84, 7)},
+        )
+
+    # --- (b) before the 12-week deadline: no 12w judgment, ever ---------------
+    early_dir = tmp_path / "early" / "data"
+    early_root = pl.loop_root(early_dir)
+    early_root.mkdir(parents=True, exist_ok=True)
+    build(early_root)
+    out_early = pl.weekly_summary(early_dir, start + timedelta(days=83))
+    early_weeks = out_early["milestone"][pl.S01_BOOK]["weeks"]
+    assert 4 in early_weeks  # its own deadline (day 28) has passed
+    assert 12 not in early_weeks  # deadline (day 84) not reached: never early
+    assert 26 not in early_weeks
+
+    # --- (a) the first run past both deadlines records BOTH in one row --------
+    data_dir = tmp_path / "data"
+    root = pl.loop_root(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    build(root)
+    deadline_12w = start + timedelta(days=84)
+    out = pl.weekly_summary(data_dir, deadline_12w)
+    weeks = out["milestone"][pl.S01_BOOK]["weeks"]
+    assert set(weeks) == {4, 12}
+    j12 = weeks[12]
+    assert j12["milestone_date"] == deadline_12w.isoformat()
+    assert j12["judged_at_week_end"] == deadline_12w.isoformat()
+    assert j12["window_end"] == deadline_12w.isoformat()
+    assert j12["window_days"] == 84
+    assert j12["verdict"] == "PASS"
+    assert j12["rules_source"] == "MILESTONE_RULES[12] + DEMO_LOOP_V1_OPS.md §4 (frozen)"
+    dd = j12["criteria"]["dd_vs_benchmark"]
+    assert dd["pass"] is True
+    assert dd["benchmark_book"] == pl.BENCH_CRYPTO_BOOK
+    assert dd["benchmark_max_drawdown"] == pytest.approx(-0.15, rel=1e-12)
+    cum = j12["criteria"]["cum_pnl_min"]
+    assert cum["pass"] is True
+    assert cum["value"] == pytest.approx(0.02, rel=1e-12)
+    sw = j12["criteria"]["switches_multiple"]
+    assert sw["pass"] is True  # per asset: BTC 0 flips <= 2.0 * 8.8 * 84/365
+    btc = sw["per_asset"]["BTC"]
+    assert btc["expected"] == pytest.approx(8.8 * 84 / 365, rel=1e-12)
+    assert btc["max"] == pytest.approx(2.0 * 8.8 * 84 / 365, rel=1e-12)
+    assert btc["pass"] is True
+    assert j12["switches_observed"] == 0
+    # the 4-week block in the same row is the unchanged t_d33aef07 judgment
+    j4 = weeks[4]
+    assert j4["verdict"] == "PASS"
+    assert set(j4["criteria"]) == {
+        "loop_success_rate",
+        "observed_cost_bps_mean",
+        "recompute_match_rate",
+        "orders",
+        "guard_violations",
+    }
+
+    # the disk row carries both weeks too (JSON string keys)
+    disk_rows = [
+        json.loads(line) for line in pl.summary_path(root).read_text(encoding="utf-8").splitlines()
+    ]
+    assert sorted(disk_rows[-1]["milestone"][pl.S01_BOOK]["weeks"]) == ["12", "4"]
+    assert disk_rows[-1]["schema"] == "demo-loop-summary-v1.10"
+
+    # dedupe: the next weekly run records neither week again
+    out_again = pl.weekly_summary(data_dir, deadline_12w + timedelta(days=7))
+    assert "milestone" not in out_again
+
+
+def test_milestone_26w_shortfall_gate_is_signed_and_defers_until_facts(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """(c) With the shortfall facts missing at the 26-week deadline, NO
+    judgment is recorded (no permanent INSUFFICIENT) and a later weekly run
+    judges the same frozen window (t_0be71b95).
+
+    The recorded gate is the SIGNED mean's one-sided 95% upper bound: three
+    marks of -100 bps give bound -100 <= 15 (PASS), which the abs()-based
+    4-week cost mean (100 bps) would have turned into a fake FAIL.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    deadline_26w = start + timedelta(days=182)
+    book_marks = {
+        offset: (1.0 if offset < 56 else (0.97 if offset < 112 else 1.03))
+        for offset in range(0, 183, 7)
+    }
+    # rev2 full-window coverage: marks at BOTH windows' last days (83 for the
+    # 12-week gates, 181 for the 26-week gates)
+    book_marks[83] = 0.97
+    book_marks[181] = 1.03
+
+    def build(root: Path) -> None:
+        _long_milestone_journal(
+            root,
+            start=start,
+            run_days=182,
+            book_marks=book_marks,
+            bench_marks=_DEEP_BENCH_MARKS_26W,
+            shortfalls={0: -100.0},
+        )
+
+    # --- at the deadline: one mark only -> n < 2 -> the 26w judgment defers ---
+    data_dir = tmp_path / "data"
+    root = pl.loop_root(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    build(root)
+    out_deadline = pl.weekly_summary(data_dir, deadline_26w)
+    weeks = out_deadline["milestone"][pl.S01_BOOK]["weeks"]
+    assert 26 not in weeks, "no permanent INSUFFICIENT: nothing recorded without facts"
+    assert 4 in weeks and 12 in weeks  # the other weeks still judge on their facts
+
+    # --- facts arrive (their decisions' execution dates are in the window; ---
+    # attribution is by decision date, recorded_at is provenance): judged once
+    for offset in (91, 140):
+        day = start + timedelta(days=offset)
+        _long_milestone_row(
+            root,
+            day,
+            event="mark",
+            book=pl.S01_BOOK,
+            decision_id=f"A:BTC:{day.isoformat()}",
+            asset="BTC",
+            bt_fill_price=100.0,
+            recompute_match=True,
+            turnover=0.0,
+            shortfall_bps=-100.0,
+        )
+    out_late = pl.weekly_summary(data_dir, deadline_26w + timedelta(days=7))
+    weeks_late = out_late["milestone"][pl.S01_BOOK]["weeks"]
+    assert 4 not in weeks_late and 12 not in weeks_late  # deduped
+    j26 = weeks_late[26]
+    assert j26["milestone_date"] == deadline_26w.isoformat()
+    assert j26["window_end"] == deadline_26w.isoformat()  # frozen deadline window
+    assert j26["judged_at_week_end"] == (deadline_26w + timedelta(days=7)).isoformat()
+    gate = j26["criteria"]["shortfall_bps_mean_upper95_max"]
+    assert gate["threshold"] == pl.MILESTONE_RULES[26]["shortfall_bps_mean_upper95_max"]
+    assert gate["value"] == pytest.approx(-100.0, rel=1e-12)  # SIGNED bound
+    assert gate["pass"] is True  # abs() would read +100 bps -> fake FAIL
+    assert gate["shortfall_n"] == 3
+    assert gate["attribution"] == "decision_execution_date"
+    assert j26["verdict"] == "PASS"
+    assert j26["rules_source"] == "MILESTONE_RULES[26] + DEMO_LOOP_V1_OPS.md §4 (frozen)"
+    assert j26["criteria"]["dd_vs_benchmark"]["pass"] is True
+
+
+def test_milestone_12w_holds_while_benchmark_drawdown_is_shallow(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Design §4-2a 判断材料なし: with the benchmark's max DD in the window
+    below 10%, the 12-week DD ratio is not judged (保留) — the record defers
+    instead of grading the ratio against a benchmark that never fell (and a
+    real drawdown judges normally, same journal otherwise)."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 6, 1)
+    book_marks = {
+        offset: (1.0 if offset < 28 else (0.99 if offset < 56 else 1.01))
+        for offset in range(0, 85, 7)
+    }
+    book_marks[83] = 1.01  # rev2: the book spans to the window's last day
+    # benchmark dips 3% and then recovers: a REAL drawdown, just shallower
+    # than the design's 10% judgeability floor
+    shallow_bench = {
+        offset: (1.0 if offset == 0 else 0.97 + (offset - 7) * 0.0004) for offset in range(0, 85, 7)
+    }
+    shallow_bench[83] = 1.0004  # spans to the window's last day, still shallow
+    deep_bench = dict(_DEEP_BENCH_MARKS)
+
+    def build(root: Path, bench: dict[int, float]) -> None:
+        _long_milestone_journal(
+            root,
+            start=start,
+            run_days=84,
+            book_marks=book_marks,
+            bench_marks=bench,
+            shortfalls={offset: 0.0 for offset in range(0, 84, 7)},
+        )
+
+    shallow_dir = tmp_path / "shallow" / "data"
+    shallow_root = pl.loop_root(shallow_dir)
+    shallow_root.mkdir(parents=True, exist_ok=True)
+    build(shallow_root, shallow_bench)
+    window_end = start + timedelta(days=84)
+    # pin the hold branch itself: the ratio IS computable (bench_dd < 0) but
+    # the shallow benchmark defers it
+    dd_criterion = pl._milestone_dd_criterion(
+        shallow_root,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[12]["dd_vs_benchmark"]),
+        shallow_bench_hold=True,
+    )
+    assert dd_criterion["pass"] is None
+    assert dd_criterion["reason"] == "benchmark_drawdown_shallow_hold"
+    assert -pl.MILESTONE_DD_BENCH_MIN < dd_criterion["benchmark_max_drawdown"] < 0
+    out = pl.weekly_summary(shallow_dir, window_end)
+    weeks = out["milestone"][pl.S01_BOOK]["weeks"]
+    assert 12 not in weeks, "shallow benchmark drawdown holds (保留), nothing recorded"
+    assert 4 in weeks
+
+    deep_dir = tmp_path / "deep" / "data"
+    deep_root = pl.loop_root(deep_dir)
+    deep_root.mkdir(parents=True, exist_ok=True)
+    build(deep_root, deep_bench)
+    out_deep = pl.weekly_summary(deep_dir, start + timedelta(days=84))
+    j12 = out_deep["milestone"][pl.S01_BOOK]["weeks"][12]
+    dd = j12["criteria"]["dd_vs_benchmark"]
+    assert dd["pass"] is True
+    assert dd["reason"] is None
+    assert abs(dd["benchmark_max_drawdown"]) >= pl.MILESTONE_DD_BENCH_MIN
+
+
+def test_milestone_12w_switches_gate_is_per_asset_and_book_c_judges(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The frozen switches gate judges each asset against ITS OWN design §2-3
+    backtest expectation (BTC 8.8/yr -> 12w expected ≈ 2.03, max 2x that ≈
+    4.05): a whip-sawing BTC FAILS the record. Book C's S-02 rates are frozen
+    too (t_be52f5bc decision A), so its 12-week judgment now RECORDS like any
+    other book's — while no rate existed the required gate deferred the whole
+    judgment every weekly run (AS-M126-01, t_0be71b95 rev2), and dropping the
+    gate to pass on the rest was the fake PASS that contract closed."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 6, 1)
+    book_marks = {
+        offset: (1.0 if offset < 28 else (0.97 if offset < 56 else 1.02))
+        for offset in range(0, 85, 7)
+    }
+    book_marks[83] = 1.02
+    shortfalls = {offset: 0.0 for offset in range(0, 84, 7)}
+
+    whip_dir = tmp_path / "whip" / "data"
+    whip_root = pl.loop_root(whip_dir)
+    whip_root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        whip_root,
+        start=start,
+        run_days=84,
+        book_marks=book_marks,
+        bench_marks=_DEEP_BENCH_MARKS,
+        shortfalls=shortfalls,
+        flip_every=7,  # 11 RISK_ON <-> RISK_OFF flips inside the 12w window
+    )
+    out = pl.weekly_summary(whip_dir, start + timedelta(days=84))
+    j12 = out["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert j12["verdict"] == "FAIL"  # a decided FAIL records; only 保留 defers
+    assert j12["failed_criteria"] == ["switches_multiple"]
+    sw = j12["criteria"]["switches_multiple"]
+    assert sw["value"] == 11
+    assert sw["pass"] is False
+    btc = sw["per_asset"]["BTC"]
+    assert btc["observed"] == 11
+    assert btc["expected"] == pytest.approx(8.8 * 84 / 365, rel=1e-12)
+    assert btc["max"] == pytest.approx(2.0 * 8.8 * 84 / 365, rel=1e-12)
+    assert btc["pass"] is False
+    assert j12["switches_by_asset"] == {"BTC": 11}
+
+    c_dir = tmp_path / "bookc" / "data"
+    c_root = pl.loop_root(c_dir)
+    c_root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        c_root,
+        start=start,
+        run_days=84,
+        book=pl.BOOK_C_BOOK,
+        asset="SPY",
+        book_marks=book_marks,
+        bench_marks=_DEEP_BENCH_MARKS,
+        shortfalls=shortfalls,
+    )
+    out_c = pl.weekly_summary(c_dir, start + timedelta(days=84))
+    # the freeze (t_be52f5bc decision A) unblocks Book C: the 12-week judgment
+    # RECORDS once like any other book's (dd 3%/15% <= 0.6, cum +2%, switches 0)
+    j12_c = out_c["milestone"][pl.BOOK_C_BOOK]["weeks"][12]
+    assert j12_c["verdict"] == "PASS"
+    assert pl._milestone_already_judged(c_root, pl.BOOK_C_BOOK, 12) is True
+    switches_c = j12_c["criteria"]["switches_multiple"]
+    # no deferred reason survives the freeze: the criterion is DECIDED and the
+    # per-asset row carries the frozen SPY rate's own expectation and cap
+    assert switches_c["pass"] is True
+    assert switches_c["reason"] is None
+    assert switches_c["per_asset"] == {
+        "SPY": {
+            "observed": 0,
+            "expected": pytest.approx(5.6 * 84 / 365, rel=1e-12),
+            "max": pytest.approx(2.0 * 5.6 * 84 / 365, rel=1e-12),
+            "pass": True,
+        }
+    }
+    # pin the decided criterion itself, judged straight from the journal
+    switches_c2, _facts = pl._milestone_switches_criterion(
+        pl._load_journal(c_root),
+        pl.BOOK_C_BOOK,
+        start,
+        start + timedelta(days=84),
+        84,
+        float(pl.MILESTONE_RULES[12]["switches_multiple"]),
+    )
+    assert switches_c2["pass"] is True
+    assert switches_c2["reason"] is None
+    assert switches_c2["per_asset"] == switches_c["per_asset"]
+
+
+def test_milestone_already_judged_reads_legacy_row_shape(tmp_path: Path) -> None:
+    """The dedupe reader accepts BOTH summary shapes: the t_d33aef07 rows
+    (``milestone[book]`` = the judgment dict, "weeks" an int) and the v1.10
+    rows (``milestone[book]["weeks"]`` = {weeks: judgment}, string keys on
+    disk). No production row ever carried the legacy shape; the reader just
+    refuses to let an old file look un-judged."""
+
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    legacy = {
+        "schema": "demo-loop-summary-v1.9",
+        "week_end": "2027-01-02",
+        "milestone": {
+            "A": {"weeks": 4, "book": "A", "verdict": "PASS", "criteria": {}},
+        },
+    }
+    with pl.summary_path(root).open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(legacy) + "\n")
+    assert pl._milestone_already_judged(root, "A", 4) is True
+    assert pl._milestone_already_judged(root, "A", 12) is False
+
+    modern = {
+        "schema": "demo-loop-summary-v1.10",
+        "week_end": "2027-03-27",
+        "milestone": {
+            "A": {"weeks": {"12": {"weeks": 12, "book": "A", "verdict": "PASS"}}},
+        },
+    }
+    with pl.summary_path(root).open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(modern) + "\n")
+    assert pl._milestone_already_judged(root, "A", 12) is True
+    assert pl._milestone_already_judged(root, "A", 26) is False
+
+
+def test_milestone_dd_gate_requires_the_frozen_window_on_both_sides(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-02 (t_0be71b95 rev2): the DD ratio grades the SAME frozen
+    period on both sides — a common origin (the first mark day both sides
+    share inside the window, recorded as ``comparison_start``) and marks at
+    the frozen window's last day on BOTH the book and the benchmark. A side
+    that stops mid-window defers the judgment (nothing recorded, retried
+    later); when the missing mark arrives later (attributed by its own
+    mtm_date, written with an honest late recorded_at) the SAME frozen window
+    is judged — the rev1 premature PASS (book day 7 vs benchmark day 83) can
+    no longer exist, and the honest numbers landing late actually decide.
+    Normal same-span windows judge at the deadline."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    window_end = start + timedelta(days=84)
+
+    def bench_deep() -> dict[int, float]:
+        return dict(_DEEP_BENCH_MARKS)
+
+    # --- normal: both sides span 0..83 -> judged PASS at the deadline --------
+    normal_dir = tmp_path / "normal" / "data"
+    normal_root = pl.loop_root(normal_dir)
+    normal_root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        normal_root,
+        start=start,
+        run_days=84,
+        book_marks={0: 1.0, 41: 0.985, 83: 1.0},
+        bench_marks=bench_deep(),
+        shortfalls={offset: 0.0 for offset in (0, 41, 83)},
+    )
+    out = pl.weekly_summary(normal_dir, window_end)
+    j12 = out["milestone"][pl.S01_BOOK]["weeks"][12]
+    dd = j12["criteria"]["dd_vs_benchmark"]
+    assert dd["pass"] is True
+    assert dd["comparison_start"] == start.isoformat()
+    assert dd["comparison_end"] == (window_end - timedelta(days=1)).isoformat()
+    assert dd["book_mark_span"] == [start.isoformat(), (start + timedelta(days=83)).isoformat()]
+    assert dd["benchmark_mark_span"] == dd["book_mark_span"]
+
+    # --- mismatch: the book stops at day 7, the benchmark spans to 83 -------
+    # (the rev1 repro: this graded book[-3% over 7 days] against
+    # bench[-20% over 83 days] and recorded a permanent PASS)
+    gap_dir = tmp_path / "gap" / "data"
+    gap_root = pl.loop_root(gap_dir)
+    gap_root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        gap_root,
+        start=start,
+        run_days=84,
+        book_marks={0: 1.0, 7: 0.97},
+        bench_marks={0: 1.0, 7: 0.99, 83: 0.8},
+        shortfalls={offset: 0.0 for offset in (0, 7)},
+    )
+    out_gap = pl.weekly_summary(gap_dir, window_end)
+    assert 12 not in out_gap["milestone"][pl.S01_BOOK]["weeks"], "mid-window span defers"
+    dd_gap = pl._milestone_dd_criterion(
+        gap_root,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[12]["dd_vs_benchmark"]),
+        shallow_bench_hold=True,
+    )
+    assert dd_gap["pass"] is None
+    assert dd_gap["reason"] == "book_no_mark_at_window_end"
+    assert dd_gap["book_mark_span"] == [start.isoformat(), (start + timedelta(days=7)).isoformat()]
+    assert dd_gap["benchmark_mark_span"] == [
+        start.isoformat(),
+        (start + timedelta(days=83)).isoformat(),
+    ]
+
+    # the honest late mark arrives (recorded_at AFTER the deadline, its own
+    # mtm_date inside the window): the next weekly run judges -0.15 vs -0.20
+    _long_milestone_row(
+        gap_root,
+        start + timedelta(days=91),  # recorded late: day 91
+        event="mtm",
+        book=pl.S01_BOOK,
+        mtm_date=(start + timedelta(days=83)).isoformat(),
+        equity=0.85,
+        cash=0.0,
+        drawdown=-0.15,
+        peak_equity=1.0,
+    )
+    out_recovered = pl.weekly_summary(gap_dir, start + timedelta(days=91))
+    j12r = out_recovered["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert j12r["verdict"] == "FAIL"  # the honest numbers decide, once
+    assert j12r["judged_at_week_end"] == (start + timedelta(days=91)).isoformat()
+    assert j12r["milestone_date"] == window_end.isoformat()  # still the frozen window
+    assert set(j12r["failed_criteria"]) == {"cum_pnl_min", "dd_vs_benchmark"}
+    assert j12r["criteria"]["dd_vs_benchmark"]["value"] == pytest.approx(0.75, rel=1e-12)
+    assert j12r["criteria"]["cum_pnl_min"]["value"] == pytest.approx(-0.15, rel=1e-12)
+    assert pl.weekly_summary(gap_dir, start + timedelta(days=98)).get("milestone") is None
+
+    # --- late-marking benchmark: the shared origin is recorded, not guessed --
+    # Book C's real case: the equity benchmark starts marking days after the
+    # book. The origin becomes the first day BOTH sides mark (v1.9's shared
+    # base_day, here day 7) and is recorded in comparison_start; the gate
+    # stays judgeable instead of deferring forever. The book's
+    # inception-to-origin move stays with the principal-anchored cum gate.
+    origin_dir = tmp_path / "origin" / "data"
+    origin_root = pl.loop_root(origin_dir)
+    origin_root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        origin_root,
+        start=start,
+        run_days=84,
+        book_marks={7: 0.97, 83: 0.99},
+        bench_marks=bench_deep(),
+        shortfalls={offset: 0.0 for offset in (7, 83)},
+    )
+    out_origin = pl.weekly_summary(origin_dir, window_end)
+    j12o = out_origin["milestone"][pl.S01_BOOK]["weeks"][12]
+    dd_origin = j12o["criteria"]["dd_vs_benchmark"]
+    assert dd_origin["pass"] is True
+    assert dd_origin["comparison_start"] == (start + timedelta(days=7)).isoformat()
+    assert dd_origin["comparison_end"] == (window_end - timedelta(days=1)).isoformat()
+    # cum still anchors to the 1.0 inception principal: 0.99 - 1.0
+    assert j12o["criteria"]["cum_pnl_min"]["value"] == pytest.approx(-0.01, rel=1e-12)
+
+    # --- 26 weeks: same contract, same recovery ------------------------------
+    deadline_26w = start + timedelta(days=182)
+    gap26_dir = tmp_path / "gap26" / "data"
+    gap26_root = pl.loop_root(gap26_dir)
+    gap26_root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        gap26_root,
+        start=start,
+        run_days=182,
+        book_marks={0: 1.0, 150: 0.9},
+        bench_marks={0: 1.0, 90: 0.85, 181: 0.8},
+        shortfalls={offset: 0.0 for offset in (10, 20)},
+    )
+    out_gap26 = pl.weekly_summary(gap26_dir, deadline_26w)
+    assert 26 not in out_gap26["milestone"][pl.S01_BOOK]["weeks"]
+    dd26 = pl._milestone_dd_criterion(
+        gap26_root,
+        pl.S01_BOOK,
+        start,
+        deadline_26w,
+        float(pl.MILESTONE_RULES[26]["dd_vs_benchmark"]),
+        shallow_bench_hold=False,
+    )
+    assert dd26["pass"] is None
+    assert dd26["reason"] == "book_no_mark_at_window_end"
+    _long_milestone_row(
+        gap26_root,
+        start + timedelta(days=189),  # recorded late
+        event="mtm",
+        book=pl.S01_BOOK,
+        mtm_date=(start + timedelta(days=181)).isoformat(),
+        equity=0.85,
+        cash=0.0,
+        drawdown=-0.15,
+        peak_equity=1.0,
+    )
+    out_recovered26 = pl.weekly_summary(gap26_dir, start + timedelta(days=189))
+    j26r = out_recovered26["milestone"][pl.S01_BOOK]["weeks"][26]
+    assert j26r["verdict"] == "FAIL"
+    # the 26-week frozen rules carry dd + shortfall only (no cum gate)
+    assert j26r["failed_criteria"] == ["dd_vs_benchmark"]
+    assert j26r["criteria"]["dd_vs_benchmark"]["value"] == pytest.approx(0.75, rel=1e-12)
+    gate26 = j26r["criteria"]["shortfall_bps_mean_upper95_max"]
+    assert gate26["pass"] is True  # the two on-time shortfall facts decided
+    assert gate26["shortfall_n"] == 2
+
+
+def test_milestone_cum_pnl_anchors_to_inception_principal(tmp_path: Path, monkeypatch) -> None:
+    """AS-M126-03 (t_0be71b95 rev2): the cumulative-PnL gate is anchored to
+    the 1.0 inception principal — the weekly cum_return contract — so a
+    first-day loss (first mtm != 1.0) cannot be rebased away. With first mtm
+    0.99 and last 0.895 the frozen -10% gate reads -10.5% (FAIL); the rev1
+    first-mark rebasing read -9.596% (PASS) and hid the loss. The DD gate's
+    own footing stays the reviewed t_dddae39e baseline (peak starts at the
+    day-0 mark on both sides); the inception-to-day-0 move is cum's job."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    window_end = start + timedelta(days=84)
+    data_dir = tmp_path / "data"
+    root = pl.loop_root(data_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        root,
+        start=start,
+        run_days=84,
+        book_marks={0: 0.99, 83: 0.895},
+        # benchmark falls 17%: the DD ratio (0.0960/0.17 ≈ 0.56) passes so the
+        # cum gate is the ONLY failing criterion in the recorded verdict
+        bench_marks={0: 1.0, 20: 0.83, 83: 0.85},
+        shortfalls={offset: 0.0 for offset in (0, 83)},
+    )
+    out = pl.weekly_summary(data_dir, window_end)
+    j12 = out["milestone"][pl.S01_BOOK]["weeks"][12]
+    cum = j12["criteria"]["cum_pnl_min"]
+    assert cum["value"] == pytest.approx(-0.105, rel=1e-12)
+    assert cum["pass"] is False
+    assert cum["value_basis"] == "inception_principal_1.0"
+    assert cum["window_base_equity"] == 1.0
+    assert cum["window_end_equity"] == pytest.approx(0.895, rel=1e-12)
+    assert j12["verdict"] == "FAIL"
+    assert j12["failed_criteria"] == ["cum_pnl_min"]
+    assert j12["criteria"]["dd_vs_benchmark"]["pass"] is True
+    # same contract as the weekly row's cum_return (equity - 1.0)
+    assert out["books"][pl.S01_BOOK]["cum_return"] == pytest.approx(-0.105, rel=1e-12)
+
+
+def test_milestone_12w_switches_per_asset_no_cross_asset_offset(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-04 (t_0be71b95 rev2): the switches gate aggregates PER-ASSET
+    verdicts, so one asset's excess reversals cannot pass on another asset's
+    quiet headroom. BTC flips 6 times (its own 2x cap is 2.0 * 8.8 * 84/365 ≈
+    4.05 — over the design §2-3 warning at 5), ETH stays silent: the rev1
+    combined expectation (8.8 + 6.7)/yr would read 6 <= 7.13 and PASS."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    flip_offsets = {7, 21, 35, 49, 63, 77}  # 6 BTC flips, ETH never flips
+    for offset in range(84):
+        day = start + timedelta(days=offset)
+        for asset in ("BTC", "ETH"):
+            regime = "RISK_ON"
+            prev = regime
+            if asset == "BTC" and offset in flip_offsets:
+                regime = "RISK_OFF"
+                prev = "RISK_ON"
+            elif asset == "BTC" and offset - 1 in flip_offsets and offset > 0:
+                regime, prev = "RISK_OFF", "RISK_OFF"  # stay flipped until the next flip
+            _long_milestone_row(
+                root,
+                day,
+                event="decision",
+                book=pl.S01_BOOK,
+                decision_id=f"A:{asset}:{day.isoformat()}",
+                decision_date=day.isoformat(),
+                asset=asset,
+                regime_state=regime,
+                prev_regime_state=prev,
+                backfill=False,
+            )
+        _long_milestone_row(root, day, event="run", job="daily", phase="end", ok=True)
+    for offset, equity in {0: 1.0, 83: 1.01}.items():
+        day = start + timedelta(days=offset)
+        _long_milestone_row(
+            root,
+            day,
+            event="mtm",
+            book=pl.S01_BOOK,
+            mtm_date=day.isoformat(),
+            equity=equity,
+            cash=0.0,
+            drawdown=0.0,
+            peak_equity=1.0,
+        )
+        _long_milestone_row(
+            root,
+            day,
+            event="mtm",
+            book=pl.BENCH_CRYPTO_BOOK,
+            mtm_date=day.isoformat(),
+            equity=0.85 if offset else 1.0,
+            cash=0.0,
+            drawdown=-0.15,
+            peak_equity=1.0,
+        )
+    out = pl.weekly_summary(tmp_path / "data", start + timedelta(days=84))
+    j12 = out["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert j12["verdict"] == "FAIL"
+    assert j12["failed_criteria"] == ["switches_multiple"]
+    per_asset = j12["criteria"]["switches_multiple"]["per_asset"]
+    assert per_asset["BTC"]["observed"] == 6
+    assert per_asset["BTC"]["max"] == pytest.approx(2.0 * 8.8 * 84 / 365, rel=1e-12)
+    assert per_asset["BTC"]["pass"] is False  # 6 > 4.05: BTC's OWN cap
+    assert per_asset["ETH"]["pass"] is True  # quiet, but it cannot offset BTC
+    assert j12["criteria"]["switches_multiple"]["value"] == 6
+
+
+def test_milestone_26w_shortfall_late_marks_arrive_via_real_writer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-05 (t_0be71b95 rev2): the recovery path is the REAL writer.
+    ``mark_up`` stamps each mark with the measurement time (2026-07-03, AFTER
+    the 2026-07-02 deadline) and never backdates; the 26-week gate attributes
+    marks by the execution date of the decision they measure, so the two late
+    measurements of in-window executions complete the sample (n=1 -> n=3) and
+    the next weekly run records the judgment. Marks of out-of-window
+    executions stay out; the rev1 recorded_at filter kept the gate at n=1
+    forever no matter how often the honest marking job retried."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    deadline = start + timedelta(days=182)  # 2026-07-02
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    marked_early = 0  # the day-0 decision is measured on time (day 1)
+    for offset in (0, 80, 81, 183):  # 183 executes OUTSIDE the frozen window
+        day = start + timedelta(days=offset)
+        did = f"A:BTC:{day.isoformat()}"
+        _long_milestone_row(
+            root,
+            day,
+            event="decision",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            decision_date=day.isoformat(),
+            asset="BTC",
+            target_weight=1.0,
+            regime_state="RISK_ON",
+            prev_regime_state="RISK_ON",
+            backfill=False,
+        )
+        _long_milestone_row(
+            root,
+            day,
+            event="fill",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            asset="BTC",
+            paper_fill_price=99.0,
+            side="buy",
+            turnover=1.0,
+            units_before=0.0,
+            units_after=0.01,
+            weight_before=0.0,
+            weight_after=1.0,
+            cash_after=0.0,
+            equity_at_fill=1.0,
+        )
+        if offset == 0:
+            _long_milestone_row(
+                root,
+                start + timedelta(days=1),
+                event="mark",
+                book=pl.S01_BOOK,
+                decision_id=did,
+                asset="BTC",
+                shortfall_bps=-100.0,
+                recompute_match=True,
+                turnover=1.0,
+            )
+            marked_early = 1
+    for offset, equity in {0: 1.0, 181: 0.97}.items():
+        day = start + timedelta(days=offset)
+        _long_milestone_row(
+            root,
+            day,
+            event="mtm",
+            book=pl.S01_BOOK,
+            mtm_date=day.isoformat(),
+            equity=equity,
+            cash=0.0,
+            drawdown=equity - 1.0,
+            peak_equity=1.0,
+        )
+        _long_milestone_row(
+            root,
+            day,
+            event="mtm",
+            book=pl.BENCH_CRYPTO_BOOK,
+            mtm_date=day.isoformat(),
+            equity=0.8 if offset else 1.0,
+            cash=0.0,
+            drawdown=-0.2,
+            peak_equity=1.0,
+        )
+    assert marked_early == 1
+
+    # at the deadline: the in-window sample is still n=1 -> defer, no record
+    out_deadline = pl.weekly_summary(tmp_path / "data", deadline)
+    assert 26 not in out_deadline["milestone"][pl.S01_BOOK]["weeks"]
+
+    # the REAL writer measures the day-80/81 executions honestly late: the
+    # execution-day bars landed after the deadline, recorded_at is NOW
+    bars = {start + timedelta(days=d): {"open": 100.0} for d in (0, 80, 81, 183)}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    monkeypatch.setattr(pl, "_engine_target", lambda *a, **k: {"BTC": 1.0, "ETH": 0.0})
+    late_time = datetime(2026, 7, 3, 12, 0, tzinfo=UTC)  # deadline + 1 day
+    written = pl.mark_up(root, late_time)
+    assert written == 3  # decisions of day 80, 81 and 183 get measured
+    marks = [row for row in pl._load_journal(root) if row.get("event") == "mark"]
+    assert len(marks) == 4  # 1 on-time + 3 honest late marks
+    late = [row for row in marks if str(row["recorded_at"])[:10] == "2026-07-03"]
+    assert len(late) == 3
+    # recorded_at keeps the honest measurement time (deadline + 1 day) for
+    # every late mark — no backdating, the journal is append-only truth
+    assert all(str(row["recorded_at"]).startswith("2026-07-03") for row in late)
+    late_decision_days = sorted(str(row["decision_id"])[-10:] for row in late)
+    assert late_decision_days == ["2026-03-22", "2026-03-23", "2026-07-03"]
+
+    # the next weekly run judges the SAME frozen window: the two late marks
+    # of in-window executions count (n=3), the out-of-window one does not
+    out_recovered = pl.weekly_summary(tmp_path / "data", start + timedelta(days=189))
+    j26 = out_recovered["milestone"][pl.S01_BOOK]["weeks"][26]
+    gate = j26["criteria"]["shortfall_bps_mean_upper95_max"]
+    assert gate["shortfall_n"] == 3
+    assert gate["late_recorded"] == 2  # provenance: measured after the window
+    assert gate["shortfall_n_excluded"] == 0
+    assert gate["value"] == pytest.approx(-100.0, rel=1e-12)  # SIGNED bound
+    assert gate["pass"] is True
+    assert j26["verdict"] == "PASS"
+    assert j26["criteria"]["dd_vs_benchmark"]["pass"] is True
+    assert set(j26["criteria"]) == set(pl.MILESTONE_RULES[26])  # every frozen gate
+    assert j26["milestone_date"] == deadline.isoformat()  # the frozen window
+    assert j26["judged_at_week_end"] == (start + timedelta(days=189)).isoformat()
+
+
+def _26w_completeness_journal(root: Path, *, start: date, measured: tuple[int, ...]) -> None:
+    """A 26-week window with three in-window executions (days 0/80/81),
+    shortfall marks for the ``measured`` days only, and full-window equity
+    marks on both sides (dd ratio 0.15, judgeable)."""
+
+    for offset in (0, 80, 81):
+        day = start + timedelta(days=offset)
+        did = f"A:BTC:{day.isoformat()}"
+        _long_milestone_row(
+            root,
+            day,
+            event="decision",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            decision_date=day.isoformat(),
+            asset="BTC",
+            target_weight=1.0,
+            regime_state="RISK_ON",
+            prev_regime_state="RISK_ON",
+            backfill=False,
+        )
+        _long_milestone_row(
+            root,
+            day,
+            event="fill",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            asset="BTC",
+            paper_fill_price=99.0,
+            side="buy",
+            turnover=1.0,
+            units_before=0.0,
+            units_after=0.01,
+            weight_before=0.0,
+            weight_after=1.0,
+            cash_after=0.0,
+            equity_at_fill=1.0,
+        )
+        if offset in measured:
+            _long_milestone_row(
+                root,
+                day + timedelta(days=1),
+                event="mark",
+                book=pl.S01_BOOK,
+                decision_id=did,
+                asset="BTC",
+                shortfall_bps=-100.0,
+                recompute_match=True,
+                turnover=1.0,
+            )
+    for offset, equity in {0: 1.0, 181: 0.97}.items():
+        day = start + timedelta(days=offset)
+        _long_milestone_row(
+            root,
+            day,
+            event="mtm",
+            book=pl.S01_BOOK,
+            mtm_date=day.isoformat(),
+            equity=equity,
+            cash=0.0,
+            drawdown=equity - 1.0,
+            peak_equity=1.0,
+        )
+        _long_milestone_row(
+            root,
+            day,
+            event="mtm",
+            book=pl.BENCH_CRYPTO_BOOK,
+            mtm_date=day.isoformat(),
+            equity=0.8 if offset else 1.0,
+            cash=0.0,
+            drawdown=-0.2 if offset else 0.0,
+            peak_equity=1.0,
+        )
+
+
+def test_milestone_26w_holds_while_a_target_fill_is_unmeasured(tmp_path: Path, monkeypatch) -> None:
+    """AS-M126-06 (t_0be71b95 rev3): ``n >= 2`` is the bound's minimum
+    sample, not proof that the window's executions are all measured. Three
+    in-window fills with two marks (-100 bps each) give a deciding bound of
+    -100 <= 15 — a PASS written from a partial sample at the deadline, which
+    the third fill's honest late measurement (+1000 bps -> bound ~869.8 bps)
+    could never correct (already_judged dedupes). The gate now matches the
+    window's fill set against the marks: while a target fill is unmeasured
+    the judgment records NOTHING (never deduped) and the criterion carries
+    the measured/unmeasured/unusable completeness."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    deadline = start + timedelta(days=182)  # window's last day: day 181
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _26w_completeness_journal(root, start=start, measured=(0, 80))
+
+    out = pl.weekly_summary(tmp_path / "data", deadline)
+    assert 26 not in out["milestone"][pl.S01_BOOK]["weeks"]
+    gate = pl._milestone_shortfall_criterion(
+        pl._load_journal(root),
+        pl.S01_BOOK,
+        start,
+        deadline,
+        float(pl.MILESTONE_RULES[26]["shortfall_bps_mean_upper95_max"]),
+    )
+    assert gate["value"] == pytest.approx(-100.0, rel=1e-12)  # the partial bound: a fact
+    assert gate["pass"] is None
+    assert gate["reason"] == "shortfall_unmeasured_fills"
+    assert gate["completeness"]["attribution"] == "decision_execution_date"
+    assert gate["completeness"]["target_fills"] == 3
+    assert gate["completeness"]["measured"] == 2
+    assert gate["completeness"]["unmeasured"] == [
+        f"A:BTC:{(start + timedelta(days=81)).isoformat()}"
+    ]
+    assert gate["completeness"]["unusable"] == []
+    # the deferral is not a record: a fact-less retry re-judges, never dedupes
+    out_retry = pl.weekly_summary(tmp_path / "data", deadline + timedelta(days=7))
+    milestone_retry = out_retry.get("milestone") or {}
+    assert 26 not in milestone_retry.get(pl.S01_BOOK, {}).get("weeks", {})
+    assert not pl._milestone_already_judged(root, pl.S01_BOOK, 26)
+
+
+def test_milestone_26w_unmeasured_fill_completes_via_real_writer_then_judges_once(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-06 recovery: the missing measurement arrives through the REAL
+    ``mark_up`` writer — the execution day's bar landed the day after the
+    deadline, so the shortfall is measured NOW with an honest recorded_at
+    (never backdated). The SAME frozen window is then judged exactly ONCE,
+    on the FULL sample: three signed shortfalls (-100, -100, +1000 bps) give
+    a one-sided 95% upper bound of ~869.797 bps > 15 -> FAIL. No later
+    weekly run writes a second record for (book, 26)."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    deadline = start + timedelta(days=182)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _26w_completeness_journal(root, start=start, measured=(0, 80))
+
+    # the real writer measures the day-81 execution honestly late
+    bars = {start + timedelta(days=d): {"open": 90.0 if d == 81 else 100.0} for d in (0, 80, 81)}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    monkeypatch.setattr(pl, "_engine_target", lambda *a, **k: {"BTC": 1.0, "ETH": 0.0})
+    late_time = datetime.combine(start + timedelta(days=183), datetime.min.time(), UTC)
+    assert pl.mark_up(root, late_time) == 1  # decisions 0/80 are already measured
+    marks = [row for row in pl._load_journal(root) if row.get("event") == "mark"]
+    assert len(marks) == 3
+    assert str(marks[-1]["recorded_at"]).startswith((start + timedelta(days=183)).isoformat())
+    assert marks[-1]["decision_id"] == f"A:BTC:{(start + timedelta(days=81)).isoformat()}"
+
+    out = pl.weekly_summary(tmp_path / "data", start + timedelta(days=189))
+    j26 = out["milestone"][pl.S01_BOOK]["weeks"][26]
+    gate = j26["criteria"]["shortfall_bps_mean_upper95_max"]
+    assert gate["completeness"]["target_fills"] == 3
+    assert gate["completeness"]["measured"] == 3
+    assert gate["completeness"]["unmeasured"] == []
+    assert gate["completeness"]["unusable"] == []
+    assert gate["shortfall_n"] == 3
+    assert gate["late_recorded"] == 1  # only the day-81 measurement is post-window
+    assert gate["value"] == pytest.approx(869.7966666666675, rel=1e-9)
+    assert gate["pass"] is False
+    assert j26["verdict"] == "FAIL"
+    assert j26["failed_criteria"] == ["shortfall_bps_mean_upper95_max"]
+    assert j26["milestone_date"] == deadline.isoformat()  # the SAME frozen window
+    assert j26["judged_at_week_end"] == (start + timedelta(days=189)).isoformat()
+    # exactly one record for (book, 26) — ever
+    assert (
+        pl.weekly_summary(tmp_path / "data", start + timedelta(days=196)).get("milestone") is None
+    )
+    recorded_rows = [
+        row
+        for row in pl._rows_from_jsonl(pl.summary_path(root), strict=True)
+        if isinstance(row.get("milestone"), dict)
+        and isinstance(row["milestone"].get(pl.S01_BOOK), dict)
+        and (
+            26 in row["milestone"][pl.S01_BOOK].get("weeks", {})
+            or "26" in row["milestone"][pl.S01_BOOK].get("weeks", {})
+        )
+    ]
+    assert len(recorded_rows) == 1
+
+
+def test_milestone_26w_pass_control_when_every_target_fill_is_measured(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Control for AS-M126-06: completeness holds back only UNMEASURED facts.
+    The same window with all three fills measured on time records its PASS
+    at the deadline exactly once — an honest complete sample must never turn
+    into a permanent deferral."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    deadline = start + timedelta(days=182)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _26w_completeness_journal(root, start=start, measured=(0, 80, 81))
+
+    out = pl.weekly_summary(tmp_path / "data", deadline)
+    j26 = out["milestone"][pl.S01_BOOK]["weeks"][26]
+    gate = j26["criteria"]["shortfall_bps_mean_upper95_max"]
+    assert gate["completeness"]["target_fills"] == 3
+    assert gate["completeness"]["measured"] == 3
+    assert gate["completeness"]["unmeasured"] == []
+    assert gate["completeness"]["unusable"] == []
+    assert gate["shortfall_n"] == 3
+    assert gate["late_recorded"] == 0  # every measurement landed inside the window
+    assert gate["value"] == pytest.approx(-100.0, rel=1e-12)  # SIGNED bound
+    assert gate["pass"] is True
+    assert j26["verdict"] == "PASS"
+    assert j26["milestone_date"] == deadline.isoformat()
+    assert (
+        pl.weekly_summary(tmp_path / "data", deadline + timedelta(days=7)).get("milestone") is None
+    )
+
+
+def test_run_daily_mtm_recovers_an_unpriced_milestone_window_end_12w(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-02-R2 (t_0be71b95 rev3): the unpriced window-end mark is
+    recovered by the REAL writer. ``run_daily_mtm`` writes ``mtm_day =
+    now.date()`` only, so the operational loop never produced the missing
+    day again and the frozen 12-week window stayed unjudgeable forever (the
+    rev2 regression recovered with a hand-written row). Here the real writer
+    records the day as unpriced (no bar for the holding), the bars land
+    later, and the NEXT honest daily run — the very call the cron makes —
+    re-prices that day AS OF THAT DAY (the day-0 fill's units priced with
+    that day's own finalized bar) and stamps it with the recovering run's
+    recorded_at. The judgment then records the SAME frozen window once."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    window_end = start + timedelta(days=84)  # the 12-week deadline
+    last_day = window_end - timedelta(days=1)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        root,
+        start=start,
+        run_days=84,
+        book_marks={0: 1.0, 7: 0.97},  # day 83: the mark that never happened
+        bench_marks={0: 1.0, 7: 0.99, 83: 0.8},
+        shortfalls={},
+    )
+    _long_milestone_row(
+        root,
+        start,
+        event="fill",
+        book=pl.S01_BOOK,
+        decision_id=f"A:BTC:{start.isoformat()}",
+        asset="BTC",
+        paper_fill_price=99.0,
+        side="buy",
+        turnover=1.0,
+        units_before=0.0,
+        units_after=0.01,
+        cash_after=0.0,
+    )
+
+    # --- the operational failure: the writer runs on the window's last day
+    # with no bar for the holding -> the real mtm_unpriced row, no judgment ---
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        assert pl.run_daily_mtm(root, _now_of(last_day)) == 3  # A unpriced; 3 books mark
+    unpriced = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "mtm_unpriced" and row.get("book") == pl.S01_BOOK
+    ]
+    assert [row["mtm_date"] for row in unpriced] == [last_day.isoformat()]
+    assert unpriced[0]["unpriced_assets"] == ["BTC"]
+    deadline_out = pl.weekly_summary(tmp_path / "data", window_end)
+    weeks = deadline_out["milestone"][pl.S01_BOOK]["weeks"]
+    assert 12 not in weeks and 4 in weeks  # the gate holds; 4w keeps its own record
+    assert not pl._milestone_already_judged(root, pl.S01_BOOK, 12)
+
+    # --- the bars land later; the next honest daily run recovers the day ----
+    bars = {
+        start + timedelta(days=82): {"open": 85.0, "close": 85.0},  # prices day 83
+        start + timedelta(days=90): {"open": 85.0, "close": 85.0},  # prices day 91
+    }
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    recovery_day = start + timedelta(days=91)
+    assert pl.run_daily_mtm(root, _now_of(recovery_day)) == 6  # A: recovered + today
+    recovered = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "mtm"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("mtm_date") == last_day.isoformat()
+    ]
+    assert len(recovered) == 1
+    row = recovered[0]
+    assert row["recovered_from_unpriced"] is True
+    # honest recorded_at: the RECOVERING run's time — never the target day
+    assert str(row["recorded_at"]).startswith(recovery_day.isoformat())
+    assert row["equity"] == pytest.approx(0.01 * 85.0, rel=1e-12)
+    assert row["drawdown"] == pytest.approx(-0.15, rel=1e-12)
+    assert row["peak_equity"] == pytest.approx(1.0, rel=1e-12)
+    assert row["price_bar_date"] == (start + timedelta(days=82)).isoformat()
+    # B2: a later run neither re-recovers the day nor duplicates anything
+    assert pl.run_daily_mtm(root, _now_of(start + timedelta(days=92))) == 5
+
+    # --- the SAME frozen window is now judgeable — and judged exactly once ---
+    dd = pl._milestone_dd_criterion(
+        root,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[12]["dd_vs_benchmark"]),
+        shallow_bench_hold=True,
+    )
+    assert dd["pass"] is False
+    assert dd["value"] == pytest.approx(0.75, rel=1e-12)  # the honest numbers decide
+    out = pl.weekly_summary(tmp_path / "data", recovery_day)
+    j12 = out["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert j12["verdict"] == "FAIL"
+    assert j12["milestone_date"] == window_end.isoformat()
+    assert j12["judged_at_week_end"] == recovery_day.isoformat()
+    assert pl.weekly_summary(tmp_path / "data", start + timedelta(days=98)).get("milestone") is None
+
+
+def test_run_daily_mtm_recovers_an_unpriced_milestone_window_end_26w(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-02-R2 on the 26-week window, composed with AS-M126-06: the
+    real writer records the window's last day unpriced AND the day-81
+    execution is still unmeasured — the judgment holds for BOTH reasons
+    (nothing recorded). The bars land, the next honest daily run re-prices
+    the past day AS OF THAT DAY, the real ``mark_up`` measures the missing
+    execution with an honest post-deadline recorded_at, and the SAME frozen
+    window is then judged exactly once — FAIL on the full evidence (dd ratio
+    0.75, signed shortfall bound ~869.797 bps > 15)."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    window_end = start + timedelta(days=182)
+    last_day = window_end - timedelta(days=1)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    for offset in (0, 80, 81):
+        day = start + timedelta(days=offset)
+        did = f"A:BTC:{day.isoformat()}"
+        _long_milestone_row(
+            root,
+            day,
+            event="decision",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            decision_date=day.isoformat(),
+            asset="BTC",
+            target_weight=1.0,
+            regime_state="RISK_ON",
+            prev_regime_state="RISK_ON",
+            backfill=False,
+        )
+        _long_milestone_row(
+            root,
+            day,
+            event="fill",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            asset="BTC",
+            paper_fill_price=99.0,
+            side="buy",
+            turnover=1.0,
+            units_before=0.0,
+            units_after=0.01,
+            cash_after=0.0,
+        )
+        if offset in (0, 80):
+            _long_milestone_row(
+                root,
+                day + timedelta(days=1),
+                event="mark",
+                book=pl.S01_BOOK,
+                decision_id=did,
+                asset="BTC",
+                shortfall_bps=-100.0,
+                recompute_match=True,
+                turnover=1.0,
+            )
+    for offset, equity in {0: 1.0, 7: 0.97}.items():
+        day = start + timedelta(days=offset)
+        _long_milestone_row(
+            root,
+            day,
+            event="mtm",
+            book=pl.S01_BOOK,
+            mtm_date=day.isoformat(),
+            equity=equity,
+            cash=0.0,
+            drawdown=equity - 1.0,
+            peak_equity=1.0,
+        )
+    for offset, equity in {0: 1.0, 7: 0.99, 181: 0.8}.items():
+        day = start + timedelta(days=offset)
+        _long_milestone_row(
+            root,
+            day,
+            event="mtm",
+            book=pl.BENCH_CRYPTO_BOOK,
+            mtm_date=day.isoformat(),
+            equity=equity,
+            cash=0.0,
+            drawdown=equity - 1.0,
+            peak_equity=1.0,
+        )
+
+    # --- at the deadline: an unpriced window-end AND an unmeasured fill -----
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        assert pl.run_daily_mtm(root, _now_of(last_day)) == 3
+    out_deadline = pl.weekly_summary(tmp_path / "data", window_end)
+    assert 26 not in out_deadline["milestone"][pl.S01_BOOK]["weeks"]
+    rows = pl._load_journal(root)
+    dd = pl._milestone_dd_criterion(
+        root,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[26]["dd_vs_benchmark"]),
+        shallow_bench_hold=False,
+    )
+    assert dd["pass"] is None
+    assert dd["reason"] == "book_no_mark_at_window_end"
+    gate = pl._milestone_shortfall_criterion(
+        rows,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[26]["shortfall_bps_mean_upper95_max"]),
+    )
+    assert gate["pass"] is None
+    assert gate["reason"] == "shortfall_unmeasured_fills"
+    assert gate["completeness"]["unmeasured"] == [
+        f"A:BTC:{(start + timedelta(days=81)).isoformat()}"
+    ]
+
+    # --- recovery: one honest daily run + one honest mark_up ----------------
+    bars = {
+        start + timedelta(days=0): {"open": 100.0, "close": 100.0},
+        start + timedelta(days=80): {"open": 100.0, "close": 100.0},
+        start + timedelta(days=81): {"open": 90.0, "close": 90.0},  # the execution bar
+        start + timedelta(days=180): {"open": 85.0, "close": 85.0},  # prices day 181
+        start + timedelta(days=188): {"open": 85.0, "close": 85.0},  # prices day 189
+    }
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    monkeypatch.setattr(pl, "_engine_target", lambda *a, **k: {"BTC": 1.0, "ETH": 0.0})
+    recovery_day = start + timedelta(days=189)
+    assert pl.run_daily_mtm(root, _now_of(recovery_day)) == 6
+    assert pl.mark_up(root, datetime.combine(recovery_day, datetime.min.time(), UTC)) == 1
+
+    out = pl.weekly_summary(tmp_path / "data", recovery_day)
+    j26 = out["milestone"][pl.S01_BOOK]["weeks"][26]
+    assert j26["verdict"] == "FAIL"
+    assert j26["milestone_date"] == window_end.isoformat()
+    assert j26["judged_at_week_end"] == recovery_day.isoformat()
+    gate = j26["criteria"]["shortfall_bps_mean_upper95_max"]
+    assert gate["completeness"]["measured"] == 3
+    assert gate["completeness"]["unmeasured"] == []
+    assert gate["shortfall_n"] == 3
+    assert gate["late_recorded"] == 1
+    assert gate["value"] == pytest.approx(869.7966666666675, rel=1e-9)
+    assert gate["pass"] is False
+    dd26 = j26["criteria"]["dd_vs_benchmark"]
+    assert dd26["value"] == pytest.approx(0.75, rel=1e-12)
+    assert dd26["pass"] is False
+    assert (
+        pl.weekly_summary(tmp_path / "data", start + timedelta(days=196)).get("milestone") is None
+    )
+
+
+def test_run_daily_mtm_recovery_values_the_failed_snapshot_not_same_day_later_fills(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-02-R3 (t_0be71b95 rev4): the recovery values the FAILED
+    evaluation's own snapshot, never the end-of-calendar-day holdings.
+
+    The real writer records the window's last day unpriced at 00:00 (holdings
+    BTC 0.01 / cash 0); a decision at 01:00 resolves through the REAL fill
+    path at 03:00 into a half sell (BTC 0.005 / cash 0.49925). The recovered
+    mark must price the 00:00 snapshot at the previous close — equity 0.85,
+    FAIL — not the afternoon holdings (0.92425, a fabricated PASS). The
+    no-outage control runs the identical MTM-before-sell day with the price
+    available: the 00:00 mark is 0.85 and the later sell does not rewrite it
+    — the recovery must land on the SAME number, and the sale's effect first
+    shows in the NEXT day's mark on both paths.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    window_end = start + timedelta(days=84)
+    last_day = window_end - timedelta(days=1)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        root,
+        start=start,
+        run_days=84,
+        book_marks={0: 1.0},
+        bench_marks={0: 1.0, 83: 0.8},
+    )
+    _long_milestone_row(
+        root,
+        start,
+        event="fill",
+        book=pl.S01_BOOK,
+        decision_id=f"A:BTC:{start.isoformat()}",
+        asset="BTC",
+        paper_fill_price=99.0,
+        side="buy",
+        turnover=1.0,
+        units_before=0.0,
+        units_after=0.01,
+        cash_after=0.0,
+    )
+
+    def same_day_sell(journal_root: Path, day: date) -> None:
+        """A real pending decision at 01:00 resolved by the real fill path."""
+        _long_milestone_row(
+            journal_root,
+            day,
+            event="decision",
+            book=pl.S01_BOOK,
+            asset="BTC",
+            decision_id=f"A:BTC:{day.isoformat()}",
+            decision_date=day.isoformat(),
+            recorded_at=f"{day.isoformat()}T01:00:00+00:00",
+            backfill=False,
+            fill_status="pending",
+            side="sell",
+            delta_weight=-0.5,
+            target_weight=0.5,
+            regime_state="RISK_ON",
+            prev_regime_state="RISK_ON",
+        )
+        assert pl.resolve_fills(
+            journal_root,
+            datetime.combine(day, datetime.min.time(), UTC).replace(hour=3),
+        )
+
+    def journal_rows(data_dir: Path) -> list[dict[str, object]]:
+        return pl._load_journal(pl.loop_root(data_dir))  # type: ignore[arg-type]
+
+    # --- the failure: the real writer cannot price the window's last day ----
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        assert pl.run_daily_mtm(root, _now_of(last_day)) == 3  # A unpriced; 3 books mark
+    unpriced = [
+        row
+        for row in journal_rows(tmp_path / "data")
+        if row.get("event") == "mtm_unpriced" and row.get("book") == pl.S01_BOOK
+    ]
+    assert len(unpriced) == 1
+    assert unpriced[0]["mtm_date"] == last_day.isoformat()
+    assert unpriced[0]["units"] == {"BTC": 0.01}
+    assert unpriced[0]["cash"] == 0.0
+
+    # --- a REAL sell fills at 03:00, AFTER the failed 00:00 write -----------
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        m.setattr(pl, "_fetch_crypto_1h", lambda *a, **k: [])
+        m.setattr(
+            pl,
+            "_first_fill_candidate",
+            lambda *a, **k: {
+                "open_time": datetime.combine(last_day, datetime.min.time(), UTC)
+                .replace(hour=2)
+                .isoformat(),
+                "open": 100.0,
+                "close": 100.0,
+            },
+        )
+        same_day_sell(root, last_day)
+    sold = next(
+        row
+        for row in journal_rows(tmp_path / "data")
+        if row.get("event") == "fill" and row.get("decision_id") == f"A:BTC:{last_day.isoformat()}"
+    )
+    assert sold["side"] == "sell" and sold["guard_applied"] is True
+    assert sold["units_after"] == pytest.approx(0.005, rel=1e-12)
+    assert not any(
+        row.get("event") == "mtm"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("mtm_date") == last_day.isoformat()
+        for row in journal_rows(tmp_path / "data")
+    )
+
+    # --- the bars land; the next honest run recovers AT THE SNAPSHOT --------
+    bars = {
+        start + timedelta(days=82): {"open": 85.0, "close": 85.0},  # prices day 83
+        start + timedelta(days=90): {"open": 85.0, "close": 85.0},  # prices day 91
+    }
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    recovery_day = start + timedelta(days=91)
+    assert pl.run_daily_mtm(root, _now_of(recovery_day)) == 6  # recovered + 5 own rows
+    recovered = [
+        row
+        for row in journal_rows(tmp_path / "data")
+        if row.get("event") == "mtm"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("mtm_date") == last_day.isoformat()
+    ]
+    assert len(recovered) == 1
+    # the 00:00 snapshot priced at the previous close: 0.01 * 85 + 0.0 — NOT
+    # the afternoon's 0.005 * 85 + 0.49925 = 0.92425
+    assert recovered[0]["equity"] == pytest.approx(0.85, rel=1e-12)
+    assert recovered[0]["units"] == {"BTC": 0.01}
+    assert recovered[0]["cash"] == 0.0
+    assert recovered[0]["recovered_from_unpriced"] is True
+    assert str(recovered[0]["recorded_at"]).startswith(recovery_day.isoformat())
+    # the sale's effect first shows in the NEXT mark (as in a normal day)
+    day91 = [
+        row
+        for row in journal_rows(tmp_path / "data")
+        if row.get("event") == "mtm"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("mtm_date") == recovery_day.isoformat()
+    ]
+    assert len(day91) == 1
+    assert day91[0]["units"] == {"BTC": 0.005}
+    assert day91[0]["equity"] == pytest.approx(0.005 * 85.0 + 0.49925, rel=1e-12)
+
+    # --- the honest numbers decide: FAIL, exactly once -----------------------
+    out = pl.weekly_summary(tmp_path / "data", recovery_day)
+    j12 = out["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert j12["verdict"] == "FAIL"
+    assert j12["failed_criteria"] == ["cum_pnl_min", "dd_vs_benchmark"]
+    dd = j12["criteria"]["dd_vs_benchmark"]
+    assert dd["value"] == pytest.approx(0.75, rel=1e-12)
+    assert dd["unresolved_mtm_gaps"] == []
+    assert pl.weekly_summary(tmp_path / "data", start + timedelta(days=98)).get("milestone") is None
+
+    # --- no-outage control: same day, price available from the start --------
+    control_dir = tmp_path / "control" / "data"
+    control_root = pl.loop_root(control_dir)
+    control_root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        control_root,
+        start=start,
+        run_days=84,
+        book_marks={0: 1.0},
+        bench_marks={0: 1.0, 83: 0.8},
+    )
+    _long_milestone_row(
+        control_root,
+        start,
+        event="fill",
+        book=pl.S01_BOOK,
+        decision_id=f"A:BTC:{start.isoformat()}",
+        asset="BTC",
+        paper_fill_price=99.0,
+        side="buy",
+        turnover=1.0,
+        units_before=0.0,
+        units_after=0.01,
+        cash_after=0.0,
+    )
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    assert pl.run_daily_mtm(control_root, _now_of(last_day)) == 4  # A marks at 00:00
+    normal = next(
+        row
+        for row in journal_rows(control_dir)
+        if row.get("event") == "mtm"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("mtm_date") == last_day.isoformat()
+    )
+    assert normal["equity"] == pytest.approx(0.85, rel=1e-12)
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        m.setattr(pl, "_fetch_crypto_1h", lambda *a, **k: [])
+        m.setattr(
+            pl,
+            "_first_fill_candidate",
+            lambda *a, **k: {
+                "open_time": datetime.combine(last_day, datetime.min.time(), UTC)
+                .replace(hour=2)
+                .isoformat(),
+                "open": 100.0,
+                "close": 100.0,
+            },
+        )
+        same_day_sell(control_root, last_day)
+    # the sell does NOT rewrite the existing 00:00 mark (B2), and the recovery
+    # equivalence holds: the outage path records the SAME numbers
+    control_day83 = [
+        row
+        for row in journal_rows(control_dir)
+        if row.get("event") == "mtm"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("mtm_date") == last_day.isoformat()
+    ]
+    assert len(control_day83) == 1 and control_day83[0]["equity"] == pytest.approx(0.85, rel=1e-12)
+    assert pl.run_daily_mtm(control_root, _now_of(recovery_day)) == 5
+    control_out = pl.weekly_summary(control_dir, recovery_day)
+    control_j12 = control_out["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert control_j12["verdict"] == "FAIL" == j12["verdict"]
+    control_dd = control_j12["criteria"]["dd_vs_benchmark"]
+    assert control_dd["value"] == pytest.approx(dd["value"], rel=1e-12)
+    assert control_j12["criteria"]["cum_pnl_min"]["value"] == pytest.approx(
+        j12["criteria"]["cum_pnl_min"]["value"], rel=1e-12
+    )
+
+
+def test_unresolved_interior_mtm_gap_defers_12w_until_the_writer_recovers(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-07 (t_0be71b95 rev4), 12 weeks: a KNOWN unresolved interior
+    valuation hole holds the judgment — matching spans are not wholeness.
+
+    The real writer records day 40 unpriced; at the frozen deadline the last
+    day's own close IS available, so both spans end on the same day and the
+    partial series would show a shallow drawdown (ratio 0.15 -> a permanent
+    PASS). The gate must defer instead. When the historical day-39 close
+    arrives, the normal daily writer recovers day 40 honestly (equity 0.70)
+    and the SAME frozen window records its real verdict (ratio 1.5, FAIL)
+    exactly once. A complete-data control records PASS through the same
+    gate with no holes.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    window_end = start + timedelta(days=84)
+    last_day = window_end - timedelta(days=1)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        root,
+        start=start,
+        run_days=84,
+        book_marks={0: 1.0},
+        bench_marks={0: 1.0, 83: 0.8},
+    )
+    _long_milestone_row(
+        root,
+        start,
+        event="fill",
+        book=pl.S01_BOOK,
+        decision_id=f"A:BTC:{start.isoformat()}",
+        asset="BTC",
+        paper_fill_price=99.0,
+        side="buy",
+        turnover=1.0,
+        units_before=0.0,
+        units_after=0.01,
+        cash_after=0.0,
+    )
+
+    # --- day 40: the real writer records a KNOWN hole ------------------------
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        assert pl.run_daily_mtm(root, _now_of(start + timedelta(days=40))) == 4
+    # --- the deadline: endpoints complete, interior still holed -------------
+    deadline_bars = {start + timedelta(days=82): {"open": 97.0, "close": 97.0}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(deadline_bars))
+    assert pl.run_daily_mtm(root, _now_of(last_day)) == 4  # A marks 0.97; day 40 unrecovered
+    out_deadline = pl.weekly_summary(tmp_path / "data", window_end)
+    weeks = out_deadline["milestone"][pl.S01_BOOK]["weeks"]
+    assert 12 not in weeks and 4 in weeks  # the gate holds; 4w keeps its own record
+    assert not pl._milestone_already_judged(root, pl.S01_BOOK, 12)
+    dd = pl._milestone_dd_criterion(
+        root,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[12]["dd_vs_benchmark"]),
+        shallow_bench_hold=True,
+    )
+    assert dd["pass"] is None
+    assert dd["reason"] == "unresolved_mtm_gap_in_window"
+    assert dd["unresolved_mtm_gaps"] == [
+        {"book": pl.S01_BOOK, "mtm_date": (start + timedelta(days=40)).isoformat()}
+    ]
+
+    # --- the late price; the NORMAL writer recovers the hole -----------------
+    late_bars = {
+        start + timedelta(days=39): {"open": 70.0, "close": 70.0},  # prices day 40
+        start + timedelta(days=82): {"open": 97.0, "close": 97.0},
+        start + timedelta(days=90): {"open": 85.0, "close": 85.0},
+    }
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(late_bars))
+    recovery_day = start + timedelta(days=91)
+    assert pl.run_daily_mtm(root, _now_of(recovery_day)) == 6  # recovered + 5 own rows
+    recovered = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("recovered_from_unpriced") and row.get("book") == pl.S01_BOOK
+    ]
+    assert len(recovered) == 1
+    assert recovered[0]["mtm_date"] == (start + timedelta(days=40)).isoformat()
+    assert recovered[0]["equity"] == pytest.approx(0.70, rel=1e-12)
+
+    # --- the SAME frozen window records its real verdict, exactly once -------
+    out = pl.weekly_summary(tmp_path / "data", recovery_day)
+    j12 = out["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert j12["verdict"] == "FAIL"
+    assert j12["failed_criteria"] == ["dd_vs_benchmark"]
+    dd = j12["criteria"]["dd_vs_benchmark"]
+    assert dd["value"] == pytest.approx(1.5, rel=1e-12)
+    assert dd["unresolved_mtm_gaps"] == []
+    assert j12["milestone_date"] == window_end.isoformat()
+    assert j12["judged_at_week_end"] == recovery_day.isoformat()
+    assert pl.weekly_summary(tmp_path / "data", start + timedelta(days=98)).get("milestone") is None
+
+    # --- complete-data control: no holes, the gate records PASS -------------
+    control_dir = tmp_path / "control" / "data"
+    control_root = pl.loop_root(control_dir)
+    control_root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        control_root,
+        start=start,
+        run_days=84,
+        book_marks={0: 1.0, 83: 0.97},
+        bench_marks={0: 1.0, 83: 0.8},
+    )
+    control_out = pl.weekly_summary(control_dir, window_end)
+    control_j12 = control_out["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert control_j12["verdict"] == "PASS"
+    control_dd = control_j12["criteria"]["dd_vs_benchmark"]
+    assert control_dd["pass"] is True
+    assert control_dd["unresolved_mtm_gaps"] == []
+    assert pl.weekly_summary(control_dir, start + timedelta(days=91)).get("milestone") is None
+
+
+def test_unresolved_interior_mtm_gap_defers_26w_until_the_writer_recovers(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-07 (t_0be71b95 rev4), 26 weeks: the same interior-hole hold on
+    the half-year window, composed with a DECIDED shortfall gate — the drawdown
+    hold alone must keep the judgment unrecorded, and the honest recovery must
+    complete the very same frozen window exactly once (ratio 1.5, FAIL). A
+    complete-data control records PASS through the same gate.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    window_end = start + timedelta(days=182)
+    last_day = window_end - timedelta(days=1)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    for offset in (0, 80, 81):
+        day = start + timedelta(days=offset)
+        did = f"A:BTC:{day.isoformat()}"
+        _long_milestone_row(
+            root,
+            day,
+            event="decision",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            decision_date=day.isoformat(),
+            asset="BTC",
+            target_weight=1.0,
+            regime_state="RISK_ON",
+            prev_regime_state="RISK_ON",
+            backfill=False,
+        )
+        _long_milestone_row(
+            root,
+            day,
+            event="fill",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            asset="BTC",
+            paper_fill_price=99.0,
+            side="buy",
+            turnover=1.0,
+            units_before=0.0,
+            units_after=0.01,
+            cash_after=0.0,
+        )
+        _long_milestone_row(
+            root,
+            day + timedelta(days=1),
+            event="mark",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            asset="BTC",
+            shortfall_bps=-100.0,
+            recompute_match=True,
+            turnover=1.0,
+        )
+    for offset, equity in {0: 1.0}.items():
+        _long_milestone_row(
+            root,
+            start + timedelta(days=offset),
+            event="mtm",
+            book=pl.S01_BOOK,
+            mtm_date=(start + timedelta(days=offset)).isoformat(),
+            equity=equity,
+            cash=0.0,
+            drawdown=equity - 1.0,
+            peak_equity=1.0,
+        )
+    for offset, equity in {0: 1.0, 181: 0.8}.items():
+        day = start + timedelta(days=offset)
+        _long_milestone_row(
+            root,
+            day,
+            event="mtm",
+            book=pl.BENCH_CRYPTO_BOOK,
+            mtm_date=day.isoformat(),
+            equity=equity,
+            cash=0.0,
+            drawdown=equity - 1.0,
+            peak_equity=1.0,
+        )
+
+    # --- the hole, then a deadline whose endpoints complete anyway -----------
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        assert pl.run_daily_mtm(root, _now_of(start + timedelta(days=40))) == 4
+    deadline_bars = {start + timedelta(days=180): {"open": 97.0, "close": 97.0}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(deadline_bars))
+    assert pl.run_daily_mtm(root, _now_of(last_day)) == 4
+    # the cost gate is fully decided — the drawdown hole alone holds the record
+    gate = pl._milestone_shortfall_criterion(
+        pl._load_journal(root),
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[26]["shortfall_bps_mean_upper95_max"]),
+    )
+    assert gate["pass"] is True
+    out_deadline = pl.weekly_summary(tmp_path / "data", window_end)
+    weeks = out_deadline["milestone"][pl.S01_BOOK]["weeks"]
+    assert 26 not in weeks and 4 in weeks
+    dd = pl._milestone_dd_criterion(
+        root,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[26]["dd_vs_benchmark"]),
+        shallow_bench_hold=False,
+    )
+    assert dd["pass"] is None
+    assert dd["reason"] == "unresolved_mtm_gap_in_window"
+    assert dd["unresolved_mtm_gaps"] == [
+        {"book": pl.S01_BOOK, "mtm_date": (start + timedelta(days=40)).isoformat()}
+    ]
+    assert not pl._milestone_already_judged(root, pl.S01_BOOK, 26)
+
+    # --- the late price; the NORMAL writer completes the same window ---------
+    late_bars = {
+        start + timedelta(days=39): {"open": 70.0, "close": 70.0},
+        start + timedelta(days=180): {"open": 97.0, "close": 97.0},
+        start + timedelta(days=188): {"open": 85.0, "close": 85.0},
+    }
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(late_bars))
+    recovery_day = start + timedelta(days=189)
+    assert pl.run_daily_mtm(root, _now_of(recovery_day)) == 6
+    recovered = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("recovered_from_unpriced") and row.get("book") == pl.S01_BOOK
+    ]
+    assert len(recovered) == 1
+    assert recovered[0]["equity"] == pytest.approx(0.70, rel=1e-12)
+    out = pl.weekly_summary(tmp_path / "data", recovery_day)
+    j26 = out["milestone"][pl.S01_BOOK]["weeks"][26]
+    assert j26["verdict"] == "FAIL"
+    assert j26["failed_criteria"] == ["dd_vs_benchmark"]
+    assert j26["criteria"]["dd_vs_benchmark"]["value"] == pytest.approx(1.5, rel=1e-12)
+    assert j26["criteria"]["dd_vs_benchmark"]["unresolved_mtm_gaps"] == []
+    assert j26["criteria"]["shortfall_bps_mean_upper95_max"]["pass"] is True
+    assert j26["milestone_date"] == window_end.isoformat()
+    assert j26["judged_at_week_end"] == recovery_day.isoformat()
+    assert (
+        pl.weekly_summary(tmp_path / "data", start + timedelta(days=196)).get("milestone") is None
+    )
+
+    # --- complete-data control -----------------------------------------------
+    control_dir = tmp_path / "control" / "data"
+    control_root = pl.loop_root(control_dir)
+    control_root.mkdir(parents=True, exist_ok=True)
+    for offset in (0, 80, 81):
+        day = start + timedelta(days=offset)
+        did = f"A:BTC:{day.isoformat()}"
+        _long_milestone_row(
+            control_root,
+            day,
+            event="decision",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            decision_date=day.isoformat(),
+            asset="BTC",
+            target_weight=1.0,
+            regime_state="RISK_ON",
+            prev_regime_state="RISK_ON",
+            backfill=False,
+        )
+        _long_milestone_row(
+            control_root,
+            day,
+            event="fill",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            asset="BTC",
+            paper_fill_price=99.0,
+            side="buy",
+            turnover=1.0,
+            units_before=0.0,
+            units_after=0.01,
+            cash_after=0.0,
+        )
+        _long_milestone_row(
+            control_root,
+            day + timedelta(days=1),
+            event="mark",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            asset="BTC",
+            shortfall_bps=-100.0,
+            recompute_match=True,
+            turnover=1.0,
+        )
+    for offset, equity in {0: 1.0, 181: 0.97}.items():
+        day = start + timedelta(days=offset)
+        _long_milestone_row(
+            control_root,
+            day,
+            event="mtm",
+            book=pl.S01_BOOK,
+            mtm_date=day.isoformat(),
+            equity=equity,
+            cash=0.0,
+            drawdown=equity - 1.0,
+            peak_equity=1.0,
+        )
+    for offset, equity in {0: 1.0, 181: 0.8}.items():
+        day = start + timedelta(days=offset)
+        _long_milestone_row(
+            control_root,
+            day,
+            event="mtm",
+            book=pl.BENCH_CRYPTO_BOOK,
+            mtm_date=day.isoformat(),
+            equity=equity,
+            cash=0.0,
+            drawdown=equity - 1.0,
+            peak_equity=1.0,
+        )
+    control_out = pl.weekly_summary(control_dir, window_end)
+    control_j26 = control_out["milestone"][pl.S01_BOOK]["weeks"][26]
+    assert control_j26["verdict"] == "PASS"
+    assert control_j26["criteria"]["dd_vs_benchmark"]["pass"] is True
+    assert control_j26["criteria"]["dd_vs_benchmark"]["unresolved_mtm_gaps"] == []
+    assert pl.weekly_summary(control_dir, start + timedelta(days=189)).get("milestone") is None
+
+
+def test_unpriced_snapshot_refusal_keeps_the_window_unresolved(tmp_path: Path, monkeypatch) -> None:
+    """AS-M126-02-R3's integrity refusal (t_0be71b95 rev4): a snapshot the
+    journal prefix cannot reproduce means the journal describes no single
+    state boundary — the recovery refuses instead of picking a side, and the
+    AS-M126-07 hole-hold keeps the judgment unrecorded (fail-closed on both
+    layers; nothing is guessed between the two disagreeing holdings).
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    window_end = start + timedelta(days=84)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        root,
+        start=start,
+        run_days=84,
+        book_marks={0: 1.0},
+        bench_marks={0: 1.0, 83: 0.8},
+    )
+    _long_milestone_row(
+        root,
+        start,
+        event="fill",
+        book=pl.S01_BOOK,
+        decision_id=f"A:BTC:{start.isoformat()}",
+        asset="BTC",
+        paper_fill_price=99.0,
+        side="buy",
+        turnover=1.0,
+        units_before=0.0,
+        units_after=0.01,
+        cash_after=0.0,
+    )
+    # a corrupted/tampered snapshot: the prefix replay says BTC 0.01 / cash 0
+    tampered_day = start + timedelta(days=40)
+    _long_milestone_row(
+        root,
+        tampered_day,
+        event="mtm_unpriced",
+        book=pl.S01_BOOK,
+        mtm_date=tampered_day.isoformat(),
+        reason="unpriced_positions",
+        unpriced_assets=["BTC"],
+        units={"BTC": 999.0},
+        cash=0.0,
+    )
+    # every price the honest snapshot needs is now available — and still the
+    # recovery must refuse: the disagreement is unresolvable from the journal
+    bars = {
+        start + timedelta(days=39): {"open": 85.0, "close": 85.0},
+        start + timedelta(days=82): {"open": 97.0, "close": 97.0},
+        start + timedelta(days=90): {"open": 85.0, "close": 85.0},
+    }
+    deadline_bars = {start + timedelta(days=82): {"open": 97.0, "close": 97.0}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(deadline_bars))
+    last_day = window_end - timedelta(days=1)
+    assert pl.run_daily_mtm(root, _now_of(last_day)) == 4  # A marks 0.97; hole refuses
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    recovery_day = start + timedelta(days=91)
+    assert pl.run_daily_mtm(root, _now_of(recovery_day)) == 5  # still NO recovered row
+    assert not any(row.get("recovered_from_unpriced") for row in pl._load_journal(root))
+    dd = pl._milestone_dd_criterion(
+        root,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[12]["dd_vs_benchmark"]),
+        shallow_bench_hold=True,
+    )
+    assert dd["pass"] is None
+    assert dd["reason"] == "unresolved_mtm_gap_in_window"
+    assert dd["unresolved_mtm_gaps"] == [
+        {"book": pl.S01_BOOK, "mtm_date": tampered_day.isoformat()}
+    ]
+    assert (
+        pl.weekly_summary(tmp_path / "data", recovery_day)["milestone"][pl.S01_BOOK]["weeks"].get(
+            12
+        )
+        is None
+    )
+
+
+def test_same_day_price_restoration_completes_the_failed_snapshot_not_current_holdings(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-02-R4 (t_0be71b95 rev5): a SAME-DAY second run after prices
+    arrive completes the FAILED evaluation's own snapshot, never the current
+    holdings.
+
+    The audit repro: the real writer records the window's last day unpriced
+    at 00:00 (BTC 0.01 / cash 0), a 01:00 decision resolves through the REAL
+    fill path at 03:00 into a half sell (BTC 0.005 / cash 0.49925), and the
+    previous close (85) lands at 06:00 the SAME day. The ordinary day pass
+    valued the CURRENT holdings — equity 0.92425, a recorded 12-week PASS —
+    while the no-outage control marked 0.85 (FAIL) at 00:00 and let the sale
+    first show in the NEXT mark: the arrival date of a price was choosing
+    which snapshot gets priced. The same-day completion must write 0.85 with
+    the recovering run's honest recorded_at, exactly once (B2), and the
+    weekly judgment must equal the control's FAIL.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    window_end = start + timedelta(days=84)
+    last_day = window_end - timedelta(days=1)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        root,
+        start=start,
+        run_days=84,
+        book_marks={0: 1.0},
+        bench_marks={0: 1.0, 83: 0.8},
+    )
+    _long_milestone_row(
+        root,
+        start,
+        event="fill",
+        book=pl.S01_BOOK,
+        decision_id=f"A:BTC:{start.isoformat()}",
+        asset="BTC",
+        paper_fill_price=99.0,
+        side="buy",
+        turnover=1.0,
+        units_before=0.0,
+        units_after=0.01,
+        cash_after=0.0,
+    )
+
+    def same_day_sell(journal_root: Path, day: date) -> None:
+        """A real pending decision at 01:00 resolved by the real fill path."""
+        _long_milestone_row(
+            journal_root,
+            day,
+            event="decision",
+            book=pl.S01_BOOK,
+            asset="BTC",
+            decision_id=f"A:BTC:{day.isoformat()}",
+            decision_date=day.isoformat(),
+            recorded_at=f"{day.isoformat()}T01:00:00+00:00",
+            backfill=False,
+            fill_status="pending",
+            side="sell",
+            delta_weight=-0.5,
+            target_weight=0.5,
+            regime_state="RISK_ON",
+            prev_regime_state="RISK_ON",
+        )
+        assert pl.resolve_fills(
+            journal_root,
+            datetime.combine(day, datetime.min.time(), UTC).replace(hour=3),
+        )
+
+    def journal_rows(data_dir: Path) -> list[dict[str, object]]:
+        return pl._load_journal(pl.loop_root(data_dir))  # type: ignore[arg-type]
+
+    # --- the failure: the real writer cannot price the window's last day ----
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        assert pl.run_daily_mtm(root, _now_of(last_day)) == 3  # A unpriced; 3 books mark
+    unpriced = [
+        row
+        for row in journal_rows(tmp_path / "data")
+        if row.get("event") == "mtm_unpriced" and row.get("book") == pl.S01_BOOK
+    ]
+    assert len(unpriced) == 1
+    assert unpriced[0]["units"] == {"BTC": 0.01}
+    assert unpriced[0]["cash"] == 0.0
+
+    # --- a REAL sell fills at 03:00, AFTER the failed 00:00 write -----------
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        m.setattr(pl, "_fetch_crypto_1h", lambda *a, **k: [])
+        m.setattr(
+            pl,
+            "_first_fill_candidate",
+            lambda *a, **k: {
+                "open_time": datetime.combine(last_day, datetime.min.time(), UTC)
+                .replace(hour=2)
+                .isoformat(),
+                "open": 100.0,
+                "close": 100.0,
+            },
+        )
+        same_day_sell(root, last_day)
+    sold = next(
+        row
+        for row in journal_rows(tmp_path / "data")
+        if row.get("event") == "fill" and row.get("decision_id") == f"A:BTC:{last_day.isoformat()}"
+    )
+    assert sold["side"] == "sell" and sold["units_after"] == pytest.approx(0.005, rel=1e-12)
+
+    # --- prices land at 06:00 the SAME day: the re-run must complete the ----
+    # --- FAILED SNAPSHOT (0.85), not the afternoon holdings (0.92425) -------
+    bars = {
+        start + timedelta(days=82): {"open": 85.0, "close": 85.0},  # prices day 83
+        start + timedelta(days=90): {"open": 85.0, "close": 85.0},  # prices day 91
+    }
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    assert pl.run_daily_mtm(root, _now_of(last_day, minute=360)) == 1  # only A's recovery
+    day_marks = [
+        row
+        for row in journal_rows(tmp_path / "data")
+        if row.get("event") == "mtm"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("mtm_date") == last_day.isoformat()
+    ]
+    assert len(day_marks) == 1  # B2: exactly one mark for the day
+    recovered = day_marks[0]
+    assert recovered["equity"] == pytest.approx(0.85, rel=1e-12)  # 0.01 * 85, NOT 0.92425
+    assert recovered["units"] == {"BTC": 0.01}
+    assert recovered["cash"] == 0.0
+    assert recovered["recovered_from_unpriced"] is True
+    # honest recorded_at: THIS run's wall time on the SAME day — never backdated
+    assert str(recovered["recorded_at"]).startswith(last_day.isoformat())
+    # the failed write's own record still stands beside the mark (append-only)
+    unpriced_after = [
+        row
+        for row in journal_rows(tmp_path / "data")
+        if row.get("event") == "mtm_unpriced" and row.get("book") == pl.S01_BOOK
+    ]
+    assert len(unpriced_after) == 1
+    # a third same-day run writes nothing (B2)
+    assert pl.run_daily_mtm(root, _now_of(last_day, minute=420)) == 0
+    # the sale's effect first shows in the NEXT mark (as on a no-outage day)
+    assert pl.run_daily_mtm(root, _now_of(start + timedelta(days=91))) == 5
+    day91 = next(
+        row
+        for row in journal_rows(tmp_path / "data")
+        if row.get("event") == "mtm"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("mtm_date") == (start + timedelta(days=91)).isoformat()
+    )
+    assert day91["units"] == {"BTC": 0.005}
+    assert day91["equity"] == pytest.approx(0.005 * 85.0 + 0.49925, rel=1e-12)
+
+    # --- the honest numbers decide: FAIL, identical to the no-outage control -
+    out = pl.weekly_summary(tmp_path / "data", window_end)
+    j12 = out["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert j12["verdict"] == "FAIL"
+    assert j12["failed_criteria"] == ["cum_pnl_min", "dd_vs_benchmark"]
+    dd = j12["criteria"]["dd_vs_benchmark"]
+    assert dd["value"] == pytest.approx(0.75, rel=1e-12)
+    assert dd["unresolved_mtm_gaps"] == []
+
+    control_dir = tmp_path / "control" / "data"
+    control_root = pl.loop_root(control_dir)
+    control_root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        control_root,
+        start=start,
+        run_days=84,
+        book_marks={0: 1.0},
+        bench_marks={0: 1.0, 83: 0.8},
+    )
+    _long_milestone_row(
+        control_root,
+        start,
+        event="fill",
+        book=pl.S01_BOOK,
+        decision_id=f"A:BTC:{start.isoformat()}",
+        asset="BTC",
+        paper_fill_price=99.0,
+        side="buy",
+        turnover=1.0,
+        units_before=0.0,
+        units_after=0.01,
+        cash_after=0.0,
+    )
+    assert pl.run_daily_mtm(control_root, _now_of(last_day)) == 4  # A marks 0.85 at 00:00
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        m.setattr(pl, "_fetch_crypto_1h", lambda *a, **k: [])
+        m.setattr(
+            pl,
+            "_first_fill_candidate",
+            lambda *a, **k: {
+                "open_time": datetime.combine(last_day, datetime.min.time(), UTC)
+                .replace(hour=2)
+                .isoformat(),
+                "open": 100.0,
+                "close": 100.0,
+            },
+        )
+        same_day_sell(control_root, last_day)
+    # the sell does NOT rewrite the 00:00 mark (B2)
+    control_day83 = [
+        row
+        for row in journal_rows(control_dir)
+        if row.get("event") == "mtm"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("mtm_date") == last_day.isoformat()
+    ]
+    assert len(control_day83) == 1 and control_day83[0]["equity"] == pytest.approx(0.85, rel=1e-12)
+    assert pl.run_daily_mtm(control_root, _now_of(start + timedelta(days=91))) == 5
+    control_out = pl.weekly_summary(control_dir, window_end)
+    control_j12 = control_out["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert control_j12["verdict"] == "FAIL" == j12["verdict"]
+    assert control_j12["criteria"]["dd_vs_benchmark"]["value"] == pytest.approx(
+        dd["value"], rel=1e-12
+    )
+    assert control_j12["criteria"]["cum_pnl_min"]["value"] == pytest.approx(
+        j12["criteria"]["cum_pnl_min"]["value"], rel=1e-12
+    )
+
+
+def test_prebaseline_unresolved_gap_holds_the_window_until_the_writer_recovers_12w(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-07-R4 (t_0be71b95 rev5), 12 weeks: a KNOWN unresolved hole
+    BEFORE the provisional shared origin holds the judgment — the origin is
+    not a safe lower bound, because recovering the hole can move the first
+    common mark itself.
+
+    The audit repro: the real writer records day 0 unpriced (the book's very
+    first valuation), day 7 and the window end mark honestly. At the frozen
+    deadline both endpoints exist and the provisional origin is day 7 — the
+    rev4 scan (origin..end) saw no hole and recorded a PASS off ratio ~0.
+    When the historical day-1 close arrives and the real writer recovers
+    day 0 (equity 1.2), the origin moves to day 0 and the SAME frozen window
+    is a FAIL (ratio .958 > .6) — but the PASS was already deduped. The gate
+    must defer while the day-0 hole is open, then judge the window exactly
+    once on the completed series.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    window_end = start + timedelta(days=84)
+    last_day = window_end - timedelta(days=1)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        root,
+        start=start,
+        run_days=84,
+        book_marks={},  # the book's own marks all come from the real writer
+        bench_marks={0: 1.0, 7: 1.0, 83: 0.8},
+    )
+    _long_milestone_row(
+        root,
+        start,
+        event="fill",
+        book=pl.S01_BOOK,
+        decision_id=f"A:BTC:{start.isoformat()}",
+        asset="BTC",
+        paper_fill_price=99.0,
+        side="buy",
+        turnover=1.0,
+        units_before=0.0,
+        units_after=0.01,
+        cash_after=0.0,
+    )
+
+    # --- day 0: the real writer records a KNOWN hole at the window's start --
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        assert pl.run_daily_mtm(root, _now_of(start)) == 3
+    unpriced = [
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "mtm_unpriced" and row.get("book") == pl.S01_BOOK
+    ]
+    assert [row["mtm_date"] for row in unpriced] == [start.isoformat()]
+    assert unpriced[0]["units"] == {"BTC": 0.01} and unpriced[0]["cash"] == 0.0
+
+    # --- days 7 and 83 mark honestly; day 0 stays a hole ---------------------
+    day7_bars = {start + timedelta(days=6): {"open": 97.0, "close": 97.0}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(day7_bars))
+    assert pl.run_daily_mtm(root, _now_of(start + timedelta(days=7))) == 4
+    deadline_bars = dict(day7_bars)
+    deadline_bars[start + timedelta(days=82)] = {"open": 97.0, "close": 97.0}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(deadline_bars))
+    assert pl.run_daily_mtm(root, _now_of(last_day)) == 4  # recovery of day 0 still impossible
+    book_marks = {
+        row["mtm_date"]: row["equity"]
+        for row in pl._load_journal(root)
+        if row.get("event") == "mtm" and row.get("book") == pl.S01_BOOK
+    }
+    assert set(book_marks) == {(start + timedelta(days=7)).isoformat(), last_day.isoformat()}
+
+    # --- the deadline: endpoints complete, the PRE-ORIGIN hole still open ----
+    out_deadline = pl.weekly_summary(tmp_path / "data", window_end)
+    weeks = out_deadline["milestone"][pl.S01_BOOK]["weeks"]
+    assert 12 not in weeks and 4 in weeks  # the gate holds; 4w keeps its own record
+    assert not pl._milestone_already_judged(root, pl.S01_BOOK, 12)
+    dd = pl._milestone_dd_criterion(
+        root,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[12]["dd_vs_benchmark"]),
+        shallow_bench_hold=True,
+    )
+    assert dd["pass"] is None
+    assert dd["reason"] == "unresolved_mtm_gap_in_window"
+    assert dd["unresolved_mtm_gaps"] == [{"book": pl.S01_BOOK, "mtm_date": start.isoformat()}]
+    assert dd["comparison_start"] == (start + timedelta(days=7)).isoformat()  # provisional
+
+    # --- the historical price arrives; the NORMAL writer recovers day 0 -----
+    late_bars = {
+        start - timedelta(days=1): {"open": 120.0, "close": 120.0},  # prices day 0
+        start + timedelta(days=6): {"open": 97.0, "close": 97.0},
+        start + timedelta(days=82): {"open": 97.0, "close": 97.0},
+        start + timedelta(days=90): {"open": 85.0, "close": 85.0},
+    }
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(late_bars))
+    recovery_day = start + timedelta(days=91)
+    assert pl.run_daily_mtm(root, _now_of(recovery_day)) == 6  # recovered + 5 own rows
+    recovered = next(
+        row
+        for row in pl._load_journal(root)
+        if row.get("recovered_from_unpriced") and row.get("book") == pl.S01_BOOK
+    )
+    assert recovered["mtm_date"] == start.isoformat()
+    assert recovered["equity"] == pytest.approx(1.2, rel=1e-12)  # 0.01 * 120, the snapshot
+    assert str(recovered["recorded_at"]).startswith(recovery_day.isoformat())
+
+    # --- the SAME frozen window records its real verdict, exactly once ------
+    dd = pl._milestone_dd_criterion(
+        root,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[12]["dd_vs_benchmark"]),
+        shallow_bench_hold=True,
+    )
+    assert dd["pass"] is False
+    assert dd["comparison_start"] == start.isoformat()  # the origin moved onto the window
+    assert dd["value"] == pytest.approx((1.0 - 0.97 / 1.2) / 0.2, rel=1e-12)
+    assert dd["unresolved_mtm_gaps"] == []
+    out = pl.weekly_summary(tmp_path / "data", recovery_day)
+    j12 = out["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert j12["verdict"] == "FAIL"
+    assert j12["failed_criteria"] == ["dd_vs_benchmark"]
+    assert j12["milestone_date"] == window_end.isoformat()
+    assert j12["judged_at_week_end"] == recovery_day.isoformat()
+    assert pl._milestone_already_judged(root, pl.S01_BOOK, 12)
+    assert pl.weekly_summary(tmp_path / "data", start + timedelta(days=98)).get("milestone") is None
+
+
+def test_prebaseline_unresolved_gap_holds_the_window_until_the_writer_recovers_26w(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-07-R4 (t_0be71b95 rev5), 26 weeks: the same pre-origin hold on
+    the half-year window, composed with a DECIDED shortfall gate — the DD
+    hold alone must keep the judgment unrecorded, and the honest recovery of
+    the window's first day must complete the very same frozen window exactly
+    once (origin day 0, ratio .958, FAIL).
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    window_end = start + timedelta(days=182)
+    last_day = window_end - timedelta(days=1)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    for offset in (0, 80, 81):
+        day = start + timedelta(days=offset)
+        did = f"A:BTC:{day.isoformat()}"
+        _long_milestone_row(
+            root,
+            day,
+            event="decision",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            decision_date=day.isoformat(),
+            asset="BTC",
+            target_weight=1.0,
+            regime_state="RISK_ON",
+            prev_regime_state="RISK_ON",
+            backfill=False,
+        )
+        _long_milestone_row(
+            root,
+            day,
+            event="fill",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            asset="BTC",
+            paper_fill_price=99.0,
+            side="buy",
+            turnover=1.0,
+            units_before=0.0,
+            units_after=0.01,
+            cash_after=0.0,
+        )
+        # every execution measured: the shortfall gate is DECIDED, so the DD
+        # hold is the only thing that can (and must) block the judgment
+        _long_milestone_row(
+            root,
+            day + timedelta(days=1),
+            event="mark",
+            book=pl.S01_BOOK,
+            decision_id=did,
+            asset="BTC",
+            shortfall_bps=-100.0,
+            recompute_match=True,
+            turnover=1.0,
+        )
+    _long_milestone_journal(
+        root,
+        start=start,
+        run_days=0,
+        book_marks={},
+        bench_marks={0: 1.0, 7: 1.0, 181: 0.8},
+    )
+
+    # --- day 0: the real writer records the window's first day as a hole ----
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        assert pl.run_daily_mtm(root, _now_of(start)) == 3
+    # --- days 7 and 181 mark honestly ----------------------------------------
+    day7_bars = {start + timedelta(days=6): {"open": 97.0, "close": 97.0}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(day7_bars))
+    assert pl.run_daily_mtm(root, _now_of(start + timedelta(days=7))) == 4
+    deadline_bars = dict(day7_bars)
+    deadline_bars[start + timedelta(days=180)] = {"open": 97.0, "close": 97.0}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(deadline_bars))
+    assert pl.run_daily_mtm(root, _now_of(last_day)) == 4
+
+    # --- the deadline: shortfall DECIDED, DD held on the pre-origin hole -----
+    out_deadline = pl.weekly_summary(tmp_path / "data", window_end)
+    assert 26 not in out_deadline["milestone"][pl.S01_BOOK]["weeks"]
+    rows = pl._load_journal(root)
+    gate = pl._milestone_shortfall_criterion(
+        rows,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[26]["shortfall_bps_mean_upper95_max"]),
+    )
+    assert gate["pass"] is True  # decided — not the blocker
+    dd = pl._milestone_dd_criterion(
+        root,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[26]["dd_vs_benchmark"]),
+        shallow_bench_hold=False,
+    )
+    assert dd["pass"] is None
+    assert dd["reason"] == "unresolved_mtm_gap_in_window"
+    assert dd["unresolved_mtm_gaps"] == [{"book": pl.S01_BOOK, "mtm_date": start.isoformat()}]
+    assert dd["comparison_start"] == (start + timedelta(days=7)).isoformat()
+    assert not pl._milestone_already_judged(root, pl.S01_BOOK, 26)
+
+    # --- the historical price arrives; the NORMAL writer recovers day 0 -----
+    late_bars = {
+        start - timedelta(days=1): {"open": 120.0, "close": 120.0},  # prices day 0
+        start + timedelta(days=6): {"open": 97.0, "close": 97.0},
+        start + timedelta(days=180): {"open": 97.0, "close": 97.0},
+        start + timedelta(days=188): {"open": 85.0, "close": 85.0},
+    }
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(late_bars))
+    recovery_day = start + timedelta(days=189)
+    assert pl.run_daily_mtm(root, _now_of(recovery_day)) == 6  # recovered + 5 own rows
+    recovered = next(
+        row
+        for row in pl._load_journal(root)
+        if row.get("recovered_from_unpriced") and row.get("book") == pl.S01_BOOK
+    )
+    assert recovered["mtm_date"] == start.isoformat()
+    assert recovered["equity"] == pytest.approx(1.2, rel=1e-12)
+
+    # --- the SAME frozen window records its real verdict, exactly once ------
+    out = pl.weekly_summary(tmp_path / "data", recovery_day)
+    j26 = out["milestone"][pl.S01_BOOK]["weeks"][26]
+    assert j26["verdict"] == "FAIL"
+    assert j26["failed_criteria"] == ["dd_vs_benchmark"]
+    dd26 = j26["criteria"]["dd_vs_benchmark"]
+    assert dd26["value"] == pytest.approx((1.0 - 0.97 / 1.2) / 0.2, rel=1e-12)
+    assert dd26["comparison_start"] == start.isoformat()
+    assert dd26["unresolved_mtm_gaps"] == []
+    assert j26["milestone_date"] == window_end.isoformat()
+    assert j26["judged_at_week_end"] == recovery_day.isoformat()
+    assert pl._milestone_already_judged(root, pl.S01_BOOK, 26)
+    assert (
+        pl.weekly_summary(tmp_path / "data", start + timedelta(days=196)).get("milestone") is None
+    )
+
+
+def test_benchmark_side_prebaseline_gap_holds_and_a_late_common_base_still_judges(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-07-R4 (t_0be71b95 rev5): the whole-window hole scan covers BOTH
+    origin candidates, and a legitimately late common origin stays judgeable.
+
+    A benchmark-side hole before the provisional origin holds the judgment
+    exactly like a book-side one (the scan is symmetric over book and
+    benchmark); once the benchmark's historical day-0 mark arrives honestly
+    (mtm_date day 0, recorded_at the arrival day — never backdated), the
+    window judges once. The control pins the Book C contract: a benchmark
+    that only STARTS marking later carries no unpriced record, is not a
+    known failure, and must not hold — the judgment records off the late
+    common origin (comparison_start day 7).
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    window_end = start + timedelta(days=84)
+    bench = pl.BOOK_BENCHMARK[pl.S01_BOOK]
+
+    # --- the bench-side hole: day 0 failed and was never completed ----------
+    root = pl.loop_root(tmp_path / "bench-gap" / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        root,
+        start=start,
+        run_days=84,
+        book_marks={0: 1.0, 7: 0.97, 83: 0.97},
+        bench_marks={7: 1.0, 83: 0.8},
+    )
+    _long_milestone_row(
+        root,
+        start,
+        event="mtm_unpriced",
+        book=bench,
+        mtm_date=start.isoformat(),
+        reason="unpriced_positions",
+        unpriced_assets=["BTC"],
+        units={},
+        cash=0.0,
+    )
+    dd = pl._milestone_dd_criterion(
+        root,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[12]["dd_vs_benchmark"]),
+        shallow_bench_hold=True,
+    )
+    assert dd["pass"] is None
+    assert dd["reason"] == "unresolved_mtm_gap_in_window"
+    assert dd["unresolved_mtm_gaps"] == [{"book": bench, "mtm_date": start.isoformat()}]
+    assert dd["comparison_start"] == (start + timedelta(days=7)).isoformat()
+    assert (
+        pl.weekly_summary(tmp_path / "bench-gap" / "data", window_end)["milestone"][pl.S01_BOOK][
+            "weeks"
+        ].get(12)
+        is None
+    )
+    # the benchmark's historical day-0 mark arrives honestly, late
+    arrival = start + timedelta(days=91)
+    _long_milestone_row(
+        root,
+        start,
+        event="mtm",
+        book=bench,
+        mtm_date=start.isoformat(),
+        equity=1.0,
+        cash=0.0,
+        drawdown=0.0,
+        peak_equity=1.0,
+        recorded_at=f"{arrival.isoformat()}T04:00:00+00:00",
+    )
+    out = pl.weekly_summary(tmp_path / "bench-gap" / "data", arrival)
+    j12 = out["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert j12["verdict"] == "PASS"
+    assert j12["criteria"]["dd_vs_benchmark"]["comparison_start"] == start.isoformat()
+    assert j12["criteria"]["dd_vs_benchmark"]["unresolved_mtm_gaps"] == []
+    assert (
+        pl.weekly_summary(tmp_path / "bench-gap" / "data", start + timedelta(days=98)).get(
+            "milestone"
+        )
+        is None
+    )
+
+    # --- control: a late-STARTING benchmark is not a hole — it judges -------
+    control_dir = tmp_path / "late-base" / "data"
+    control_root = pl.loop_root(control_dir)
+    control_root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        control_root,
+        start=start,
+        run_days=84,
+        book_marks={0: 1.0, 7: 0.97, 83: 0.97},
+        bench_marks={7: 1.0, 83: 0.8},  # the bench simply starts at day 7
+    )
+    dd = pl._milestone_dd_criterion(
+        control_root,
+        pl.S01_BOOK,
+        start,
+        window_end,
+        float(pl.MILESTONE_RULES[12]["dd_vs_benchmark"]),
+        shallow_bench_hold=True,
+    )
+    assert dd["pass"] is True  # no known failure — the late common origin judges
+    assert dd["comparison_start"] == (start + timedelta(days=7)).isoformat()
+    assert dd["unresolved_mtm_gaps"] == []
+    control_out = pl.weekly_summary(control_dir, window_end)
+    control_j12 = control_out["milestone"][pl.S01_BOOK]["weeks"][12]
+    assert control_j12["verdict"] == "PASS"
+    assert pl.weekly_summary(control_dir, start + timedelta(days=91)).get("milestone") is None
 
 
 # --- v1.5 (t_e2c98d2b): the recorded edge-lifetime verdict gates the next -----
@@ -1632,7 +4292,6 @@ def test_cost_drag_pp_reads_the_incurred_cost_not_the_market_move() -> None:
     """
 
     from collections.abc import Mapping
-    from typing import Any
 
     from yowayowa.paperloop_panel import _cost_drag_pp
 
@@ -1816,7 +4475,7 @@ def test_weekly_shortfall_is_scoped_to_the_week_and_survives_bad_rows(
         for line in pl.summary_path(mixed_root).read_text(encoding="utf-8").splitlines()
     ]
     assert written[-1]["books"][pl.S01_BOOK]["shortfall_n"] == 2
-    assert written[-1]["schema"] == "demo-loop-summary-v1.9"
+    assert written[-1]["schema"] == "demo-loop-summary-v1.10"
 
     # --- a week with only unusable values: None, never 0 ----------------------
     empty = tmp_path / "all_bad" / "data"
@@ -2380,3 +5039,750 @@ def test_C04_unpriced_mtm_is_recorded_and_never_zero_filled(tmp_path: Path, monk
     # the pre-fix equity: ETH valued at 0 (which is also how 0 got into equity)
     assert row2["equity"] == pytest.approx(zero_filled + row2["units"]["ETH"] * eth_next, rel=1e-12)
     assert row2["equity"] - zero_filled == pytest.approx(row2["units"]["ETH"] * eth_next, rel=1e-12)
+
+
+@pytest.mark.parametrize("recovery_close", [70.0, 120.0])
+def test_recovered_past_mark_does_not_rollback_current_state_or_fill_sizing(
+    tmp_path: Path, monkeypatch, recovery_close: float
+) -> None:
+    """AS-M126-08 (t_0be71b95 rev6): a recovered PAST mark must not roll the
+    CURRENT state (and the next real fill sized on it) backwards.
+
+    The audit repro, every step through the REAL writers: book A holds BTC
+    0.01 / cash 0; day 40 fails unpriced; day 83 marks 0.97 normally at
+    00:00; the day-39 close arrives 06:00 the SAME day and the recovery
+    honestly completes day 40 (0.70 low / 1.20 high — both parametrized),
+    appended at the journal END with the OLDER target day. rebuild_state
+    adopted the last append, so the current equity rolled back to the
+    recovered value and a 07:00 sell decision resolved by the real fill path
+    at 09:00 traded notional 0.35 instead of 0.485 (27.8% less paper sold
+    than the no-outage control). The consumer contract (state by target day,
+    chain never steps at recovered marks) keeps current equity 0.97 and the
+    fill identical to the control, while the recovered row stays and stays
+    faithful.
+    """
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    start = date(2026, 1, 1)
+    day40 = start + timedelta(days=40)
+    window_end = start + timedelta(days=84)
+    last_day = window_end - timedelta(days=1)  # day 83
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        root, start=start, run_days=84, book_marks={0: 1.0}, bench_marks={0: 1.0}
+    )
+    _long_milestone_row(
+        root,
+        start,
+        event="fill",
+        book=pl.S01_BOOK,
+        decision_id=f"{pl.S01_BOOK}:BTC:{start.isoformat()}",
+        asset="BTC",
+        paper_fill_price=99.0,
+        side="buy",
+        turnover=1.0,
+        units_before=0.0,
+        units_after=0.01,
+        cash_after=0.0,
+    )
+
+    def sell_fill(journal_root: Path, day: date) -> dict[str, Any]:
+        """A real pending decision at 07:00 resolved by the real fill path."""
+        _long_milestone_row(
+            journal_root,
+            day,
+            event="decision",
+            book=pl.S01_BOOK,
+            asset="BTC",
+            decision_id=f"{pl.S01_BOOK}:BTC:{day.isoformat()}",
+            decision_date=day.isoformat(),
+            recorded_at=f"{day.isoformat()}T07:00:00+00:00",
+            backfill=False,
+            fill_status="pending",
+            side="sell",
+            delta_weight=-0.5,
+            target_weight=0.5,
+            regime_state="RISK_ON",
+            prev_regime_state="RISK_ON",
+        )
+        with monkeypatch.context() as m:
+            m.setattr(pl, "_daily_map", lambda root_, asset: {})
+            m.setattr(pl, "_fetch_crypto_1h", lambda *a, **k: [])
+            m.setattr(
+                pl,
+                "_first_fill_candidate",
+                lambda *a, **k: {
+                    "open_time": datetime.combine(day, datetime.min.time(), UTC)
+                    .replace(hour=8)
+                    .isoformat(),
+                    "open": 100.0,
+                    "close": 100.0,
+                },
+            )
+            assert pl.resolve_fills(
+                journal_root, datetime.combine(day, datetime.min.time(), UTC).replace(hour=9)
+            )
+        return next(
+            row
+            for row in pl._load_journal(journal_root)
+            if row.get("event") == "fill"
+            and row.get("decision_id") == f"{pl.S01_BOOK}:BTC:{day.isoformat()}"
+        )
+
+    def a_marks(data_root: Path, mtm_day: date) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in pl._load_journal(data_root)
+            if row.get("event") == "mtm"
+            and row.get("book") == pl.S01_BOOK
+            and row.get("mtm_date") == mtm_day.isoformat()
+        ]
+
+    # --- day 40: the real writer cannot price the holding -------------------
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        pl.run_daily_mtm(root, _now_of(day40))
+    assert len(a_marks(root, day40)) == 0
+
+    # --- day 83 00:20: the normal mark (0.01 BTC at the day-82 close 97) ----
+    bars = {start + timedelta(days=82): {"open": 97.0, "close": 97.0}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    pl.run_daily_mtm(root, _now_of(last_day))
+    day83 = a_marks(root, last_day)
+    assert len(day83) == 1 and day83[0]["equity"] == pytest.approx(0.97, rel=1e-12)
+    assert pl.rebuild_state(root, pl.S01_BOOK)["equity"] == pytest.approx(0.97, rel=1e-12)
+
+    # --- 06:00 SAME day: the day-39 close arrives; the recovery completes ---
+    # --- day 40's FAILED snapshot, appended at the journal end -------------
+    bars[start + timedelta(days=39)] = {"open": recovery_close, "close": recovery_close}
+    assert pl.run_daily_mtm(root, _now_of(last_day, minute=360)) == 1  # only A's recovery
+    recovered = a_marks(root, day40)
+    assert len(recovered) == 1
+    rec = recovered[0]
+    assert rec["equity"] == pytest.approx(0.01 * recovery_close, rel=1e-12)
+    assert rec["recovered_from_unpriced"] is True
+    assert rec["recorded_at"].startswith(last_day.isoformat())  # honest, never backdated
+    assert rec["price_bar_date"] == (start + timedelta(days=39)).isoformat()
+    # B2: the day-83 mark was not rewritten, and the failed write's record stands
+    assert len(a_marks(root, last_day)) == 1
+    assert any(
+        row.get("event") == "mtm_unpriced" and row.get("book") == pl.S01_BOOK
+        for row in pl._load_journal(root)
+    )
+    assert pl.run_daily_mtm(root, _now_of(last_day, minute=420)) == 0  # B2: nothing twice
+
+    # --- THE contract: the current state did NOT roll back to the recovery --
+    state = pl.rebuild_state(root, pl.S01_BOOK)
+    assert state["equity"] == pytest.approx(0.97, rel=1e-12)
+
+    # --- the 07:00 decision's real fill is sized on the CURRENT equity ------
+    sold = sell_fill(root, last_day)
+    assert sold["equity_at_fill"] == pytest.approx(0.97, rel=1e-12)
+    assert sold["traded_notional"] == pytest.approx(0.485, rel=1e-12)
+    assert sold["units_after"] == pytest.approx(0.00515, rel=1e-12)
+    assert sold["cash_after"] == pytest.approx(0.485 * (1 - pl.COST_RATE), rel=1e-12)
+
+    # --- no-outage control: day 40 marked normally, everything else equal ---
+    control_dir = tmp_path / "control" / "data"
+    control_root = pl.loop_root(control_dir)
+    control_root.mkdir(parents=True, exist_ok=True)
+    _long_milestone_journal(
+        control_root, start=start, run_days=84, book_marks={0: 1.0}, bench_marks={0: 1.0}
+    )
+    _long_milestone_row(
+        control_root,
+        start,
+        event="fill",
+        book=pl.S01_BOOK,
+        decision_id=f"{pl.S01_BOOK}:BTC:{start.isoformat()}",
+        asset="BTC",
+        paper_fill_price=99.0,
+        side="buy",
+        turnover=1.0,
+        units_before=0.0,
+        units_after=0.01,
+        cash_after=0.0,
+    )
+    control_bars = {start + timedelta(days=39): {"open": recovery_close, "close": recovery_close}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(control_bars))
+    pl.run_daily_mtm(control_root, _now_of(day40))  # day 40 marks honestly at 00:20
+    control_bars[start + timedelta(days=82)] = {"open": 97.0, "close": 97.0}
+    pl.run_daily_mtm(control_root, _now_of(last_day))
+    control_sold = sell_fill(control_root, last_day)
+    assert control_sold["equity_at_fill"] == pytest.approx(0.97, rel=1e-12)
+    assert control_sold["traded_notional"] == pytest.approx(sold["traded_notional"], rel=1e-12)
+    assert control_sold["units_after"] == pytest.approx(sold["units_after"], rel=1e-12)
+
+    # --- the recovered row is as faithful as the control's own day-40 mark --
+    control_rec = [
+        row
+        for row in pl._load_journal(control_root)
+        if row.get("event") == "mtm"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("mtm_date") == day40.isoformat()
+    ]
+    assert len(control_rec) == 1
+    c40 = control_rec[0]
+    for column in ("equity", "equity_gross", "cum_cost_assumed", "cum_turnover", "peak_equity"):
+        assert rec[column] == pytest.approx(c40[column], rel=1e-12), column
+
+    # --- the NEXT day's real writer: identical row in both directions -------
+    # (the gross chain must not step at the recovered mark — with the rev5
+    # append-order walk the repro's next row carried a corrupted chain)
+    next_day = window_end
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    pl.run_daily_mtm(root, _now_of(next_day))
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(control_bars))
+    pl.run_daily_mtm(control_root, _now_of(next_day))
+    repro_next = a_marks(root, next_day)
+    control_next = [
+        row
+        for row in pl._load_journal(control_root)
+        if row.get("event") == "mtm"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("mtm_date") == next_day.isoformat()
+    ]
+    assert len(repro_next) == 1 and len(control_next) == 1
+    rn, cn = repro_next[0], control_next[0]
+    for column in ("equity", "units", "cash", "peak_equity", "halted", "cum_turnover"):
+        assert rn[column] == cn[column], column
+    assert rn["cum_cost_assumed"] == pytest.approx(cn["cum_cost_assumed"], rel=1e-12)
+    assert rn["cum_cost_assumed"] > 0  # the real sell's cost: not a vacuous comparison
+    assert rn["equity_gross"] == pytest.approx(cn["equity_gross"], rel=1e-12)
+    assert rn["equity"] == pytest.approx(0.485 * (1 - pl.COST_RATE) + 0.00515 * 97.0, rel=1e-12)
+
+
+def test_unpriced_boundary_chain_branches_for_recovered_marks() -> None:
+    """AS-M126-08 (rev6) + AS-M126-10 (rev7): the boundary replay mirrors the
+    consumer chain contract for recovered marks, in BOTH branches.
+
+    A recovery that was the chain's NEWEST target day when appended IS a
+    gross step (nothing was written across the hole yet — skipping it would
+    re-charge the hole's costs at face value on the final step); a recovery
+    that arrived after a LATER as-written mark is NOT a step (that written
+    step already compounded across the hole). Neither rolls the boundary's
+    "now" (halted) backwards. Non-zero costs make the branches
+    distinguishable: the two prefixes chain differently.
+    """
+
+    book = pl.S01_BOOK
+
+    def prefix(*, late: bool) -> list[dict[str, Any]]:
+        recovery_row = {
+            "event": "mtm",
+            "book": book,
+            "mtm_date": "2026-02-10",
+            "equity": 0.70,
+            "peak_equity": 1.0,
+            "halted": True,  # the recovered day's honest PAST halt flag
+            "recovered_from_unpriced": True,
+        }
+        later_mark = {
+            "event": "mtm",
+            "book": book,
+            "mtm_date": "2026-02-11",
+            "equity": 0.97,
+            "peak_equity": 1.0,
+            "halted": False,
+        }
+        return [
+            {
+                "event": "fill",
+                "book": book,
+                "asset": "BTC",
+                "units_after": 0.01,
+                "cash_after": 0.0,
+                "cost_assumed": 0.0015,
+                "traded_notional": 1.0,
+            },
+            later_mark if late else recovery_row,
+            recovery_row if late else later_mark,
+        ]
+
+    # latest-day recovery (no later mark existed when it was appended): a step
+    state = pl._unpriced_boundary(prefix(late=False), book, boundary=3, equity=0.80)
+    assert state is not None
+    assert state["halted"] is False  # still the newest target day's flag
+    assert state["equity_gross"] == pytest.approx(
+        ((0.70 + 0.0015) / 1.0) * (0.97 / 0.70) * (0.80 / 0.97), rel=1e-12
+    )
+    # late recovery (the later mark was already written): not a step
+    late_state = pl._unpriced_boundary(prefix(late=True), book, boundary=3, equity=0.80)
+    assert late_state is not None
+    assert late_state["halted"] is False
+    assert late_state["equity_gross"] == pytest.approx(
+        ((0.97 + 0.0015) / 1.0) * (0.80 / 0.97), rel=1e-12
+    )
+    assert state["equity_gross"] != pytest.approx(late_state["equity_gross"], rel=1e-4)
+
+
+# --- rev7 (AS-M126-09 / AS-M126-10): as-of reads and the chain branch ---------
+
+
+def _real_market_fill(
+    monkeypatch,
+    root: Path,
+    day: date,
+    *,
+    side: str,
+    delta_weight: float,
+    target_weight: float,
+    price: float,
+) -> dict[str, Any]:
+    """A pending decision resolved through the REAL fill path (the audit
+    probes' shape): decision 07:00, bar 08:00 at ``price``, resolve_fills
+    09:00. Returns the fill row."""
+
+    book = pl.S01_BOOK
+    _long_milestone_row(
+        root,
+        day,
+        event="decision",
+        book=book,
+        asset="BTC",
+        decision_id=f"{book}:BTC:{day.isoformat()}",
+        decision_date=day.isoformat(),
+        recorded_at=f"{day.isoformat()}T07:00:00+00:00",
+        backfill=False,
+        fill_status="pending",
+        side=side,
+        delta_weight=delta_weight,
+        target_weight=target_weight,
+        regime_state="RISK_ON",
+        prev_regime_state="RISK_ON",
+    )
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        m.setattr(pl, "_fetch_crypto_1h", lambda *a, **k: [])
+        m.setattr(
+            pl,
+            "_first_fill_candidate",
+            lambda *a, **k: {
+                "open_time": datetime.combine(day, datetime.min.time(), UTC)
+                .replace(hour=8)
+                .isoformat(),
+                "open": price,
+                "close": price,
+            },
+        )
+        assert pl.resolve_fills(
+            root, datetime.combine(day, datetime.min.time(), UTC).replace(hour=9)
+        )
+    return next(
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "fill" and row.get("decision_id") == f"{book}:BTC:{day.isoformat()}"
+    )
+
+
+def _a_mtm(root: Path, day: date) -> dict[str, Any]:
+    return next(
+        row
+        for row in pl._load_journal(root)
+        if row.get("event") == "mtm"
+        and row.get("book") == pl.S01_BOOK
+        and row.get("mtm_date") == day.isoformat()
+    )
+
+
+def test_cost_accumulators_step_branch_for_recovered_marks(tmp_path: Path) -> None:
+    """AS-M126-10 (rev7): the writer-side gross chain steps at a recovery
+    only while it is the chain's newest target day. Skipping a latest-day
+    recovery (rev6's blanket rule) loses the hole day's first cost step and
+    everything compounding after it — the audited day-41 row read gross
+    1.25961 instead of 1.26081. A recovery appended after a later as-written
+    mark stays out of that written chain (AS-M126-08)."""
+
+    book = pl.S01_BOOK
+
+    def journal(*, late: bool) -> Path:
+        root = pl.loop_root(tmp_path / ("late" if late else "latest") / "data")
+        root.mkdir(parents=True, exist_ok=True)
+
+        def append(row: dict[str, Any]) -> None:
+            row.setdefault("recorded_at", "2026-03-26T00:00:00+00:00")
+            pl._append_row(root, row)
+
+        append(
+            {
+                "event": "fill",
+                "book": book,
+                "asset": "BTC",
+                "units_after": 0.009985,
+                "cash_after": 0.0,
+                "cost_assumed": 0.0015,
+                "traded_notional": 1.0,
+            }
+        )
+        recovery_row = {
+            "event": "mtm",
+            "book": book,
+            "mtm_date": "2026-02-10",
+            "equity": 0.69895,
+            "equity_gross": 0.70045,
+            "recovered_from_unpriced": True,
+        }
+        later_mark = {
+            "event": "mtm",
+            "book": book,
+            "mtm_date": "2026-03-25",
+            "equity": 0.968545,
+            "equity_gross": 0.970045,
+        }
+        rows = [later_mark, recovery_row] if late else [recovery_row, later_mark]
+        for row in rows:
+            append(row)
+        append(
+            {
+                "event": "fill",
+                "book": book,
+                "asset": "BTC",
+                "units_after": 0.0049925,
+                "cash_after": 0.349475 * (1 - pl.COST_RATE),
+                "cost_assumed": 0.0005242125,
+                "traded_notional": 0.349475,
+            }
+        )
+        return root
+
+    equity_now = 0.349475 * (1 - pl.COST_RATE) + 0.0049925 * 140.0
+    # latest-day recovery: the chain runs inception -> recovery -> now, each
+    # step adding back only its own segment's costs (the independent formula
+    # (E40+Cbefore40)/E40*(Enow+C40tonow)/E40 with the recovery as day 40)
+    cum_cost, cum_turnover, gross = pl._cost_accumulators(journal(late=False), book, equity_now)
+    assert cum_cost == pytest.approx(0.0015 + 0.0005242125, rel=1e-12)
+    assert cum_turnover == pytest.approx(1.0 + 0.349475, rel=1e-12)
+    assert gross == pytest.approx(
+        ((0.69895 + 0.0015) / 1.0) * ((equity_now + 0.0005242125) / 0.69895), rel=1e-12
+    )
+    # late recovery: the written 03-25 step already compounded across the
+    # hole, so the recovery stays out and the chain runs over that mark
+    _, _, late_gross = pl._cost_accumulators(journal(late=True), book, equity_now)
+    assert late_gross == pytest.approx(
+        ((0.968545 + 0.0015) / 1.0) * ((equity_now + 0.0005242125) / 0.968545), rel=1e-12
+    )
+    assert gross != pytest.approx(late_gross, rel=1e-4)
+
+
+def test_recovery_before_the_next_mark_keeps_the_next_days_gross_step(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-10 (t_0be71b95 rev7), the audited repro end to end through the
+    REAL writers: day 40 fails unpriced at 00:00, the day-39 close arrives
+    06:00 the SAME day and the recovery honestly completes day 40, a 07:00
+    decision sells through the real fill path at 09:00, and day 41 marks at
+    a changed price. The recovery happened BEFORE the next mark, so it is
+    the chain's newest day and the day-41 row must chain THROUGH it —
+    identical to the no-outage control and to the independent formula (with
+    rev6's blanket skip the walk chained from inception and read gross
+    1.25961 vs the control's 1.26081, understating cost_drag by 37.16%)."""
+
+    monkeypatch.setattr(pl, "_eval_blocks", lambda *a, **k: {"stub": True})
+    from yowayowa import paperloop_panel
+
+    start = date(2026, 1, 1)
+    day39 = start + timedelta(days=39)
+    day40 = start + timedelta(days=40)
+    day41 = start + timedelta(days=41)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+
+    bought = _real_market_fill(
+        monkeypatch, root, start, side="buy", delta_weight=1.0, target_weight=1.0, price=100.0
+    )
+    assert bought["cost_assumed"] == pytest.approx(0.0015, rel=1e-12)
+    assert bought["units_after"] == pytest.approx(0.009985, rel=1e-12)
+
+    # --- day 40 00:20: the real writer cannot price the holding -------------
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        pl.run_daily_mtm(root, _now_of(day40))
+    with pytest.raises(StopIteration):
+        _a_mtm(root, day40)  # unpriced, honestly
+
+    # --- 06:00 SAME day: the day-39 close arrives; the recovery completes ---
+    bars = {day39: {"open": 70.0, "close": 70.0}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    assert pl.run_daily_mtm(root, _now_of(day40, minute=360)) == 1  # only A's recovery
+    rec = _a_mtm(root, day40)
+    assert rec["recovered_from_unpriced"] is True
+    assert rec["equity"] == pytest.approx(0.009985 * 70.0, rel=1e-12)
+    assert rec["equity_gross"] == pytest.approx(0.69895 + 0.0015, rel=1e-12)
+    assert pl.rebuild_state(root, pl.S01_BOOK)["equity"] == pytest.approx(0.69895, rel=1e-12)
+
+    # --- 07:00 decision -> 09:00 real sell, sized on the CURRENT state ------
+    sold = _real_market_fill(
+        monkeypatch, root, day40, side="sell", delta_weight=-0.5, target_weight=0.5, price=70.0
+    )
+    assert sold["equity_at_fill"] == pytest.approx(0.69895, rel=1e-12)
+    assert sold["traded_notional"] == pytest.approx(0.349475, rel=1e-12)
+    assert sold["cost_assumed"] == pytest.approx(0.0005242125, rel=1e-12)
+
+    # --- day 41: the real writer marks at the changed price -----------------
+    bars[day40] = {"open": 140.0, "close": 140.0}
+    pl.run_daily_mtm(root, _now_of(day41))
+    nxt = _a_mtm(root, day41)
+    expected_equity = sold["cash_after"] + sold["units_after"] * 140.0
+    assert nxt["equity"] == pytest.approx(expected_equity, rel=1e-12)
+    assert nxt["cum_cost_assumed"] == pytest.approx(0.0015 + 0.0005242125, rel=1e-12)
+    # THE contract: the chain runs through the recovery, not from inception
+    expected_gross = ((rec["equity"] + 0.0015) / 1.0) * (
+        (expected_equity + sold["cost_assumed"]) / rec["equity"]
+    )
+    assert nxt["equity_gross"] == pytest.approx(expected_gross, rel=1e-12)
+    assert pl.run_daily_mtm(root, _now_of(day41, minute=60)) == 0  # B2: nothing twice
+
+    # --- no-outage control: day 40 marked normally, everything else equal ---
+    control_root = pl.loop_root(tmp_path / "control" / "data")
+    control_root.mkdir(parents=True, exist_ok=True)
+    control_bought = _real_market_fill(
+        monkeypatch,
+        control_root,
+        start,
+        side="buy",
+        delta_weight=1.0,
+        target_weight=1.0,
+        price=100.0,
+    )
+    assert control_bought["units_after"] == pytest.approx(bought["units_after"], rel=1e-12)
+    control_bars = {day39: {"open": 70.0, "close": 70.0}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(control_bars))
+    pl.run_daily_mtm(control_root, _now_of(day40))  # day 40 marks honestly at 00:20
+    c40 = _a_mtm(control_root, day40)
+    for column in ("equity", "equity_gross", "cum_cost_assumed", "cum_turnover", "peak_equity"):
+        assert rec[column] == pytest.approx(c40[column], rel=1e-12), column
+    control_sold = _real_market_fill(
+        monkeypatch,
+        control_root,
+        day40,
+        side="sell",
+        delta_weight=-0.5,
+        target_weight=0.5,
+        price=70.0,
+    )
+    assert control_sold["traded_notional"] == pytest.approx(sold["traded_notional"], rel=1e-12)
+    assert control_sold["units_after"] == pytest.approx(sold["units_after"], rel=1e-12)
+    control_bars[day40] = {"open": 140.0, "close": 140.0}
+    pl.run_daily_mtm(control_root, _now_of(day41))
+    nxt_c = _a_mtm(control_root, day41)
+    assert nxt_c["equity"] == pytest.approx(nxt["equity"], rel=1e-12)
+    assert nxt_c["cum_cost_assumed"] == pytest.approx(nxt["cum_cost_assumed"], rel=1e-12)
+    assert nxt_c["equity_gross"] == pytest.approx(nxt["equity_gross"], rel=1e-12)
+
+    # --- cost_drag reads the same share on both paths (Q3's window metric) --
+    panel_r = paperloop_panel.build_panel(tmp_path / "data", start=day40, end=day41)
+    panel_c = paperloop_panel.build_panel(tmp_path / "control" / "data", start=day40, end=day41)
+    drag_r = paperloop_panel._cost_drag_pp(panel_r["rows"], pl.S01_BOOK)
+    drag_c = paperloop_panel._cost_drag_pp(panel_c["rows"], pl.S01_BOOK)
+    assert drag_r is not None and drag_r > 0
+    assert drag_r == pytest.approx(drag_c, rel=1e-12)
+
+
+def test_panel_as_of_reads_target_day_order_not_append_order(tmp_path: Path, monkeypatch) -> None:
+    """AS-M126-09 (t_0be71b95 rev7): the panel's as-of equity columns adopt
+    the newest TARGET day's mark, never the last append. The audited repro,
+    real writers throughout: day 40 fails unpriced, day 83 marks 0.968545
+    normally, the day-39 close lands 06:00 and day 40 is honestly recovered
+    (0.69895) at the journal's END, then a real decision/fill lands on day
+    83. The public build_panel row for day 83 must read day 83's OWN mark —
+    rev6's append-order read put the recovered past value there (26.9595pp
+    wrong) and leaked it into weekly Q4."""
+
+    start = date(2026, 1, 1)
+    day39 = start + timedelta(days=39)
+    day40 = start + timedelta(days=40)
+    last_day = start + timedelta(days=83)  # 2026-03-25
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+
+    bought = _real_market_fill(
+        monkeypatch, root, start, side="buy", delta_weight=1.0, target_weight=1.0, price=100.0
+    )
+    assert bought["units_after"] == pytest.approx(0.009985, rel=1e-12)
+
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        pl.run_daily_mtm(root, _now_of(day40))
+    bars = {start + timedelta(days=82): {"open": 97.0, "close": 97.0}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    pl.run_daily_mtm(root, _now_of(last_day))
+    day83 = _a_mtm(root, last_day)
+    assert day83["equity"] == pytest.approx(0.009985 * 97.0, rel=1e-12)
+
+    bars[day39] = {"open": 70.0, "close": 70.0}
+    assert pl.run_daily_mtm(root, _now_of(last_day, minute=360)) == 1
+    rec = _a_mtm(root, day40)
+    assert rec["recovered_from_unpriced"] is True
+    assert rec["equity"] == pytest.approx(0.009985 * 70.0, rel=1e-12)
+    assert rec["recorded_at"].startswith(last_day.isoformat())  # honest, never backdated
+
+    repro_sold = _real_market_fill(
+        monkeypatch,
+        root,
+        last_day,
+        side="sell",
+        delta_weight=-0.5,
+        target_weight=0.5,
+        price=100.0,
+    )
+    assert pl.rebuild_state(root, pl.S01_BOOK)["equity"] == pytest.approx(0.968545, rel=1e-12)
+
+    from yowayowa.paperloop_panel import build_panel
+
+    panel = build_panel(tmp_path / "data", start=last_day, end=last_day)
+    rows = [row for row in panel["rows"] if row.get("book") == pl.S01_BOOK]
+    assert len(rows) == 1
+    row = rows[0]
+    # the queried day's OWN mark — not the trailing recovered past value
+    assert row["equity"] == pytest.approx(day83["equity"], rel=1e-12)
+    assert row["equity"] == pytest.approx(0.968545, rel=1e-12)
+    assert row["equity_gross"] == pytest.approx(day83["equity_gross"], rel=1e-12)
+    assert row["equity"] != pytest.approx(rec["equity"], rel=1e-3)
+    assert row["equity_gross"] != pytest.approx(rec["equity_gross"], rel=1e-3)
+    assert row["bench_equity"] == pytest.approx(1.0, rel=1e-12)
+
+    # --- the no-outage control reads the same day-83 equity -----------------
+    control_root = pl.loop_root(tmp_path / "control" / "data")
+    control_root.mkdir(parents=True, exist_ok=True)
+    _real_market_fill(
+        monkeypatch,
+        control_root,
+        start,
+        side="buy",
+        delta_weight=1.0,
+        target_weight=1.0,
+        price=100.0,
+    )
+    control_bars = {day39: {"open": 70.0, "close": 70.0}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(control_bars))
+    pl.run_daily_mtm(control_root, _now_of(day40))
+    control_bars[start + timedelta(days=82)] = {"open": 97.0, "close": 97.0}
+    pl.run_daily_mtm(control_root, _now_of(last_day))
+    control_sold = _real_market_fill(
+        monkeypatch,
+        control_root,
+        last_day,
+        side="sell",
+        delta_weight=-0.5,
+        target_weight=0.5,
+        price=100.0,
+    )
+    assert control_sold["traded_notional"] == pytest.approx(
+        repro_sold["traded_notional"], rel=1e-12
+    )
+    assert control_sold["units_after"] == pytest.approx(repro_sold["units_after"], rel=1e-12)
+    control_panel = build_panel(tmp_path / "control" / "data", start=last_day, end=last_day)
+    control_rows = [row for row in control_panel["rows"] if row.get("book") == pl.S01_BOOK]
+    assert len(control_rows) == 1
+    assert control_rows[0]["equity"] == pytest.approx(row["equity"], rel=1e-12)
+    assert control_rows[0]["equity_gross"] == pytest.approx(
+        _a_mtm(control_root, last_day)["equity_gross"], rel=1e-12
+    )
+
+
+def test_weekly_q4_excess_reads_the_marked_day_not_the_recovered_past(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """AS-M126-09 (t_0be71b95 rev7) on the public weekly row: with day 40's
+    recovery appended AFTER day 83's own mark, weekly_summary's Q4 must read
+    the marked day's equity — mean excess equal to the row's books
+    cum_return (-0.031455 in the audited numbers) — not the recovered past
+    value (-0.30105). Every fact through the real writers; the no-outage
+    control produces the identical Q4 block."""
+
+    start = date(2026, 1, 1)
+    day39 = start + timedelta(days=39)
+    day40 = start + timedelta(days=40)
+    last_day = start + timedelta(days=83)
+    window_end = start + timedelta(days=84)
+    root = pl.loop_root(tmp_path / "data")
+    root.mkdir(parents=True, exist_ok=True)
+
+    bought = _real_market_fill(
+        monkeypatch, root, start, side="buy", delta_weight=1.0, target_weight=1.0, price=100.0
+    )
+    assert bought["units_after"] == pytest.approx(0.009985, rel=1e-12)
+
+    with monkeypatch.context() as m:
+        m.setattr(pl, "_daily_map", lambda root_, asset: {})
+        pl.run_daily_mtm(root, _now_of(day40))
+    bars = {start + timedelta(days=82): {"open": 97.0, "close": 97.0}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(bars))
+    pl.run_daily_mtm(root, _now_of(last_day))
+    bars[day39] = {"open": 70.0, "close": 70.0}
+    assert pl.run_daily_mtm(root, _now_of(last_day, minute=360)) == 1
+    rec = _a_mtm(root, day40)
+    assert rec["equity"] == pytest.approx(0.009985 * 70.0, rel=1e-12)
+
+    # a live-schema decision on the marked day: the panel row Q4 judges
+    _long_milestone_row(
+        root,
+        last_day,
+        event="decision",
+        book=pl.S01_BOOK,
+        asset="BTC",
+        decision_id=f"{pl.S01_BOOK}:BTC:{last_day.isoformat()}",
+        decision_date=last_day.isoformat(),
+        recorded_at=f"{last_day.isoformat()}T07:00:00+00:00",
+        schema=pl.SCHEMA_V13,
+        backfill=False,
+        regime_state="RISK_ON",
+        prev_regime_state="RISK_ON",
+        close=97.0,
+        regime_tag={"vol_bucket": "low", "trend_bucket": "up"},
+    )
+    bars[start + timedelta(days=83)] = {"open": 97.0, "close": 97.0}
+    pl.run_daily_mtm(root, _now_of(window_end))  # next day's mark: ret_next exists
+
+    out = pl.weekly_summary(tmp_path / "data", window_end)
+    expected = 0.009985 * 97.0 - 1.0
+    q4 = out["eval_by_book"][pl.S01_BOOK]["eval"]["Q4"]
+    assert q4["n"] == 1
+    assert q4["n_excluded"]["unjudgeable"] == 0
+    bucket = next(iter(q4["by_bucket"].values()))
+    assert bucket["n"] == 1
+    # the marked day's equity vs the benchmark — not the recovered past value
+    assert bucket["mean_excess"] == pytest.approx(expected, rel=1e-12)
+    assert out["books"][pl.S01_BOOK]["cum_return"] == pytest.approx(expected, rel=1e-12)
+    assert bucket["mean_excess"] != pytest.approx(-0.30105, rel=1e-3)
+
+    # --- no-outage control: the identical Q4 block ---------------------------
+    control_root = pl.loop_root(tmp_path / "control" / "data")
+    control_root.mkdir(parents=True, exist_ok=True)
+    _real_market_fill(
+        monkeypatch,
+        control_root,
+        start,
+        side="buy",
+        delta_weight=1.0,
+        target_weight=1.0,
+        price=100.0,
+    )
+    control_bars = {day39: {"open": 70.0, "close": 70.0}}
+    monkeypatch.setattr(pl, "_daily_map", lambda root_, asset: dict(control_bars))
+    pl.run_daily_mtm(control_root, _now_of(day40))
+    control_bars[start + timedelta(days=82)] = {"open": 97.0, "close": 97.0}
+    pl.run_daily_mtm(control_root, _now_of(last_day))
+    _long_milestone_row(
+        control_root,
+        last_day,
+        event="decision",
+        book=pl.S01_BOOK,
+        asset="BTC",
+        decision_id=f"{pl.S01_BOOK}:BTC:{last_day.isoformat()}",
+        decision_date=last_day.isoformat(),
+        recorded_at=f"{last_day.isoformat()}T07:00:00+00:00",
+        schema=pl.SCHEMA_V13,
+        backfill=False,
+        regime_state="RISK_ON",
+        prev_regime_state="RISK_ON",
+        close=97.0,
+        regime_tag={"vol_bucket": "low", "trend_bucket": "up"},
+    )
+    control_bars[start + timedelta(days=83)] = {"open": 97.0, "close": 97.0}
+    pl.run_daily_mtm(control_root, _now_of(window_end))
+    control_out = pl.weekly_summary(tmp_path / "control" / "data", window_end)
+    control_q4 = control_out["eval_by_book"][pl.S01_BOOK]["eval"]["Q4"]
+    assert control_q4["by_bucket"] == q4["by_bucket"]
+    assert control_q4["n"] == q4["n"]

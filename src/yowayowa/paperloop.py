@@ -75,6 +75,133 @@ missing in ``vs_benchmark_pp_cum_legacy_nobaseline_reason``. The summary row is
 ``demo-loop-summary-v1.9``: rows already written may hold a value computed
 across two different end days.
 
+summary-v1.10 (t_0be71b95, 12/26-week milestone wiring): MILESTONE_WEEKS_CONNECTED
+is now ``(4, 12, 26)`` — the frozen §4 12-week and 26-week gates are evaluated on
+the first weekly run at/after each book's deadline, next to the 4-week block.
+Two changes, both described here because append-only readers need them:
+
+- ``milestone[book]`` is now ``{"weeks": {weeks: judgment}}`` so ONE summary row
+  can carry several weeks of the same book (paused weekly runs or a late book
+  start can let the 4-week and 12-week deadlines close inside one run — the old
+  single ``out[book] = judgment`` slot silently kept only the LAST judgment).
+  Disk rows hold the week keys as JSON strings; in memory they are ints.
+  ``_milestone_already_judged`` reads this shape AND the t_d33aef07
+  single-judgment shape (``milestone[book]`` = the judgment dict itself). No
+  production row ever carried a judgment (every row so far has ``milestone``
+  null); the legacy branch only keeps an older file from looking un-judged.
+  The summary row is ``demo-loop-summary-v1.10``.
+
+- 12/26-week judgments are RECORDED ONLY WHEN JUDGEABLE. Under the once-only
+  record, a criterion whose facts were missing at the deadline (no marks, a
+  benchmark without a usable drawdown in the window, a shortfall sample under
+  two) hardened into a PERMANENT INSUFFICIENT verdict — short measurement gaps
+  would keep 12/26 forever "insufficient". Now the judgment is not written at
+  all and the next weekly run judges again: the window stays frozen at
+  ``start..start+weeks*7``, so the eventual record still measures the deadline
+  window and only ``judged_at_week_end`` names the run that wrote it. This is
+  design §4-2's 「保留」 (benchmark max DD under 10% → hold, judge at the next
+  milestone) applied to every not-yet-judgeable fact. The 4-week block keeps
+  the t_d33aef07 fail-closed INSUFFICIENT records verbatim — that semantics is
+  already live, and changing it would retroactively alter a frozen record
+  shape.
+
+summary-v1.10 rev2 (t_0be71b95, independent review round 1 — five corrected
+gate contracts; readers of a recorded 12/26 judgment must know these):
+
+- ``criteria`` now always covers EVERY frozen ``MILESTONE_RULES[weeks]`` key,
+  and a verdict is recorded only when all of them are decided. rev1 dropped
+  the 12-week ``switches_multiple`` criterion for Book C (no frozen expected
+  rate exists for S-02 anywhere in the repo) and recorded a two-criteria PASS
+  — a required gate must never be deleted to make a verdict: the judgment now
+  defers until the rate-freeze decision lands (a separate card). (2026-10-28:
+  the freeze landed — t_be52f5bc decision A wired frozen S-02 rates into
+  ``MILESTONE_SWITCH_EXPECTED_ANNUAL``, so Book C's 12-week judgment now
+  records like every other book's; the deferral above stays the contract for
+  any book or asset that still has no frozen rate.)
+- switches is judged PER ASSET (design §2-3 is per asset: "帳簿Aの BTC なら12週
+  で期待値は約2回、警告は5回以上"). The criterion carries ``per_asset`` with
+  each asset's observed/expected/max/pass; rev1 summed the expected values
+  across assets, so BTC's excess reversals passed on ETH's quiet headroom.
+- dd_vs_benchmark compares the SAME frozen period on both sides: a common
+  origin (the first mark day both sides share inside the window — the v1.9
+  shared-base contract, recorded as ``comparison_start``) and marks at the
+  window's last day on BOTH sides (the spans are recorded as
+  ``book_mark_span`` / ``benchmark_mark_span``; defer reasons name the
+  missing side). rev1 compared whatever marks each side happened to have —
+  a book that stopped at day 7 was graded against a benchmark that fell to
+  day 83, recorded a permanent PASS, and the honest numbers arriving later
+  could no longer correct it. cum_pnl_min is the last in-window equity minus
+  the 1.0 INCEPTION PRINCIPAL (the weekly ``cum_return`` contract) — rev1
+  rebased on the first mark and thereby dropped the book's first-day loss.
+- the 26-week shortfall gate attributes marks by the EXECUTION DATE of the
+  decision they measure (the decision row's ``decision_date``), not by the
+  mark's ``recorded_at``: ``mark_up`` stamps the measurement time and never
+  backdates, so late measurements of in-window executions — the normal
+  recovery path — kept the gate at n=1 forever under the rev1 recorded_at
+  filter. ``attribution="decision_execution_date"`` and ``late_recorded``
+  make the rule visible on the recorded criterion.
+
+summary-v1.10 rev3 (t_0be71b95, independent review round 2 — recovery must be
+a real operation, and a sample is not a target set):
+
+- ``run_daily_mtm`` recovers PAST ``mtm_unpriced`` days. The writer used to
+  write only ``mtm_day = now.date()``, so a day whose open positions could not
+  all be priced stayed unpriced FOREVER — and the 12/26-week gates, which
+  require the frozen window's last-day mark, could never become judgeable no
+  matter how long the loop kept running. Before the day's own row, each
+  book's still-unpriced past days are re-priced AS OF THAT DAY (state rebuilt
+  from fills by EXECUTION date — never current holdings projected backwards)
+  once the store can price every holding; the appended row carries the
+  recovering run's honest ``recorded_at`` (never backdated) plus
+  ``recovered_from_unpriced`` for provenance, and stays B2-idempotent per
+  (book, mtm_date). Days the loop never attempted are not invented: recovery
+  completes a recorded failure, it does not fabricate facts.
+- the 26-week cost gate separates the SAMPLE from the TARGET SET. ``n >= 2``
+  is the minimum for the upper bound, not evidence that every in-window
+  execution has been measured: the criterion now matches the window's fills
+  (by execution date, the marks' own attribution) against the measured marks
+  and records ``completeness`` (target / measured / unmeasured / unusable).
+  While any target fill is unmeasured the judgment defers — recorded nowhere,
+  not deduped — so a partial-sample PASS written at the deadline can no
+  longer outlive the honest late measurement that would have failed it.
+
+summary-v1.11 (t_264e0692, A_HALF 20-business-day shadow gate): the shadow
+book A_HALF — whose prereg row (``book_id=="A_HALF"``, row_hash
+``5cd8e914…``) froze the judgment rule 「design §4 12週 + 20営業日連続:
+費用控除後 equity>=1.0 / 最大DD<=3.0% / DD比<=0.6」 — additionally carries
+``milestone[book]["20bd"]``: a FORWARD 20-business-day judgment over the
+book's first 20 WEEKDAYS (Mon-Fri; 土日・祝日以外の平日) from its first non-backfill decision date.
+「営業日」 is fixed to plain weekdays (Mon-Fri, no holiday table: the crypto
+tape and the loop run them) because that count reproduces the prereg plan
+exactly — first decision day 2026-10-25(日)/10-26(月) → 20th weekday =
+2026-11-20(Fri, per docs/DEMO_LOOP_SHADOW_GROSS_CAP_20261025.md §5); counting
+loop-operated calendar days instead would end 2026-11-14 and contradict the
+pre-registered plan, so it is rejected. The record-only discipline is shared
+with the weekly milestones: no early judgment (first weekly run whose
+``week_end`` reaches the 20th weekday), one judgment record per book ever
+(deduped against its own ``"20bd"`` slot), and any missing fact DEFERS the
+record entirely — a weekday without an A_HALF mtm mark, an unresolved
+``mtm_unpriced`` hole in the window, or a benchmark drawdown that cannot be
+divided by — never a PASS on a subset. Metrics are the mtm row's AFTER-COST
+``equity`` (「費用控除後」; ``equity_gross`` exists precisely to be NOT the
+gate value): (1) ``equity_net_daily_min`` — every window weekday's equity
+>= 1.0 (「20営業日連続」 = the condition holds through the window; a single
+dip fails the gate and the criterion names the failing day, the card's case
+(b) reading — a judgeable-but-then-restarted streak is rejected because the
+pre-registered gate measures the ONE forward window, 「前方 20 営業日」);
+(2) ``max_drawdown_max`` — the window's inner max drawdown (running peak
+rebased at the window's first mark, the ``_max_drawdown_since`` footing both
+milestone DD gates already use) must not exceed 3.0%; (3) ``dd_vs_benchmark``
+— the same-window book/benchmark (CRYPTO_1N) drawdown ratio <= 0.60, with no
+drawdown on the benchmark side meaning the ratio cannot be judged (defer, the
+26-week criterion's ``benchmark_drawdown_not_negative`` handling — fabricating
+a denominator is prohibited). Weekend rows exist in the crypto journal but
+are outside the business-day observation set for this gate. Judgment fires
+when ``week_end >= business_days_end``: with a Friday 09:50-style weekly run
+`week_end` EXACTLY lands on 2026-11-20; with the existing Monday-morning
+``demo-loop-report-weekly`` the record lands on Monday 2026-11-23 — both are
+"at/after", never early.
+
 v1.8 addition (C-04, docs/PAPERLOOP_MONEY_REVIEW_20261023.md): a mark-to-market
 day that cannot price every OPEN position no longer crashes and no longer
 values a holding at 0. ``run_daily_mtm`` prices each holding from the local
@@ -272,6 +399,37 @@ MILESTONE_RULES = {  # design §4, frozen numeric gates
     26: {"dd_vs_benchmark": 0.6, "shortfall_bps_mean_upper95_max": 15.0},
 }
 SHORTFALL_UPPER95_Z = 1.6449  # one-sided 95% normal quantile (frozen)
+
+# 12-week switches-gate input (design §2-3 + §4-2c, frozen text): the expected
+# regime-flip count is the strategy's BACKTEST annual switch rate scaled to the
+# window ("バックテストの年率から計算した期待値" — SHORT_TERM_STRATEGY_DESIGN.md
+# §2-3: S-01 BTC 8.8/year, ETH 6.7/year, 58 flips over 2023-01-01..2026-09-29;
+# the design's own arithmetic: BTC 12-week expected ≈ 8.8 * 84/365 ≈ 2 flips,
+# warn at 5). BOOK_A_HALF runs the same S-01 signal engine, so the same
+# per-asset rates apply — its 50% gross cap changes sizing, not the regime
+# gate. Book C (S-02 vol target) rates below are FROZEN by executive decision
+# (t_be52f5bc decision A): numbered by the implementation-definition mirror
+# (SMA200 cross, per-asset cursors) over window 2021-01-04..2026-09-28,
+# rate = switches / span_days * 365, 1dp ROUND_HALF_UP, verbatim from
+# results.<SYMBOL>.primary.rate_1dp of
+# scripts/research/book_c_switch_rate_numbering_result.json
+# (sha256 3c14ffb1d0941ff762b6e46edfada7a2b0dbc7b1f27acf2712eb83c46ba9f23b;
+# numbering script committed at 6d9459664e044cf085572525d521488afab05bd0,
+# t_b63497a9; wiring t_5a2489f5). The numbering ran on RAW prices — the
+# runtime journal's own store, no total-return adjustment — so if the runtime
+# data basis changes to TR-adjusted (AS-TR-01/02 landing), the BOOK_C rates
+# must be RE-NUMBERED (the frozen values' premise would be gone).
+MILESTONE_SWITCH_EXPECTED_ANNUAL = {
+    S01_BOOK: {"BTC": 8.8, "ETH": 6.7},
+    BOOK_A_HALF: {"BTC": 8.8, "ETH": 6.7},
+    # S-02 frozen 2026-10-28 (t_be52f5bc decision A, t_b63497a9 numbering)
+    BOOK_C_BOOK: {"SPY": 5.6, "IWM": 7.7, "JNJ": 10.5, "PG": 14.6},
+}
+MILESTONE_SWITCH_YEAR_DAYS = 365.0  # design §2-3 scales the annual rate by 84/365
+# design §4-2a: the 12-week DD ratio is only judged when the benchmark's max DD
+# in the window is at least 10% ("ベンチマークのDDが 10% 以上の場合"; below that
+# is 「判断材料なし」 → 保留 → the judgment defers, it is not recorded).
+MILESTONE_DD_BENCH_MIN = 0.10
 
 # clock injection point (single, for tests) — D5
 CLOCK = datetime.now
@@ -964,8 +1122,38 @@ def _decision_seq(root: Path) -> dict[str, int]:
     return seqs
 
 
+def _mtm_row_day(row: dict[str, Any]) -> date | None:
+    """An ``mtm`` row's own target day (``mtm_date``), or None if unusable."""
+
+    raw = row.get("mtm_date")
+    if raw is None:
+        return None
+    try:
+        return date.fromisoformat(str(raw))
+    except ValueError:
+        return None
+
+
 def rebuild_state(root: Path, book: str) -> dict[str, Any]:
-    """Rebuild a book's units/cash/equity/peak/halt state from journal rows."""
+    """Rebuild a book's units/cash/equity/peak/halt state from journal rows.
+
+    Consumer contract (AS-M126-08, t_0be71b95 rev6): the journal is ordered by
+    WRITE time, and exactly one writer appends rows OUT of target-day order —
+    the ``mtm_unpriced`` recovery pass, which completes a PAST day's mark once
+    its prices arrive. The current state therefore adopts the order-sensitive
+    fields from the newest TARGET day, never from the last append: ``equity``
+    and ``halted`` come from the row holding the greatest ``mtm_date`` (ties:
+    the later journal row wins — the same rule ``_equity_as_of`` already
+    applies to as-of reads), so a recovered past mark completes the historical
+    record without rolling the present backwards. A late ``.70`` recovery of
+    day 40 must not make day 83's ``.97`` state (and the next real fill sized
+    on it) trade on yesterday's equity. The order-insensitive aggregations
+    stay global: ``peak`` is the max ``peak_equity`` over every row and
+    ``stopped`` the sticky OR — both are HISTORY, not "now". Holdings
+    (units/cash) remain fill-driven in append order; recovery never writes
+    fills. Rows without a usable ``mtm_date`` (none are written today) keep
+    the legacy append-order adoption.
+    """
 
     units: dict[str, float] = {}
     cash = 1.0
@@ -973,15 +1161,22 @@ def rebuild_state(root: Path, book: str) -> dict[str, Any]:
     peak = 1.0
     halted = False
     stopped = False
+    latest_mark: date | None = None
     for row in _load_journal(root):
         if row.get("event") == "fill" and row.get("book") == book:
             units[str(row["asset"])] = float(row["units_after"])
             cash = float(row["cash_after"])
         elif row.get("event") == "mtm" and row.get("book") == book:
-            equity = float(row["equity"])
             peak = max(peak, float(row.get("peak_equity", peak)))
-            halted = bool(row.get("halted", halted))
             stopped = stopped or bool(row.get("stopped", False))
+            day = _mtm_row_day(row)
+            if day is not None:
+                if latest_mark is not None and day < latest_mark:
+                    # a recovered PAST mark must not roll the state back
+                    continue
+                latest_mark = day
+            equity = float(row["equity"])
+            halted = bool(row.get("halted", halted))
     return {
         "units": units,
         "cash": cash,
@@ -989,6 +1184,104 @@ def rebuild_state(root: Path, book: str) -> dict[str, Any]:
         "peak": peak,
         "halted": halted,
         "stopped": stopped,
+    }
+
+
+def _unpriced_boundary(
+    rows: list[dict[str, Any]],
+    book: str,
+    boundary: int,
+    equity: float,
+) -> dict[str, Any] | None:
+    """A book's state AT the original failed valuation — the journal prefix.
+
+    AS-M126-02-R3 (t_0be71b95 rev4): the recovery's state boundary is the
+    ORIGINAL evaluation, i.e. ``rows[:boundary]`` — exactly the rows the
+    failing ``mtm_unpriced`` write had already seen — not the end of the
+    calendar day. A fill EXECUTED later the same day (its decision row's
+    ``decision_date`` equals the unpriced day, but its real execution landed
+    after the failed write) must not enter the recovered mark: valuing the
+    AFTERNOON's holdings at the previous close would rewrite which snapshot
+    is priced and turn a FAIL day into a recorded PASS. Journal ORDER is the
+    provenance here and ``decision_date`` is deliberately NOT consulted —
+    it dates the decision, not the valuation, so it cannot say "before the
+    failed write". The chain rules are ``rebuild_state``'s verbatim (fills
+    set units/cash in order, mtm rows carry the peak/halt chain) plus the
+    P2 cost walk of ``_cost_accumulators`` (final step taken with the
+    recovered ``equity``), INCLUDING their AS-M126-08 (rev6) consumer
+    contract: ``equity``-carrying adoption (here the ``halted`` flag) and
+    chain steps follow target-day order, and the AS-M126-10 (rev7) step
+    rule for recovered marks — a recovery is a step only while the
+    as-written chain had not already stepped PAST its target day when it
+    was appended (a latest-day recovery continues the chain; a recovery
+    that arrived after a later real mark is not a step, because that
+    written step already compounded across the hole) — so a boundary that
+    contains an earlier recovery replays the same state the as-written
+    chain produced. Malformed rows make the boundary unknowable:
+    ``None`` — the recovery is skipped, never guessed.
+    """
+
+    units: dict[str, float] = {}
+    cash = 1.0
+    peak = 1.0
+    halted = False
+    stopped = False
+    cum_cost = 0.0
+    cum_turnover = 0.0
+    equity_gross = 1.0
+    prev_equity = 1.0  # inception capital anchor
+    cost_since_prev_mtm = 0.0
+    latest_mark: date | None = None
+    as_written_max: date | None = None  # newest day the AS-WRITTEN chain stepped at
+    try:
+        for row in rows[:boundary]:
+            if row.get("book") != book:
+                continue
+            event = row.get("event")
+            if event == "fill":
+                units[str(row["asset"])] = float(row["units_after"])
+                cash = float(row["cash_after"])
+                cost = float(row.get("cost_assumed") or 0.0)
+                cum_cost += cost
+                cum_turnover += abs(float(row.get("traded_notional") or 0.0))
+                cost_since_prev_mtm += cost
+            elif event == "mtm":
+                peak = max(peak, float(row.get("peak_equity", peak)))
+                stopped = stopped or bool(row.get("stopped", False))
+                day = _mtm_row_day(row)
+                if row.get("recovered_from_unpriced"):
+                    # AS-M126-10 (rev7): step only while the chain had not
+                    # already passed this recovery's target day at append
+                    # time; an unusable day cannot be ordered — never a step.
+                    is_step = day is not None and (as_written_max is None or day > as_written_max)
+                else:
+                    is_step = True
+                    if day is not None and (as_written_max is None or day > as_written_max):
+                        as_written_max = day
+                if is_step:
+                    mtm_equity = float(row["equity"])
+                    if prev_equity > 0:
+                        equity_gross *= (mtm_equity + cost_since_prev_mtm) / prev_equity
+                    prev_equity = mtm_equity
+                    cost_since_prev_mtm = 0.0
+                if day is not None:
+                    if latest_mark is not None and day < latest_mark:
+                        continue  # a recovered PAST mark is not the boundary's "now"
+                    latest_mark = day
+                halted = bool(row.get("halted", halted))
+        if prev_equity > 0:
+            equity_gross *= (equity + cost_since_prev_mtm) / prev_equity
+    except (KeyError, TypeError, ValueError):
+        return None
+    return {
+        "units": units,
+        "cash": cash,
+        "peak": peak,
+        "halted": halted,
+        "stopped": stopped,
+        "cum_cost": cum_cost,
+        "cum_turnover": cum_turnover,
+        "equity_gross": equity_gross,
     }
 
 
@@ -1435,6 +1728,171 @@ def _unpriced_mtm_books(root: Path, mtm_day: date) -> list[str]:
     ]
 
 
+def _recover_unpriced_mtm(
+    root: Path,
+    book: str,
+    rows: list[dict[str, Any]],
+    mtm_day: date,
+    now: datetime,
+) -> int:
+    """Re-price this book's days recorded as valuation-unavailable.
+
+    AS-M126-02-R2 (t_0be71b95 rev3): the writer only ever writes
+    ``mtm_day = now.date()``, so a day whose open positions could not ALL be
+    priced (the v1.8 C-04 ``mtm_unpriced`` row) stayed unpriced forever —
+    and the 12/26-week milestone gates require the frozen window's last-day
+    mark, so those windows could never become judgeable, however long the
+    loop kept running. This pass runs inside the SAME daily writer, before
+    the day's own row: for every day that still carries an unpriced
+    record and no mtm row, the day is re-priced once the store can price
+    every holding of the FAILED EVALUATION, and the honest ``mtm`` row is
+    appended. Since AS-M126-02-R4 (rev5) this covers the SAME day too: a
+    second run on a day that already failed once (00:00 write failed, a
+    03:00 execution landed, prices arrived at 06:00) completes the FAILED
+    evaluation's own snapshot — valuing the CURRENT holdings instead would
+    silently swap the evaluated state (0.005 BTC + cash → 0.92425 "PASS"
+    where the failed snapshot is 0.85 FAIL) while a no-outage day marked
+    0.85 at 00:00 and let the sale show up only in the NEXT mark. The
+    arrival date of a price must not change what gets priced.
+
+    The valuation is the FAILED EVALUATION's own (AS-M126-02-R3, rev4): the
+    units/cash being priced are the ``mtm_unpriced`` row's own snapshot —
+    the holdings as they stood when the write failed — and every other
+    column (peak/halt chain, cumulative cost/turnover, ``equity_gross``)
+    comes from the journal PREFIX before that row (``_unpriced_boundary``).
+    The end-of-calendar-day state is deliberately NOT used: an execution
+    that landed later the same day (a 01:00 decision resolved at 03:00
+    after a 00:00 failed write) belongs to the NEXT mark, exactly as in a
+    day that priced normally at 00:00. Consistency is enforced: the prefix
+    replay must reproduce the row's own snapshot (units AND cash) — a
+    disagreement means the journal does not describe one state boundary and
+    the recovery refuses rather than pick a side. Coverage is the union of
+    the snapshot's holdings and the row's own ``unpriced_assets`` (what the
+    original write could not price); anything still without a bar keeps the
+    day unpriced. Provenance: ``recorded_at`` is THIS run's time (never
+    backdated) and the row carries ``recovered_from_unpriced``; the day's
+    own ``mtm_unpriced`` row stays in the journal as the record of what
+    happened. Refusals, all fail-closed: a day that still cannot be fully
+    priced stays unpriced (no duplicate unpriced row — the first one
+    stands); a snapshot without units/cash, or one the prefix replay does
+    not reproduce, aborts the day; days the loop never attempted are NOT
+    invented — recovery completes a recorded failure, it does not fabricate
+    a mark for a day the writer never saw. B2 holds: at most one mtm row per
+    (book, date), ever.
+
+    A recovered row is APPENDED at the journal's end carrying an OLDER target
+    day (AS-M126-08, t_0be71b95 rev6). That append-order position must not —
+    and with the consumer contract it does not — roll the present backwards:
+    state consumers adopt the current equity/halt by TARGET day
+    (``rebuild_state``, ``_equity_as_of`` and the panel's as-of reads), and
+    the cost chain treats the recovery as a step only while it is still the
+    chain's newest target day — a recovery that lands after later marks were
+    already written stays out of the chain those rows compounded (rev7,
+    AS-M126-10). The recovery completes the historical record; the next real
+    decision and fill are still sized on the newest day's state.
+    """
+
+    unpriced_days: dict[date, tuple[int, dict[str, Any]]] = {}
+    for index, row in enumerate(rows):
+        if row.get("event") != "mtm_unpriced" or row.get("book") != book:
+            continue
+        try:
+            day = date.fromisoformat(str(row.get("mtm_date")))
+        except (TypeError, ValueError):
+            continue
+        if day <= mtm_day and day not in unpriced_days:
+            unpriced_days[day] = (index, row)
+    written = 0
+    for day in sorted(unpriced_days):
+        if any(
+            row.get("event") == "mtm"
+            and row.get("book") == book
+            and str(row.get("mtm_date")) == day.isoformat()
+            for row in rows
+        ):
+            continue  # B2: the day already has its mark
+        boundary, original = unpriced_days[day]
+        # the failed evaluation's own holdings are the ONLY state this day
+        # may be priced at (AS-M126-02-R3): a row that lost its snapshot is
+        # unknowable — the unpriced record stands, nothing is reconstructed
+        try:
+            snapshot_units = {
+                str(asset): float(units) for asset, units in (original.get("units") or {}).items()
+            }
+            snapshot_cash = float(original["cash"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        universe = list(CRYPTO_UNIVERSE if book in CRYPTO_BOOKS else EQUITY_UNIVERSE)
+        prices: dict[str, float | None] = {}
+        price_bar_date: str | None = None
+        for symbol in universe:
+            bar = _latest_finalized_close(root, symbol, day)
+            if bar is None:
+                prices[symbol] = None
+                continue
+            prices[symbol] = bar[1]
+            if price_bar_date is None or bar[0].isoformat() > price_bar_date:
+                price_bar_date = bar[0].isoformat()
+        # every holding of the failed evaluation must price — plus whatever
+        # the row itself named unpriceable (the original blocker)
+        held = {asset: units for asset, units in snapshot_units.items() if units}
+        must_price = set(held)
+        for asset in original.get("unpriced_assets") or []:
+            must_price.add(str(asset))
+        valued: dict[str, float] = {}
+        unpriced: list[str] = []
+        for asset in sorted(must_price):
+            price = prices.get(asset)
+            if price is None:
+                # a holding outside the universe is still a position: same
+                # store fallback as the day's own pass
+                bar = _latest_finalized_close(root, asset, day)
+                price = bar[1] if bar is not None else None
+            if price is None:
+                unpriced.append(asset)
+            else:
+                valued[asset] = price
+        if unpriced:
+            continue  # still unpriceable: the original mtm_unpriced row stands
+        equity = snapshot_cash + sum(units * valued[asset] for asset, units in held.items())
+        state = _unpriced_boundary(rows, book, boundary, equity)
+        if state is None:
+            continue  # unknowable boundary: a past valuation must not be guessed
+        if state["units"] != snapshot_units or state["cash"] != snapshot_cash:
+            # the prefix replay does not reproduce the row's own snapshot —
+            # the journal describes no single boundary: refuse both readings
+            continue
+        peak = max(state["peak"], equity)
+        drawdown = equity / peak - 1.0 if peak > 0 else 0.0
+        appended = _append_row(
+            root,
+            {
+                "event": "mtm",
+                "book": book,
+                "mtm_date": day.isoformat(),
+                "recorded_at": _utc_now_text(now),
+                "price_bar_date": price_bar_date,
+                "prices": {asset: prices.get(asset) for asset in universe},
+                "units": dict(snapshot_units),
+                "cash": snapshot_cash,
+                "equity": equity,
+                "peak_equity": peak,
+                "drawdown": drawdown,
+                "drawdown_warning": drawdown <= HALT_DRAWDOWN,
+                "halted": bool(state.get("halted")),
+                "stopped": bool(state.get("stopped")),
+                "cost_assumed_bps": COST_RATE_BPS,
+                "cum_cost_assumed": state["cum_cost"],
+                "cum_turnover": state["cum_turnover"],
+                "equity_gross": state["equity_gross"],
+                "recovered_from_unpriced": True,
+            },
+        )
+        rows.append(appended)  # later days' as-of chains must see this row
+        written += 1
+    return written
+
+
 def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
     """Write one mtm row per enabled book (D3): equity chain + DD warning.
 
@@ -1448,6 +1906,23 @@ def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
     explicit ``mtm_unpriced`` row (reason + the missing assets) and NO ``mtm``
     row — 0 is never substituted for a missing price, and one dead tape no
     longer aborts the whole pass (the other books still mark).
+    Recovery pass (AS-M126-02-R2/R3, t_0be71b95 rev3/rev4): BEFORE the day's
+    own row, each book's days that still carry an ``mtm_unpriced``
+    record are re-priced AS OF THEIR FAILED EVALUATION (the row's own
+    holdings snapshot, journal prefix for every chain column) once the store
+    can price every holding — with the recovering run's honest
+    ``recorded_at`` and ``recovered_from_unpriced`` provenance. The 12/26-week
+    milestone gates need the frozen window's last-day mark; a writer that
+    only ever writes today could otherwise leave those windows unjudgeable
+    forever. AS-M126-02-R4 (rev5) covers the day ITSELF: once today has an
+    unpriced record, a second same-day run no longer values the current
+    holdings (that would price the state AFTER executions that landed past
+    the failed write) — the day's only completions are the failed
+    evaluation's own snapshot, same day or later. The rows recovery appends
+    (past target days, journal end) never roll the CURRENT state back:
+    consumers adopt equity/halt by target day (AS-M126-08, rev6 —
+    ``rebuild_state``), so today's own row and every later fill are still
+    built on the newest day's state.
     """
 
     now = utc_now if utc_now is not None else CLOCK(UTC)
@@ -1455,6 +1930,7 @@ def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
     written = 0
     for book in BOOKS_ENABLED:
         rows = _load_journal(root)
+        written += _recover_unpriced_mtm(root, book, rows, mtm_day, now)
         if any(
             row.get("event") == "mtm"
             and row.get("book") == book
@@ -1468,6 +1944,21 @@ def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
             and str(row.get("mtm_date")) == mtm_day.isoformat()
             for row in rows
         )
+        if unpriced_recorded:
+            # AS-M126-02-R4 (t_0be71b95 rev5): today already failed once. The
+            # recovery pass above has just re-attempted the FAILED
+            # evaluation's own snapshot (it covers the same day); if it could
+            # not complete — a bar is still missing, or the journal does not
+            # reproduce the snapshot — the day stays unpriced. Valuing the
+            # CURRENT holdings here would silently swap the evaluated state
+            # for whatever executions landed after the failure (the 03:00
+            # sale replacing the 00:00 failed write): a no-outage day marks
+            # the 00:00 snapshot and lets the sale first show in the NEXT
+            # mark, and the arrival date of a price must not change what is
+            # priced. The unpriced record stands; later runs keep
+            # re-attempting the failed snapshot (never a dead end while it
+            # is priceable).
+            continue
         state = rebuild_state(root, book)
         universe = list(CRYPTO_UNIVERSE if book in CRYPTO_BOOKS else EQUITY_UNIVERSE)
         prices: dict[str, float | None] = {}
@@ -1500,22 +1991,24 @@ def run_daily_mtm(root: Path, utc_now: datetime | None = None) -> int:
                 valued[asset] = price
         if unpriced:
             # v1.8 (C-04): unvaluable equity is recorded as such, not stored.
-            if not unpriced_recorded:
-                _append_row(
-                    root,
-                    {
-                        "event": "mtm_unpriced",
-                        "book": book,
-                        "mtm_date": mtm_day.isoformat(),
-                        "recorded_at": _utc_now_text(now),
-                        "reason": "unpriced_positions",
-                        "unpriced_assets": unpriced,
-                        "price_bar_date": price_bar_date,
-                        "prices": {asset: prices.get(asset) for asset in universe},
-                        "units": dict(state["units"]),
-                        "cash": state["cash"],
-                    },
-                )
+            # (AS-M126-02-R4, rev5: reachable only when today has NO unpriced
+            # record yet — the gate above sends a day that already failed
+            # once straight to `continue`, so this is never a duplicate.)
+            _append_row(
+                root,
+                {
+                    "event": "mtm_unpriced",
+                    "book": book,
+                    "mtm_date": mtm_day.isoformat(),
+                    "recorded_at": _utc_now_text(now),
+                    "reason": "unpriced_positions",
+                    "unpriced_assets": unpriced,
+                    "price_bar_date": price_bar_date,
+                    "prices": {asset: prices.get(asset) for asset in universe},
+                    "units": dict(state["units"]),
+                    "cash": state["cash"],
+                },
+            )
             continue  # no fabricated equity for this book/day
         units_value = sum(units * valued[asset] for asset, units in held.items())
         equity = state["cash"] + units_value
@@ -1567,6 +2060,33 @@ def _cost_accumulators(root: Path, book: str, equity: float) -> tuple[float, flo
     Algebraically ``gross/equity == product(1 + cost_t / equity_t)`` over the
     steps, so ``cost_drag_pp`` reads the actually incurred cost share. The
     cost share is stated against the CURRENT equity.
+
+    A ``recovered_from_unpriced`` mark is a chain step only while the
+    AS-WRITTEN chain had not already stepped past its target day when the
+    recovery was appended (AS-M126-10, t_0be71b95 rev7). Two branches:
+
+    - A recovery completed at the NEWEST target day (no later real mark
+      existed yet) IS a step: nothing was written across the hole, so the
+      next row must chain from the recovered equity or its first cost step
+      and everything compounding after it is lost (the audited repro: a
+      same-day day-40 recovery followed by a real same-day sale made the
+      day-41 row read gross 1.25961 instead of 1.26081 — cost_drag 37.16%
+      understated — because the walk skipped the recovery and chained from
+      inception, re-adding the hole's costs at face value).
+    - A recovery appended AFTER a later real mark was already written is
+      NOT a step (AS-M126-08, rev6): that written step already compounded
+      across the hole (the day after an unpriced day chained from the last
+      real mark, skipping the gap). Stepping at the late-appended recovered
+      row would divide the next day's move by the recovered PAST equity and
+      redefine that written history — the append order of a recovery must
+      not re-order the chain.
+
+    The branch is read off the journal itself: walking rows in append
+    order, a recovery steps iff its target day is NEWER than every
+    as-written (non-recovered) mark seen so far. A recovery with an
+    unusable target day cannot be ordered and is never a step. Either way
+    the recovered row keeps its own faithfully replayed chain columns
+    (written from the prefix at recovery time).
     """
 
     cum_cost = 0.0
@@ -1574,6 +2094,7 @@ def _cost_accumulators(root: Path, book: str, equity: float) -> tuple[float, flo
     equity_gross = 1.0
     prev_equity = 1.0  # inception capital anchor
     cost_since_prev_mtm = 0.0
+    as_written_max: date | None = None  # newest day the AS-WRITTEN chain stepped at
     for row in _load_journal(root):
         if row.get("book") != book:
             continue
@@ -1583,6 +2104,14 @@ def _cost_accumulators(root: Path, book: str, equity: float) -> tuple[float, flo
             cum_turnover += abs(float(row.get("traded_notional") or 0.0))
             cost_since_prev_mtm += cost
         elif row.get("event") == "mtm":
+            day = _mtm_row_day(row)
+            if row.get("recovered_from_unpriced"):
+                # AS-M126-10 (rev7): step only while the chain had not
+                # already passed this recovery's target day at append time.
+                if day is None or (as_written_max is not None and day <= as_written_max):
+                    continue  # not a chain step: see the docstring
+            elif day is not None and (as_written_max is None or day > as_written_max):
+                as_written_max = day
             mtm_equity = float(row.get("equity") or 0.0)
             if prev_equity > 0:
                 equity_gross *= (mtm_equity + cost_since_prev_mtm) / prev_equity
@@ -2626,8 +3155,16 @@ def _cusum_gate_trigger(verdict: Mapping[str, Any]) -> dict[str, Any]:
 # adds one block to the summary row — no orders, no journal rows, no state
 # transitions, no live promotion. Design §4 is the evaluation standard; it is
 # not proof of benefit and not an adoption decision (the human gate stays).
+#
+# t_0be71b95: 12/26 are wired through the same path with their frozen
+# MILESTONE_RULES[weeks] gates, and the summary block holds several weeks per
+# book ({"weeks": {weeks: judgment}}). A 12/26 judgment whose facts are
+# incomplete is DEFERRED (nothing is recorded; the next weekly run judges the
+# same frozen window again) — design §4-2's 保留. The 4-week block keeps the
+# original fail-closed INSUFFICIENT records verbatim. Module docstring
+# "summary-v1.10" has the full rationale.
 
-MILESTONE_WEEKS_CONNECTED = (4,)  # 12/26 stay unwired (t_d33aef07 scope)
+MILESTONE_WEEKS_CONNECTED = (4, 12, 26)  # t_0be71b95: all three §4 gates wired
 _KNOWN_JOURNAL_EVENTS = frozenset(
     {
         "decision",
@@ -2671,12 +3208,25 @@ def _milestone_already_judged(root: Path, book: str, weeks: int) -> bool:
     The deadline can fall between weekly runs; whichever run fires first
     writes the record and every later run dedupes against it — exactly one
     judgment record per (book, weeks), ever.
+
+    Reads BOTH block shapes. summary-v1.10 (t_0be71b95) rows hold
+    ``milestone[book]["weeks"]`` = per-week judgments (int keys in memory,
+    JSON-string keys on disk); t_d33aef07 rows held the judgment dict itself
+    under ``milestone[book]`` (its "weeks" is the int). No production row ever
+    carried the legacy shape, but a reader that refused it would make an old
+    file look un-judged.
     """
 
     for row in _rows_from_jsonl(summary_path(root), strict=True):
         block = row.get("milestone")
         entry = block.get(book) if isinstance(block, Mapping) else None
-        if isinstance(entry, Mapping) and entry.get("weeks") == weeks:
+        if not isinstance(entry, Mapping):
+            continue
+        inner = entry.get("weeks")
+        if isinstance(inner, Mapping):
+            if weeks in inner or str(weeks) in inner:
+                return True
+        elif entry.get("weeks") == weeks:
             return True
     return False
 
@@ -2755,8 +3305,18 @@ def _milestone_judgment(
 
     Fires on the first weekly run whose week_end reached start + weeks*7
     days, and only if no prior summary row already carries the judgment:
-    no early judgment, no duplicate records. Fail-closed on missing facts:
-    a criterion without its data is None -> INSUFFICIENT, never back-filled.
+    no early judgment, no duplicate records.
+
+    Week 4 keeps the t_d33aef07 fail-closed semantics: a criterion without
+    its data is None -> INSUFFICIENT is RECORDED, never back-filled.
+
+    Weeks 12/26 (t_0be71b95) defer instead: a would-be INSUFFICIENT verdict
+    (a criterion whose facts are still missing) returns None so the NEXT
+    weekly run judges the same frozen window again. The once-only record
+    would otherwise harden a short measurement gap into a permanent
+    INSUFFICIENT verdict — design §4-2's 保留 ("判断材料なし" is not a
+    failure, it is not-yet-judgeable). Module docstring "summary-v1.10"
+    carries the full rationale.
     """
 
     if weeks not in MILESTONE_WEEKS_CONNECTED or _milestone_already_judged(root, book, weeks):
@@ -2770,6 +3330,32 @@ def _milestone_judgment(
     window_end = milestone_date  # [start, milestone_date): exactly weeks*7 days
     window_days = weeks * 7
     rules = MILESTONE_RULES[weeks]
+    if weeks == 4:
+        return _milestone_4w_judgment(
+            rows, book, weeks, start, milestone_date, window_end, window_days, rules, week_end
+        )
+    return _milestone_long_judgment(
+        root, rows, book, weeks, start, milestone_date, window_end, window_days, rules, week_end
+    )
+
+
+def _milestone_4w_judgment(
+    rows: list[dict[str, Any]],
+    book: str,
+    weeks: int,
+    start: date,
+    milestone_date: date,
+    window_end: date,
+    window_days: int,
+    rules: dict[str, Any],
+    week_end: date,
+) -> dict[str, Any]:
+    """The t_d33aef07 4-week judgment, verbatim (t_0be71b95 only moved it).
+
+    Fail-closed on missing facts: a criterion without its data is None ->
+    INSUFFICIENT, and the record IS written (already-live semantics; the
+    deferral policy of the 12/26-week judgments does not apply here).
+    """
 
     # distinct dates, not row counts: a same-day re-run is one ok day.
     days_with_runs: set[str] = set()
@@ -2913,17 +3499,839 @@ def _milestone_judgment(
     }
 
 
+def _unresolved_mtm_gaps(
+    root: Path, books: tuple[str, ...], first_day: date, last_day: date
+) -> list[dict[str, str]]:
+    """Known valuation failures still unresolved inside ``[first_day, last_day]``.
+
+    AS-M126-07 (t_0be71b95 rev4): an ``mtm_unpriced`` row is a KNOWN hole in
+    a book's mark series; it counts as resolved only when a real ``mtm`` row
+    exists for the same (book, ``mtm_date``) — the recovery pass appends one
+    beside it (the original unpriced row always stands: append-only journal).
+    Matching mark SPANS is not wholeness: a mid-window hole hides the
+    window's true worst day, understating that side's drawdown — a book-side
+    hole can harden a PASS the recovered series would overturn into FAIL,
+    and a benchmark-side hole shrinks the denominator and can harden a FAIL
+    the same way. The descriptors (book + ``mtm_date``) name exactly which
+    facts are still missing.
+
+    AS-M126-07-R4 (t_0be71b95 rev5): the DD caller passes the FROZEN window's
+    start as ``first_day``, NOT the provisional shared origin — recovering a
+    hole before the origin moves the first common mark itself, so a hole the
+    provisional span excludes is still able to re-foot the whole comparison
+    and must hold the judgment until it resolves.
+    """
+
+    rows = _load_journal(root)
+    marked = {
+        (str(row.get("book")), str(row.get("mtm_date")))
+        for row in rows
+        if row.get("event") == "mtm"
+    }
+    gaps: list[dict[str, str]] = []
+    for row in rows:
+        if row.get("event") != "mtm_unpriced" or row.get("book") not in books:
+            continue
+        mtm_date = str(row.get("mtm_date"))
+        try:
+            day = date.fromisoformat(mtm_date)
+        except (TypeError, ValueError):
+            continue
+        if first_day <= day <= last_day and (str(row.get("book")), mtm_date) not in marked:
+            gaps.append({"book": str(row.get("book")), "mtm_date": mtm_date})
+    return sorted(gaps, key=lambda gap: (gap["mtm_date"], gap["book"]))
+
+
+def _milestone_dd_criterion(
+    root: Path,
+    book: str,
+    start: date,
+    window_end: date,
+    threshold: float,
+    *,
+    shallow_bench_hold: bool,
+) -> dict[str, Any]:
+    """DD-ratio criterion over the frozen milestone window (§4-2a / §4-3).
+
+    Book max DD vs benchmark max DD, both recomputed from the mtm equity marks
+    inside ``[start, window_end)`` with the running peak started at the
+    window's first mark — the same ``_max_drawdown_since`` the weekly
+    comparison line uses, scoped to the milestone window instead of
+    ``comparison_start..as_of``. The gate is the frozen
+    ``MILESTONE_RULES[weeks]["dd_vs_benchmark"]`` ratio threshold.
+
+    Both sides are compared over the SAME frozen period (AS-M126-02, t_0be71b95
+    rev2). The ORIGIN is the reviewed v1.9 shared-base contract: the first day
+    inside the window on which BOTH sides have a mark (recorded as
+    ``comparison_start`` — a one-sided origin would mix footings, and a bench
+    that started marking later than the book must not make the gate
+    permanently unjudgeable; the book's inception-to-origin move is carried by
+    the principal-anchored ``cum_pnl_min`` gate). The ENDPOINT is pinned to
+    the frozen window's last day on both sides: a shorter common endpoint
+    would silently grade a sub-window under the frozen standard (the v1.9
+    t_94687d03 refusal, applied to a window whose shortening is not even an
+    option). Marks are keyed by their own ``mtm_date``, so a late-arriving
+    in-window mark completes the span and the deferred judgment lands at a
+    later weekly run. Marks are attributed by target day, never by
+    ``recorded_at``: the writer never backdates.
+
+    The peak starts at the shared baseline day's mark per the reviewed
+    t_dddae39e baseline contract (same footing on both sides). ``pass`` is
+    None (defer: the judgment is not recorded this run) while the ratio is not
+    judgeable — either side has no mark in the window, the shared baseline is
+    unusable, the endpoints do not both reach the frozen window end, a KNOWN
+    valuation hole (``mtm_unpriced``) is still unresolved anywhere inside the
+    frozen window on either side (AS-M126-07: matching spans are not
+    wholeness — a hole hides the true worst day; AS-M126-07-R4, rev5: the
+    scan reaches from the window START, not the provisional origin, because
+    recovering a hole before the origin can move the origin itself and
+    re-foot the whole comparison), or the
+    benchmark has no drawdown to divide by (a ratio against 0 would be
+    fabricated). For the 12-week gate, design §4-2a adds the 「判断材料なし」
+    hold: a benchmark drawdown shallower than MILESTONE_DD_BENCH_MIN gives a
+    defensive strategy no chance to show anything, so the ratio is not judged
+    (保留 → the next weekly run / the 26-week window judges instead).
+    """
+
+    bench = BOOK_BENCHMARK[book]
+    book_marks = {
+        day: value for day, value in _mtm_marks(root, book).items() if start <= day < window_end
+    }
+    bench_marks = {
+        day: value for day, value in _mtm_marks(root, bench).items() if start <= day < window_end
+    }
+    last_day = window_end - timedelta(days=1)
+    book_dd: float | None = None
+    bench_dd: float | None = None
+    ratio: float | None = None
+    passed: bool | None
+    reason: str | None
+    out: dict[str, Any] = {
+        "value": ratio,
+        "comparison": "<=",
+        "threshold": threshold,
+        "pass": None,
+        "reason": None,
+        "book_max_drawdown": book_dd,
+        "benchmark_book": bench,
+        "benchmark_max_drawdown": bench_dd,
+        # AS-M126-02 (t_0be71b95 rev2): the compared period is recorded so any
+        # defer or judgment names exactly what was measured on both sides
+        "comparison_start": None,
+        "comparison_end": last_day.isoformat(),
+        "book_mark_span": None,
+        "benchmark_mark_span": None,
+        # AS-M126-07 (t_0be71b95 rev4): known valuation holes still open in
+        # the compared span (filled in once the spans are endpoint-complete)
+        "unresolved_mtm_gaps": [],
+    }
+    if not book_marks:
+        passed, reason = None, "book_no_mark_in_window"
+    elif not bench_marks:
+        passed, reason = None, "benchmark_no_mark_in_window"
+    else:
+        book_first, book_last = min(book_marks), max(book_marks)
+        bench_first, bench_last = min(bench_marks), max(bench_marks)
+        out["book_mark_span"] = [book_first.isoformat(), book_last.isoformat()]
+        out["benchmark_mark_span"] = [bench_first.isoformat(), bench_last.isoformat()]
+        if book_last != last_day or bench_last != last_day:
+            # v1.9's endpoint rule (t_94687d03) applied to a FROZEN window: the
+            # gate may not silently shrink to the last shared mark (that was
+            # rejected for the weekly line and is worse here, where the window
+            # itself is the frozen standard). Marks are attributed by their
+            # own mtm_date, so a late-arriving in-window mark completes the
+            # span at a later weekly run.
+            passed = None
+            reason = (
+                "book_no_mark_at_window_end"
+                if book_last != last_day
+                else "benchmark_no_mark_at_window_end"
+            )
+        else:
+            # shared origin: the first day BOTH sides mark inside the window
+            # (v1.9's base_day selection); with matching endpoints it is
+            # well-defined and recorded
+            base_day = min(book_marks.keys() & bench_marks.keys())
+            out["comparison_start"] = base_day.isoformat()
+            if book_marks[base_day] <= 0 or bench_marks[base_day] <= 0:
+                passed, reason = None, "baseline_unusable"  # v1.9's refusal
+            elif gaps := _unresolved_mtm_gaps(root, (book, bench), start, last_day):
+                # AS-M126-07 (t_0be71b95 rev4) + -R4 (rev5): the endpoints
+                # matching is not evidence the window is whole, and the
+                # provisional origin is not a safe lower bound — the honest
+                # recovery of a day BEFORE ``base_day`` (even the window's
+                # first day) can move the first common mark itself. The audit
+                # repro judged PASS off base_day = start+7 while the book's
+                # day-0 write sat unpriced; its later recovery (equity 1.2)
+                # moved the origin to day 0 and the SAME frozen window became
+                # a FAIL (ratio .958 > .6) — already deduped, the fake PASS
+                # would have stood forever. So the scan covers the WHOLE
+                # frozen window on both sides: any KNOWN unresolved hole
+                # inside it defers the judgment (named in
+                # ``unresolved_mtm_gaps``) until the real writer's recovery
+                # or a late honest mark completes the series, and the
+                # completing weekly run judges the window exactly once.
+                # Days that were never attempted (a late-starting book or
+                # benchmark) carry no unpriced record and still do not hold:
+                # only KNOWN failures count, so a legitimately late common
+                # origin stays judgeable.
+                out["unresolved_mtm_gaps"] = gaps
+                passed, reason = None, "unresolved_mtm_gap_in_window"
+            else:
+                book_dd = _max_drawdown_since(book_marks, base_day)
+                bench_dd = _max_drawdown_since(bench_marks, base_day)
+                out["book_max_drawdown"] = book_dd
+                out["benchmark_max_drawdown"] = bench_dd
+                if book_dd is None or bench_dd is None:
+                    # _max_drawdown_since is Optional; with non-empty in-window marks
+                    # it is a number — kept fail-closed for the type anyway
+                    passed, reason = None, "drawdown_missing"
+                else:
+                    ratio = _dd_vs_benchmark_ratio(book_dd, bench_dd)
+                    out["value"] = ratio
+                    if bench_dd >= 0:
+                        passed, reason = None, "benchmark_drawdown_not_negative"
+                    elif shallow_bench_hold and abs(bench_dd) < MILESTONE_DD_BENCH_MIN:
+                        passed, reason = None, "benchmark_drawdown_shallow_hold"
+                    elif ratio is None:  # unreachable after the guards; kept fail-closed
+                        passed, reason = None, "ratio_undefined"
+                    else:
+                        passed, reason = ratio <= threshold, None
+    out["pass"] = passed
+    out["reason"] = reason
+    return out
+
+
+def _milestone_cum_pnl_criterion(
+    root: Path, book: str, start: date, window_end: date, threshold: float
+) -> dict[str, Any]:
+    """Window cumulative-PnL criterion (design §4-2b: 累積損益 >= cum_pnl_min).
+
+    Anchored to the INCEPTION PRINCIPAL (AS-M126-03, t_0be71b95 rev2): the
+    value is the last in-window mtm equity minus 1.0 — the same 元本1.0 contract
+    as the weekly row's ``cum_return`` (``equity_now - 1.0``). Rebasing to the
+    first in-window mark was a defect: that mark already embeds the costs and
+    PnL of the book's first days, so a first-day loss (first mtm != 1.0) was
+    silently excluded from the gate. An equity LEVEL minus 1.0 needs no day-0
+    mark (unlike a drawdown), so only the END must be measured: the book's
+    last in-window mark must sit on the window's last day, otherwise the
+    cumulative number would grade a shorter period than the frozen window
+    (defer instead — the same full-coverage contract as the DD gate).
+
+    No usable end mark -> ``pass`` None (defer). The base/end are named so the
+    number is audit-able, and ``value_basis`` states the anchor.
+    """
+
+    marks = {
+        day: value for day, value in _mtm_marks(root, book).items() if start <= day < window_end
+    }
+    last_day = window_end - timedelta(days=1)
+    cum: float | None = None
+    passed: bool | None = None
+    reason: str | None = "book_no_mark_in_window"
+    base_day: date | None = None
+    end_day: date | None = None
+    base: float | None = None
+    end: float | None = None
+    if marks:
+        base_day, end_day = start, max(marks)
+        base, end = 1.0, marks[end_day]
+        if end_day != last_day:
+            # full-window coverage: a level from an earlier day would grade a
+            # shorter window than the frozen one (AS-M126-02's contract)
+            reason = "book_no_mark_at_window_end"
+        else:
+            cum = end - base
+            passed, reason = cum >= threshold, None
+    return {
+        "value": cum,
+        "comparison": ">=",
+        "threshold": threshold,
+        "pass": passed,
+        "reason": reason,
+        "value_basis": "inception_principal_1.0",
+        "window_base_equity": base,
+        "window_base_date": base_day.isoformat() if base_day else None,
+        "window_end_equity": end,
+        "window_end_date": end_day.isoformat() if end_day else None,
+    }
+
+
+def _milestone_switches_criterion(
+    rows: list[dict[str, Any]],
+    book: str,
+    start: date,
+    window_end: date,
+    window_days: int,
+    threshold: float,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Switch-count criterion (design §4-2c), judged PER ASSET (AS-M126-04).
+
+    The frozen §2-3 rule is per asset: 「帳簿Aの BTC なら12週で期待値は約2回、
+    警告は5回以上」. Each asset's observed flips are compared against ITS OWN
+    frozen backtest rate scaled by window/365 times the frozen
+    ``switches_multiple``; the criterion aggregates the per-asset verdicts.
+    Summing the expected values across assets (rev1) let one asset's excess
+    reversals pass on another asset's calm headroom — BTC 6 flips passed a
+    7.13 combined cap while BTC's own 2x cap is 4.05.
+
+    The count comes from ``_week_switches`` — the weekly row's own per-asset
+    rule (``prev_regime_state``, HALT excluded, backfill excluded) — scoped to
+    ``[start, window_end)``. ``pass`` is None (defer: the judgment is not
+    recorded this run, AS-M126-01) while a REQUIRED asset has no frozen
+    expected rate: the book has no rate row at all (no live book is in this
+    state since the Book C freeze — t_be52f5bc decision A wired the S-02
+    rates) or an asset that actually flipped has no rate. An unevaluated
+    required gate must never be dropped from the
+    criteria: the overall verdict would PASS without it and dedupe would
+    harden the fake PASS forever. Returns ``(criterion, facts)``.
+    """
+
+    observed, by_asset = _week_switches(rows, book, start, window_end - timedelta(days=1))
+    facts: dict[str, Any] = {
+        "switches_observed": observed,
+        "switches_by_asset": by_asset,
+    }
+    rates = MILESTONE_SWITCH_EXPECTED_ANNUAL.get(book)
+    per_asset: dict[str, dict[str, Any]] = {}
+    passed: bool | None = True
+    reason: str | None = None
+    if rates is None:
+        passed, reason = None, "no_frozen_expected_rate"
+        for asset, count in by_asset.items():
+            per_asset[asset] = {"observed": count, "expected": None, "max": None, "pass": None}
+    else:
+        for asset, count in by_asset.items():
+            rate = rates.get(asset)
+            if rate is None:
+                passed, reason = None, "asset_without_frozen_expected_rate"
+                per_asset[asset] = {"observed": count, "expected": None, "max": None, "pass": None}
+                continue
+            expected = rate * window_days / MILESTONE_SWITCH_YEAR_DAYS
+            asset_max = threshold * expected
+            per_asset[asset] = {
+                "observed": count,
+                "expected": expected,
+                "max": asset_max,
+                "pass": count <= asset_max,
+            }
+        if passed is True:
+            passed = all(item["pass"] is True for item in per_asset.values())
+    criterion: dict[str, Any] = {
+        "value": observed,
+        "comparison": "<=",
+        "threshold": threshold,
+        "pass": passed,
+        "reason": reason,
+        "per_asset": per_asset,
+    }
+    return criterion, facts
+
+
+def _milestone_shortfall_criterion(
+    rows: list[dict[str, Any]], book: str, start: date, window_end: date, threshold: float
+) -> dict[str, Any]:
+    """26-week cost gate (t_2202c100 frozen form): the one-sided 95% upper
+    bound of the SIGNED ``shortfall_bps`` mean over the window's marks must be
+    <= ``shortfall_bps_mean_upper95_max`` bps.
+
+    SIGNED — the 4-week ``observed_cost_bps_mean`` criterion takes ``abs()``
+    and MUST NOT be copied here: negative shortfall is realized cost credit,
+    and flipping signs would turn a cost saving into a fake failure (or hide a
+    real cost). ``shortfall_bps_mean_upper95`` provides the bound; n >= 2 is
+    required (below that the bound is undefined -> ``pass`` None -> defer).
+
+    Period attribution (AS-M126-05, t_0be71b95 rev2): a mark belongs to the
+    frozen window by the EXECUTION DATE of the decision it measures (its
+    decision row's ``decision_date`` — the 対象時点), never by the mark's own
+    ``recorded_at`` (the 記録時点). ``mark_up`` writes ``recorded_at`` = the
+    measurement time and never backdates, so a shortfall measured after the
+    deadline (the execution day's bar landed late, the marking job was down)
+    is still a fact ABOUT an in-window execution: filtering on
+    ``recorded_at`` would exclude it forever and no number of honest retries
+    would ever complete the sample. Marks whose ``decision_id`` has no
+    decision row (or an unparseable date) are unplaceable — excluded from the
+    statistics and REPORTED, the same contract as the weekly row's
+    ``shortfall_errors`` (v1.7 C-03). ``late_recorded`` counts the selected
+    marks whose ``recorded_at`` date falls after the window (provenance only).
+
+    Completeness (AS-M126-06, t_0be71b95 rev3): ``n >= 2`` is the bound's
+    MINIMUM SAMPLE, not evidence that the window's executions are all
+    measured. The criterion therefore matches the window's TARGET fills
+    (event=``fill`` rows of this book, attributed by their decision's
+    execution date — the marks' own rule) against the measured marks and
+    records the result as ``completeness`` (target / measured / unmeasured /
+    unusable, by ``decision_id``). While any target fill is unmeasured the
+    gate must not decide: a bound from the measured subset would record a
+    partial-sample PASS at the deadline, and dedupe would keep it forever
+    even after the missing measurement — honest and late — arrives and fails
+    it. The deferral is recorded NOWHERE (``pass`` None -> the judgment
+    returns None) so the next weekly run re-judges the same frozen window.
+    A measured-but-unusable mark is a permanent fact (the writer never
+    rewrites a mark) and follows the v1.7 C-03 contract — excluded from the
+    statistics and named in ``shortfall_errors``, without blocking: an
+    unusable row would otherwise freeze the 26-week gate into the very
+    permanent non-judgment this wiring exists to prevent. A fill whose
+    decision row is missing has an unknowable execution date: it is treated
+    as unmeasured (blocking, fail-closed — the journal is the origin of
+    record, and a gate over a corrupt journal must not finalize).
+    """
+
+    window_end_incl = window_end - timedelta(days=1)
+    decision_days: dict[str, date] = {}
+    for row in rows:
+        if row.get("event") != "decision" or row.get("book") != book:
+            continue
+        try:
+            decision_days[str(row.get("decision_id"))] = date.fromisoformat(
+                str(row.get("decision_date"))
+            )
+        except (TypeError, ValueError):
+            continue
+    marks: list[Mapping[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    late_recorded = 0
+    for row in rows:
+        if row.get("event") != "mark" or row.get("book") != book:
+            continue
+        execution_day = decision_days.get(str(row.get("decision_id")))
+        if execution_day is None:
+            # the mark states no placeable execution (orphan decision_id):
+            # out of the statistics, but reported (never silently dropped)
+            errors.append(_shortfall_row_error(row, "mark_decision_row_missing"))
+            continue
+        if not start <= execution_day <= window_end_incl:
+            continue  # a fact about another window's execution
+        try:
+            recorded_day = date.fromisoformat(str(row.get("recorded_at"))[:10])
+        except (TypeError, ValueError):
+            recorded_day = None
+        if recorded_day is not None and recorded_day > window_end_incl:
+            late_recorded += 1
+        marks.append(row)
+    values, usability_errors = _shortfall_values(marks)
+    errors.extend(usability_errors)
+    bound = shortfall_bps_mean_upper95(values)
+    # AS-M126-06: the sample (above) vs the TARGET SET (below)
+    measured_ids = {str(row.get("decision_id")) for row in marks}
+    usable_ids = {str(row.get("decision_id")) for row in marks if _shortfall_row_value(row)[0]}
+    target_fill_ids: set[str] = set()
+    for row in rows:
+        if row.get("event") != "fill" or row.get("book") != book:
+            continue
+        decision_id = str(row.get("decision_id"))
+        execution_day = decision_days.get(decision_id)
+        if execution_day is not None and not start <= execution_day <= window_end_incl:
+            continue  # a fact about another window's execution
+        # in-window (or unplaceable — possibly this window's): its measurement
+        # is REQUIRED before this gate may decide
+        target_fill_ids.add(decision_id)
+    unmeasured = sorted(target_fill_ids - measured_ids)
+    unusable = sorted((target_fill_ids & measured_ids) - usable_ids)
+    if unmeasured:
+        passed: bool | None = None
+        reason: str | None = "shortfall_unmeasured_fills"
+    else:
+        passed = None if bound is None else bound <= threshold
+        reason = None if bound is not None else "shortfall_sample_too_small"
+    return {
+        "value": bound,
+        "comparison": "<=",
+        "threshold": threshold,
+        "pass": passed,
+        "reason": reason,
+        "attribution": "decision_execution_date",
+        "shortfall_n": len(values),
+        "shortfall_n_excluded": len(errors),
+        "shortfall_errors": errors,
+        "late_recorded": late_recorded,
+        "completeness": {
+            "attribution": "decision_execution_date",
+            "target_fills": len(target_fill_ids),
+            "measured": len(target_fill_ids & measured_ids),
+            "unmeasured": unmeasured,
+            "unusable": unusable,
+        },
+    }
+
+
+def _milestone_long_judgment(
+    root: Path,
+    rows: list[dict[str, Any]],
+    book: str,
+    weeks: int,
+    start: date,
+    milestone_date: date,
+    window_end: date,
+    window_days: int,
+    rules: dict[str, Any],
+    week_end: date,
+) -> dict[str, Any] | None:
+    """12/26-week judgment (t_0be71b95): the frozen MILESTONE_RULES[weeks]
+    gates over the frozen window, recorded only when judgeable.
+
+    Fail-closed completeness (AS-M126-01, t_0be71b95 rev2): EVERY frozen gate
+    key of ``MILESTONE_RULES[weeks]`` must be present in ``criteria`` AND
+    decided (``pass`` is True or False) before any verdict is recorded. A
+    criterion whose facts are still missing — no full-window mark span, a
+    shortfall sample under two or with an unmeasured in-window fill
+    (AS-M126-06, rev3), a KNOWN valuation hole still unresolved inside the
+    compared span (AS-M126-07, rev4 — a mid-window ``mtm_unpriced`` hides the
+    window's true worst day, so the partial drawdown decides nothing), a
+    benchmark drawdown too shallow (§4-2a), or a
+    REQUIRED gate that cannot be evaluated at all (Book C's 12-week switches
+    gate: no frozen expected rate exists in the repo — freezing one is a
+    separate decision, not a wiring one) — means the whole judgment is not
+    recorded (None returned). The next weekly run judges the same frozen
+    window again, so a short measurement gap — a past day the writer could
+    not price is RECOVERED by ``run_daily_mtm``'s recovery pass at the
+    failed evaluation's own state boundary (AS-M126-02-R2/R3), an unmeasured
+    execution is measured late by ``mark_up``
+    — or a gate waiting for its freeze decision can never harden into a
+    permanent INSUFFICIENT record, and no partial set of gates can ever
+    produce a recorded PASS (design §4-2's 保留). A FAIL or PASS — every
+    criterion decided — is recorded exactly once (the deadline can fall
+    between weekly runs).
+    """
+
+    criteria: dict[str, dict[str, Any]] = {}
+    facts: dict[str, Any] = {}
+    if weeks == 12:
+        criteria["dd_vs_benchmark"] = _milestone_dd_criterion(
+            root, book, start, window_end, float(rules["dd_vs_benchmark"]), shallow_bench_hold=True
+        )
+        criteria["cum_pnl_min"] = _milestone_cum_pnl_criterion(
+            root, book, start, window_end, float(rules["cum_pnl_min"])
+        )
+        switches, switch_facts = _milestone_switches_criterion(
+            rows, book, start, window_end, window_days, float(rules["switches_multiple"])
+        )
+        facts.update(switch_facts)
+        # always present: an unwired required gate stays an explicit undecided
+        # criterion (defer) — it must never be dropped to let the rest PASS
+        criteria["switches_multiple"] = switches
+    elif weeks == 26:
+        criteria["dd_vs_benchmark"] = _milestone_dd_criterion(
+            root,
+            book,
+            start,
+            window_end,
+            float(rules["dd_vs_benchmark"]),
+            shallow_bench_hold=False,
+        )
+        criteria["shortfall_bps_mean_upper95_max"] = _milestone_shortfall_criterion(
+            rows, book, start, window_end, float(rules["shortfall_bps_mean_upper95_max"])
+        )
+    else:  # unreachable: MILESTONE_WEEKS_CONNECTED gates the caller
+        return None
+    failed = sorted(name for name, check in criteria.items() if check["pass"] is False)
+    undecided = sorted(name for name, check in criteria.items() if check["pass"] is None)
+    missing = sorted(key for key in rules if key not in criteria)
+    if missing or undecided:
+        # Facts can still arrive at a later weekly run (a full-window mark
+        # span, a larger shortfall sample, a frozen expected rate for an
+        # unwired gate). Recording now would freeze a permanent INSUFFICIENT
+        # — or a PASS decided on a subset of the frozen gates; the window is
+        # frozen, so a later judgment measures exactly this deadline window.
+        return None
+    verdict = "FAIL" if failed else "PASS"
+    out: dict[str, Any] = {
+        "weeks": weeks,
+        "book": book,
+        "start_date": start.isoformat(),
+        "window_start": start.isoformat(),
+        "window_end": window_end.isoformat(),
+        "window_days": window_days,
+        "milestone_date": milestone_date.isoformat(),
+        "judged_at_week_end": week_end.isoformat(),
+        "rules_source": f"MILESTONE_RULES[{weeks}] + DEMO_LOOP_V1_OPS.md §4 (frozen)",
+        "criteria": criteria,
+        "verdict": verdict,
+        "failed_criteria": failed,
+        "insufficient_criteria": [],
+        "promotion": "none",
+        "notes": (
+            "record-only: no orders, no journal rows, no live promotion. "
+            "Design §4 is the evaluation standard, not proof of benefit; "
+            "adoption stays a separate human decision. Judged over the frozen "
+            "window start..start+weeks*7 even when a later weekly run writes "
+            "the record (judged_at_week_end names that run). Missing facts "
+            "defer the record entirely — no INSUFFICIENT is ever written for "
+            "12/26 weeks and no PASS is recorded before EVERY frozen gate is "
+            "decided; the next weekly run judges the same frozen window "
+            "(design §4-2 保留). The 4-week block keeps the t_d33aef07 "
+            "fail-closed INSUFFICIENT records; only 12/26 defer. "
+            "dd_vs_benchmark compares the SAME frozen period on both sides "
+            "(marks at the window start and at its last day; spans are in the "
+            "criterion) and holds while the benchmark drawdown in the window "
+            "is shallower than 10% (design §4-2a 判断材料なし; 26 weeks has no "
+            "such hold in the frozen text and only fails closed on a "
+            "non-negative benchmark drawdown). cum_pnl_min is the last "
+            "in-window equity minus the 1.0 inception principal — the weekly "
+            "cum_return contract, so a first-day loss is not rebased away. "
+            "switches is judged PER ASSET against each asset's frozen S-01 "
+            "backtest annual rate (MILESTONE_SWITCH_EXPECTED_ANNUAL, design "
+            "§2-3) — one asset's excess reversals are not offset by another "
+            "asset's calm; a book whose required asset rate is not frozen "
+            "(Book C) defers until the rate freeze decision lands. The "
+            "26-week cost gate is the SIGNED shortfall mean's one-sided 95% "
+            "upper bound (t_2202c100) — not the abs()-based 4-week cost mean "
+            "— over marks attributed by their decision's execution date, so "
+            "honest late measurements (recorded_at after the deadline, never "
+            "backdated by the writer) still reach the frozen window; the "
+            "gate decides only once every in-window fill (the same "
+            "attribution) has its measurement — the criterion's completeness "
+            "block names the target/measured/unmeasured/unusable sets "
+            "(AS-M126-06). A past mark-to-market day the writer could not "
+            "price is recovered by the run_daily_mtm recovery pass at the "
+            "failed evaluation's own state boundary — the unpriced row's own "
+            "holdings snapshot with every chain column from the journal "
+            "prefix before it, so a same-day later execution stays out of "
+            "the recovered mark — stamped with the recovering run's "
+            "recorded_at and recovered_from_unpriced provenance "
+            "(AS-M126-02-R2/R3). A known unresolved valuation hole inside "
+            "the compared span (either side) holds the drawdown gate — "
+            "matching spans are not wholeness — and the criterion names the "
+            "open holes in unresolved_mtm_gaps (AS-M126-07)."
+        ),
+    }
+    out.update(facts)
+    return out
+
+
 def _collect_milestone_judgments(root: Path, week_end: date) -> dict[str, Any]:
-    """Milestone blocks for the weekly summary row (empty = judge nothing)."""
+    """Milestone blocks for the weekly summary row (empty = judge nothing).
+
+    t_0be71b95: ``milestone[book]`` is ``{"weeks": {weeks: judgment}}`` — one
+    weekly run can close several deadlines of one book (paused weekly runs, a
+    late book start), and the old single ``out[book] = judgment`` slot
+    silently kept only the LAST judgment of the run. Disk rows hold the week
+    keys as JSON strings; in memory they are ints (``_milestone_already_judged``
+    reads both, plus the pre-v1.10 single-judgment shape).
+    """
 
     rows = _load_journal(root)
     out: dict[str, Any] = {}
     for book in STRATEGY_BOOKS:
+        judged: dict[int, dict[str, Any]] = {}
         for weeks in MILESTONE_WEEKS_CONNECTED:
             judgment = _milestone_judgment(root, rows, book, weeks, week_end)
             if judgment is not None:
-                out[book] = judgment
+                judged[weeks] = judgment
+        slot: dict[str, Any] = {}
+        if judged:
+            slot["weeks"] = judged
+        # t_264e0692: A_HALF's pre-registered 20-business-day gate rides the
+        # same weekly run and the same record-only discipline (no early
+        # judgment, one record ever, missing facts defer). It adds its OWN
+        # "20bd" slot instead of an int week slot and exists only for
+        # BOOK_A_HALF — the A and C blocks stay exactly as they were.
+        if book == BOOK_A_HALF:
+            gate = _a_half_20bd_judgment(root, rows, book, week_end)
+            if gate is not None:
+                slot["20bd"] = gate
+        if slot:
+            out[book] = slot
     return out
+
+
+A_HALF_20BD_BUSINESS_DAYS = 20
+# t_264e0692: A_HALF's pre-registered 20-business-day gate (prereg row
+# book_id="A_HALF", row_hash 5cd8e91479fb3d1f…; the original text is
+# docs/DEMO_LOOP_LOSS_ATTRIBUTION_20261025.md §7-2 L153: 「改善案1(グロス50%)
+# を影の帳簿で 20営業日連続: 費用控除後 equity >= 1.000、最大DD <= 3.00%、
+# DD比 <= 0.60」). Threshold names are 1:1 with the prereg wording; the
+# closing-in = "the condition holds on EVERY one of the 20 business days"
+# (case (b) of the card fixes the reading: one 0.995 day FAILS). Max DD is the
+# window's inner drawdown (running peak rebased at the window's first mark —
+# the same footing as _max_drawdown_since / the weekly milestone DD gates) and
+# the DD ratio compares the SAME weekdays against A_HALF's frozen benchmark
+# CRYPTO_1N. Weekday rows only: the prereg plan counts 営業日 as weekdays
+# (10-26 .. 11-20), so loop-operated weekend days are outside the observation
+# set. This gate is additive: A and C blocks never carry an A_HALF slot and
+# their weekly milestones are untouched.
+A_HALF_20BD_RULES = {
+    "equity_net_min": 1.0,  # prereg: 費用控除後 equity >= 1.0 (after-cost equity)
+    "max_drawdown_max": 0.03,  # prereg: 最大DD <= 3.0% (window inner max drawdown)
+    "dd_vs_benchmark": 0.6,  # prereg: DD比 <= 0.6 (same window, same weekdays)
+}
+
+
+def _a_half_20bd_business_days(start: date) -> list[date]:
+    """The first ``A_HALF_20BD_BUSINESS_DAYS`` weekdays on/after ``start``.
+
+    Plain Mon-Fri weekday count (the crypto book's own first decision day may
+    be a Sunday — 2026-10-25 — and the count then starts at the following
+    Monday, which reproduces the pre-registered 2026-11-20 window end). No
+    holiday table: the crypto tape and the loop run JPY holidays, and the
+    prereg plan's own arithmetic (「約 20 営業日後は 2026-11-20 前後」) counts
+    plain weekdays as well.
+    """
+
+    days: list[date] = []
+    day = start
+    while len(days) < A_HALF_20BD_BUSINESS_DAYS:
+        if day.weekday() < 5:
+            days.append(day)
+        day += timedelta(days=1)
+    return days
+
+
+def _a_half_20bd_already_judged(root: Path) -> bool:
+    """True once a prior summary row carries A_HALF's ``"20bd"`` record.
+
+    The 20-business-day gate rides the same once-only record discipline as the
+    weekly milestone judgments: whichever weekly run (or a manual report) fires
+    first writes the record, and every later run dedupes against it.
+    """
+
+    for row in _rows_from_jsonl(summary_path(root), strict=True):
+        block = row.get("milestone")
+        entry = block.get(BOOK_A_HALF) if isinstance(block, Mapping) else None
+        if isinstance(entry, Mapping) and "20bd" in entry:
+            return True
+    return False
+
+
+def _a_half_20bd_judgment(
+    root: Path, rows: list[dict[str, Any]], book: str, week_end: date
+) -> dict[str, Any] | None:
+    """A_HALF's pre-registered 20-business-day judgment — or None (defer).
+
+    The prereg froze the rule but not the metric mechanics, so this judgment
+    rides the same record discipline as the weekly milestones (t_0be71b95):
+    record-only, never early (``week_end >= business_days_end``), never twice,
+    and NOT recorded while any judgeable fact is missing — a window weekday
+    without the book's (or the benchmark's) mtm mark, an unresolved
+    ``mtm_unpriced`` hole inside the window (AS-M126-07's matching-spans-are-
+    not-wholeness applies unchanged), or a benchmark drawdown that cannot be
+    divided by. Deferral appends nothing, so the completing weekly run judges
+    the same frozen 20 weekdays exactly once. After-cost ``equity`` is the gated
+    series — the journal's ``equity_gross`` column names the before-cost chain
+    precisely so the prereg's 費用控除後 gate cannot be met by the gross value.
+    """
+
+    if book != BOOK_A_HALF or _a_half_20bd_already_judged(root):
+        return None
+    start = _milestone_start_date(rows, book)
+    if start is None:
+        return None
+    business_days = _a_half_20bd_business_days(start)
+    business_days_end = business_days[-1]
+    if week_end < business_days_end:
+        return None  # deadline not reached: never judge early
+    day_set = set(business_days)
+    bench = BOOK_BENCHMARK[BOOK_A_HALF]
+    book_marks = {day: value for day, value in _mtm_marks(root, book).items() if day in day_set}
+    bench_marks = {day: value for day, value in _mtm_marks(root, bench).items() if day in day_set}
+    missing_book = [day.isoformat() for day in business_days if day not in book_marks]
+    missing_bench = [day.isoformat() for day in business_days if day not in bench_marks]
+    if missing_book or missing_bench:
+        # 材料不足は保留: a missing weekday could still hide the window's true
+        # worst day (the writer's recovery pass or a late fill may add the
+        # mark), so nothing is judged or recorded on a partial series.
+        return None
+    gaps = _unresolved_mtm_gaps(root, (BOOK_A_HALF, bench), business_days[0], business_days_end)
+    if gaps:
+        return None
+    book_series = [book_marks[day] for day in business_days]
+
+    equity_failing_days = [
+        day.isoformat()
+        for day in business_days
+        if book_marks[day] < A_HALF_20BD_RULES["equity_net_min"]
+    ]
+    equity_criterion: dict[str, Any] = {
+        "value": min(book_series),
+        "comparison": ">=",
+        "threshold": A_HALF_20BD_RULES["equity_net_min"],
+        "per_business_day": {day.isoformat(): book_marks[day] for day in business_days},
+        "failing_days": equity_failing_days,
+        "pass": not equity_failing_days,
+        "reason": None,
+        "value_basis": "mtm.equity (after-cost)",
+    }
+    book_dd = _max_drawdown_since(book_marks, business_days[0])
+    bench_dd = _max_drawdown_since(bench_marks, business_days[0])
+    ratio: float | None = None
+    dd_self_pass: bool | None = None
+    dd_ratio_pass: bool | None = None
+    dd_reason: str | None = None
+    if book_dd is None or bench_dd is None:
+        dd_reason = "drawdown_missing"
+    elif abs(bench_dd) <= 0.0:
+        # a ratio against 0 would be fabricated (the 26-week criterion's
+        # benchmark_drawdown_not_negative handling): defer, never zero-divide
+        dd_reason = "benchmark_drawdown_not_negative"
+    else:
+        dd_self_pass = book_dd >= -A_HALF_20BD_RULES["max_drawdown_max"]
+        ratio = abs(book_dd) / abs(bench_dd)
+        dd_ratio_pass = ratio <= A_HALF_20BD_RULES["dd_vs_benchmark"]
+    drawdown_criterion: dict[str, Any] = {
+        "value": book_dd,
+        "comparison": ">=",
+        "threshold": -A_HALF_20BD_RULES["max_drawdown_max"],
+        "benchmark_book": bench,
+        "benchmark_max_drawdown": bench_dd,
+        "dd_ratio": ratio,
+        "pass": dd_self_pass,
+        "reason": dd_reason,
+        "value_basis": (
+            "window inner max drawdown (peak rebased at the window's first weekday mark)"
+        ),
+    }
+    # the DD ratio is its own prereg criterion (「DD比 <= 0.6」), named 1:1;
+    # max_drawdown_max is judged on its own drawdown value, NOT via the ratio
+    dd_ratio_criterion: dict[str, Any] = {
+        "value": ratio,
+        "comparison": "<=",
+        "threshold": A_HALF_20BD_RULES["dd_vs_benchmark"],
+        "benchmark_book": bench,
+        "benchmark_max_drawdown": bench_dd,
+        "book_max_drawdown": book_dd,
+        "pass": dd_ratio_pass,
+        "reason": dd_reason,
+        "value_basis": (
+            "abs(book window max drawdown) / abs(benchmark window max drawdown), same weekdays"
+        ),
+    }
+    criteria = {
+        "equity_net_min": equity_criterion,
+        "max_drawdown_max": drawdown_criterion,
+        "dd_vs_benchmark": dd_ratio_criterion,
+    }
+    failed = sorted(name for name, check in criteria.items() if check["pass"] is False)
+    undecided = sorted(name for name, check in criteria.items() if check["pass"] is None)
+    if undecided:
+        return None  # judgment not recorded this run; the next run re-judges
+    return {
+        "gate": "20bd",
+        "book": book,
+        "business_days_required": A_HALF_20BD_BUSINESS_DAYS,
+        "business_days_start": business_days[0].isoformat(),
+        "business_days_end": business_days_end.isoformat(),
+        "milestone_date": business_days_end.isoformat(),
+        "judged_at_week_end": week_end.isoformat(),
+        "rules_source": "prereg.jsonl book_id=A_HALF judgment_rule (row_hash 5cd8e914…)"
+        " + DEMO_LOOP_LOSS_ATTRIBUTION_20261025.md §7-2 (frozen text)",
+        "criteria": criteria,
+        "verdict": "FAIL" if failed else "PASS",
+        "failed_criteria": failed,
+        "promotion": "none",
+        "notes": (
+            "record-only: no orders, no journal rows, no live promotion — the "
+            "pre-registered gate is the evaluation standard, not proof of "
+            "benefit, and adoption stays a separate human decision. "
+            "equity_net_min holds only when EVERY one of the 20 business days "
+            "(「20営業日連続」) has after-cost equity >= 1.0; failing_days "
+            "names each dip below the principal. max_drawdown_max and "
+            "dd_vs_benchmark are both window-inner metrics over the SAME "
+            "weekdays against the same benchmark, measured on the mtm "
+            "after-cost equity with the running peak rebased at the window's "
+            "first weekday mark. Any missing fact defers the record entirely; "
+            "the record is written once, ever."
+        ),
+    }
 
 
 def _max_drawdown_since(marks: Mapping[date, float], base_day: date) -> float | None:
@@ -3229,6 +4637,53 @@ def _shortfall_row_error(row: Mapping[str, Any], reason: str) -> dict[str, Any]:
     }
 
 
+def _shortfall_row_value(
+    row: Mapping[str, Any],
+) -> tuple[bool, float | None, dict[str, Any] | None]:
+    """One mark row's ``shortfall_bps`` usability (v1.7 C-03 contract).
+
+    ``(usable, value, error)``: a row without a usable numeric finite
+    ``shortfall_bps`` is unusable and carries a named error record (the row
+    itself stays in the journal — never silently dropped, never fabricated).
+    """
+
+    raw = row.get("shortfall_bps")
+    if raw is None:
+        return False, None, _shortfall_row_error(row, "missing_shortfall_bps")
+    if isinstance(raw, bool):
+        return False, None, _shortfall_row_error(row, "non_numeric_shortfall_bps")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return False, None, _shortfall_row_error(row, "non_numeric_shortfall_bps")
+    if not math.isfinite(value):
+        return False, None, _shortfall_row_error(row, "non_finite_shortfall_bps")
+    return True, value, None
+
+
+def _shortfall_values(
+    marks: Sequence[Mapping[str, Any]],
+) -> tuple[list[float], list[dict[str, Any]]]:
+    """Usable signed ``shortfall_bps`` values from already-attributed marks.
+
+    The per-row usability contract shared by the weekly row (``_week_shortfalls``,
+    which scopes by ``recorded_at`` BEFORE validating) and the 26-week
+    milestone gate (which attributes by decision date): a row without a usable
+    numeric finite ``shortfall_bps`` is excluded from the statistics and
+    REPORTED (v1.7 C-03) — missing data stays missing, never 0.
+    """
+
+    values: list[float] = []
+    errors: list[dict[str, Any]] = []
+    for row in marks:
+        usable, value, error = _shortfall_row_value(row)
+        if usable and value is not None:
+            values.append(value)
+        elif error is not None:
+            errors.append(error)
+    return values, errors
+
+
 def _week_shortfalls(
     marks: Sequence[Mapping[str, Any]], window_start: date, week_end: date
 ) -> tuple[list[float], list[dict[str, Any]]]:
@@ -3243,9 +4698,11 @@ def _week_shortfalls(
     number.
 
     The week a mark belongs to is decided by its own ``recorded_at`` date —
-    the same rule ``_milestone_judgment`` uses — because a mark states when
-    its execution was measured, and rows without a parseable date cannot be
-    placed in any week.
+    the weekly row measures cost facts as they were WRITTEN into that week.
+    (The 26-week milestone gate deliberately does NOT reuse this scoping: it
+    attributes marks by their decision's execution date so late measurements
+    of in-window executions still reach the frozen window — see
+    ``_milestone_shortfall_criterion``.)
 
     The second half of the defect: ``row["shortfall_bps"]`` was a direct dict
     lookup, so ONE mark row without the column (older schema, hand-written
@@ -3260,6 +4717,9 @@ def _week_shortfalls(
 
     values: list[float] = []
     errors: list[dict[str, Any]] = []
+    # single pass in row order: the v1.7 C-03 pinned contract reports each
+    # unusable row in the order the marks were given (an unparseable
+    # recorded_at and an unusable value are both named, in encounter order)
     for row in marks:
         try:
             day = date.fromisoformat(str(row.get("recorded_at"))[:10])
@@ -3270,22 +4730,11 @@ def _week_shortfalls(
             continue
         if not window_start <= day <= week_end:
             continue
-        raw = row.get("shortfall_bps")
-        if raw is None:
-            errors.append(_shortfall_row_error(row, "missing_shortfall_bps"))
-            continue
-        if isinstance(raw, bool):
-            errors.append(_shortfall_row_error(row, "non_numeric_shortfall_bps"))
-            continue
-        try:
-            value = float(raw)
-        except (TypeError, ValueError):
-            errors.append(_shortfall_row_error(row, "non_numeric_shortfall_bps"))
-            continue
-        if not math.isfinite(value):
-            errors.append(_shortfall_row_error(row, "non_finite_shortfall_bps"))
-            continue
-        values.append(value)
+        usable, value, error = _shortfall_row_value(row)
+        if usable and value is not None:
+            values.append(value)
+        elif error is not None:
+            errors.append(error)
     return values, errors
 
 
@@ -3364,6 +4813,14 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     the derived panel. The journal keeps facts only; the eval numbers live
     here (design §7: never in the journal).
 
+    summary-v1.10 (t_0be71b95): the milestone block holds several weeks per
+    book — ``milestone[book]["weeks"]`` = {weeks: judgment} — and the frozen
+    §4 12/26-week gates are judged on the first weekly run at/after each
+    deadline, like the 4-week block before them. A 12/26-week judgment whose
+    facts are incomplete is not written at all (the next weekly run judges
+    the same frozen window again); the 4-week block keeps its fail-closed
+    INSUFFICIENT records. Module docstring "summary-v1.10" has the details.
+
     v1.7 (C-03): the per-book ``shortfall_*`` statistics are scoped to this
     week (``shortfall_scope`` / ``shortfall_window_start`` say so), and mark
     rows with an unusable ``shortfall_bps`` are reported in
@@ -3400,7 +4857,7 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     root = loop_root(data_dir)
     window_start = week_end - timedelta(days=6)
     out: dict[str, Any] = {
-        "schema": "demo-loop-summary-v1.9",
+        "schema": "demo-loop-summary-v1.10",
         "week_end": week_end.isoformat(),
         "generated_at": _utc_now_text(),
         "books": {},
@@ -3582,8 +5039,10 @@ def weekly_summary(data_dir: Path, week_end: date) -> dict[str, Any]:
     out["eval_by_book"] = {
         book: _eval_blocks(data_dir, book=book, week_end=week_end) for book in BOOKS_ENABLED
     }
-    # t_d33aef07: the frozen §4 milestone judgment rides the same weekly row
-    # (absent on every week where nothing is due — no early/duplicate records).
+    # t_d33aef07 + t_0be71b95: the frozen §4 milestone judgments ride the same
+    # weekly row (absent on every week where nothing is due or judgeable —
+    # no early, duplicate, or would-be-INSUFFICIENT records; 4-week records
+    # keep their fail-closed INSUFFICIENT semantics).
     milestone = _collect_milestone_judgments(root, week_end)
     if milestone:
         out["milestone"] = milestone
