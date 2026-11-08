@@ -94,6 +94,8 @@ def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch
     monkeypatch.setattr(c2_runner, "ATTRIBUTION_JSON", tmp_path / "attribution_summary.json")
     monkeypatch.setattr(c2_runner, "ATTRIBUTION_MD", tmp_path / "attribution_summary.md")
     monkeypatch.setattr(c2_runner, "ORDERS_FILE", tmp_path / "orders.jsonl")
+    # Avoid probing the operator's macro-data store; this test uses the stable fallback.
+    monkeypatch.setenv("C2_DGS1_PATHS", str(tmp_path / "missing-dgs1.jsonl"))
 
     class MockAlpaca:
         def get_account(self):

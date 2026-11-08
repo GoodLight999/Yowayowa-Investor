@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -205,11 +206,16 @@ def _extract_date(bar: dict[str, Any]) -> date | None:
 
 def _load_latest_dgs1(as_of: date) -> float:
     """Read DGS1 rate from local files or default to 0.0412 (4.12%)."""
-    search_paths = [
-        Path("/root/current-work/yowayowa-investor/data/macro-observations/fred.jsonl"),
-        Path("/root/current-work/yowayowa-investor/data/macro-observations/treasury.jsonl"),
-        Path("/root/current-work/yowayowa-investor/data/gates/dgs1.jsonl"),
-    ]
+    configured_paths = os.environ.get("C2_DGS1_PATHS")
+    search_paths = (
+        [Path(path) for path in configured_paths.split(os.pathsep) if path]
+        if configured_paths is not None
+        else [
+            Path("/root/current-work/yowayowa-investor/data/macro-observations/fred.jsonl"),
+            Path("/root/current-work/yowayowa-investor/data/macro-observations/treasury.jsonl"),
+            Path("/root/current-work/yowayowa-investor/data/gates/dgs1.jsonl"),
+        ]
+    )
     for p in search_paths:
         if p.exists():
             try:

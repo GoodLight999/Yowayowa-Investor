@@ -156,6 +156,8 @@ def test_kill_switch_liquidation_and_halt_integration(
     monkeypatch.setattr(c2_runner, "ATTRIBUTION_JSON", tmp_path / "attribution_summary.json")
     monkeypatch.setattr(c2_runner, "ATTRIBUTION_MD", tmp_path / "attribution_summary.md")
     monkeypatch.setattr(c2_runner, "ORDERS_FILE", tmp_path / "orders.jsonl")
+    # Avoid probing the operator's macro-data store; this test uses the stable fallback.
+    monkeypatch.setenv("C2_DGS1_PATHS", str(tmp_path / "missing-dgs1.jsonl"))
 
     initial_state = {
         "peak_equity_10": 100000.0,
