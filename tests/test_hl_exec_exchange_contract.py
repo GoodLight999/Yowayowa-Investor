@@ -86,3 +86,33 @@ def test_malformed_response_is_not_retried() -> None:
     with pytest.raises(HLError, match="unexpected exchange order response"):
         place(client(exchange), reduce_only=True)
     assert len(exchange.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://api.hyperliquid.xyz",
+        "https://api.hyperliquid-testnet.xyz.attacker.invalid",
+        "https://attacker.invalid/api.hyperliquid-testnet.xyz",
+        "http://api.hyperliquid-testnet.xyz",
+        "https://api.hyperliquid-testnet.xyz/evil",
+    ],
+)
+def test_rejects_noncanonical_testnet_base_url(url: str) -> None:
+    with pytest.raises(ValueError, match="testnet endpoint"):
+        client(RecordingExchange(), base_url=url)
+
+
+def test_injected_exchange_must_itself_be_exact_testnet() -> None:
+    exchange = RecordingExchange()
+    exchange.base_url = "https://api.hyperliquid.xyz"
+    with pytest.raises(ValueError, match="injected exchange"):
+        client(exchange)
+
+
+def test_order_converts_cloid_str_to_official_sdk_cloid() -> None:
+    sdk = pytest.importorskip("hyperliquid.utils.types")
+    exchange = RecordingExchange()
+    place(client(exchange), cloid="0x" + "ab" * 16)
+    assert isinstance(exchange.calls[0]["cloid"], sdk.Cloid)
+    assert str(exchange.calls[0]["cloid"]) == "0x" + "ab" * 16

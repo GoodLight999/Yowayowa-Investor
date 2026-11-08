@@ -238,13 +238,28 @@ class HyperliquidExchangeClient:
         exchange: Any | None = None,
     ) -> None:
         _validate_address(account_address)
-        if "api.hyperliquid.xyz" in base_url and "testnet" not in base_url:
-            raise ValueError(f"Mainnet endpoint is strictly forbidden: {base_url}")
+        # 送信系の接続先は正規テストネットの完全一致のみ（部分一致・成りすまし
+        # ・パス付き・http・メインネットを全部拒否する）。メインネット
+        # （api.hyperliquid.xyz）への接続もこの検査で厳格に禁止（即時例外）。
+        if base_url != TESTNET_API_URL:
+            raise ValueError(
+                "order path must use the canonical Hyperliquid testnet endpoint "
+                f"({TESTNET_API_URL}); got: {base_url!r}"
+            )
         self._account_address = account_address
         self._base_url = base_url
         self._killswitch = killswitch
 
         if exchange is not None:
+            # 注入トランスポートも接続先の契約に従う。base_url を名乗る
+            # 注入物が正規テストネット以外を向いていれば拒否する
+            # （属性を持たない単純テストダブルは検証不能なため許容）。
+            injected_base_url = getattr(exchange, "base_url", None)
+            if injected_base_url is not None and injected_base_url != TESTNET_API_URL:
+                raise ValueError(
+                    "injected exchange must itself use the canonical Hyperliquid "
+                    f"testnet endpoint ({TESTNET_API_URL}); got: {injected_base_url!r}"
+                )
             self._exchange = exchange
         else:
             try:
@@ -294,10 +309,17 @@ class HyperliquidExchangeClient:
         """注文を発注する。発注前にキルスイッチの取引可否を検証する。"""
         if self._killswitch is not None:
             self._killswitch.ensure_may_trade()
+        # 公式SDKのtransportは Cloid インスタンスを期待する。検証済みhex文字列を
+        # ここで公式型へ変換し、wire上の値は変えない。
+        sdk_cloid: Any = None
+        if cloid is not None:
+            from hyperliquid.utils.types import Cloid
+
+            sdk_cloid = Cloid(cloid)
         # Order submission is not retry-safe: a TypeError can occur after acceptance.
         # Keep reduce_only intact; SDK-incompatible test doubles must be fixed in tests.
         res: Any = self._exchange.order(
-            coin, is_buy, sz, px, order_type, reduce_only=reduce_only, cloid=cloid
+            coin, is_buy, sz, px, order_type, reduce_only=reduce_only, cloid=sdk_cloid
         )
         if not isinstance(res, dict):
             raise HLError(f"unexpected exchange order response: {type(res).__name__}")

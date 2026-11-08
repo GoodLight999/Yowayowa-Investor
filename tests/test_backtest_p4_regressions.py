@@ -189,8 +189,10 @@ def test_financial_inputs_survive_model_and_store_and_generate_trades(
         assert restored[symbol][0]["disclosure_date"] == "2024-12-31"
     strategy = _strategy(signal)
     request = _request(date(2025, 1, 2))
-    raw = run_backtest(request, strategy, histories)
-    persisted = run_backtest(request, strategy, restored)
+    # This test supplies its own empty calendar explicitly; production missing-data
+    # warnings remain covered by tests that omit the calendar.
+    raw = run_backtest(request, strategy, histories, split_calendar={})
+    persisted = run_backtest(request, strategy, restored, split_calendar={})
     assert persisted.trades
     assert persisted.trades == raw.trades
     assert persisted.metrics == raw.metrics
