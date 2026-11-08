@@ -255,7 +255,7 @@ class HyperliquidExchangeClient:
                 else:
                     key_str = agent_key
                 from eth_account import Account
-                from hyperliquid.exchange import Exchange  # type: ignore[import-untyped]
+                from hyperliquid.exchange import Exchange
 
                 account = Account.from_key(key_str)
                 self._exchange = Exchange(
@@ -289,11 +289,16 @@ class HyperliquidExchangeClient:
         order_type: dict[str, Any],
         *,
         cloid: str | None = None,
+        reduce_only: bool = False,
     ) -> dict[str, Any]:
         """注文を発注する。発注前にキルスイッチの取引可否を検証する。"""
         if self._killswitch is not None:
             self._killswitch.ensure_may_trade()
-        res: Any = self._exchange.order(coin, is_buy, sz, px, order_type, cloid=cloid)
+        # Order submission is not retry-safe: a TypeError can occur after acceptance.
+        # Keep reduce_only intact; SDK-incompatible test doubles must be fixed in tests.
+        res: Any = self._exchange.order(
+            coin, is_buy, sz, px, order_type, reduce_only=reduce_only, cloid=cloid
+        )
         if not isinstance(res, dict):
             raise HLError(f"unexpected exchange order response: {type(res).__name__}")
         return res

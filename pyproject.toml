@@ -154,6 +154,12 @@ plugins = []
 module = ["pandas_ta_classic", "yfinance"]
 ignore_missing_imports = true
 
+# Execution is optional: the core/dev environment intentionally has no signing SDK.
+# Do not suppress errors for the application; only these optional external imports.
+[[tool.mypy.overrides]]
+module = ["eth_account", "hyperliquid.*"]
+ignore_missing_imports = true
+
 [tool.hatch.build]
 include = [
   "src/yowayowa/**/*.py",
