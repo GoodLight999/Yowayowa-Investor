@@ -71,10 +71,15 @@ def main() -> None:
     status = res.get("status")
     mtm = res.get("mtm_record", {})
     kill = res.get("kill_switch_eval")
+    life = res.get("order_lifecycle") or {}
     print(
         f"C2_DAILY_OK status={status} date={res.get('as_of_date')} "
         f"eq10={mtm.get('equity_10')} eq15={mtm.get('equity_15')} "
-        f"kill_verdict={kill.verdict if kill else 'N/A'}"
+        f"kill_verdict={kill.verdict if kill else 'N/A'} "
+        f"orders_refresh={len(life.get('refreshed', []))} "
+        f"orders_stale_canceled={len(life.get('stale_canceled', []))} "
+        f"orders_submitted={len(life.get('submitted', []))} "
+        f"orders_errors={len(life.get('errors', []))}"
     )
 
 

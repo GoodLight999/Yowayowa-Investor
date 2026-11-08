@@ -194,11 +194,65 @@ class AlpacaPaperClient:
         logger.warning("Emergency close_all_positions executed: %s", res)
         return res if isinstance(res, list) else []
 
-    def get_orders(self, status: str = "open") -> list[dict[str, Any]]:
-        """Fetch orders with given status ('open', 'closed', 'all')."""
+    def get_orders(
+        self,
+        status: str = "open",
+        limit: int | None = None,
+        direction: str | None = None,
+        after: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch orders with given status ('open', 'closed', 'all').
+
+        ``limit``/``direction``/``after`` are optional; Alpaca defaults to 50 rows,
+        which silently truncates the book for a long-running paper account.
+        """
         self._enforce_safety_invariants()
-        res = self._request(f"{self.base_url}/orders?status={status}")
+        params: dict[str, str] = {"status": status}
+        if limit is not None:
+            params["limit"] = str(int(limit))
+        if direction is not None:
+            params["direction"] = direction
+        if after is not None:
+            params["after"] = after
+        query = urllib.parse.urlencode(params)
+        res = self._request(f"{self.base_url}/orders?{query}")
         return res if isinstance(res, list) else []
+
+    def get_order(self, order_id: str) -> dict[str, Any]:
+        """Fetch a single order by broker id or client_order_id."""
+        self._enforce_safety_invariants()
+        res = self._request(f"{self.base_url}/orders/{urllib.parse.quote(str(order_id))}")
+        return res if isinstance(res, dict) else {}
+
+    def get_orders_strict(
+        self,
+        status: str = "all",
+        limit: int = 500,
+        direction: str = "desc",
+    ) -> list[dict[str, Any]]:
+        """Read the order book, raising instead of returning an empty list on error.
+
+        ``get_orders`` swallows API failures into ``[]``, which is indistinguishable
+        from "no orders" -- unusable for idempotency checks, where an empty read
+        would authorise a duplicate submission. Callers that decide whether to send
+        an order must use this.
+        """
+        self._enforce_safety_invariants()
+        params = {"status": status, "limit": str(int(limit)), "direction": direction}
+        res = self._request(f"{self.base_url}/orders?{urllib.parse.urlencode(params)}")
+        if isinstance(res, dict) and (res.get("http_code") or res.get("error")):
+            raise RuntimeError(f"Failed to read Alpaca orders: {res}")
+        if not isinstance(res, list):
+            raise RuntimeError(f"Unexpected Alpaca orders payload: {type(res).__name__}")
+        return res
+
+    def cancel_order(self, order_id: str) -> dict[str, Any]:
+        """Cancel a single order (paper only)."""
+        self._enforce_safety_invariants()
+        res = self._request(
+            f"{self.base_url}/orders/{urllib.parse.quote(str(order_id))}", method="DELETE"
+        )
+        return res if isinstance(res, dict) else {}
 
     def submit_paper_order(
         self,

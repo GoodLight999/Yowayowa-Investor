@@ -33,6 +33,14 @@ from .c2_ledger import (
     append_decision_record,
 )
 from .c2_llm_loop import apply_decision_to_weights, call_llm_decider
+from .c2_order_lifecycle import (
+    LIFECYCLE_FILENAME,
+    OPEN_STATUSES,
+    resolve_session,
+    run_order_lifecycle,
+    window_mismatch,
+)
+from .c2_order_lifecycle import summarize as summarize_order_lifecycle
 from .c2_strategy import compute_rule_weights
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -113,6 +121,35 @@ def record_order_event(order_record: dict[str, Any]) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(ORDERS_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(order_record) + "\n")
+
+
+def _run_order_lifecycle_step(
+    client: AlpacaPaperClient,
+    state: dict[str, Any],
+    as_of_date: date,
+    prices: dict[str, float],
+) -> dict[str, Any] | None:
+    """Daily order-lifecycle pass: refresh broker status, cancel dead orders, retry.
+
+    Never raises: a broker hiccup must not stop the MTM record. Any failure lands
+    in the returned ``errors`` and blocks submission for that run (fail-closed).
+    """
+    try:
+        result = run_order_lifecycle(
+            client,
+            state=state,
+            as_of_date=as_of_date,
+            prices=prices,
+            universe=C2_UNIVERSE,
+            now=datetime.now(UTC),
+            ledger_path=ORDERS_FILE.parent / LIFECYCLE_FILENAME,
+            record_submit=record_order_event,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("Order lifecycle step failed: %s", exc)
+        return {"status": "error", "errors": [str(exc)]}
+    logger.info("Order lifecycle: %s", summarize_order_lifecycle(result))
+    return result
 
 
 def run_weekly_cycle(
@@ -309,8 +346,57 @@ def run_weekly_cycle(
                 p["symbol"]: float(p.get("qty", 0.0)) for p in positions_list if "symbol" in p
             }
 
+            # TIF/session alignment (see c2_order_lifecycle module docstring):
+            # a `day` order only lives in the session it is submitted for, so the
+            # session this submission would trade in must be the decision session.
+            # Refusing here keeps a mislabelled order out of the book -- the exact
+            # 2026-11-02 defect (order labelled 2026-11-03, expires_at 2026-11-02).
+            session = resolve_session(client, datetime.now(UTC))
+            session_gate: str | None = None
+            if session.session_date != as_of_date:
+                session_gate = (
+                    f"session_mismatch: order submitted now would live in "
+                    f"{session.session_date} ({session.source}) but the decision session "
+                    f"is {as_of_date}; not submitting (the daily order-lifecycle pass "
+                    f"will reconcile the book on the next run)"
+                )
+                logger.warning("Alpaca submission skipped for %s: %s", seq_date, session_gate)
+
+            # Orders already queued for this session belong to the *previous*
+            # target book (typically a daily order-lifecycle retry sent before the
+            # decision). Replace them: leaving both in the book would double the
+            # exposure when the session opens. A failed book read is fail-closed
+            # (no submission at all) because we cannot prove the book is empty.
+            queued_for_session: dict[tuple[str, str], list[dict[str, Any]]] = {}
+            strict_reader = getattr(client, "get_orders_strict", None)
+            lenient_reader = getattr(client, "get_orders", None)
+            existing_orders: list[dict[str, Any]] = []
+            if strict_reader is not None or lenient_reader is not None:
+                try:
+                    reader = strict_reader if strict_reader is not None else lenient_reader
+                    assert reader is not None
+                    fetched = reader(status="all")
+                    existing_orders = fetched if isinstance(fetched, list) else []
+                except Exception as exc:
+                    session_gate = f"order_book_unreadable: {exc}"
+                    logger.error(
+                        "Alpaca submission skipped for %s: cannot read the order book (%s)",
+                        seq_date,
+                        exc,
+                    )
+            for existing in existing_orders:
+                cid = str(existing.get("client_order_id", ""))
+                if existing.get("status") in OPEN_STATUSES and cid.startswith(
+                    f"c2_{existing.get('symbol')}_{existing.get('side')}_"
+                ):
+                    queued_for_session.setdefault(
+                        (str(existing.get("symbol")), str(existing.get("side"))), []
+                    ).append(existing)
+
             # Submit rebalance orders targeting final_w_15 with limit slippage guard
             for sym in C2_UNIVERSE:
+                if session_gate is not None:
+                    break
                 target_w = final_w_15.get(sym, 0.0)
                 target_notional = acct.equity * target_w
                 sym_price = context.universe_closes.get(sym, 100.0)
@@ -320,6 +406,23 @@ def run_weekly_cycle(
 
                 if delta_shares == 0:
                     continue
+
+                replaced: list[str] = []
+                for stale_order in queued_for_session.get((sym, "buy" if delta_shares > 0 else "sell"), []):
+                    try:
+                        client.cancel_order(str(stale_order.get("id")))
+                        replaced.append(str(stale_order.get("client_order_id")))
+                    except Exception as exc:
+                        logger.error(
+                            "Failed to cancel superseded order %s before re-deciding %s: %s",
+                            stale_order.get("id"),
+                            sym,
+                            exc,
+                        )
+                if replaced:
+                    logger.info(
+                        "Replaced %d order(s) already queued for %s: %s", len(replaced), sym, replaced
+                    )
 
                 if delta_shares > 0:
                     side = "buy"
@@ -341,6 +444,29 @@ def run_weekly_cycle(
                     limit_price=limit_price,
                     client_order_id=f"c2_{sym}_{side}_{seq_date}",
                 )
+                # Validity-window assertion: the broker's expires_at must cover the
+                # session this order is meant to trade (Alpaca sets it to that
+                # session's close for a `day` order). A mismatch means the order
+                # would die before/after the intended session -> cancel it instead
+                # of leaving a mislabelled order in the book.
+                mismatch, window_note = window_mismatch(
+                    order_res if isinstance(order_res, dict) else {}, session.session_date
+                )
+                window_ok = not mismatch
+                if mismatch:
+                    logger.critical(
+                        "Order %s %s carries a validity window that does not cover session %s: %s",
+                        side,
+                        sym,
+                        session.session_date,
+                        window_note,
+                    )
+                    order_id = (order_res or {}).get("id") if isinstance(order_res, dict) else None
+                    if order_id and hasattr(client, "cancel_order"):
+                        try:
+                            client.cancel_order(str(order_id))
+                        except Exception as exc:
+                            logger.error("Failed to cancel mislabelled order %s: %s", order_id, exc)
                 order_entry = {
                     "as_of_date": seq_date,
                     "timestamp_utc": now_iso,
@@ -353,6 +479,11 @@ def run_weekly_cycle(
                     "limit_price": limit_price,
                     "slippage_tolerance_bps": SLIPPAGE_TOLERANCE_BPS,
                     "client_order_id": f"c2_{sym}_{side}_{seq_date}",
+                    "session_date": session.session_date.isoformat(),
+                    "session_source": session.source,
+                    "window_ok": window_ok,
+                    "window_note": window_note,
+                    "replaced_client_order_ids": replaced,
                     "alpaca_response": order_res,
                 }
                 record_order_event(order_entry)
@@ -477,6 +608,11 @@ def run_daily_cycle(
             seq_date,
             last_bar,
         )
+        # The MTM row is idempotent, but the broker order book is not part of that
+        # row: still refresh order status (and retry a dead book) on a re-run.
+        lifecycle = _run_order_lifecycle_step(
+            client, state, as_of_date, context.universe_closes
+        )
         return {
             "status": "already_executed",
             "as_of_date": seq_date,
@@ -484,6 +620,7 @@ def run_daily_cycle(
             "equity_10": state["current_equity_10"],
             "equity_15": state["current_equity_15"],
             "alpaca_paper_equity": state.get("alpaca_paper_equity", paper_equity),
+            "order_lifecycle": lifecycle,
         }
 
     # 5. Daily MTM tracking for 10% and 15%
@@ -558,6 +695,26 @@ def run_daily_cycle(
         except Exception as exc:
             logger.error("Failed to execute emergency liquidation on Alpaca: %s", exc)
 
+    # 6b. Order lifecycle follow-up (paper only): refresh the broker's true order
+    # status, cancel orders whose validity window already closed, and re-send the
+    # part of the target book that never filled. Runs after the kill-switch
+    # evaluation so a halt day never opens new exposure.
+    order_lifecycle = _run_order_lifecycle_step(
+        client, state, as_of_date, context.universe_closes
+    )
+    if order_lifecycle is not None:
+        state["last_order_lifecycle"] = {
+            "as_of_date": order_lifecycle.get("as_of_date"),
+            "checked_at": order_lifecycle.get("checked_at"),
+            "session_date": order_lifecycle.get("session_date"),
+            "session_source": order_lifecycle.get("session_source"),
+            "status": order_lifecycle.get("status"),
+            "refreshed": len(order_lifecycle.get("refreshed", [])),
+            "stale_canceled": len(order_lifecycle.get("stale_canceled", [])),
+            "submitted": len(order_lifecycle.get("submitted", [])),
+            "errors": order_lifecycle.get("errors", []),
+        }
+
     # 7. Attribution Join & Matrix Update
     decisions = load_decisions(ledger_path)
     price_hist: dict[str, dict[date, float]] = {s: {} for s in C2_UNIVERSE}
@@ -593,6 +750,7 @@ def run_daily_cycle(
         "mtm_record": mtm_record,
         "kill_switch_eval": kill_eval,
         "attribution_matrix": attribution_matrix,
+        "order_lifecycle": order_lifecycle,
     }
 
 
