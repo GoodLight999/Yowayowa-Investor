@@ -168,6 +168,51 @@ class StoreTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_first_formal_verdict_is_frozen_and_later_samples_are_separate(self):
+        make_store(self.root, series(20, -1.0))
+        now = datetime(2026, 11, 20, 0, 0, tzinfo=timezone.utc)
+        first = dp.run(self.root, as_of=date(2026, 11, 20), now=now)
+        self.assertEqual(first["payload"]["result"]["verdict"], "不合格")
+        frozen_path = self.root / "decision_frozen.json"
+        frozen_hash_path = self.root / "decision_frozen.sha256"
+        self.assertTrue(frozen_path.exists())
+        self.assertTrue(frozen_hash_path.exists())
+        frozen_hash = frozen_hash_path.read_text(encoding="utf-8").strip()
+
+        later = series(20, 10.0, start_day=8)
+        for i, ev in enumerate(later):
+            ev["episode_id"] = f"later-{i:03d}"
+        with (self.root / "closed_episodes.jsonl").open("a", encoding="utf-8") as fh:
+            for ev in later:
+                fh.write(json.dumps(ev, ensure_ascii=False) + "\n")
+        by_day = {}
+        for ev in later:
+            by_day.setdefault(ev["day_key"], []).append(ev)
+        for day, rows in by_day.items():
+            day_file = self.root / "episodes" / f"{day}.json"
+            rec = json.loads(day_file.read_text(encoding="utf-8"))
+            rec["episodes"].extend({"episode_id": ev["episode_id"], "episode_start_utc": ev["episode_start_utc"],
+                "episode_end_utc": ev["episode_end_utc"], "day_key": ev["day_key"],
+                "independent": ev["independent"], "cluster_pnl_usd": ev["cluster_pnl_usd"]} for ev in rows)
+            day_file.write_text(json.dumps(rec), encoding="utf-8")
+        second = dp.run(self.root, as_of=date(2026, 11, 21), now=now)
+        self.assertEqual(second["payload"]["result"]["verdict"], "不合格")
+        self.assertEqual(second["payload"]["result"]["independent_episodes"], 20)
+        self.assertEqual(second["payload"]["first_formal_decision"]["verdict"], "不合格")
+        self.assertEqual(second["payload"]["additional_observations"]["independent_episodes"], 40)
+        self.assertIn("## 凍結後の追加観測", second["page"])
+        self.assertIn("独立局面 40件", second["page"])
+        self.assertIn("95%区間", second["page"])
+        self.assertEqual(frozen_hash_path.read_text(encoding="utf-8").strip(), frozen_hash)
+
+    def test_frozen_file_without_hash_is_rejected(self):
+        make_store(self.root, series(20, -1.0))
+        now = datetime(2026, 11, 20, 0, 0, tzinfo=timezone.utc)
+        dp.run(self.root, as_of=date(2026, 11, 20), now=now)
+        (self.root / "decision_frozen.sha256").unlink()
+        with self.assertRaises(dp.DecisionInputError):
+            dp.run(self.root, as_of=date(2026, 11, 21), now=now, write=False)
+
     def test_end_to_end_pass_and_ledger(self):
         make_store(self.root, series(20, 10.0))
         now = datetime(2026, 11, 20, 0, 0, tzinfo=timezone.utc)

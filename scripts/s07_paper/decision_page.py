@@ -435,6 +435,24 @@ def render_page(result: dict, inputs: dict, decision_ledger: dict, *, generated_
     ledger = decision_ledger or {}
     events = inputs["events"]
 
+    # 凍結判定の後に観測された追加局面は、凍結判定と混ぜず1行で別掲する。
+    # キー欠落・null は捏造せず N/A と明示する（0 や OK で埋めない）。
+    add = result.get("additional_observations")
+    add_lines: list[str] = []
+    if isinstance(add, dict):
+        ci = add.get("ci95")
+        ci_txt = (f"[{_fmt(ci[0], ' USD')}, {_fmt(ci[1], ' USD')}]"
+                  if isinstance(ci, (list, tuple)) and len(ci) == 2 and all(v is not None for v in ci)
+                  else "N/A")
+        add_lines = [
+            "",
+            "## 凍結後の追加観測",
+            "",
+            f"- 独立局面 {_fmt(add.get('independent_episodes'), '件', dash='N/A')}"
+            f" / 期待値 {_fmt(add.get('mean_pnl_per_episode_usd'), ' USD', dash='N/A')}"
+            f" / 95%区間 {ci_txt} / 仮判定 {_fmt(add.get('verdict'), dash='N/A')}",
+        ]
+
     verdict = result["verdict"]
     lines = [
         "# 前方局面 判定ページ（項目5）",
@@ -463,6 +481,7 @@ def render_page(result: dict, inputs: dict, decision_ledger: dict, *, generated_
         "",
         f"95%区間の方法: {result['ci_method']}。",
         "",
+        *add_lines,
         "## 判定ロジック（凍結）",
         "",
         f"1. 合格 = 期待値 > 0 かつ 95%区間下限 > 0（トリガ到達後に評価）。",
@@ -548,11 +567,47 @@ def run(root, *, as_of: date, now: datetime, write: bool = True) -> dict:
         decision_ledger = update_decision_ledger(root, inputs["events"], evaluated_at=now)
     else:
         decision_ledger = prev_decision
-    result = evaluate(inputs["events"],
-                      kill_ledger_status=inputs["kill_ledger"].get("status", "ARMED"),
-                      decision_status=decision_ledger.get("status", "ARMED"),
-                      as_of=as_of)
-    page = render_page(result, inputs, decision_ledger, generated_at=now)
+    computed = evaluate(inputs["events"],
+                        kill_ledger_status=inputs["kill_ledger"].get("status", "ARMED"),
+                        decision_status=decision_ledger.get("status", "ARMED"),
+                        as_of=as_of)
+    out = Path(root)
+    frozen_path = out / "decision_frozen.json"
+    frozen_hash_path = out / "decision_frozen.sha256"
+    frozen = _read_json(frozen_path) if frozen_path.exists() else None
+    first_formal = frozen.get("result") if frozen else None
+    if first_formal is None and (computed["reached_target"] or computed["deadline_reached"] or computed["kill"]):
+        first_formal = computed
+        frozen = {"schema_version": 1, "frozen_at_utc": _utc(now), "result": computed,
+                  "input_sha256": inputs["inputs"]["closed_episodes"]["sha256"]}
+        if write:
+            frozen_bytes = json.dumps(frozen, ensure_ascii=False, indent=1) + "\n"
+            frozen_hash = hashlib.sha256(frozen_bytes.encode("utf-8")).hexdigest()
+            try:
+                with frozen_path.open("x", encoding="utf-8") as fh:
+                    fh.write(frozen_bytes)
+                with frozen_hash_path.open("x", encoding="utf-8") as fh:
+                    fh.write(frozen_hash + "\n")
+            except FileExistsError:
+                frozen = _read_json(frozen_path)
+                first_formal = frozen["result"]
+    if frozen and not frozen_hash_path.exists():
+        raise DecisionInputError(
+            f"{frozen_path.name} は存在するが {frozen_hash_path.name} が存在しない"
+            f"（{frozen_path} / {frozen_hash_path}）ため、凍結結果を検証できません")
+    if frozen and frozen_hash_path.exists():
+        recorded_hash = frozen_hash_path.read_text(encoding="utf-8").strip()
+        if recorded_hash != hashlib.sha256(frozen_path.read_bytes()).hexdigest():
+            raise DecisionInputError("decision_frozen.json のsha256不一致")
+        first_formal = frozen["result"]
+    additional = computed if first_formal and len(computed["values"]) > len(first_formal["values"]) else None
+    result = first_formal or computed
+    page_result = dict(result)
+    page_result["first_formal_decision"] = first_formal
+    page_result["additional_observations"] = ({"independent_episodes": computed["independent_episodes"],
+        "mean_pnl_per_episode_usd": computed["mean_pnl_per_episode_usd"], "ci95": computed["ci95"],
+        "verdict": computed["verdict"]} if additional else None)
+    page = render_page(page_result, inputs, decision_ledger, generated_at=now)
     payload = {
         "schema_version": SCHEMA_VERSION,
         "card": CARD,
@@ -562,6 +617,8 @@ def run(root, *, as_of: date, now: datetime, write: bool = True) -> dict:
         "deadline_utc": DEADLINE_UTC,
         "target_independent_episodes": TARGET_INDEPENDENT_EPISODES,
         "result": result,
+        "first_formal_decision": first_formal,
+        "additional_observations": page_result["additional_observations"],
         "exclusions": inputs["exclusions"].get("counts"),
         "exclusions_one_line": inputs["exclusions"].get("one_line"),
         "checks": inputs["checks"],
@@ -575,7 +632,6 @@ def run(root, *, as_of: date, now: datetime, write: bool = True) -> dict:
         "inputs": inputs["inputs"],
     }
     if write:
-        out = Path(root)
         (out / PAGE_FILE).write_text(page, encoding="utf-8")
         _write_atomic(out / JSON_FILE, payload)
     return {"page": page, "payload": payload, "decision_ledger": decision_ledger}
