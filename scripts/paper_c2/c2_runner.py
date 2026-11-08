@@ -36,6 +36,8 @@ from .c2_llm_loop import apply_decision_to_weights, call_llm_decider
 from .c2_order_lifecycle import (
     LIFECYCLE_FILENAME,
     OPEN_STATUSES,
+    cancel_and_confirm,
+    next_client_order_id,
     resolve_session,
     run_order_lifecycle,
     window_mismatch,
@@ -315,6 +317,7 @@ def run_weekly_cycle(
 
     # 10. Alpaca Paper Order Execution (Primary 15% strategy with slippage guard and delta-rebalance)
     orders_placed = []
+    orders_blocked: list[dict[str, Any]] = []
     current_utc_date = datetime.now(UTC).date()
     if current_utc_date < PHASE_START_DATE:
         logger.info(
@@ -408,21 +411,88 @@ def run_weekly_cycle(
                     continue
 
                 replaced: list[str] = []
-                for stale_order in queued_for_session.get((sym, "buy" if delta_shares > 0 else "sell"), []):
+                blocked_orders: list[dict[str, Any]] = []
+                for stale_order in queued_for_session.get(
+                    (sym, "buy" if delta_shares > 0 else "sell"), []
+                ):
+                    order_id = str(stale_order.get("id"))
+                    # A DELETE is only a request. Queue the replacement only after the
+                    # broker read-back reports a terminal status; a refused cancel, a
+                    # communication failure or ``pending_cancel`` leaves the old order
+                    # fillable, and sending a new client_order_id next to it would
+                    # double the exposure (review finding 2026-11-09).
+                    confirmation = cancel_and_confirm(client, order_id)
+                    if not confirmation.confirmed:
+                        blocked_orders.append(
+                            {
+                                "id": order_id,
+                                "client_order_id": stale_order.get("client_order_id"),
+                                "broker_status": confirmation.status,
+                                "detail": confirmation.detail,
+                            }
+                        )
+                        continue
+                    replaced.append(str(stale_order.get("client_order_id")))
+
+                if blocked_orders:
+                    orders_blocked.append(
+                        {
+                            "as_of_date": seq_date,
+                            "symbol": sym,
+                            "side": "buy" if delta_shares > 0 else "sell",
+                            "reason": "cancel_unconfirmed",
+                            "orders": blocked_orders,
+                        }
+                    )
+                    logger.error(
+                        "Not submitting %s: %d superseded order(s) not confirmed canceled: %s",
+                        sym,
+                        len(blocked_orders),
+                        [b["id"] for b in blocked_orders],
+                    )
+                    continue
+
+                if replaced:
+                    logger.info(
+                        "Replaced %d order(s) already queued for %s: %s",
+                        len(replaced),
+                        sym,
+                        replaced,
+                    )
+                    # A fill can race the cancel. Re-read positions so only the
+                    # residual target delta is sent, never the original size.
                     try:
-                        client.cancel_order(str(stale_order.get("id")))
-                        replaced.append(str(stale_order.get("client_order_id")))
+                        latest_positions = client.get_positions()
+                        if not isinstance(latest_positions, list):
+                            raise RuntimeError(
+                                f"unexpected /positions payload: {type(latest_positions).__name__}"
+                            )
+                        current_positions = {
+                            p["symbol"]: float(p.get("qty", 0.0))
+                            for p in latest_positions
+                            if isinstance(p, dict) and "symbol" in p
+                        }
                     except Exception as exc:
+                        orders_blocked.append(
+                            {
+                                "as_of_date": seq_date,
+                                "symbol": sym,
+                                "side": "buy" if delta_shares > 0 else "sell",
+                                "reason": "positions_unreadable_after_cancel",
+                                "detail": str(exc),
+                            }
+                        )
                         logger.error(
-                            "Failed to cancel superseded order %s before re-deciding %s: %s",
-                            stale_order.get("id"),
+                            "Not submitting %s: cannot re-read positions after cancel (%s)",
                             sym,
                             exc,
                         )
-                if replaced:
-                    logger.info(
-                        "Replaced %d order(s) already queued for %s: %s", len(replaced), sym, replaced
-                    )
+                        continue
+                    curr_shares = int(current_positions.get(sym, 0.0))
+                    delta_shares = target_shares - curr_shares
+                    if delta_shares == 0:
+                        logger.info("Residual for %s is zero after cancel; nothing to send", sym)
+                        continue
 
                 if delta_shares > 0:
                     side = "buy"
@@ -435,6 +505,12 @@ def run_weekly_cycle(
                     # Slippage guard: sell limit price floored at -50 bps below reference
                     limit_price = round(sym_price * (1.0 - SLIPPAGE_TOLERANCE_BPS / 10000.0), 2)
 
+                # Alpaca rejects a reused client_order_id forever, so a re-run that
+                # replaced an order already carrying the bare id must version the
+                # replacement instead of colliding with the dead one.
+                client_order_id = f"c2_{sym}_{side}_{seq_date}"
+                if client_order_id in {str(o.get("client_order_id", "")) for o in existing_orders}:
+                    client_order_id = next_client_order_id(existing_orders, sym, side, as_of_date)
                 order_res = client.submit_paper_order(
                     symbol=sym,
                     qty=qty,
@@ -442,7 +518,7 @@ def run_weekly_cycle(
                     order_type="limit",
                     time_in_force="day",
                     limit_price=limit_price,
-                    client_order_id=f"c2_{sym}_{side}_{seq_date}",
+                    client_order_id=client_order_id,
                 )
                 # Validity-window assertion: the broker's expires_at must cover the
                 # session this order is meant to trade (Alpaca sets it to that
@@ -453,6 +529,7 @@ def run_weekly_cycle(
                     order_res if isinstance(order_res, dict) else {}, session.session_date
                 )
                 window_ok = not mismatch
+                window_cancel_ok: bool | None = None
                 if mismatch:
                     logger.critical(
                         "Order %s %s carries a validity window that does not cover session %s: %s",
@@ -463,10 +540,14 @@ def run_weekly_cycle(
                     )
                     order_id = (order_res or {}).get("id") if isinstance(order_res, dict) else None
                     if order_id and hasattr(client, "cancel_order"):
-                        try:
-                            client.cancel_order(str(order_id))
-                        except Exception as exc:
-                            logger.error("Failed to cancel mislabelled order %s: %s", order_id, exc)
+                        confirmation = cancel_and_confirm(client, str(order_id))
+                        window_cancel_ok = confirmation.confirmed
+                        if not confirmation.confirmed:
+                            logger.error(
+                                "Mislabelled order %s could not be confirmed canceled: %s",
+                                order_id,
+                                confirmation.detail,
+                            )
                 order_entry = {
                     "as_of_date": seq_date,
                     "timestamp_utc": now_iso,
@@ -478,11 +559,12 @@ def run_weekly_cycle(
                     "reference_price": sym_price,
                     "limit_price": limit_price,
                     "slippage_tolerance_bps": SLIPPAGE_TOLERANCE_BPS,
-                    "client_order_id": f"c2_{sym}_{side}_{seq_date}",
+                    "client_order_id": client_order_id,
                     "session_date": session.session_date.isoformat(),
                     "session_source": session.source,
                     "window_ok": window_ok,
                     "window_note": window_note,
+                    "window_cancel_confirmed": window_cancel_ok,
                     "replaced_client_order_ids": replaced,
                     "alpaca_response": order_res,
                 }
@@ -516,6 +598,7 @@ def run_weekly_cycle(
         "h1": h1,
         "h2": h2,
         "orders_placed": orders_placed,
+        "orders_blocked": orders_blocked,
     }
 
 
@@ -610,9 +693,7 @@ def run_daily_cycle(
         )
         # The MTM row is idempotent, but the broker order book is not part of that
         # row: still refresh order status (and retry a dead book) on a re-run.
-        lifecycle = _run_order_lifecycle_step(
-            client, state, as_of_date, context.universe_closes
-        )
+        lifecycle = _run_order_lifecycle_step(client, state, as_of_date, context.universe_closes)
         return {
             "status": "already_executed",
             "as_of_date": seq_date,
@@ -699,9 +780,7 @@ def run_daily_cycle(
     # status, cancel orders whose validity window already closed, and re-send the
     # part of the target book that never filled. Runs after the kill-switch
     # evaluation so a halt day never opens new exposure.
-    order_lifecycle = _run_order_lifecycle_step(
-        client, state, as_of_date, context.universe_closes
-    )
+    order_lifecycle = _run_order_lifecycle_step(client, state, as_of_date, context.universe_closes)
     if order_lifecycle is not None:
         state["last_order_lifecycle"] = {
             "as_of_date": order_lifecycle.get("as_of_date"),
@@ -711,6 +790,7 @@ def run_daily_cycle(
             "status": order_lifecycle.get("status"),
             "refreshed": len(order_lifecycle.get("refreshed", [])),
             "stale_canceled": len(order_lifecycle.get("stale_canceled", [])),
+            "cancel_unconfirmed": len(order_lifecycle.get("cancel_unconfirmed", [])),
             "submitted": len(order_lifecycle.get("submitted", [])),
             "errors": order_lifecycle.get("errors", []),
         }
@@ -759,7 +839,9 @@ def main() -> None:
     parser.add_argument("--date", type=str, default="2026-11-03", help="Date in YYYY-MM-DD")
     parser.add_argument("--action", choices=["weekly", "daily", "full"], default="weekly")
     parser.add_argument("--dry-run", action="store_true", help="Do not submit broker orders")
-    parser.add_argument("--force", action="store_true", help="Force re-run even if already executed")
+    parser.add_argument(
+        "--force", action="store_true", help="Force re-run even if already executed"
+    )
     parser.add_argument(
         "--force-rule-only", action="store_true", help="Skip LLM and use rule weights"
     )
@@ -788,6 +870,8 @@ def main() -> None:
             print(f"Hash 2: {res.get('h2')}")
         if "orders_placed" in res:
             print(f"Orders placed: {len(res['orders_placed'])}")
+        if res.get("orders_blocked"):
+            print(f"Orders blocked: {len(res['orders_blocked'])}")
 
     if args.action in ("daily", "full"):
         d_res = run_daily_cycle(as_of_date=target_date, ledger_path=args.ledger)

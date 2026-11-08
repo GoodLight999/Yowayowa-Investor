@@ -16,9 +16,16 @@ What it does (daily post-close batch)
                   ``order_lifecycle.jsonl`` (append-only, never rewrite the ledger)
 2. stale-open     a still-open order whose validity window has already closed
                   (``expires_at <= now``, or ``pending_new`` untouched for >24h) is
-                  canceled, because it will never trade
+                  canceled *and the broker read back until it reports a terminal
+                  status*.  24h is only a trigger for the attempt, never proof that
+                  the order cannot fill.  Until the cancel is confirmed (422,
+                  connection failure, or still ``pending_cancel``) the order keeps
+                  occupying its slot and no retry is sent -- otherwise the old order
+                  and a new ``client_order_id`` can both fill.
 3. retry          for a desired position that has no live order and no fill, submit
-                  the remaining delta for the *next* session (idempotent)
+                  the remaining delta for the *next* session (idempotent).  Positions
+                  are read after the cancels, so a fill that raced a cancel reduces
+                  the resend to the residual quantity.
 
 TIF / submission-time contract
 ------------------------------
@@ -60,6 +67,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time as _time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -88,6 +96,12 @@ OPEN_STATUSES = frozenset(
 )
 # Terminal states that produced no (or only a partial) position.
 TERMINAL_UNFILLED = frozenset({"expired", "canceled", "rejected", "suspended"})
+# Statuses the broker reports once an order can no longer execute.  Only these
+# count as a *confirmed* cancel: a DELETE that returned 204 means the request was
+# accepted, not that the order is dead (it can still sit in ``pending_cancel``).
+CONFIRMED_TERMINAL_STATUSES = frozenset(
+    {"filled", "canceled", "expired", "rejected", "done_for_day", "replaced"}
+)
 
 CLIENT_ORDER_ID_PREFIX = "c2_"
 _ATTEMPT_SUFFIX = re.compile(r"_a(\d+)$")
@@ -225,6 +239,91 @@ def _is_stale_open(order: dict[str, Any], now: datetime) -> tuple[bool, str]:
     return False, ""
 
 
+@dataclass(frozen=True)
+class CancelConfirmation:
+    """Result of a cancel request plus the broker read-back that confirms it."""
+
+    confirmed: bool
+    status: str | None
+    detail: str
+    filled_qty: float
+
+
+def _as_float(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def cancel_and_confirm(
+    client: Any,
+    order_id: str,
+    *,
+    polls: int = 3,
+    interval_s: float = 0.5,
+    sleep: Callable[[float], None] | None = None,
+) -> CancelConfirmation:
+    """Cancel ``order_id`` and prove from the broker that it is terminal.
+
+    Why the read-back is mandatory (measured 2026-11-09 review): ``DELETE /v2/orders``
+    answers 204 when the cancel *request* is accepted, 422 when it is refused, and an
+    accepted request can still land in ``pending_cancel`` while the order remains
+    fillable.  ``AlpacaPaperClient`` surfaces both of those as return values, not
+    exceptions (``{http_code: 422}`` / ``{error: ...}``), so a caller that trusts the
+    request alone can place a second order next to a still-live first one.  Only a
+    terminal status read back from ``GET /v2/orders/{id}`` proves the slot is free.
+    A 422 is not conclusive either: it can mean the order already filled, which the
+    read-back reports as ``filled``.
+    """
+    request_error: str | None = None
+    try:
+        response = client.cancel_order(str(order_id))
+        if isinstance(response, dict) and (response.get("http_code") or response.get("error")):
+            request_error = f"cancel request rejected: {response}"
+    except Exception as exc:
+        request_error = f"cancel request failed: {exc}"
+
+    reader = getattr(client, "get_order", None)
+    if not callable(reader):
+        return CancelConfirmation(
+            False,
+            None,
+            f"{request_error or 'cancel requested'}; cannot confirm: client has no get_order",
+            0.0,
+        )
+
+    sleeper = sleep or _time.sleep
+    attempts = max(1, int(polls))
+    last_status: str | None = None
+    last_detail = "read-back carried no status"
+    for attempt in range(attempts):
+        try:
+            snapshot = reader(str(order_id))
+        except Exception as exc:
+            snapshot = {"error": str(exc)}
+        if isinstance(snapshot, dict):
+            status = snapshot.get("status")
+            if status:
+                last_status = str(status)
+                if last_status in CONFIRMED_TERMINAL_STATUSES:
+                    prefix = f"{request_error}; " if request_error else ""
+                    return CancelConfirmation(
+                        True,
+                        last_status,
+                        f"{prefix}broker reports terminal status {last_status}",
+                        _as_float(snapshot.get("filled_qty")),
+                    )
+                last_detail = f"broker still reports {last_status}"
+            else:
+                last_detail = f"read-back failed: {snapshot}"
+        if attempt < attempts - 1 and interval_s > 0:
+            sleeper(interval_s)
+
+    detail = request_error or last_detail
+    return CancelConfirmation(False, last_status, f"cancel not confirmed ({detail})", 0.0)
+
+
 def attempt_ids(
     orders: Iterable[dict[str, Any]], symbol: str, side: str, session: date
 ) -> list[str]:
@@ -315,6 +414,8 @@ def run_order_lifecycle(
     record_submit: Callable[[dict[str, Any]], None] | None = None,
     max_attempts: int = MAX_ATTEMPTS_PER_SESSION,
     slippage_bps: float = SLIPPAGE_TOLERANCE_BPS,
+    cancel_polls: int = 3,
+    cancel_poll_interval_s: float = 0.5,
 ) -> dict[str, Any]:
     """Refresh, cancel dead orders, and re-send the missing book (paper only).
 
@@ -330,6 +431,7 @@ def run_order_lifecycle(
         "session_source": None,
         "refreshed": [],
         "stale_canceled": [],
+        "cancel_unconfirmed": [],
         "submitted": [],
         "skipped": [],
         "errors": [],
@@ -377,30 +479,63 @@ def run_order_lifecycle(
         for o in mine
     ]
 
-    # ---- 2. cancel orders whose window already closed ----
+    # ---- 2. cancel orders whose window already closed (confirm from the broker) ----
+    # A closed validity window tells us the order *should* be dead; it does not mean
+    # the broker has actually stopped it.  Only a terminal status read back after the
+    # DELETE frees the slot.  While the cancel is unconfirmed (refused, communication
+    # failure, or still ``pending_cancel``) the order can still fill, so it keeps
+    # occupying its slot and the retry below must not send a second order.
     live: dict[tuple[str, str], dict[str, Any]] = {}
     for order in mine:
         if order.get("status") not in OPEN_STATUSES:
             continue
+        slot = (str(order.get("symbol")), str(order.get("side")))
         stale, why = _is_stale_open(order, now)
         if not stale:
-            live.setdefault((str(order.get("symbol")), str(order.get("side"))), order)
+            live.setdefault(slot, order)
             continue
         order_id = order.get("id")
-        try:
-            cancel_res = client.cancel_order(str(order_id))
-            if isinstance(cancel_res, dict) and (
-                cancel_res.get("http_code") or cancel_res.get("error")
-            ):
-                # e.g. already expired between the read and the cancel: it cannot
-                # fill anyway, so keep going and let the retry below re-send.
-                result["errors"].append(f"cancel_rejected:{order_id}: {cancel_res}")
-            result["stale_canceled"].append(
-                {"client_order_id": order.get("client_order_id"), "id": order_id, "reason": why}
+        if not order_id:
+            result["cancel_unconfirmed"].append(
+                {
+                    "client_order_id": order.get("client_order_id"),
+                    "id": None,
+                    "reason": why,
+                    "cancel_confirmed": False,
+                    "broker_status": order.get("status"),
+                    "cancel_detail": "order carries no broker id; cannot cancel/confirm",
+                    "filled_qty": 0.0,
+                }
             )
-        except Exception as exc:
-            result["errors"].append(f"cancel_failed:{order_id}: {exc}")
-            # still treat it as not-live: it cannot fill anyway (window closed)
+            result["errors"].append(
+                f"cancel_unconfirmed:{order.get('client_order_id')}: no broker id"
+            )
+            live.setdefault(slot, order)
+            continue
+        confirmation = cancel_and_confirm(
+            client,
+            str(order_id),
+            polls=cancel_polls,
+            interval_s=cancel_poll_interval_s,
+        )
+        entry = {
+            "client_order_id": order.get("client_order_id"),
+            "id": order_id,
+            "reason": why,
+            "cancel_confirmed": confirmation.confirmed,
+            "broker_status": confirmation.status,
+            "cancel_detail": confirmation.detail,
+            "filled_qty": confirmation.filled_qty,
+        }
+        if confirmation.confirmed:
+            # Terminal: it can no longer fill.  Any quantity that filled before the
+            # cancel landed shows up in the positions read below, so the retry only
+            # re-sends the residual.
+            result["stale_canceled"].append(entry)
+        else:
+            result["cancel_unconfirmed"].append(entry)
+            result["errors"].append(f"cancel_unconfirmed:{order_id}: {confirmation.detail}")
+            live.setdefault(slot, order)
 
     # ---- 3. re-send the missing book ----
     halt = state.get("kill_switch_triggered") or state.get("order_retry_paused")
@@ -418,6 +553,9 @@ def run_order_lifecycle(
 
     try:
         account = client.get_account()
+        # Read positions *after* the cancels above: a quantity that filled while a
+        # cancel was in flight is already reflected here, so the delta below is the
+        # residual only (never re-send the full original size).
         positions_payload = client.get_positions()
         if not isinstance(positions_payload, list):
             raise OrderLifecycleError(
@@ -535,11 +673,18 @@ def run_order_lifecycle(
             # letting a mislabelled order sit in the book (the 2026-11-02 defect).
             order_id = (response or {}).get("id") if isinstance(response, dict) else None
             if order_id:
-                try:
-                    client.cancel_order(str(order_id))
-                    entry["canceled_for_window"] = True
-                except Exception as exc:
-                    result["errors"].append(f"window_cancel_failed:{order_id}: {exc}")
+                confirmation = cancel_and_confirm(
+                    client,
+                    str(order_id),
+                    polls=cancel_polls,
+                    interval_s=cancel_poll_interval_s,
+                )
+                entry["canceled_for_window"] = confirmation.confirmed
+                entry["window_cancel_status"] = confirmation.status
+                if not confirmation.confirmed:
+                    result["errors"].append(
+                        f"window_cancel_unconfirmed:{order_id}: {confirmation.detail}"
+                    )
             result["errors"].append(f"session_window_mismatch:{symbol}:{side}: {reason}")
         result["submitted"].append(entry)
 
@@ -594,6 +739,7 @@ def summarize(result: dict[str, Any]) -> str:
         f"session={result.get('session_date')}({result.get('session_source')}) "
         f"refresh={len(result.get('refreshed', []))} "
         f"stale_canceled={len(result.get('stale_canceled', []))} "
+        f"cancel_unconfirmed={len(result.get('cancel_unconfirmed', []))} "
         f"submitted={len(result.get('submitted', []))} "
         f"skipped={len(result.get('skipped', []))} "
         f"errors={len(result.get('errors', []))}"

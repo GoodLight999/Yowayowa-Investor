@@ -78,6 +78,7 @@ def main() -> None:
         f"kill_verdict={kill.verdict if kill else 'N/A'} "
         f"orders_refresh={len(life.get('refreshed', []))} "
         f"orders_stale_canceled={len(life.get('stale_canceled', []))} "
+        f"orders_cancel_unconfirmed={len(life.get('cancel_unconfirmed', []))} "
         f"orders_submitted={len(life.get('submitted', []))} "
         f"orders_errors={len(life.get('errors', []))}"
     )
