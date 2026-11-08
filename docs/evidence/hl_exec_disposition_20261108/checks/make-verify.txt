@@ -1,0 +1,2006 @@
+Using CPython 3.14.7
+Creating virtual environment at: /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv
+Downloading uvloop (4.1MiB)
+Downloading cryptography (4.5MiB)
+Downloading pdfminer-six (6.3MiB)
+Downloading playwright (46.0MiB)
+Downloading psycopg-binary (5.0MiB)
+Downloading numpy (15.9MiB)
+Downloading lxml (5.0MiB)
+Downloading pandas (11.8MiB)
+Downloading sqlalchemy (3.2MiB)
+Downloading pydantic-core (2.0MiB)
+Downloading ruff (9.8MiB)
+Downloading curl-cffi (12.9MiB)
+Downloading mypy (14.0MiB)
+ Downloaded pydantic-core
+ Downloaded sqlalchemy
+ Downloaded uvloop
+ Downloaded psycopg-binary
+ Downloaded cryptography
+ Downloaded lxml
+ Downloaded pdfminer-six
+ Downloaded ruff
+ Downloaded curl-cffi
+ Downloaded numpy
+ Downloaded playwright
+ Downloaded pandas
+ Downloaded mypy
+Prepared 79 packages in 14.77s
+Installed 87 packages in 216ms
+ + annotated-doc==0.0.5
+ + annotated-types==0.8.0
+ + anyio==4.15.1
+ + beautifulsoup4==4.15.0
+ + cachetools==6.2.6
+ + certifi==2026.7.22
+ + cffi==2.1.1
+ + charset-normalizer==3.5.1
+ + click==8.5.0
+ + coverage==7.16.1
+ + cryptography==50.0.1
+ + curl-cffi==0.16.3
+ + et-xmlfile==2.0.0
+ + fastapi==0.141.1
+ + greenlet==3.5.6
+ + h11==0.16.0
+ + httpcore==1.0.9
+ + httpcore2==2.13.0
+ + httptools==0.8.0
+ + httpx==0.28.1
+ + httpx2==2.13.0
+ + idna==3.20
+ + iniconfig==2.3.0
+ + jinja2==3.1.6
+ + librt==0.15.0
+ + lxml==6.1.3
+ + markdown-it-py==4.2.0
+ + markupsafe==3.0.3
+ + mdurl==0.1.2
+ + multitasking==0.0.13
+ + mypy==1.20.2
+ + mypy-extensions==1.1.0
+ + numpy==2.5.3
+ + openpyxl==3.1.5
+ + orjson==3.12.0
+ + packaging==26.3
+ + pandas==2.3.3
+ + pandas-stubs==3.0.5.260914
+ + pandas-ta-classic==0.8.32
+ + pathspec==1.1.1
+ + pdfminer-six==20260107
+ + peewee==4.5.1
+ + platformdirs==4.11.12
+ + playwright==1.63.0
+ + pluggy==1.6.0
+ + protobuf==7.36.2
+ + psycopg==3.3.6
+ + psycopg-binary==3.3.6
+ + pycparser==3.0
+ + pydantic==2.13.5
+ + pydantic-core==2.46.5
+ + pydantic-settings==2.15.0
+ + pyee==13.0.1
+ + pygments==2.21.0
+ + pytest==8.4.2
+ + pytest-base-url==2.1.0
+ + pytest-cov==6.3.0
+ + pytest-httpx==0.35.0
+ + pytest-playwright==0.9.0
+ + python-dateutil==2.9.0.post0
+ + python-dotenv==1.2.3
+ + python-multipart==0.0.32
+ + python-slugify==8.0.4
+ + pytz==2026.3.post1
+ + pyyaml==6.0.3
+ + requests==2.34.2
+ + rich==14.3.4
+ + ruff==0.16.8
+ + shellingham==1.5.4
+ + six==1.17.0
+ + soupsieve==2.9.2
+ + sqlalchemy==2.0.54
+ + starlette==1.6.0
+ + tenacity==9.1.4
+ + text-unidecode==1.3
+ + truststore==0.10.4
+ + typer==0.27.2
+ + types-cachetools==7.0.0.20260713
+ + typing-extensions==4.16.0
+ + typing-inspection==0.4.4
+ + tzdata==2026.4
+ + urllib3==2.8.0
+ + uvicorn==0.53.0
+ + uvloop==0.22.1
+ + watchfiles==1/home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/bin/ruff check src tests
+All checks passed!
+/home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/bin/ruff format --check --diff src tests
+/home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/bin/mypy src/yowayowa
+.3.0
+ + websockets==17.1
+ + yfinance==1.7.0
+482 files already formatted
+Success: no issues found in 259 source files
+/home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/bin/pytest --cov=yowayowa --cov-report=term-missing
+................................................................x....... [  2%]
+........................................................................ [  4%]
+........................................................................ [  6%]
+........................................................................ [  8%]
+...............FF....................................................... [ 10%]
+.....ssssss............................................................. [ 12%]
+...........................ss........................................... [ 14%]
+..............................................F.FFFF.................... [ 16%]
+................ss...................................................... [ 18%]
+........................................................................ [ 20%]
+........................................................................ [ 22%]
+...................F..F................................................. [ 24%]
+........................................................................ [ 26%]
+........................................................................ [ 28%]
+........................................................................ [ 30%]
+........................................................................ [ 32%]
+........................................................................ [ 34%]
+........................................................................ [ 36%]
+........................................................................ [ 38%]
+........................................................................ [ 40%]
+........................................................................ [ 42%]
+........................................................................ [ 44%]
+........................................................................ [ 46%]
+........................................................................ [ 48%]
+........................................................................ [ 50%]
+.......................................s................................ [ 52%]
+........................................................................ [ 54%]
+..............s........................................................s [ 56%]
+..................................................................ss.... [ 58%]
+........................................................................ [ 60%]
+........................................................................ [ 62%]
+........................................................................ [ 64%]
+........................................................................ [ 66%]
+........................................................................ [ 68%]
+........................................................................ [ 70%]
+........................................................................ [ 72%]
+........................................................................ [ 74%]
+........................................................................ [ 76%]
+........................................................................ [ 78%]
+........................................................................ [ 80%]
+........................................................................ [ 82%]
+........................................................................ [ 84%]
+........................................................................ [ 86%]
+........................................................................ [ 88%]
+........................................................................ [ 90%]
+........................................................................ [ 92%]
+........................................................................ [ 94%]
+........................................................................ [ 96%]
+........................................................................ [ 98%]
+.......................................                                  [100%]
+=================================== FAILURES ===================================
+_ test_financial_inputs_survive_model_and_store_and_generate_trades[value_fundamental-net_cash_ratio] _
+
+tmp_path = PosixPath('/home/good-light/vps-work/sessions/t_f840d5bc/tmp/pytest-of-good-light/pytest-0/test_financial_inputs_survive_0')
+signal = 'value_fundamental', cash_key = 'net_cash_ratio'
+
+    @pytest.mark.parametrize(
+        "signal,cash_key",
+        [("value_fundamental", "net_cash_ratio"), ("kiyohara_value", "kiyohara_net_cash_ratio")],
+    )
+    def test_financial_inputs_survive_model_and_store_and_generate_trades(
+        tmp_path: Path,
+        signal: BacktestSignal,
+        cash_key: str,
+    ) -> None:
+        histories = _histories()
+        store = StockOhlcvStore(tmp_path)
+        restored = {}
+        for symbol, rows in histories.items():
+            for row in rows:
+                row.update(
+                    disclosure_date="2024-12-31",
+                    pbr=1,
+                    per=10,
+                    net_cash_ratio=0.2,
+                    kiyohara_net_cash_ratio=0.3,
+                )
+            records = [StockOhlcvRecord.model_validate(row) for row in rows]
+            assert store.append(symbol, records) == len(rows)
+            assert store.append(symbol, records) == 0
+            restored[symbol] = store.read(symbol, provider="alpaca", limit=1000)
+            assert restored[symbol][0][cash_key] == rows[-1][cash_key]
+            assert restored[symbol][0]["disclosure_date"] == "2024-12-31"
+        strategy = _strategy(signal)
+        request = _request(date(2025, 1, 2))
+        raw = run_backtest(request, strategy, histories)
+        persisted = run_backtest(request, strategy, restored)
+        assert persisted.trades
+        assert persisted.trades == raw.trades
+        assert persisted.metrics == raw.metrics
+        assert persisted.equity_curve == raw.equity_curve
+>       assert persisted.warnings == []
+E       AssertionError: assert ['split calen...not adjusted'] == []
+E         
+E         Left contains one more item: 'split calendar unavailable: file not found at /home/good-light/vps-work/sessions/t_f840d5bc/repo/data/fundamentals/pbr/split-calendar.json; splits not adjusted'
+E         Use -v to get more diff
+
+tests/test_backtest_p4_regressions.py:198: AssertionError
+_ test_financial_inputs_survive_model_and_store_and_generate_trades[kiyohara_value-kiyohara_net_cash_ratio] _
+
+tmp_path = PosixPath('/home/good-light/vps-work/sessions/t_f840d5bc/tmp/pytest-of-good-light/pytest-0/test_financial_inputs_survive_1')
+signal = 'kiyohara_value', cash_key = 'kiyohara_net_cash_ratio'
+
+    @pytest.mark.parametrize(
+        "signal,cash_key",
+        [("value_fundamental", "net_cash_ratio"), ("kiyohara_value", "kiyohara_net_cash_ratio")],
+    )
+    def test_financial_inputs_survive_model_and_store_and_generate_trades(
+        tmp_path: Path,
+        signal: BacktestSignal,
+        cash_key: str,
+    ) -> None:
+        histories = _histories()
+        store = StockOhlcvStore(tmp_path)
+        restored = {}
+        for symbol, rows in histories.items():
+            for row in rows:
+                row.update(
+                    disclosure_date="2024-12-31",
+                    pbr=1,
+                    per=10,
+                    net_cash_ratio=0.2,
+                    kiyohara_net_cash_ratio=0.3,
+                )
+            records = [StockOhlcvRecord.model_validate(row) for row in rows]
+            assert store.append(symbol, records) == len(rows)
+            assert store.append(symbol, records) == 0
+            restored[symbol] = store.read(symbol, provider="alpaca", limit=1000)
+            assert restored[symbol][0][cash_key] == rows[-1][cash_key]
+            assert restored[symbol][0]["disclosure_date"] == "2024-12-31"
+        strategy = _strategy(signal)
+        request = _request(date(2025, 1, 2))
+        raw = run_backtest(request, strategy, histories)
+        persisted = run_backtest(request, strategy, restored)
+        assert persisted.trades
+        assert persisted.trades == raw.trades
+        assert persisted.metrics == raw.metrics
+        assert persisted.equity_curve == raw.equity_curve
+>       assert persisted.warnings == []
+E       AssertionError: assert ['split calen...not adjusted'] == []
+E         
+E         Left contains one more item: 'split calendar unavailable: file not found at /home/good-light/vps-work/sessions/t_f840d5bc/repo/data/fundamentals/pbr/split-calendar.json; splits not adjusted'
+E         Use -v to get more diff
+
+tests/test_backtest_p4_regressions.py:198: AssertionError
+______________ test_kill_switch_liquidation_and_halt_integration _______________
+
+tmp_path = PosixPath('/home/good-light/vps-work/sessions/t_f840d5bc/tmp/pytest-of-good-light/pytest-0/test_kill_switch_liquidation_a0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3ed430dcc0>
+
+    def test_kill_switch_liquidation_and_halt_integration(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify that when kill switch triggers, runner halts and calls close_all_positions."""
+        from scripts.paper_c2 import c2_runner
+    
+        state_file = tmp_path / "state.json"
+        mtm_file = tmp_path / "mtm_history.jsonl"
+        monkeypatch.setattr(c2_runner, "STATE_FILE", state_file)
+        monkeypatch.setattr(c2_runner, "MTM_FILE", mtm_file)
+        # run_daily_cycle also writes attribution/orders via module-level constants that are
+        # bound to the live data/paper_c2 dir at import time; redirect them or the test
+        # overwrites production reports.
+        monkeypatch.setattr(c2_runner, "ATTRIBUTION_JSON", tmp_path / "attribution_summary.json")
+        monkeypatch.setattr(c2_runner, "ATTRIBUTION_MD", tmp_path / "attribution_summary.md")
+        monkeypatch.setattr(c2_runner, "ORDERS_FILE", tmp_path / "orders.jsonl")
+    
+        initial_state = {
+            "peak_equity_10": 100000.0,
+            "peak_equity_15": 100000.0,
+            "current_equity_10": 100000.0,
+            "current_equity_15": 84000.0,  # -16.0% DD -> triggers MAXDD_LIMIT_KILL
+            "alpaca_paper_equity": 84000.0,
+            "current_weights_10": {"USD": 1.0, "SPY": 0.0, "IWM": 0.0, "JNJ": 0.0, "PG": 0.0},
+            "current_weights_15": {"USD": 0.0, "SPY": 0.25, "IWM": 0.25, "JNJ": 0.25, "PG": 0.25},
+            "consecutive_api_failures": 0,
+            "last_decision_date": None,
+            "last_mtm_date": None,
+            "last_mtm_bar_date": None,
+            "kill_switch_triggered": False,
+            "kill_switch_event": None,
+            "missed_trading_days": 0,
+            "missed_rebalance_days": 0,
+            "completed_trading_days": [],
+        }
+>       c2_runner.save_state(initial_state)
+
+tests/test_c2_kill_switch.py:177: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/paper_c2/c2_runner.py:80: in save_state
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/root/current-work/yowayowa-investor/data/paper_c2')
+mode = 511, parents = True, exist_ok = True
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           os.mkdir(self, mode)
+E           PermissionError: [Errno 13] Permission denied: '/root/current-work/yowayowa-investor/data/paper_c2'
+
+../../../../.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/pathlib/__init__.py:1011: PermissionError
+_______________ test_runner_idempotency_no_duplicate_equity_drag _______________
+
+tmp_path = PosixPath('/home/good-light/vps-work/sessions/t_f840d5bc/tmp/pytest-of-good-light/pytest-0/test_runner_idempotency_no_dup0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3ed4ceac10>
+
+    def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch) -> None:
+        """Verify repeated daily cycles are idempotent and do not multiply equity."""
+        from datetime import date
+    
+        from scripts.paper_c2 import c2_runner
+    
+        state_file = tmp_path / "state.json"
+        mtm_file = tmp_path / "mtm_history.jsonl"
+        ledger_file = tmp_path / "decisions.jsonl"
+        monkeypatch.setattr(c2_runner, "STATE_FILE", state_file)
+        monkeypatch.setattr(c2_runner, "MTM_FILE", mtm_file)
+        # Redirect the attribution/orders outputs too: they are module-level constants bound
+        # to data/paper_c2 at import time, so run_daily_cycle would overwrite production files.
+        monkeypatch.setattr(c2_runner, "ATTRIBUTION_JSON", tmp_path / "attribution_summary.json")
+        monkeypatch.setattr(c2_runner, "ATTRIBUTION_MD", tmp_path / "attribution_summary.md")
+        monkeypatch.setattr(c2_runner, "ORDERS_FILE", tmp_path / "orders.jsonl")
+    
+        class MockAlpaca:
+            def get_account(self):
+                class Acct:
+                    equity = 100000.0
+    
+                return Acct()
+    
+        monkeypatch.setattr(c2_runner, "AlpacaPaperClient", MockAlpaca)
+    
+        # Initial state
+        st = c2_runner.load_state()
+        assert st["current_equity_10"] == 100000.0
+        assert st["current_equity_15"] == 100000.0
+    
+        # Provide mock 2026-11-03 bar for session 2026-11-03 run.
+        # Bootstrap history comes from the frozen synthetic fixture, never from the live
+        # data/stock-ohlcv store (it advances daily, which made the >= 22 bar premise decay).
+        from tests.c2_synthetic_history import detached_copy, synthetic_base_history
+    
+        base_hist = synthetic_base_history()
+        # Keep the default history source isolated too: a fallback to load_local_history()
+        # would otherwise read the production OHLCV store.
+        monkeypatch.setattr(c2_runner, "load_local_history", lambda: detached_copy(base_hist))
+    
+        mock_hist = {}
+        for s, bars in base_hist.items():
+            b_list = list(bars)
+            b_list.append(
+                {
+                    "t": "2026-11-03T04:00:00Z",
+                    "o": 100.0,
+                    "h": 100.0,
+                    "l": 100.0,
+                    "c": 100.0,
+                    "v": 1000.0,
+                }
+            )
+            mock_hist[s] = b_list
+    
+        # First daily run on 2026-11-03
+>       d1 = c2_runner.run_daily_cycle(
+            as_of_date=date(2026, 11, 3), ledger_path=ledger_file, override_history=mock_hist
+        )
+
+tests/test_c2_ledger.py:137: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/paper_c2/c2_runner.py:588: in run_daily_cycle
+    save_state(state)
+scripts/paper_c2/c2_runner.py:80: in save_state
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/root/current-work/yowayowa-investor/data/paper_c2')
+mode = 511, parents = True, exist_ok = True
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           os.mkdir(self, mode)
+E           PermissionError: [Errno 13] Permission denied: '/root/current-work/yowayowa-investor/data/paper_c2'
+
+../../../../.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/pathlib/__init__.py:1011: PermissionError
+____ test_weekly_cycle_skips_broker_submission_when_prior_to_decision_date _____
+
+tmp_path = PosixPath('/home/good-light/vps-work/sessions/t_f840d5bc/tmp/pytest-of-good-light/pytest-0/test_weekly_cycle_skips_broker0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3ed4d76890>
+
+    def test_weekly_cycle_skips_broker_submission_when_prior_to_decision_date(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify that weekly rebalance orders are NOT submitted prior to the decision date.
+    
+        When weekly cycle is executed prior to decision session date (e.g. executed on 2026-11-02
+        with as_of_date=2026-11-03), broker submission must be skipped (dry_run=True).
+        Otherwise, orders become active in the prior session (2026-11-02 regular market)
+        and execute 1 session too early, violating the decision schedule.
+        """
+        test_state_file = tmp_path / "state.json"
+        test_orders_file = tmp_path / "orders.jsonl"
+        test_ledger_file = tmp_path / "decisions.jsonl"
+    
+        monkeypatch.setattr("scripts.paper_c2.c2_runner.STATE_FILE", test_state_file)
+        monkeypatch.setattr("scripts.paper_c2.c2_runner.ORDERS_FILE", test_orders_file)
+        monkeypatch.setattr("scripts.paper_c2.c2_runner.DEFAULT_LEDGER_PATH", test_ledger_file)
+        monkeypatch.setattr("scripts.paper_c2.c2_runner.PHASE_START_DATE", date(2026, 11, 1))
+    
+        initial_state = {
+            "alpaca_paper_equity": 100000.0,
+            "completed_trading_days": [],
+            "consecutive_api_failures": 0,
+            "current_equity_10": 100000.0,
+            "current_equity_15": 100000.0,
+            "current_weights_10": {},
+            "current_weights_15": {},
+            "initial_paper_equity": 100000.0,
+            "kill_switch_event": None,
+            "kill_switch_triggered": False,
+            "last_decision_date": None,
+            "last_mtm_bar_date": None,
+            "last_mtm_date": None,
+            "missed_rebalance_days": 0,
+            "missed_trading_days": 0,
+            "peak_equity_10": 100000.0,
+            "peak_equity_15": 100000.0,
+        }
+>       c2_runner.save_state(initial_state)
+
+tests/test_c2_order_timing.py:53: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/paper_c2/c2_runner.py:80: in save_state
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/root/current-work/yowayowa-investor/data/paper_c2')
+mode = 511, parents = True, exist_ok = True
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           os.mkdir(self, mode)
+E           PermissionError: [Errno 13] Permission denied: '/root/current-work/yowayowa-investor/data/paper_c2'
+
+../../../../.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/pathlib/__init__.py:1011: PermissionError
+____________ test_weekly_cycle_submits_day_orders_on_decision_date _____________
+
+tmp_path = PosixPath('/home/good-light/vps-work/sessions/t_f840d5bc/tmp/pytest-of-good-light/pytest-0/test_weekly_cycle_submits_day_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3ed4d774d0>
+
+    def test_weekly_cycle_submits_day_orders_on_decision_date(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify weekly rebalance orders use time_in_force='day' on decision date."""
+        test_state_file = tmp_path / "state.json"
+        test_orders_file = tmp_path / "orders.jsonl"
+        test_ledger_file = tmp_path / "decisions.jsonl"
+    
+        monkeypatch.setattr("scripts.paper_c2.c2_runner.STATE_FILE", test_state_file)
+        monkeypatch.setattr("scripts.paper_c2.c2_runner.ORDERS_FILE", test_orders_file)
+        monkeypatch.setattr("scripts.paper_c2.c2_runner.DEFAULT_LEDGER_PATH", test_ledger_file)
+        monkeypatch.setattr("scripts.paper_c2.c2_runner.PHASE_START_DATE", date(2026, 11, 1))
+    
+        initial_state = {
+            "alpaca_paper_equity": 100000.0,
+            "completed_trading_days": [],
+            "consecutive_api_failures": 0,
+            "current_equity_10": 100000.0,
+            "current_equity_15": 100000.0,
+            "current_weights_10": {},
+            "current_weights_15": {},
+            "initial_paper_equity": 100000.0,
+            "kill_switch_event": None,
+            "kill_switch_triggered": False,
+            "last_decision_date": None,
+            "last_mtm_bar_date": None,
+            "last_mtm_date": None,
+            "missed_rebalance_days": 0,
+            "missed_trading_days": 0,
+            "peak_equity_10": 100000.0,
+            "peak_equity_15": 100000.0,
+        }
+>       c2_runner.save_state(initial_state)
+
+tests/test_c2_order_timing.py:162: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/paper_c2/c2_runner.py:80: in save_state
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/root/current-work/yowayowa-investor/data/paper_c2')
+mode = 511, parents = True, exist_ok = True
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           os.mkdir(self, mode)
+E           PermissionError: [Errno 13] Permission denied: '/root/current-work/yowayowa-investor/data/paper_c2'
+
+../../../../.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/pathlib/__init__.py:1011: PermissionError
+_ test_prior_execution_skipped_allows_full_execution_on_decision_date_without_force _
+
+tmp_path = PosixPath('/home/good-light/vps-work/sessions/t_f840d5bc/tmp/pytest-of-good-light/pytest-0/test_prior_execution_skipped_a0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3ed4d779a0>
+
+    def test_prior_execution_skipped_allows_full_execution_on_decision_date_without_force(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify early execution skips without consuming the decision,
+    
+        allowing the scheduled run on decision date to execute fully without force=True.
+        """
+        test_state_file = tmp_path / "state.json"
+        test_orders_file = tmp_path / "orders.jsonl"
+        test_ledger_file = tmp_path / "decisions.jsonl"
+    
+        monkeypatch.setattr("scripts.paper_c2.c2_runner.STATE_FILE", test_state_file)
+        monkeypatch.setattr("scripts.paper_c2.c2_runner.ORDERS_FILE", test_orders_file)
+        monkeypatch.setattr("scripts.paper_c2.c2_runner.DEFAULT_LEDGER_PATH", test_ledger_file)
+        monkeypatch.setattr("scripts.paper_c2.c2_runner.PHASE_START_DATE", date(2026, 11, 1))
+    
+        initial_state = {
+            "alpaca_paper_equity": 100000.0,
+            "completed_trading_days": [],
+            "consecutive_api_failures": 0,
+            "current_equity_10": 100000.0,
+            "current_equity_15": 100000.0,
+            "current_weights_10": {},
+            "current_weights_15": {},
+            "initial_paper_equity": 100000.0,
+            "kill_switch_event": None,
+            "kill_switch_triggered": False,
+            "last_decision_date": None,
+            "last_mtm_bar_date": None,
+            "last_mtm_date": None,
+            "missed_rebalance_days": 0,
+            "missed_trading_days": 0,
+            "peak_equity_10": 100000.0,
+            "peak_equity_15": 100000.0,
+        }
+>       c2_runner.save_state(initial_state)
+
+tests/test_c2_order_timing.py:269: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/paper_c2/c2_runner.py:80: in save_state
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/root/current-work/yowayowa-investor/data/paper_c2')
+mode = 511, parents = True, exist_ok = True
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           os.mkdir(self, mode)
+E           PermissionError: [Errno 13] Permission denied: '/root/current-work/yowayowa-investor/data/paper_c2'
+
+../../../../.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/pathlib/__init__.py:1011: PermissionError
+__________ test_legacy_positions_duplicates_fail_closed_and_keep_data __________
+
+tmp_path = PosixPath('/home/good-light/vps-work/sessions/t_f840d5bc/tmp/pytest-of-good-light/pytest-0/test_legacy_positions_duplicat0')
+
+    def test_legacy_positions_duplicates_fail_closed_and_keep_data(tmp_path: Path) -> None:
+        duplicate_row = "INSERT INTO positions VALUES (8, 1, '7203', 5, 1, 'JPY');\n"
+        path = _legacy_db(
+            tmp_path,
+            _positions_legacy_script(unique=False, version=False, extra=duplicate_row),
+        )
+    
+>       with pytest.raises(RuntimeError) as error:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'RuntimeError'>
+
+tests/test_db_units.py:380: Failed
+------------------------------ Captured log call -------------------------------
+ERROR    yowayowa.db:db.py:587 positions_unique_constraint_migration_skipped reason=existing duplicates found: (portfolio_id=1, symbol='7203', count=2)
+_________ test_non_sqlite_positions_branch_is_not_exercised_by_sqlite __________
+
+tmp_path = PosixPath('/home/good-light/vps-work/sessions/t_f840d5bc/tmp/pytest-of-good-light/pytest-0/test_non_sqlite_positions_bran0')
+
+    def test_non_sqlite_positions_branch_is_not_exercised_by_sqlite(tmp_path: Path) -> None:
+        """The raw ALTER ... ADD CONSTRAINT branch is a Postgres-only path.
+    
+        It is listed here so the coverage report is honest: on SQLite that
+        statement is a syntax error. Only the rebuild path above is real for the
+        production backend.
+        """
+    
+        path = _legacy_db(tmp_path, _positions_legacy_script(unique=False, version=True))
+        engine = create_engine(f"sqlite:///{path}")
+        try:
+            engine.dialect.name = "postgresql"
+>           with pytest.raises(OperationalError):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           Failed: DID NOT RAISE <class 'sqlalchemy.exc.OperationalError'>
+
+tests/test_db_units.py:446: Failed
+------------------------------ Captured log call -------------------------------
+ERROR    yowayowa.db:db.py:587 positions_unique_constraint_migration_skipped reason=constraint application failed: OperationalError
+=============================== warnings summary ===============================
+../verify-venv/lib/python3.14/site-packages/starlette/testclient.py:53
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+tests/test_credit_margin.py::test_api_personal_mode_serves_three_paths
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/type_api.py:975: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ed99367a0>
+    def _dialect_info(self, dialect: Dialect) -> _TypeMemoDict:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_credit_margin.py::test_cli_show_roundtrip
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/typing.py:433: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecd1c8e50>
+    def _eval_type(t, globalns, localns, type_params=_sentinel, *, recursive_guard=frozenset(),
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_requires_token
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_config.py:93: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf47ea70>
+    def __init__(self, config: ConfigDict | dict[str, Any] | type[Any] | None, *, check: bool = True):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_previews_without_live_arm
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/asyncio/base_events.py:818: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf47e5c0>
+    def call_soon(self, callback, *args, context=None):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_submits_and_audits_armed_order
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py:2766: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf47e3e0>
+    def __init__(self) -> None:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_submits_and_audits_armed_order
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py:2766: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf4ab970>
+    def __init__(self) -> None:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_submits_and_audits_armed_order
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py:2766: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf4aaf20>
+    def __init__(self) -> None:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_submits_and_audits_armed_order
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py:2766: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf4aac50>
+    def __init__(self) -> None:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_submits_and_audits_armed_order
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py:2766: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf47e020>
+    def __init__(self) -> None:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_submits_and_audits_armed_order
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py:2766: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf4aa980>
+    def __init__(self) -> None:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf541f30>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf5433d0>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf543100>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf540d60>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf540c70>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf540e50>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf4a87c0>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf4a89a0>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf4ab1f0>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf541a80>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf540220>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf5417b0>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf541e40>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf540310>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf541c60>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf4a8d60>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_app.py::test_operator_bridge_cancels_without_live_order_arm_and_is_idempotent
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/inspect.py:3037: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf541b70>
+    params = OrderedDict((param.name, param) for param in parameters)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2044f0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2045e0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2046d0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2048b0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf5431f0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf5422f0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf5414e0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf5415d0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf543880>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf542b60>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf542f20>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf543d30>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf542890>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf5413f0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf542e30>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf543b50>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf543e20>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf542c50>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf540130>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf5427a0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf204040>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf204130>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf204220>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf204310>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf204400>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2047c0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2049a0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf543f10>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf204a90>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf204b80>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf204c70>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf204d60>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf204e50>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf204f40>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf205030>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf205120>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf205210>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf205300>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2053f0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2054e0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2055d0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2056c0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2057b0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2058a0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf205a80>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf206020>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf205e40>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf205d50>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf205f30>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf205b70>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf205c60>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf206110>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf206200>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2062f0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_dispatch_single_use_claim_across_real_processes
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/multiprocessing/util.py:439: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2063e0>
+    class ForkAwareThreadLock(object):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24c130>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24c220>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24c310>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf2076a0>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf207e20>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24c400>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24c4f0>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24c5e0>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24c6d0>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24c7c0>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24c8b0>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24c9a0>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24ca90>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/annotationlib.py:1067: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24ce50>
+    if hasattr(unwrap, "__wrapped__"):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24f790>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24f880>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24f970>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1a9030>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1a9120>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1a9210>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1a9300>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1a93f0>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1a94e0>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24fa60>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24fe20>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24e020>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-False]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/fastapi/routing.py:961: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24df30>
+    def _populate_api_route_state(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_config.py:93: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24f2e0>
+    def __init__(self, config: ConfigDict | dict[str, Any] | type[Any] | None, *, check: bool = True):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_config.py:93: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24de40>
+    def __init__(self, config: ConfigDict | dict[str, Any] | type[Any] | None, *, check: bool = True):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_config.py:93: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf24e2f0>
+    def __init__(self, config: ConfigDict | dict[str, Any] | type[Any] | None, *, check: bool = True):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1ab6a0>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1ab790>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1ab880>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf18cf40>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf18d030>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf18d120>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf18d210>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf18d300>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf18d3f0>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1ab970>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1abd30>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1a8d60>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[False-True]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/starlette/requests.py:217: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1a8b80>
+    def __init__(self, scope: Scope, receive: Receive = empty_receive, send: Send = empty_send):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[True-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/functools.py:35: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1a86d0>
+    def update_wrapper(wrapper,
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[True-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/functools.py:35: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1a95d0>
+    def update_wrapper(wrapper,
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[True-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/functools.py:35: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf18f4c0>
+    def update_wrapper(wrapper,
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[True-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/functools.py:35: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf18f5b0>
+    def update_wrapper(wrapper,
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[True-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/functools.py:35: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf18f6a0>
+    def update_wrapper(wrapper,
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[True-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/functools.py:35: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee38d60>
+    def update_wrapper(wrapper,
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[True-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/functools.py:35: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee38e50>
+    def update_wrapper(wrapper,
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[True-False]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/functools.py:35: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee38f40>
+    def update_wrapper(wrapper,
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_dispatch.py::test_api_rollover_during_rss_id_preparation_is_fail_closed[True-True]
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/threading.py:144: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf1ab1f0>
+    return _CRLock(*args, **kwargs)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee3a890>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee3a980>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee3aa70>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6c130>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6c220>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6c310>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6c400>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6c4f0>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6c5e0>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee3ab60>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee3b880>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee39300>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee39990>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee3bb50>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[book]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_known_annotated_metadata.py:107: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf18fb50>
+    def expand_grouped_metadata(annotations: Iterable[Any]) -> Iterable[Any]:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[macro]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_schema_generation_shared.py:72: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6c040>
+    def __init__(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[macro]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_schema_generation_shared.py:72: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6c8b0>
+    def __init__(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[macro]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_schema_generation_shared.py:72: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6c7c0>
+    def __init__(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[macro]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_schema_generation_shared.py:72: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6cb80>
+    def __init__(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[macro]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_schema_generation_shared.py:72: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6d210>
+    def __init__(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[macro]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_schema_generation_shared.py:72: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee393f0>
+    def __init__(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[macro]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_schema_generation_shared.py:72: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee39a80>
+    def __init__(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_operator_bridge_excel_dispatch.py::test_excel_preparation_rollover_is_checked_before_com_invocation[macro]
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_schema_generation_shared.py:72: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee3a3e0>
+    def __init__(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6e5c0>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6e6b0>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6e7a0>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6e890>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6e980>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee3a4d0>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee3b970>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee3a6b0>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6cf40>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6dc60>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6cc70>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6d120>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6c9a0>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6de40>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6e4d0>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6ec50>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6ed40>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6ee30>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6ef20>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_order_inquiry.py::test_08_api_list_orders_200_and_order_status_200_404
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/sqlalchemy/sql/compiler.py:7236: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecee6f010>
+    text += "(%s)" % ", ".join(
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_orderbook.py::test_orderbook_cli_commands
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/typing.py:433: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ecf18f790>
+    def _eval_type(t, globalns, localns, type_params=_sentinel, *, recursive_guard=frozenset(),
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_paperloop.py::test_milestone_judgment_fires_once_at_deadline
+  /home/good-light/.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/json/decoder.py:361: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ec72f27a0>
+    obj, end = self.scan_once(s, idx)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_rakuten_ms2_rss_quantity.py::test_operator_bridge_returns_null_for_unknown_quantities
+  /home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/lib/python3.14/site-packages/pydantic/_internal/_generate_schema.py:997: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ea548f880>
+    args = tuple(self._resolve_forward_ref(a) if isinstance(a, ForwardRef) else a for a in args)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_screening_pipeline.py::test_cli_screening_run_and_candidates
+  <string>:0: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x7f3ea46a0f40>
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.14.7-final-0 ________________
+
+Name                                                 Stmts   Miss  Cover   Missing
+----------------------------------------------------------------------------------
+src/yowayowa/__init__.py                                 1      0   100%
+src/yowayowa/acquisition/__init__.py                     0      0   100%
+src/yowayowa/acquisition/alerts.py                     108      4    96%   89, 123-124, 129
+src/yowayowa/acquisition/auth.py                        39      0   100%
+src/yowayowa/acquisition/cache.py                       42      0   100%
+src/yowayowa/acquisition/discovery.py                  141      2    99%   123, 125
+src/yowayowa/acquisition/documents.py                  489     11    98%   227, 231, 235, 300, 648, 673, 733, 799, 860, 922-923
+src/yowayowa/acquisition/downloads.py                   71      4    94%   50, 53-54, 57
+src/yowayowa/acquisition/ir.py                         378     49    87%   119, 132-133, 201, 206, 321, 337-339, 380, 393-395, 398, 407, 413, 426, 455, 466, 469-470, 525, 529, 542-543, 562-574, 595, 702, 719, 721, 755, 791, 794-795, 797, 800-801
+src/yowayowa/acquisition/mailbox.py                    137      1    99%   287
+src/yowayowa/acquisition/models.py                      81      0   100%
+src/yowayowa/acquisition/parsers.py                     89      1    99%   64
+src/yowayowa/acquisition/registry.py                    59      5    92%   42, 49, 69-70, 99
+src/yowayowa/acquisition/service.py                    177     21    88%   55-64, 240, 246-247, 261-266, 295-297, 321-322, 349, 405, 458-459
+src/yowayowa/acquisition/snapshots.py                  181      8    96%   50, 91, 172, 248-249, 319, 350, 354
+src/yowayowa/acquisition/transport.py                   74      6    92%   128-129, 134, 181, 210-211
+src/yowayowa/ai_network_policy.py                       12      1    92%   34
+src/yowayowa/api/__init__.py                             0      0   100%
+src/yowayowa/api/ai_integration_routes.py               78     15    81%   220, 223-226, 231, 255-256, 262-268, 275, 279, 283
+src/yowayowa/api/ai_routes.py                           98     60    39%   39-42, 50, 66-68, 85-98, 108, 118, 126-160, 169-187, 195-205, 214-220
+src/yowayowa/api/app.py                                300     14    95%   257, 367-369, 380-381, 385-392
+src/yowayowa/api/backtest_routes.py                     47      5    89%   26, 44-45, 78-79
+src/yowayowa/api/broker_execution_routes.py            125     10    92%   138, 140, 147-148, 169-170, 218, 294-295, 317
+src/yowayowa/api/broker_read_routes.py                  46      4    91%   73, 86, 116, 133
+src/yowayowa/api/calendar_routes.py                     83     30    64%   48, 50, 52, 60, 75-83, 98-101, 111-112, 131-132, 141-149
+src/yowayowa/api/chart_routes.py                        10      1    90%   15
+src/yowayowa/api/credit_routes.py                       55      1    98%   85
+src/yowayowa/api/crypto_routes.py                       55     10    82%   103-115
+src/yowayowa/api/deps.py                               136     19    86%   193-194, 215, 235, 262-268, 285-303, 354-356, 364-366
+src/yowayowa/api/edinet_routes.py                       69     39    43%   32-51, 57, 72-84, 98-110, 120-123, 128-131, 141-144
+src/yowayowa/api/edinet_ux_routes.py                    26      5    81%   47, 58-59, 68-69
+src/yowayowa/api/fundamentals_routes.py                167     63    62%   71-76, 86-88, 99, 114-120, 125-137, 142-154, 166-167, 203-224, 260-263, 278-279, 293, 310-311
+src/yowayowa/api/fx_routes.py                           59     11    81%   87-89, 106-108, 122-126
+src/yowayowa/api/hypothesis_routes.py                   26      3    88%   20, 41-42
+src/yowayowa/api/import_routes.py                       46     13    72%   29, 32-33, 38, 50, 62-67, 73, 80-83
+src/yowayowa/api/institutional_routes.py                24      7    71%   32-38
+src/yowayowa/api/ir_routes.py                           41      0   100%
+src/yowayowa/api/jpx_public_routes.py                   92     62    33%   45-48, 58-72, 81-92, 100-109, 117-126, 134-145, 153-162, 175-189
+src/yowayowa/api/jpx_routes.py                          70     17    76%   79, 104-129
+src/yowayowa/api/license_routes.py                      10      0   100%
+src/yowayowa/api/macro_routes.py                       119     63    47%   49-50, 61-76, 86-87, 108, 111-117, 132, 135-142, 152-166, 179-199
+src/yowayowa/api/orderbook_routes.py                    38      4    89%   52, 66, 83, 100
+src/yowayowa/api/portfolio_sizing_routes.py             41      6    85%   67, 70-74
+src/yowayowa/api/private_routes.py                      51      0   100%
+src/yowayowa/api/private_source_routes.py               37      0   100%
+src/yowayowa/api/rate_routes.py                         18      9    50%   20-28
+src/yowayowa/api/research_llm_routes.py                 67     10    85%   88-92, 112-116
+src/yowayowa/api/research_routes.py                    162     81    50%   87-96, 107-108, 121, 133-141, 152-160, 165-173, 182-190, 195-198, 206-214, 230-234, 244-253, 268-288
+src/yowayowa/api/risk_routes.py                         27      7    74%   46-52
+src/yowayowa/api/routes.py                             341     65    81%   102, 171-177, 182-193, 274, 294, 302-308, 375-377, 413-416, 429, 447, 528, 547-560, 572-585
+src/yowayowa/api/screening_routes.py                    41      0   100%
+src/yowayowa/api/sector_routes.py                       17      7    59%   19-25
+src/yowayowa/api/settings_routes.py                      8      0   100%
+src/yowayowa/api/stock_routes.py                        56      2    96%   86-87
+src/yowayowa/api/web_asset_routes.py                    25      2    92%   24-25
+src/yowayowa/backtest_cli.py                            43     16    63%   26-39, 61, 79-81, 85-91, 93, 95
+src/yowayowa/backtest_models.py                        116      2    98%   59, 96
+src/yowayowa/bea_models.py                              30      0   100%
+src/yowayowa/bls_models.py                              27      0   100%
+src/yowayowa/broker/__init__.py                          0      0   100%
+src/yowayowa/broker/execution/__init__.py                7      0   100%
+src/yowayowa/broker/execution/audit.py                 177     22    88%   90, 135, 177, 203, 214, 216, 239-241, 246, 256, 272-283, 288
+src/yowayowa/broker/execution/interlocks.py             35      0   100%
+src/yowayowa/broker/execution/models.py                 40      1    98%   47
+src/yowayowa/broker/execution/service.py               143      1    99%   137
+src/yowayowa/broker/execution/transport.py             215     14    93%   170-171, 178-179, 182, 435-436, 473, 528-531, 539-540, 543-545
+src/yowayowa/broker/session_notify.py                   82     10    88%   80, 83, 117-118, 121, 145-147, 158, 162-165
+src/yowayowa/broker_execution_cli.py                   175     59    66%   83-108, 135-136, 152-155, 191, 197-219, 235-254, 310-319, 330, 333, 336, 339, 391, 393, 449-458, 464
+src/yowayowa/broker_models.py                          126      1    99%   71
+src/yowayowa/broker_read_cli.py                         86     11    87%   69-74, 191-198
+src/yowayowa/calendar_models.py                         25      0   100%
+src/yowayowa/calibration_cli.py                         81      5    94%   22-23, 81, 160, 177
+src/yowayowa/chart_cli.py                               49     37    24%   18-34, 38-54, 74-98
+src/yowayowa/chart_models.py                            61      5    92%   26, 28, 30, 51, 55
+src/yowayowa/cli.py                                    288    160    44%   30, 39-51, 60-66, 77-84, 96-105, 113-127, 136-162, 172-182, 194-209, 217-218, 227-228, 238-244, 254-262, 270-271, 281-282, 341-348, 362-363, 376-397, 407-422, 433-465, 475-478, 486-487, 498-499, 515-517, 525-527, 617-631, 641-662, 671-675, 680-686
+src/yowayowa/cli_entry.py                              183     80    56%   92-123, 135-163, 176-205, 217-283
+src/yowayowa/cli_shim.py                                41      3    93%   10-12, 68
+src/yowayowa/config.py                                  98      7    93%   12-16, 127, 135
+src/yowayowa/credit_margin_cli.py                       58      8    86%   73-74, 78-83
+src/yowayowa/credit_margin_models.py                    41      0   100%
+src/yowayowa/crypto_acquisition.py                      90      7    92%   34-35, 88, 124, 162-163, 184
+src/yowayowa/crypto_cli.py                              60     15    75%   35, 39-43, 60-61, 64-66, 75, 92-93, 100-101
+src/yowayowa/crypto_models.py                           44      0   100%
+src/yowayowa/cusum_watch.py                            234     29    88%   177, 179, 341-344, 355-358, 426, 430, 439-440, 442, 454, 535-546, 550
+src/yowayowa/db.py                                     355      2    99%   554-555
+src/yowayowa/demo_loop.py                                4      4     0%   7-45
+src/yowayowa/domain.py                                 307      0   100%
+src/yowayowa/edinet_cli.py                              92     75    18%   23-50, 63-102, 115-142, 156-189, 200-223
+src/yowayowa/edinet_index_db.py                         30      0   100%
+src/yowayowa/edinet_models.py                           97      0   100%
+src/yowayowa/estat_models.py                            63      0   100%
+src/yowayowa/event_cli.py                               60     41    32%   13-20, 32-46, 54-69, 78-79, 87-94, 103-122, 131-132
+src/yowayowa/fx_models.py                              111      6    95%   140, 163, 261, 275-278
+src/yowayowa/hl_exec/__init__.py                         0      0   100%
+src/yowayowa/hl_exec/client.py                         144     28    81%   66-74, 94, 124, 129, 156, 172, 242, 250-265, 271, 275, 278, 310, 315-318
+src/yowayowa/hl_exec/journal.py                        133     14    89%   50, 115, 118-119, 145, 149-150, 160, 162, 169-170, 223, 235, 237
+src/yowayowa/hl_exec/killswitch.py                      88      3    97%   96, 120, 173
+src/yowayowa/hl_exec/orders.py                         276     42    85%   61-62, 64, 70, 89, 117-118, 120, 127, 137, 152-153, 155, 158, 204, 207, 214, 218, 222, 224, 226-228, 252, 254, 308, 310, 338-339, 469, 476, 478, 487, 568, 590, 595, 599, 617, 624, 653, 657, 659, 679
+src/yowayowa/hl_exec/risk.py                            79      3    96%   102, 213, 229
+src/yowayowa/hypothesis_cli.py                          68      7    90%   20-21, 61, 91-99
+src/yowayowa/hypothesis_models.py                       55      4    93%   26, 29, 31, 63
+src/yowayowa/institutional_cli.py                       25     17    32%   20-74
+src/yowayowa/institutional_models.py                    50      0   100%
+src/yowayowa/ir_cli.py                                  63     46    27%   19-30, 43-52, 62-89, 100-124, 135-153
+src/yowayowa/jpx_margin_cli.py                          36      0   100%
+src/yowayowa/jpx_models.py                              56      0   100%
+src/yowayowa/jpx_public_cli.py                         106     74    30%   55, 59-62, 66-69, 73-74, 84-98, 112-135, 150-185, 192-198, 205-211, 218-224, 231-240
+src/yowayowa/jpx_public_models.py                      105      0   100%
+src/yowayowa/license_cli.py                             15      7    53%   17-31
+src/yowayowa/license_models.py                          30      0   100%
+src/yowayowa/loop_cli.py                                55     55     0%   17-106
+src/yowayowa/macro_cli.py                              101     80    21%   17-23, 34-50, 58-70, 74-82, 94-115, 126-146, 157-185, 203-230
+src/yowayowa/news_models.py                             51      0   100%
+src/yowayowa/ohlcv_coverage.py                          64      4    94%   48, 55, 73, 75
+src/yowayowa/ohlcv_coverage_cli.py                      34     24    29%   17-22, 33-116
+src/yowayowa/openapi_baseline.py                       103     10    90%   61-65, 90, 92, 102, 105, 168
+src/yowayowa/operator_bridge/__init__.py                 0      0   100%
+src/yowayowa/operator_bridge/app.py                    125     33    74%   35-38, 56, 75, 82, 112, 119, 131, 150-157, 175-177, 191-198, 222, 231, 247-254, 270, 286, 298-305
+src/yowayowa/operator_bridge/excel.py                  126     96    24%   41-47, 50-81, 86-96, 100-103, 106, 113-114, 117-120, 125-137, 140-168
+src/yowayowa/operator_bridge/rakuten.py                 59     15    75%   117, 122, 126-128, 131-137, 175-177
+src/yowayowa/operator_bridge/rakuten_web.py            519     39    92%   279, 285, 317, 319, 321, 549, 577, 579, 605, 648, 707-708, 750, 760, 845-846, 854, 859, 906, 924, 942, 970, 978, 990, 992, 1002, 1026, 1032, 1037, 1042-1055, 1201
+src/yowayowa/operator_bridge/state.py                  268     56    79%   84-85, 90, 99, 117, 127-129, 143, 176, 186, 188, 197, 286, 288, 290, 297, 379-380, 431, 451-452, 475-476, 479-480, 498-500, 557-608
+src/yowayowa/operator_bridge/web_session.py             83     41    51%   19, 62, 66-91, 94-101, 106-109, 112-114, 127-129, 141-142, 145
+src/yowayowa/orderbook_cli.py                          103      3    97%   136-137, 170
+src/yowayowa/orderbook_models.py                        56      0   100%
+src/yowayowa/paperloop.py                             1398    217    84%   316-330, 343, 355, 395, 431, 444, 521, 563-564, 566, 571-572, 574, 576, 584-599, 609-627, 641-643, 655-656, 675-676, 678, 718-719, 745, 764, 816, 835, 875-879, 907, 911-923, 926, 1009, 1054, 1103, 1154, 1171-1186, 1219, 1333, 1337, 1425-1426, 1604, 1614, 1648, 1696, 2038, 2044, 2051, 2185, 2192-2193, 2247, 2249, 2253-2282, 2406, 2424, 2547-2548, 2602, 2836-2843, 2968, 2981, 3063, 3066-3067, 3196, 3198, 3331, 3334-3335, 3461, 3539, 3608-3609, 3630-3696, 3702-3758, 3762
+src/yowayowa/paperloop_guard.py                         30      0   100%
+src/yowayowa/paperloop_panel.py                        310     13    96%   53-60, 69, 84, 309, 460, 605, 611
+src/yowayowa/paperloop_verify.py                       323     24    93%   75, 78-79, 86, 161-162, 178-182, 193, 202, 222, 238, 280, 348-349, 357-361, 450, 491, 613-614, 624
+src/yowayowa/preset_cli.py                             172     72    58%   30-33, 37-41, 72, 76, 103-105, 114-120, 129-131, 142-146, 158-164, 173-175, 183-192, 204-205, 235, 249-297, 324-325
+src/yowayowa/preset_models.py                           23      1    96%   21
+src/yowayowa/private_cli.py                             73      2    97%   54, 99
+src/yowayowa/private_connectors.py                      27      0   100%
+src/yowayowa/private_source_cli.py                      48      3    94%   82-83, 102
+src/yowayowa/providers/__init__.py                       0      0   100%
+src/yowayowa/providers/alpaca.py                       134     11    92%   94-95, 218, 246-247, 253, 266, 270-273, 276
+src/yowayowa/providers/alpha_vantage.py                 86      6    93%   53, 56, 59, 62-63, 113
+src/yowayowa/providers/base.py                          25      1    96%   51
+src/yowayowa/providers/bea.py                          118      0   100%
+src/yowayowa/providers/binance.py                       97     14    86%   104, 141, 146-147, 149-151, 154, 166, 180, 185, 191-192, 205
+src/yowayowa/providers/bls.py                          107      0   100%
+src/yowayowa/providers/coingecko.py                     68      7    90%   101, 104-105, 116-117, 130, 140
+src/yowayowa/providers/credit_margin_kabutan.py         74      0   100%
+src/yowayowa/providers/credit_margin_yahoo.py           77      2    97%   127-128
+src/yowayowa/providers/edinet.py                       110     12    89%   48, 135, 137, 139, 141, 155-156, 159, 161-162, 178, 180
+src/yowayowa/providers/estat.py                        240      0   100%
+src/yowayowa/providers/frankfurter.py                  125     13    90%   253-255, 257-258, 262, 280, 283, 286, 305-306, 314-315
+src/yowayowa/providers/fred.py                          64      0   100%
+src/yowayowa/providers/fundamentals.py                  25      0   100%
+src/yowayowa/providers/jpx_margin.py                    99     10    90%   126, 138, 162, 184, 192, 194, 203-204, 211, 279
+src/yowayowa/providers/jpx_public_balance.py           222     31    86%   56, 80, 82, 84, 98, 111-113, 115, 118, 120, 136-137, 148-150, 166, 170-171, 179, 194, 205, 224-225, 227, 256, 258, 305, 307, 382, 388
+src/yowayowa/providers/jpx_public_common.py            109     31    72%   35, 47, 53-54, 94-116, 124, 128, 145, 148-149, 161-162, 169, 171, 175-176, 187-189, 192-193
+src/yowayowa/providers/jpx_public_flow.py               66     12    82%   47, 49, 66-67, 72, 79-81, 85, 92, 127, 129
+src/yowayowa/providers/jpx_public_margin.py              5      0   100%
+src/yowayowa/providers/jpx_public_xlsx.py               97     14    86%   55, 72, 78, 83, 102, 104, 176, 198, 203, 205, 210, 212, 218, 264
+src/yowayowa/providers/ms2_rss_file.py                 115     12    90%   208, 211, 213, 216-217, 219, 228-232, 238
+src/yowayowa/providers/rakuten_ms2_rss.py              189      0   100%
+src/yowayowa/providers/registry.py                      83      2    98%   54, 128
+src/yowayowa/providers/sec.py                          137      1    99%   144
+src/yowayowa/providers/sec_13f.py                      173      0   100%
+src/yowayowa/providers/treasury.py                      67      1    99%   73
+src/yowayowa/providers/yahoo.py                        241      0   100%
+src/yowayowa/providers/yahoo_deep_research.py          160      0   100%
+src/yowayowa/providers/yahoo_fundamentals.py           279     12    96%   304, 346-347, 384-391, 428, 445, 477, 482, 498-499, 501
+src/yowayowa/providers/yahoo_research.py               145     19    87%   55, 61, 64, 158, 177, 216, 223-226, 245, 257, 263, 269-270, 275, 277-280
+src/yowayowa/providers/yahoo_risk.py                   102      0   100%
+src/yowayowa/providers/yahoo_screener.py               129      0   100%
+src/yowayowa/providers/yahoo_search.py                  31      0   100%
+src/yowayowa/providers/yahoo_sectors.py                 29      1    97%   63
+src/yowayowa/providers/yahoo_tracked_calendar.py       111     10    91%   51, 111, 133, 142, 173, 185, 188-189, 191, 195
+src/yowayowa/quote_currency.py                           5      0   100%
+src/yowayowa/rate_cli.py                                18     10    44%   18-28
+src/yowayowa/rate_models.py                             17      0   100%
+src/yowayowa/research_brief_models.py                   51      0   100%
+src/yowayowa/research_cli.py                            71     18    75%   48, 50, 79-82, 109-110, 148, 167-179
+src/yowayowa/research_models.py                         97      0   100%
+src/yowayowa/risk_models.py                             45      0   100%
+src/yowayowa/screening_cli.py                           56      2    96%   72-73
+src/yowayowa/screening_models.py                        38      0   100%
+src/yowayowa/sec_pbr.py                                160     10    94%   46-47, 131, 161, 228, 276, 288, 300, 315, 318
+src/yowayowa/services/__init__.py                        0      0   100%
+src/yowayowa/services/ai_agent.py                      799    205    74%   105, 124-126, 229, 250-265, 270, 336, 345, 353-362, 390, 397, 405-414, 438, 540-553, 565-566, 580, 583, 599, 633, 635-645, 655, 694, 1312-1314, 1342-1351, 1354-1355, 1358-1364, 1373-1376, 1379-1385, 1388-1395, 1398-1402, 1429, 1437, 1440, 1454-1455, 1523, 1567-1571, 1574-1577, 1580-1592, 1595-1597, 1600-1603, 1611, 1627-1640, 1657-1658, 1712-1713, 1724, 1740-1741, 1761, 1763, 1769-1770, 1788-1789, 1800-1805, 1850-1857, 1863, 1869, 1873, 1878-1879, 1885, 1887, 1889, 1893, 1902, 1911, 1914-1915, 1917, 1922, 1924, 1928, 1941, 1947, 1954, 1957, 2008-2010, 2015-2017, 2023, 2025, 2029-2032, 2034, 2116, 2123, 2126, 2132, 2134, 2137-2138, 2145-2154, 2182-2183, 2190, 2193-2194, 2220, 2223, 2227-2229
+src/yowayowa/services/alerts.py                        166     12    93%   187, 263, 265, 267, 287, 312, 380-383, 414, 416
+src/yowayowa/services/backtest.py                      584     33    94%   105-109, 124-128, 134, 145, 216, 223, 225, 285, 391, 485-489, 586, 607, 621, 627, 635, 641, 652, 677, 683-688, 743, 759, 807
+src/yowayowa/services/backtest_definitions.py           15      0   100%
+src/yowayowa/services/broker_execution.py               35      3    91%   64-70
+src/yowayowa/services/broker_read_service.py           121      1    99%   283
+src/yowayowa/services/calendar.py                       32      5    84%   45, 53, 56-57, 73
+src/yowayowa/services/charts.py                        137     16    88%   63, 125, 130, 134, 138-139, 143, 175, 193, 205-208, 211, 253-254
+src/yowayowa/services/codex_cli.py                     128     48    62%   46, 60, 69, 88-89, 100-101, 116, 139-152, 156-175, 189, 204-205, 207, 216, 219, 246, 260-263, 266-269, 273-274, 276
+src/yowayowa/services/comparison.py                     22      0   100%
+src/yowayowa/services/credit_margin.py                  66      4    94%   103-105, 112
+src/yowayowa/services/edinet.py                        142     22    85%   113-114, 120, 123-124, 148, 158, 166, 168, 170, 172, 174, 179, 221, 223, 225, 228-229, 255, 288, 291, 358
+src/yowayowa/services/edinet_index.py                  160      5    97%   57, 203, 225, 227, 364
+src/yowayowa/services/executions_reconciliation.py     252     42    83%   112, 114, 132-133, 135-136, 138-142, 176-178, 180-181, 192, 195-197, 207-208, 211, 221, 224-227, 257, 267, 269, 394, 398-399, 403-404, 419, 422-423, 438-440, 452-454, 457
+src/yowayowa/services/hypotheses.py                     33      4    88%   26, 55-57
+src/yowayowa/services/institutional.py                  48     15    69%   31, 91-106
+src/yowayowa/services/ir_monitor_service.py            407     27    93%   75-125, 242, 368-370, 447, 524, 615, 690, 824, 887, 890-891
+src/yowayowa/services/jp_value_quality.py              213      4    98%   222, 226, 242, 312
+src/yowayowa/services/jp_value_quality_backtest.py     348     58    83%   105-106, 219-274, 304, 314, 339-340, 398, 411, 424, 430, 453, 480, 509, 587, 592-598, 606, 643-646
+src/yowayowa/services/jpx_margin.py                     76     15    80%   78, 104-106, 150-153, 169-173, 194, 196
+src/yowayowa/services/jpx_margin_signals.py            158    102    35%   23, 48, 79, 104-186, 196-226, 236-288, 292-316, 331, 398-423, 440, 448, 450, 457, 469-472
+src/yowayowa/services/jpx_public_margin.py             290    101    65%   60, 79, 89-96, 102, 129, 147, 156, 163, 205, 298-300, 312, 329-331, 348, 365, 382, 402-488, 501-535, 598-600, 645-646, 702, 762-774, 788-828, 834-846, 850-862
+src/yowayowa/services/licensing.py                      22      0   100%
+src/yowayowa/services/macro_store.py                   113     17    85%   50-52, 57, 65, 93, 109-110, 113, 117-119, 121-122, 125, 148, 170
+src/yowayowa/services/news.py                           53      1    98%   47
+src/yowayowa/services/ohlcv_evidence.py                 68      5    93%   64, 94, 103, 141-142
+src/yowayowa/services/operations.py                     75     31    59%   42-43, 58-63, 80, 85, 88, 95-131, 138-146
+src/yowayowa/services/order_inquiry_service.py         140      9    94%   214, 217, 296-297, 310-311, 343, 350-351
+src/yowayowa/services/orderbook_service.py             245     17    93%   94, 101, 149, 306-308, 310-312, 360-361, 447-448, 454-455, 473, 475
+src/yowayowa/services/portfolio_csv.py                  28      5    82%   23, 27-28, 38, 40
+src/yowayowa/services/portfolio_sizing.py              126     26    79%   25-26, 28, 41, 48, 50, 59, 70, 74, 76, 80, 84, 93, 97, 103, 109, 132, 137, 139, 149-150, 152, 161, 163, 167, 182
+src/yowayowa/services/portfolios.py                    303     16    95%   240-241, 263, 288-289, 320-321, 365, 367, 371, 382-383, 389-390, 420-421
+src/yowayowa/services/presets.py                        56      2    96%   85, 98
+src/yowayowa/services/private_http.py                   71     13    82%   52, 58, 70, 98, 106-107, 111, 124, 139-143
+src/yowayowa/services/private_source_service.py        304     13    96%   58, 194, 230, 291-293, 494, 497, 552, 555, 558-559, 572, 575
+src/yowayowa/services/research_ask.py                  307     23    93%   122, 125-126, 128, 151-152, 179-180, 313, 348, 366, 384, 390, 394, 409, 424, 453-454, 593, 641, 657, 729, 733
+src/yowayowa/services/research_brief.py                416     44    89%   107, 122, 157-162, 173, 179, 224, 229-230, 246, 308, 327, 354-370, 567, 675, 735, 739, 745, 754, 785, 902-904, 943-946
+src/yowayowa/services/risk.py                          145     12    92%   25, 32, 35, 43, 49, 59, 70, 102-104, 198-207
+src/yowayowa/services/screening.py                     144      8    94%   70, 107, 180, 196, 295, 297-299
+src/yowayowa/services/screening_pipeline.py            269     16    94%   91, 94-95, 103, 157-158, 169-170, 358-359, 411, 618, 690-692, 720
+src/yowayowa/services/sizing_idea.py                    57      4    93%   72-73, 93-94
+src/yowayowa/services/strategy_calibration.py          218      8    96%   80, 87, 89, 369-371, 416-417
+src/yowayowa/services/strategy_edinet.py                61      9    85%   25, 37, 54, 57, 70, 86, 93, 108, 116
+src/yowayowa/services/strategy_outcomes.py              79      7    91%   38-40, 60, 75, 135-149
+src/yowayowa/services/strategy_presets.py               56      4    93%   192, 197, 214, 216
+src/yowayowa/services/strategy_priority.py              72      2    97%   35-36
+src/yowayowa/services/strategy_sec.py                   46      1    98%   12
+src/yowayowa/services/strategy_signals.py              144      6    96%   46, 56, 71, 80, 125-126
+src/yowayowa/services/strategy_snapshot_service.py      70      7    90%   50, 63, 68-69, 87, 90-91
+src/yowayowa/services/strategy_tracking.py              40      1    98%   47
+src/yowayowa/services/strategy_yahoo.py                 34      2    94%   12, 44
+src/yowayowa/services/technical_context.py              30      4    87%   34, 36, 38, 40
+src/yowayowa/services/valuation.py                      96      7    93%   19, 39, 56-57, 159, 176, 180
+src/yowayowa/services/watchlists.py                     42      0   100%
+src/yowayowa/sizing_cli.py                              14      2    86%   22-23
+src/yowayowa/sizing_models.py                           62      1    98%   27
+src/yowayowa/stock_acquisition.py                      104      8    92%   37-38, 59, 99, 136, 175-176, 213
+src/yowayowa/stock_cli.py                               70      7    90%   56, 60-63, 100, 121-122
+src/yowayowa/stock_models.py                            50      2    96%   99, 107
+src/yowayowa/strategy_models.py                        190      0   100%
+src/yowayowa/symbols.py                                 15      0   100%
+src/yowayowa/technical.py                              124      3    98%   88, 119, 122
+src/yowayowa/trading_sessions.py                        71      1    99%   88
+src/yowayowa/vercel_app.py                               5      0   100%
+src/yowayowa/vercel_observability.py                   110     16    85%   52-67
+src/yowayowa/web/__init__.py                             0      0   100%
+src/yowayowa/web/assets.py                              46      2    96%   35, 38
+src/yowayowa/web/calendar_i18n.py                       10      1    90%   49
+src/yowayowa/web/chart_i18n.py                          12      2    83%   86, 91
+src/yowayowa/web/edinet_i18n.py                         12      2    83%   176, 181
+src/yowayowa/web/expansion_i18n.py                      12      2    83%   270, 275
+src/yowayowa/web/i18n.py                                31      3    90%   526, 542, 544
+src/yowayowa/web/institutional_i18n.py                  12      2    83%   89, 94
+src/yowayowa/web/licensing_i18n.py                      12      2    83%   131, 136
+src/yowayowa/web/rate_i18n.py                           12      2    83%   56, 61
+src/yowayowa/web/risk_i18n.py                           12      2    83%   109, 114
+src/yowayowa/web/sector_i18n.py                         12      2    83%   66, 71
+src/yowayowa/web/ux_i18n.py                             12      2    83%   206, 211
+----------------------------------------------------------------------------------
+TOTAL                                                27713   3780    86%
+=========================== short test summary info ============================
+FAILED tests/test_backtest_p4_regressions.py::test_financial_inputs_survive_model_and_store_and_generate_trades[value_fundamental-net_cash_ratio]
+FAILED tests/test_backtest_p4_regressions.py::test_financial_inputs_survive_model_and_store_and_generate_trades[kiyohara_value-kiyohara_net_cash_ratio]
+FAILED tests/test_c2_kill_switch.py::test_kill_switch_liquidation_and_halt_integration
+FAILED tests/test_c2_ledger.py::test_runner_idempotency_no_duplicate_equity_drag
+FAILED tests/test_c2_order_timing.py::test_weekly_cycle_skips_broker_submission_when_prior_to_decision_date
+FAILED tests/test_c2_order_timing.py::test_weekly_cycle_submits_day_orders_on_decision_date
+FAILED tests/test_c2_order_timing.py::test_prior_execution_skipped_allows_full_execution_on_decision_date_without_force
+FAILED tests/test_db_units.py::test_legacy_positions_duplicates_fail_closed_and_keep_data
+FAILED tests/test_db_units.py::test_non_sqlite_positions_branch_is_not_exercised_by_sqlite
+9 failed, 3542 passed, 16 skipped, 1 xfailed, 182 warnings in 3448.81s (0:57:28)
+make: *** [Makefile:38: test] Error 1
+MAKE_VERIFY_EXIT=2

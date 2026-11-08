@@ -1,0 +1,1 @@
+DISABLED: t_f840d5bc rejected the unsafe S-07 forward executor. No order or dry-run ledger write was performed. See docs/HL_EXEC_DISPOSITION_20261108.md; replacement needs independent review.
