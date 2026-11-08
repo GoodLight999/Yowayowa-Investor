@@ -14,6 +14,7 @@ from yowayowa.db import (
     PortfolioRecord,
     PortfolioSnapshotRecord,
     PositionRecord,
+    require_positions_writable,
     utcnow,
 )
 from yowayowa.domain import (
@@ -157,6 +158,7 @@ def delete_portfolio(
     execution application ledger is deleted with it so a later reconcile cannot
     resurrect a deleted holding as "already applied".
     """
+    require_positions_writable(session)
     row = session.get(PortfolioRecord, portfolio_id)
     if row is None:
         raise LookupError(f"Portfolio {portfolio_id} not found")
@@ -194,6 +196,7 @@ def upsert_position(
     payload: PositionUpsert,
     expected_version: int | None = None,
 ) -> Portfolio:
+    require_positions_writable(session)
     row = session.get(PortfolioRecord, portfolio_id)
     if row is None:
         raise LookupError(f"Portfolio {portfolio_id} not found")
@@ -258,6 +261,7 @@ def bulk_upsert_positions(
     portfolio_id: int,
     payload: PositionBulkUpsert,
 ) -> Portfolio:
+    require_positions_writable(session)
     row = session.get(PortfolioRecord, portfolio_id)
     if row is None:
         raise LookupError(f"Portfolio {portfolio_id} not found")
@@ -359,6 +363,7 @@ def apply_execution_reconciliation(
     expected_versions: dict[str, int | None] | None = None,
 ) -> Portfolio:
     """Atomically upsert approved holdings and record applied fill identities."""
+    require_positions_writable(session)
     session.expire_all()
     row = session.get(PortfolioRecord, portfolio_id)
     if row is None:
@@ -447,6 +452,7 @@ def remove_position(
     symbol: str,
     expected_version: int | None = None,
 ) -> Portfolio:
+    require_positions_writable(session)
     row = session.get(PortfolioRecord, portfolio_id)
     if row is None:
         raise LookupError(f"Portfolio {portfolio_id} not found")

@@ -13,8 +13,9 @@ Covered boundaries (see ``src/yowayowa/db.py``):
 * rebuild migrations -- legacy ``positions`` (no ``version``, no composite
   unique) and legacy ``screening_candidates`` (no ``document_id``) are rebuilt
   in place, preserving rows, and become no-ops on a second run;
-* fail-closed migration -- duplicate ``(portfolio_id, symbol)`` rows abort the
-  unique-constraint migration with the offending ids and keep the data;
+* fail-closed migration -- duplicate ``(portfolio_id, symbol)`` rows block the
+  unique-constraint migration (recorded reason, rows kept): startup continues
+  serving reads while write entry points refuse until the constraint holds;
 * transaction boundaries -- commit survives across sessions, rollback discards
   pending writes, ``engine.begin()`` rolls back on exception;
 * connection reuse -- ``get_session`` keeps one engine, ``init_database``
@@ -32,6 +33,8 @@ instead of being discovered by a future caller.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import sqlite3
 import threading
 from datetime import UTC, date, datetime
@@ -59,6 +62,7 @@ from yowayowa.db import (
     PortfolioRecord,
     PortfolioSnapshotRecord,
     PositionRecord,
+    PositionsWriteUnavailableError,
     PriceAlertNotificationRecord,
     PriceAlertRecord,
     ResearchBriefRecord,
@@ -72,8 +76,11 @@ from yowayowa.db import (
     get_session,
     init_database,
     make_engine,
+    positions_unique_constraint_status,
     utcnow,
 )
+from yowayowa.domain import PositionUpsert
+from yowayowa.services.portfolios import upsert_position
 
 _NOW = datetime(2026, 10, 23, 3, 0, tzinfo=UTC)
 
@@ -370,20 +377,32 @@ def test_legacy_positions_rebuild_keeps_existing_version_values(tmp_path: Path) 
         assert session.scalars(select(PositionRecord)).one().version == 4
 
 
-def test_legacy_positions_duplicates_fail_closed_and_keep_data(tmp_path: Path) -> None:
+def test_legacy_positions_duplicates_keep_data_disable_writes_keep_reads(
+    tmp_path: Path,
+) -> None:
+    """Duplicates block the constraint but startup continues serving reads.
+
+    The ruling contract (t_3992b86c -> t_c86a1609): the migration records the
+    offending duplicates, leaves every row untouched, and the process keeps
+    starting. Write entry points refuse through ``require_positions_writable``
+    until the constraint is really applied, while reads stay available.
+    """
+
     duplicate_row = "INSERT INTO positions VALUES (8, 1, '7203', 5, 1, 'JPY');\n"
     path = _legacy_db(
         tmp_path,
         _positions_legacy_script(unique=False, version=False, extra=duplicate_row),
     )
 
-    with pytest.raises(RuntimeError) as error:
-        init_database(_settings(path))
+    init_database(_settings(path))  # startup survives the duplicates
 
-    message = str(error.value)
-    assert "existing duplicates found" in message
-    assert "portfolio_id=1" in message
-    assert "count=2" in message
+    status = positions_unique_constraint_status()
+    assert status["applied"] is False
+    reason = status["reason"]
+    assert isinstance(reason, str)
+    assert "existing duplicates found" in reason
+    assert "portfolio_id=1" in reason
+    assert "count=2" in reason
 
     connection = sqlite3.connect(path)
     try:
@@ -397,6 +416,49 @@ def test_legacy_positions_duplicates_fail_closed_and_keep_data(tmp_path: Path) -
 
     assert rows == [(7,), (8,)]
     assert uniques == []
+
+    session = get_session()
+    try:
+        # Reads keep working: the duplicated rows stay visible through the ORM.
+        visible = (
+            session.execute(select(PositionRecord.id).order_by(PositionRecord.id)).scalars().all()
+        )
+        assert list(visible) == [7, 8]
+        # The write gate refuses the app engine while the constraint is absent...
+        with pytest.raises(PositionsWriteUnavailableError):
+            dbm.require_positions_writable(session)
+        # ...and the service write entry points refuse before touching any row.
+        with pytest.raises(PositionsWriteUnavailableError):
+            upsert_position(
+                session,
+                1,
+                PositionUpsert(symbol="6501", quantity=Decimal("1"), currency="JPY"),
+            )
+        still = (
+            session.execute(select(PositionRecord.id).order_by(PositionRecord.id)).scalars().all()
+        )
+        assert list(still) == [7, 8]
+    finally:
+        session.close()
+
+
+def test_positions_write_unavailable_maps_to_fixed_503_payload() -> None:
+    """The API exception handler answers with the fixed 503 JSON body."""
+
+    from typing import Any, cast
+
+    from yowayowa.api.app import positions_write_unavailable_handler
+
+    request = cast(Any, None)
+    error = PositionsWriteUnavailableError("positions unique constraint unavailable")
+    response = asyncio.run(positions_write_unavailable_handler(request, error))
+    assert response.status_code == 503
+    assert json.loads(bytes(response.body)) == {
+        "detail": {
+            "code": "positions_unique_constraint_unavailable",
+            "message": "保有情報の整合性確認が完了していないため、更新を停止しています。",
+        }
+    }
 
 
 def test_positions_migration_is_a_noop_when_the_table_is_absent(tmp_path: Path) -> None:
@@ -443,8 +505,9 @@ def test_non_sqlite_positions_branch_is_not_exercised_by_sqlite(tmp_path: Path) 
     engine = create_engine(f"sqlite:///{path}")
     try:
         engine.dialect.name = "postgresql"
-        with pytest.raises(OperationalError):
+        with pytest.raises(dbm.PositionsConstraintBlockedError) as error:
             dbm._ensure_positions_unique_constraint(engine)
+        assert isinstance(error.value.__cause__, OperationalError)
     finally:
         engine.dispose()
 

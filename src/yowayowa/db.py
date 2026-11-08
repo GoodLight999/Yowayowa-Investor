@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
+from weakref import WeakSet
 
 from sqlalchemy import (
     JSON,
@@ -496,12 +497,70 @@ _engine = None
 _SessionLocal = None
 
 
+class PositionsConstraintBlockedError(RuntimeError):
+    """The positions uniqueness constraint could not be safely established."""
+
+
+class PositionsWriteUnavailableError(RuntimeError):
+    """Position writes are disabled until uniqueness is confirmed."""
+
+
+_POSITIONS_CONSTRAINT_APPLIED = False
+_POSITIONS_CONSTRAINT_ENGINE = None
+_POSITIONS_CONSTRAINT_BLOCKER: str | None = None
+#: Engines whose own schema was verified to carry the composite unique key.
+_POSITIONS_WRITABLE_VERIFIED: WeakSet[Engine] = WeakSet()
+
+
+def _bind_has_positions_unique_constraint(bind: Any) -> bool:
+    """True when this bind's own schema carries the composite unique key.
+
+    Verifying the bind itself -- never another engine's verdict -- is what
+    keeps isolated engines (created via ``Base.metadata.create_all``) writable
+    while a blocked production schema refuses writes.
+    """
+
+    if not isinstance(bind, Engine):
+        return False
+    try:
+        inspector = inspect(bind)
+        if "positions" not in inspector.get_table_names():
+            return False
+        for constraint in inspector.get_unique_constraints("positions"):
+            if set(constraint.get("column_names") or []) == {"portfolio_id", "symbol"}:
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def require_positions_writable(session: Session) -> None:
+    """Refuse position writes unless this session's own bind is confirmed constrained.
+
+    The process engine is confirmed by ``init_database``; any other bind is
+    verified against its own schema once and then remembered for its lifetime
+    (an engine without the key -- e.g. the blocked startup schema -- always
+    refuses).
+    """
+
+    bind = session.get_bind()
+    if bind is _POSITIONS_CONSTRAINT_ENGINE and _POSITIONS_CONSTRAINT_APPLIED:
+        return
+    if bind in _POSITIONS_WRITABLE_VERIFIED or _bind_has_positions_unique_constraint(bind):
+        if isinstance(bind, Engine):
+            _POSITIONS_WRITABLE_VERIFIED.add(bind)
+        return
+    raise PositionsWriteUnavailableError("positions unique constraint unavailable")
+
+
 def init_database(settings: Settings | None = None) -> None:
-    global _engine, _SessionLocal
+    global _engine, _SessionLocal, _POSITIONS_CONSTRAINT_ENGINE
     if _engine is not None:
         _engine.dispose()
     _engine = make_engine(settings)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
+    _POSITIONS_CONSTRAINT_ENGINE = None
+    _POSITIONS_WRITABLE_VERIFIED.clear()
     # Re-evaluate the migration state on every startup: a previous invocation in
     # the same process must not make an applied (or repaired) migration look
     # permanently blocked.
@@ -512,7 +571,14 @@ def init_database(settings: Settings | None = None) -> None:
     _ensure_price_alert_notifications_table(_engine)
     Base.metadata.create_all(_engine)
     _ensure_positions_version(_engine)
-    _ensure_positions_unique_constraint(_engine)
+    try:
+        _ensure_positions_unique_constraint(_engine)
+    except PositionsConstraintBlockedError:
+        pass
+    else:
+        global _POSITIONS_CONSTRAINT_APPLIED
+        _POSITIONS_CONSTRAINT_APPLIED = True
+        _POSITIONS_CONSTRAINT_ENGINE = _engine
     _ensure_screening_candidates_document_id(_engine)
     _ensure_jpx_margin_aux_instant_tz(_engine)
 
@@ -565,23 +631,22 @@ def _ensure_positions_version(engine: Engine) -> None:
             )
 
 
-_POSITIONS_CONSTRAINT_BLOCKER: str | None = None
-
-
 def _reset_positions_constraint_blocker() -> None:
     """Clear the recorded blocker so the next evaluation starts fresh."""
 
-    global _POSITIONS_CONSTRAINT_BLOCKER
+    global _POSITIONS_CONSTRAINT_BLOCKER, _POSITIONS_CONSTRAINT_APPLIED
     _POSITIONS_CONSTRAINT_BLOCKER = None
+    _POSITIONS_CONSTRAINT_APPLIED = False
 
 
 def _record_positions_constraint_blocker(reason: str) -> None:
     """Record that the positions unique-constraint migration is unresolved.
 
-    The caller then raises: the record exists so an operator interface (the
-    ``/internal/debug/runtime`` payload) can still explain a startup refusal,
-    not so that startup may continue unprotected. The message deliberately
-    contains no secret and no absolute path.
+    ``init_database`` catches the dedicated exception raised afterwards so the
+    process can keep starting with reads served and writes refused; the record
+    exists so an operator interface (the ``/internal/debug/runtime`` payload)
+    can explain why writes are unavailable. The message deliberately contains
+    no secret and no absolute path.
     """
 
     global _POSITIONS_CONSTRAINT_BLOCKER
@@ -592,16 +657,18 @@ def _record_positions_constraint_blocker(reason: str) -> None:
 def positions_unique_constraint_status() -> dict[str, object]:
     """Report whether the positions unique constraint is applied and why not.
 
-    ``applied`` is True when no blocker was recorded during startup. A False
-    value means startup refused to serve and position writes are unprotected;
-    the duplicates already in the table are reported so an operator can repair
-    them explicitly. This is only reachable for callers that caught the raised
-    migration error, e.g. the operator payload endpoint.
+    ``applied`` is True only after ``init_database`` confirmed the constraint
+    on the engine the process serves. A False value means position writes are
+    refused while reads continue; the recorded reason -- e.g. the duplicates
+    already in the table -- is reported so an operator can repair them
+    explicitly and restart. A fresh process reports False until
+    ``init_database`` has evaluated the migration.
     """
 
-    if _POSITIONS_CONSTRAINT_BLOCKER is None:
-        return {"applied": True, "reason": None}
-    return {"applied": False, "reason": _POSITIONS_CONSTRAINT_BLOCKER}
+    return {
+        "applied": _POSITIONS_CONSTRAINT_APPLIED,
+        "reason": None if _POSITIONS_CONSTRAINT_APPLIED else _POSITIONS_CONSTRAINT_BLOCKER,
+    }
 
 
 def _ensure_positions_unique_constraint(engine: Engine) -> None:
@@ -648,7 +715,9 @@ def _ensure_positions_unique_constraint(engine: Engine) -> None:
             # Keep every row (no delete, no rewrite) and refuse to claim the
             # constraint is installed. Raising, not logging, is what stops a
             # caller from writing into a table with no composite unique key.
-            raise RuntimeError("positions unique constraint migration blocked: " + reason)
+            raise PositionsConstraintBlockedError(
+                "positions unique constraint migration blocked: " + reason
+            )
 
     dialect = engine.dialect.name
     if dialect == "sqlite":
@@ -713,14 +782,16 @@ def _ensure_positions_unique_constraint(engine: Engine) -> None:
                     )
                 )
         except Exception as exc:
-            # Same rule as the duplicate path: record the reason for the
-            # operator payload, then let the failure surface. Swallowing it
-            # left production running without the unique key and with only a
-            # log line to say so.
-            _record_positions_constraint_blocker(
-                f"constraint application failed: {type(exc).__name__}"
-            )
-            raise
+            # Only downgrade when rollback is known to have completed and the
+            # connection remains queryable. Otherwise preserve startup failure.
+            try:
+                with engine.connect() as verify_conn:
+                    verify_conn.execute(text("SELECT 1"))
+            except Exception:
+                raise
+            reason = f"constraint application failed: {type(exc).__name__}"
+            _record_positions_constraint_blocker(reason)
+            raise PositionsConstraintBlockedError(reason) from exc
 
 
 def _ensure_screening_candidates_document_id(engine: Engine) -> None:
@@ -829,11 +900,14 @@ def _ensure_screening_candidates_document_id(engine: Engine) -> None:
 
 
 def dispose_database() -> None:
-    global _engine, _SessionLocal
+    global _engine, _SessionLocal, _POSITIONS_CONSTRAINT_ENGINE, _POSITIONS_CONSTRAINT_APPLIED
     if _engine is not None:
         _engine.dispose()
     _engine = None
     _SessionLocal = None
+    _POSITIONS_CONSTRAINT_ENGINE = None
+    _POSITIONS_CONSTRAINT_APPLIED = False
+    _POSITIONS_WRITABLE_VERIFIED.clear()
 
 
 def get_session() -> Session:

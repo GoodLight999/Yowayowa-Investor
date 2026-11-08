@@ -55,6 +55,7 @@ from yowayowa.api.stock_routes import router as stock_router
 from yowayowa.api.web_asset_routes import router as web_asset_router
 from yowayowa.config import Settings, get_settings
 from yowayowa.db import (
+    PositionsWriteUnavailableError,
     dispose_database,
     get_or_create_default_watchlist,
     get_session,
@@ -204,6 +205,23 @@ app = FastAPI(
     summary="Provenance-aware investment research API",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(PositionsWriteUnavailableError)
+async def positions_write_unavailable_handler(
+    _: Request, __: PositionsWriteUnavailableError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": {
+                "code": "positions_unique_constraint_unavailable",
+                "message": "保有情報の整合性確認が完了していないため、更新を停止しています。",
+            }
+        },
+    )
+
+
 app.include_router(research_llm_router)
 app.include_router(backtest_router)
 app.include_router(strategy_screening_router)

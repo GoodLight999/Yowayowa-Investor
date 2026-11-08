@@ -530,17 +530,17 @@ def test_positions_unique_constraint_blocker_resets_on_restart(tmp_path) -> None
     assert positions_unique_constraint_status() == {"applied": True, "reason": None}
 
 
-def test_app_startup_fails_closed_when_positions_migration_is_blocked(tmp_path) -> None:
-    """A blocked migration must abort startup instead of serving unprotected.
+def test_app_startup_survives_blocked_positions_migration_and_refuses_writes(tmp_path) -> None:
+    """A blocked migration keeps serving reads and refuses position writes.
 
     Duplicate ``(portfolio_id, symbol)`` rows mean the composite unique key
-    cannot be installed. Continuing to serve would accept writes the schema is
-    supposed to reject while only a log line records it, so startup refuses and
-    the operator repairs the data first. The duplicates themselves are kept
-    byte-for-byte; this migration never deletes or rewrites rows.
+    cannot be installed. The ruling contract keeps startup alive (reads keep
+    working) while every positions write answers 503 with the fixed payload
+    until the operator repairs the data and restarts. The duplicates
+    themselves are kept byte-for-byte; this migration never deletes or
+    rewrites rows.
     """
 
-    import pytest
     from sqlalchemy import create_engine, text
 
     from yowayowa import db as db_module
@@ -589,19 +589,33 @@ def test_app_startup_fails_closed_when_positions_migration_is_blocked(tmp_path) 
 
     get_settings.cache_clear()
     try:
-        with pytest.raises(RuntimeError) as error:
-            db_module.init_database()
-        assert "existing duplicates found" in str(error.value)
+        db_module.init_database()  # startup survives the duplicates
         assert positions_unique_constraint_status()["applied"] is False
 
-        # The real ASGI lifespan runs the same migration, so serving traffic is
-        # refused as well rather than starting a half-guarded process.
+        # The real ASGI lifespan runs the same migration and still serves:
+        # reads answer 200 while positions writes answer 503 with the fixed body.
         from fastapi.testclient import TestClient
 
         from yowayowa.api.app import app
 
-        with pytest.raises(RuntimeError), TestClient(app):
-            pass
+        headers = {"Authorization": "Bearer fixture-operator-token"}
+        with TestClient(app) as client:
+            listed = client.get("/v1/portfolios", headers=headers)
+            assert listed.status_code == 200, listed.text
+            assert [item["id"] for item in listed.json()] == [1]
+
+            refused = client.put(
+                "/v1/portfolios/1/positions",
+                json={"symbol": "6501", "quantity": "1", "currency": "JPY"},
+                headers=headers,
+            )
+            assert refused.status_code == 503, refused.text
+            assert refused.json() == {
+                "detail": {
+                    "code": "positions_unique_constraint_unavailable",
+                    "message": "保有情報の整合性確認が完了していないため、更新を停止しています。",
+                }
+            }
 
         # Nothing was deleted: both duplicate rows are still there.
         check = create_engine(f"sqlite:///{db_path}")
@@ -612,6 +626,7 @@ def test_app_startup_fails_closed_when_positions_migration_is_blocked(tmp_path) 
             check.dispose()
         assert rows == [(1,), (2,)]
     finally:
+        db_module.dispose_database()
         if previous_token is None:
             os.environ.pop("YOWAYOWA_API_TOKEN", None)
         else:
