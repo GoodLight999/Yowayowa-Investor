@@ -78,8 +78,9 @@ def test_c2_ledger_chaining_and_tamper_detection(tmp_path: Path) -> None:
 
 
 def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch) -> None:
-    """Verify that calling run_daily_cycle multiple times is strictly idempotent and does not multiply equity."""
+    """Verify repeated daily cycles are idempotent and do not multiply equity."""
     from datetime import date
+
     from scripts.paper_c2 import c2_runner
 
     state_file = tmp_path / "state.json"
@@ -97,6 +98,7 @@ def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch
         def get_account(self):
             class Acct:
                 equity = 100000.0
+
             return Acct()
 
     monkeypatch.setattr(c2_runner, "AlpacaPaperClient", MockAlpaca)
@@ -119,11 +121,22 @@ def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch
     mock_hist = {}
     for s, bars in base_hist.items():
         b_list = list(bars)
-        b_list.append({"t": "2026-11-03T04:00:00Z", "o": 100.0, "h": 100.0, "l": 100.0, "c": 100.0, "v": 1000.0})
+        b_list.append(
+            {
+                "t": "2026-11-03T04:00:00Z",
+                "o": 100.0,
+                "h": 100.0,
+                "l": 100.0,
+                "c": 100.0,
+                "v": 1000.0,
+            }
+        )
         mock_hist[s] = b_list
 
     # First daily run on 2026-11-03
-    d1 = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), ledger_path=ledger_file, override_history=mock_hist)
+    d1 = c2_runner.run_daily_cycle(
+        as_of_date=date(2026, 11, 3), ledger_path=ledger_file, override_history=mock_hist
+    )
     assert d1["status"] == "success"
     eq10_first = d1["mtm_record"]["equity_10"]
     eq15_first = d1["mtm_record"]["equity_15"]
@@ -133,13 +146,17 @@ def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch
     assert len(lines1) == 1
 
     # Second daily run on the SAME date 2026-11-03 (should be idempotent no-op)
-    d2 = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), ledger_path=ledger_file, override_history=mock_hist)
+    d2 = c2_runner.run_daily_cycle(
+        as_of_date=date(2026, 11, 3), ledger_path=ledger_file, override_history=mock_hist
+    )
     assert d2["status"] == "already_executed"
     assert round(d2["equity_10"], 2) == eq10_first
     assert round(d2["equity_15"], 2) == eq15_first
 
     # Third daily run on the SAME date 2026-11-03
-    d3 = c2_runner.run_daily_cycle(as_of_date=date(2026, 11, 3), ledger_path=ledger_file, override_history=mock_hist)
+    d3 = c2_runner.run_daily_cycle(
+        as_of_date=date(2026, 11, 3), ledger_path=ledger_file, override_history=mock_hist
+    )
     assert d3["status"] == "already_executed"
 
     # Verify MTM file still only has 1 line (not 3!)
@@ -150,4 +167,3 @@ def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch
     st_final = c2_runner.load_state()
     assert round(st_final["current_equity_10"], 2) == eq10_first
     assert round(st_final["current_equity_15"], 2) == eq15_first
-

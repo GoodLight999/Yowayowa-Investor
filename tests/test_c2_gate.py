@@ -103,7 +103,9 @@ def test_gate_pass_both_series(
 # ==============================================================================
 # TEST 2: FAIL CASES - PROVING INDIVIDUAL AND ISOLATION (§7.1)
 # ==============================================================================
-def test_criteria_1_sharpe_fail(base_equity_pass: list[float], base_attrib_pass: dict[str, Any]) -> None:
+def test_criteria_1_sharpe_fail(
+    base_equity_pass: list[float], base_attrib_pass: dict[str, Any]
+) -> None:
     """Criterion ①: Sharpe < 0.50 fails."""
     # A flat/choppy return series with zero drift -> Sharpe ~ 0.0 < 0.50
     choppy_returns = [0.002, -0.002] * 30
@@ -123,7 +125,9 @@ def test_criteria_1_sharpe_fail(base_equity_pass: list[float], base_attrib_pass:
     assert res.sharpe < SHARPE_THRESHOLD
 
 
-def test_criteria_2_max_dd_fail(base_returns_pass: list[float], base_attrib_pass: dict[str, Any]) -> None:
+def test_criteria_2_max_dd_fail(
+    base_returns_pass: list[float], base_attrib_pass: dict[str, Any]
+) -> None:
     """Criterion ②: MaxDD < -15.00% (e.g. -18%) fails."""
     # Start 100k, crash to 80k (-20%), then recover
     crashing_equity = [100000.0] * 10 + [80000.0] * 10 + [105000.0] * 41
@@ -143,7 +147,9 @@ def test_criteria_2_max_dd_fail(base_returns_pass: list[float], base_attrib_pass
     assert res.max_dd < MAX_DD_THRESHOLD
 
 
-def test_criteria_3_profit_factor_fail(base_equity_pass: list[float], base_attrib_pass: dict[str, Any]) -> None:
+def test_criteria_3_profit_factor_fail(
+    base_equity_pass: list[float], base_attrib_pass: dict[str, Any]
+) -> None:
     """Criterion ③: Profit Factor < 1.05 fails."""
     # Returns with gains = 1.0, losses = 1.0 -> PF = 1.00 < 1.05
     flat_returns = [0.001, -0.001] * 30

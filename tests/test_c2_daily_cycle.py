@@ -148,14 +148,16 @@ def test_daily_cycle_stale_bar_skips_and_fresh_bar_records(
     for s in ["SPY", "IWM", "JNJ", "PG"]:
         bars = list(base_history[s])
         prev_close = bars[-1]["c"]
-        bars.append({
-            "t": "2026-11-02T04:00:00Z",
-            "o": prev_close,
-            "h": prev_close * 1.002,
-            "l": prev_close * 0.998,
-            "c": prev_close * 1.001,
-            "v": 50000.0,
-        })
+        bars.append(
+            {
+                "t": "2026-11-02T04:00:00Z",
+                "o": prev_close,
+                "h": prev_close * 1.002,
+                "l": prev_close * 0.998,
+                "c": prev_close * 1.001,
+                "v": 50000.0,
+            }
+        )
         stale_history[s] = bars
 
     # Run for 2026-11-03 session with 2026-11-02 latest bar -> MUST SKIP safely
@@ -176,20 +178,20 @@ def test_daily_cycle_stale_bar_skips_and_fresh_bar_records(
     for s in ["SPY", "IWM", "JNJ", "PG"]:
         bars = list(stale_history[s])
         prev_close = bars[-1]["c"]
-        if s == "SPY":
-            new_close = round(prev_close * 1.01, 2)  # +1.0%
-        elif s == "IWM":
+        if s == "SPY" or s == "IWM":
             new_close = round(prev_close * 1.01, 2)  # +1.0%
         else:
             new_close = round(prev_close * 1.005, 2)  # +0.5%
-        bars.append({
-            "t": "2026-11-03T04:00:00Z",
-            "o": prev_close,
-            "h": max(prev_close, new_close),
-            "l": min(prev_close, new_close),
-            "c": new_close,
-            "v": 100000.0,
-        })
+        bars.append(
+            {
+                "t": "2026-11-03T04:00:00Z",
+                "o": prev_close,
+                "h": max(prev_close, new_close),
+                "l": min(prev_close, new_close),
+                "c": new_close,
+                "v": 100000.0,
+            }
+        )
         fresh_history[s] = bars
 
     # Run for 2026-11-03 session with matching 2026-11-03 bar -> MUST SUCCEED
@@ -213,7 +215,7 @@ def test_daily_cycle_stale_bar_skips_and_fresh_bar_records(
     assert rec["daily_return_10"] > 0.0060 and rec["daily_return_10"] < 0.0070
     assert rec["equity_10"] > 100600.0
 
-    # 15% daily return strictly reflects the difference from initial_paper_equity (100,000 -> 100,350 = +0.35%)
+    # 15% daily return reflects initial_paper_equity (100,000 -> 100,350 = +0.35%).
     assert pytest.approx(rec["daily_return_15"], abs=1e-5) == 0.0035
     assert rec["equity_15"] == 100350.0
 

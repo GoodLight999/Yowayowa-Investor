@@ -104,7 +104,7 @@ def test_weekly_cycle_skips_broker_submission_when_prior_to_decision_date(
     class MockDatetimePrior(datetime.datetime):
         @classmethod
         def now(cls, tz=None):
-            return datetime.datetime(2026, 11, 2, 10, 16, 0, tzinfo=datetime.timezone.utc)
+            return datetime.datetime(2026, 11, 2, 10, 16, 0, tzinfo=datetime.UTC)
 
     monkeypatch.setattr(c2_runner, "datetime", MockDatetimePrior)
 
@@ -120,7 +120,7 @@ def test_weekly_cycle_skips_broker_submission_when_prior_to_decision_date(
     # When current date (2026-11-02) is before as_of_date (2026-11-03),
     # the entire cycle is skipped early to avoid writing decisions or consuming the schedule.
     assert len(submitted_orders) == 0, (
-        f"Expected 0 orders submitted when executing prior to as_of_date, but got {len(submitted_orders)}"
+        f"Expected 0 orders before as_of_date; got {len(submitted_orders)}"
     )
     assert not test_ledger_file.exists() or test_ledger_file.stat().st_size == 0
     saved_state = c2_runner.load_state()
@@ -130,7 +130,7 @@ def test_weekly_cycle_skips_broker_submission_when_prior_to_decision_date(
 def test_weekly_cycle_submits_day_orders_on_decision_date(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify that weekly rebalance orders are submitted with time_in_force='day' when executed on decision date."""
+    """Verify weekly rebalance orders use time_in_force='day' on decision date."""
     test_state_file = tmp_path / "state.json"
     test_orders_file = tmp_path / "orders.jsonl"
     test_ledger_file = tmp_path / "decisions.jsonl"
@@ -213,7 +213,7 @@ def test_weekly_cycle_submits_day_orders_on_decision_date(
     class MockDatetimeOnDate(datetime.datetime):
         @classmethod
         def now(cls, tz=None):
-            return datetime.datetime(2026, 11, 3, 13, 0, 0, tzinfo=datetime.timezone.utc)
+            return datetime.datetime(2026, 11, 3, 13, 0, 0, tzinfo=datetime.UTC)
 
     monkeypatch.setattr(c2_runner, "datetime", MockDatetimeOnDate)
 
@@ -234,7 +234,7 @@ def test_weekly_cycle_submits_day_orders_on_decision_date(
 def test_prior_execution_skipped_allows_full_execution_on_decision_date_without_force(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Verify that an early cycle execution prior to as_of_date skips cleanly without consuming the decision,
+    """Verify early execution skips without consuming the decision,
 
     allowing the scheduled run on decision date to execute fully without force=True.
     """
@@ -317,7 +317,7 @@ def test_prior_execution_skipped_allows_full_execution_on_decision_date_without_
     monkeypatch.setattr(c2_runner, "AlpacaPaperClient", MockAlpacaClient)
 
     # 1. First execution: Pre-scheduled run on 2026-11-02 (prior to decision session 2026-11-03)
-    current_simulated_time = datetime.datetime(2026, 11, 2, 10, 16, 0, tzinfo=datetime.timezone.utc)
+    current_simulated_time = datetime.datetime(2026, 11, 2, 10, 16, 0, tzinfo=datetime.UTC)
 
     class MockDatetimeDynamic(datetime.datetime):
         @classmethod
@@ -343,7 +343,7 @@ def test_prior_execution_skipped_allows_full_execution_on_decision_date_without_
     assert state_after_prior.get("last_decision_date") is None
 
     # 2. Second execution: Production run on decision date 2026-11-03 without force!
-    current_simulated_time = datetime.datetime(2026, 11, 3, 13, 0, 0, tzinfo=datetime.timezone.utc)
+    current_simulated_time = datetime.datetime(2026, 11, 3, 13, 0, 0, tzinfo=datetime.UTC)
 
     res_on_date = c2_runner.run_weekly_cycle(
         as_of_date=date(2026, 11, 3),

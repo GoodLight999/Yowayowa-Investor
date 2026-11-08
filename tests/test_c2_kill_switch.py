@@ -139,7 +139,9 @@ def test_kill_switch_all_nominal() -> None:
     assert res.verdict == "OK"
 
 
-def test_kill_switch_liquidation_and_halt_integration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_kill_switch_liquidation_and_halt_integration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Verify that when kill switch triggers, runner halts and calls close_all_positions."""
     from scripts.paper_c2 import c2_runner
 
@@ -181,6 +183,7 @@ def test_kill_switch_liquidation_and_halt_integration(tmp_path: Path, monkeypatc
         def get_account(self):
             class Acct:
                 equity = 84000.0
+
             return Acct()
 
         def cancel_all_orders(self):
@@ -209,7 +212,16 @@ def test_kill_switch_liquidation_and_halt_integration(tmp_path: Path, monkeypatc
     mock_hist = {}
     for s, bars in base_hist.items():
         b_list = list(bars)
-        b_list.append({"t": "2026-11-03T04:00:00Z", "o": 100.0, "h": 100.0, "l": 100.0, "c": 100.0, "v": 1000.0})
+        b_list.append(
+            {
+                "t": "2026-11-03T04:00:00Z",
+                "o": 100.0,
+                "h": 100.0,
+                "l": 100.0,
+                "c": 100.0,
+                "v": 1000.0,
+            }
+        )
         mock_hist[s] = b_list
 
     # The ledger lives in data/paper_c2 by default; point it at tmp_path so the run opens
@@ -231,4 +243,3 @@ def test_kill_switch_liquidation_and_halt_integration(tmp_path: Path, monkeypatc
     # Subsequent run must be immediately halted
     halted_res = c2_runner.run_weekly_cycle(as_of_date=date(2026, 11, 9))
     assert halted_res["status"] == "halted_by_kill_switch"
-
