@@ -47,16 +47,14 @@ class MockExchange:
         order_type: dict[str, Any],
         cloid: str | None = None,
     ) -> dict[str, Any]:
-        self.orders.append(
-            {
-                "coin": coin,
-                "is_buy": is_buy,
-                "sz": sz,
-                "px": px,
-                "order_type": order_type,
-                "cloid": cloid,
-            }
-        )
+        self.orders.append({
+            "coin": coin,
+            "is_buy": is_buy,
+            "sz": sz,
+            "px": px,
+            "order_type": order_type,
+            "cloid": cloid,
+        })
         return {
             "status": "ok",
             "response": {

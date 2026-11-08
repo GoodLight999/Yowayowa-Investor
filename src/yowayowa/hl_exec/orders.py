@@ -506,19 +506,17 @@ def run_order_roundtrip(
             ask=ask,
         )
 
-        signal_entry = journal.log_decision(
-            {
-                "action": "ORDER_ROUNDTRIP_SIGNAL",
-                "stage": "pre_state",
-                "account_address": account_address,
-                "coin": coin,
-                "accountValue": pre_account_value,
-                "openPositions": pre_positions,
-                "bid": bid,
-                "ask": ask,
-                "initial_fills_count": initial_fills_count,
-            }
-        )
+        signal_entry = journal.log_decision({
+            "action": "ORDER_ROUNDTRIP_SIGNAL",
+            "stage": "pre_state",
+            "account_address": account_address,
+            "coin": coin,
+            "accountValue": pre_account_value,
+            "openPositions": pre_positions,
+            "bid": bid,
+            "ask": ask,
+            "initial_fills_count": initial_fills_count,
+        })
 
         # 3. 価格・サイズ丸めと注文組立
         meta = info.asset_meta(coin)
