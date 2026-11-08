@@ -26,6 +26,7 @@ from scripts.paper_c2.c2_gate import (
     compute_forward_score,
     evaluate_c2_gate,
     evaluate_single_series,
+    format_gate_markdown,
 )
 
 
@@ -446,6 +447,10 @@ def test_input_missing_when_all_five_inputs_absent(tmp_path: Path) -> None:
     payload = verdict.to_dict()
     assert payload["verdict"] == "INPUT_MISSING"
     assert payload["missing_inputs"] == list(verdict.missing_inputs)
+
+    md = format_gate_markdown(verdict)
+    assert "INPUT_MISSING" in md
+    assert "0 / 60 営業日" not in md  # never presented as "0 business days"
 
 
 def test_input_missing_when_state_json_only_absent(tmp_path: Path) -> None:

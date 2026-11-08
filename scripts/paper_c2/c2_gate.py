@@ -935,10 +935,18 @@ def format_gate_markdown(verdict: GateVerdict) -> str:
         f"- **総合判定**: {v_badge}",
         f"- **判定理由**: {verdict.reason}",
         f"- **推挙戦略**: `{verdict.recommended_candidate or 'なし'}`",
-        f"- **判定営業日数**: {verdict.judged_business_days} / {verdict.target_business_days} 営業日",
+        (
+            "- **判定営業日数**: 不明（必須入力欠損のため算定不能。0営業日目ではない）"
+            if verdict.verdict == INPUT_MISSING_VERDICT
+            else f"- **判定営業日数**: {verdict.judged_business_days} / {verdict.target_business_days} 営業日"
+        ),
         f"- **起算日**: {verdict.start_date}",
         f"- **当初判定日**: {verdict.projected_judgement_date}",
-        f"- **欠測日数**: 累計 {verdict.missed_trading_days} 日 / リバランス欠測 {verdict.missed_rebalance_days} 回",
+        (
+            "- **欠測日数**: 不明（必須入力欠損のため算定不能）"
+            if verdict.verdict == INPUT_MISSING_VERDICT
+            else f"- **欠測日数**: 累計 {verdict.missed_trading_days} 日 / リバランス欠測 {verdict.missed_rebalance_days} 回"
+        ),
         f"- **設計書 SHA256**: `{verdict.design_doc_sha256}` ({'MATCH' if verdict.design_doc_valid else 'MISMATCH'})",
         "",
         "---",
