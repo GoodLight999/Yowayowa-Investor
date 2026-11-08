@@ -43,8 +43,14 @@ def test_db_source_has_no_having_cnt_alias() -> None:
     assert "HAVING cnt" not in source
 
 
-def test_non_sqlite_alter_failure_is_fail_soft(monkeypatch) -> None:
-    """A failed non-SQLite ALTER must not abort startup and must be recorded."""
+def test_non_sqlite_alter_failure_is_fail_closed(monkeypatch) -> None:
+    """A failed non-SQLite ALTER must record the reason and propagate.
+
+    Swallowing it let startup continue without the unique key; the caller now
+    sees the failure and the operator payload still names the exception class.
+    """
+
+    import pytest
 
     import yowayowa.db as db_module
 
@@ -88,7 +94,8 @@ def test_non_sqlite_alter_failure_is_fail_soft(monkeypatch) -> None:
 
     db_module._reset_positions_constraint_blocker()
     try:
-        db_module._ensure_positions_unique_constraint(engine)
+        with pytest.raises(RuntimeError, match="simulated migration failure"):
+            db_module._ensure_positions_unique_constraint(engine)
         status = db_module.positions_unique_constraint_status()
         assert status["applied"] is False
         reason = str(status["reason"])

@@ -389,6 +389,7 @@ def test_concurrent_initial_insert_unique_constraint() -> None:
 
 
 def test_ensure_positions_unique_constraint_upgrade_and_fail_closed(tmp_path) -> None:
+    import pytest
     from sqlalchemy import inspect, text
 
     from yowayowa.db import _ensure_positions_unique_constraint
@@ -485,12 +486,14 @@ def test_ensure_positions_unique_constraint_upgrade_and_fail_closed(tmp_path) ->
             positions_unique_constraint_status,
         )
 
-        # Fail closed means: do not apply the constraint, and report the
-        # blocker. It must NOT raise, because this migration runs inside the
-        # ASGI lifespan — raising aborts startup and every route answers 500
-        # (the production outage this test previously pinned).
+        # Fail closed means: do not apply the constraint, keep every duplicate
+        # row, record the reason, and raise. Serving on with a missing
+        # write-side guard and only a log line to say so is the defect this
+        # pins against.
         _reset_positions_constraint_blocker()
-        _ensure_positions_unique_constraint(engine_dup)
+        with pytest.raises(RuntimeError) as error:
+            _ensure_positions_unique_constraint(engine_dup)
+        assert "existing duplicates found" in str(error.value)
 
         status = positions_unique_constraint_status()
         assert status["applied"] is False
@@ -527,16 +530,17 @@ def test_positions_unique_constraint_blocker_resets_on_restart(tmp_path) -> None
     assert positions_unique_constraint_status() == {"applied": True, "reason": None}
 
 
-def test_app_boots_when_positions_migration_is_blocked(tmp_path) -> None:
-    """Regression: a blocked migration must not abort application startup.
+def test_app_startup_fails_closed_when_positions_migration_is_blocked(tmp_path) -> None:
+    """A blocked migration must abort startup instead of serving unprotected.
 
-    The production outage (HTTP 500 / FUNCTION_INVOCATION_FAILED on EVERY route)
-    came from ``init_database()`` raising inside the ASGI lifespan. Duplicate
-    positions are a repairable data condition; they must not make the whole
-    application unservable. This test pins the boot-survival invariant directly
-    against the real lifespan, not just the migration helper.
+    Duplicate ``(portfolio_id, symbol)`` rows mean the composite unique key
+    cannot be installed. Continuing to serve would accept writes the schema is
+    supposed to reject while only a log line records it, so startup refuses and
+    the operator repairs the data first. The duplicates themselves are kept
+    byte-for-byte; this migration never deletes or rewrites rows.
     """
 
+    import pytest
     from sqlalchemy import create_engine, text
 
     from yowayowa import db as db_module
@@ -579,32 +583,34 @@ def test_app_boots_when_positions_migration_is_blocked(tmp_path) -> None:
     previous_url = os.environ.get("YOWAYOWA_DATABASE_URL")
     previous_token = os.environ.get("YOWAYOWA_API_TOKEN")
     os.environ["YOWAYOWA_DATABASE_URL"] = f"sqlite:///{db_path}"
-    # The runtime debug route gates build/runtime detail (including the
-    # positions-constraint status) behind the operator Bearer token, so hold
-    # the token here and present it on the runtime request below.
     os.environ["YOWAYOWA_API_TOKEN"] = "fixture-operator-token"
 
     from yowayowa.config import get_settings
 
     get_settings.cache_clear()
     try:
-        db_module.init_database()  # must not raise
+        with pytest.raises(RuntimeError) as error:
+            db_module.init_database()
+        assert "existing duplicates found" in str(error.value)
         assert positions_unique_constraint_status()["applied"] is False
 
+        # The real ASGI lifespan runs the same migration, so serving traffic is
+        # refused as well rather than starting a half-guarded process.
         from fastapi.testclient import TestClient
 
         from yowayowa.api.app import app
 
-        with TestClient(app) as client:
-            auth = {"Authorization": "Bearer fixture-operator-token"}
-            health = client.get("/v1/health", headers=auth)
-            runtime = client.get("/internal/debug/runtime", headers=auth)
+        with pytest.raises(RuntimeError), TestClient(app):
+            pass
 
-        assert health.status_code == 200
-        assert runtime.status_code == 200
-        reported = runtime.json()["database"]["positions_unique_constraint"]
-        assert reported["applied"] is False
-        assert "existing duplicates found" in reported["reason"]
+        # Nothing was deleted: both duplicate rows are still there.
+        check = create_engine(f"sqlite:///{db_path}")
+        try:
+            with check.connect() as conn:
+                rows = conn.execute(text("SELECT id FROM positions ORDER BY id")).fetchall()
+        finally:
+            check.dispose()
+        assert rows == [(1,), (2,)]
     finally:
         if previous_token is None:
             os.environ.pop("YOWAYOWA_API_TOKEN", None)

@@ -578,8 +578,10 @@ def _reset_positions_constraint_blocker() -> None:
 def _record_positions_constraint_blocker(reason: str) -> None:
     """Record that the positions unique-constraint migration is unresolved.
 
-    Recorded rather than raised: see ``_ensure_positions_unique_constraint``.
-    The message deliberately contains no secret and no absolute path.
+    The caller then raises: the record exists so an operator interface (the
+    ``/internal/debug/runtime`` payload) can still explain a startup refusal,
+    not so that startup may continue unprotected. The message deliberately
+    contains no secret and no absolute path.
     """
 
     global _POSITIONS_CONSTRAINT_BLOCKER
@@ -591,9 +593,10 @@ def positions_unique_constraint_status() -> dict[str, object]:
     """Report whether the positions unique constraint is applied and why not.
 
     ``applied`` is True when no blocker was recorded during startup. A False
-    value means position writes are unprotected against concurrent initial
-    inserts; the duplicates already in the table are reported so an operator
-    can repair them explicitly.
+    value means startup refused to serve and position writes are unprotected;
+    the duplicates already in the table are reported so an operator can repair
+    them explicitly. This is only reachable for callers that caught the raised
+    migration error, e.g. the operator payload endpoint.
     """
 
     if _POSITIONS_CONSTRAINT_BLOCKER is None:
@@ -609,17 +612,14 @@ def _ensure_positions_unique_constraint(engine: Engine) -> None:
     verify there are no duplicate (portfolio_id, symbol) rows (failing closed if
     any duplicates exist), and rebuild the table safely preserving all rows.
 
-    Fail-closed here means *do not apply* the constraint and report the blocker;
-    it deliberately does NOT mean *refuse to start*. This function runs inside
-    the ASGI lifespan, so an exception escapes before the function serves any
-    byte and Vercel reports FUNCTION_INVOCATION_FAILED for EVERY route. That
-    turns a repairable data condition into a total outage of unrelated
-    read-only surfaces. The constraint is a write-side concurrency guard, not a
-    correctness prerequisite for serving reads, so the safe behavior is to skip
-    the migration, keep serving, and expose the unresolved state where an
-    operator will actually see it (see ``positions_unique_constraint_status`` and
-    the ``/internal/debug/runtime`` payload). Losing the guard degrades write
-    concurrency; killing the process loses the entire product.
+    Fail-closed here means *do not apply* the constraint, report the blocker,
+    and raise so the caller cannot continue as if the write-side guard were
+    installed. A silent skip is the defect this guards against: the process
+    keeps accepting writes that the schema is supposed to reject, and nothing
+    except a log line says so. Startup therefore refuses rather than serving
+    traffic under a missing integrity guarantee; the duplicates are preserved
+    untouched for an explicit operator repair. See
+    ``positions_unique_constraint_status`` for the recorded reason.
     """
     inspector = inspect(engine)
     if "positions" not in inspector.get_table_names():
@@ -643,8 +643,12 @@ def _ensure_positions_unique_constraint(engine: Engine) -> None:
             detail = ", ".join(
                 f"(portfolio_id={row[0]}, symbol={row[1]!r}, count={row[2]})" for row in duplicates
             )
-            _record_positions_constraint_blocker("existing duplicates found: " + detail)
-            return
+            reason = "existing duplicates found: " + detail
+            _record_positions_constraint_blocker(reason)
+            # Keep every row (no delete, no rewrite) and refuse to claim the
+            # constraint is installed. Raising, not logging, is what stops a
+            # caller from writing into a table with no composite unique key.
+            raise RuntimeError("positions unique constraint migration blocked: " + reason)
 
     dialect = engine.dialect.name
     if dialect == "sqlite":
@@ -708,10 +712,15 @@ def _ensure_positions_unique_constraint(engine: Engine) -> None:
                         "UNIQUE (portfolio_id, symbol)"
                     )
                 )
-        except Exception as exc:  # startup must survive a migration failure
+        except Exception as exc:
+            # Same rule as the duplicate path: record the reason for the
+            # operator payload, then let the failure surface. Swallowing it
+            # left production running without the unique key and with only a
+            # log line to say so.
             _record_positions_constraint_blocker(
                 f"constraint application failed: {type(exc).__name__}"
             )
+            raise
 
 
 def _ensure_screening_candidates_document_id(engine: Engine) -> None:
