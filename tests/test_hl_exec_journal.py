@@ -156,4 +156,3 @@ def test_default_clock_uses_utc_timezone(tmp_path: Path) -> None:
     # JST等の本地時がそのまま+00:00と誤ラベルされた場合（9時間差）、
     # このアサーションで検知される
     assert before - _dt.timedelta(seconds=2) <= parsed <= after + _dt.timedelta(seconds=2)
-
