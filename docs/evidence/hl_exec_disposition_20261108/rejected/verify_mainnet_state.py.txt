@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Hyperliquid メインネット口座状態・エージェント承認状態 検証スクリプト
+タスク: t_d4e331b6
+秘密鍵不要・公開API (https://api.hyperliquid.xyz/info) のみ使用
+"""
+
+import json
+import urllib.request
+import sys
+
+MAINNET_API_URL = "https://api.hyperliquid.xyz/info"
+WALLET_ADDRESS = "0x4c95c6153bc98f225a2cb6c625911a6403767f98"
+AGENT_ADDRESS = "0xa561fa36e962f6b4c59f87b5d94f034a74c8280b"
+
+def query_info(payload: dict) -> dict:
+    req = urllib.request.Request(
+        MAINNET_API_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+def main():
+    print(f"=== Hyperliquid Mainnet State Verification ===")
+    print(f"Wallet Address: {WALLET_ADDRESS}")
+    print(f"Agent Address:  {AGENT_ADDRESS}")
+    print()
+
+    # 1. clearinghouseState
+    print("[1] Querying clearinghouseState...")
+    chs = query_info({"type": "clearinghouseState", "user": WALLET_ADDRESS})
+    margin = chs.get("marginSummary", {})
+    account_value = margin.get("accountValue", "0.0")
+    positions = chs.get("assetPositions", [])
+    print(f"    Account Value:      {account_value} USD")
+    print(f"    Open Positions:     {len(positions)}")
+
+    # 2. extraAgents
+    print("[2] Querying extraAgents...")
+    agents = query_info({"type": "extraAgents", "user": WALLET_ADDRESS})
+    print(f"    Registered Agents:  {len(agents)}")
+    matched = False
+    for a in agents:
+        addr = a.get("address", "").lower()
+        name = a.get("name", "")
+        print(f"      - Address: {addr}, Name: {name}")
+        if addr == AGENT_ADDRESS.lower():
+            matched = True
+
+    # 3. openOrders
+    print("[3] Querying openOrders...")
+    orders = query_info({"type": "openOrders", "user": WALLET_ADDRESS})
+    print(f"    Open Orders:        {len(orders)}")
+
+    print()
+    print("=== Summary ===")
+    print(f"Funded:           {'YES (' + account_value + ' USD)' if float(account_value) > 0 else 'NO (0.0 USD)'}")
+    print(f"Agent Approved:   {'YES' if matched else 'NO (Pending approval)'}")
+    print(f"Zero Positions:   {'YES' if len(positions) == 0 else 'NO'}")
+    print(f"Zero Open Orders: {'YES' if len(orders) == 0 else 'NO'}")
+
+if __name__ == "__main__":
+    main()

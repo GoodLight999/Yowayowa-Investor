@@ -1,0 +1,80 @@
+{
+  "task": "t_22130424",
+  "phase": 3,
+  "date_jst": "2026-11-02",
+  "network": "testnet",
+  "info_endpoint": "https://api.hyperliquid-testnet.xyz/info",
+  "exchange_endpoint_called": false,
+  "signatures_sent": 0,
+  "orders_sent": 0,
+  "approve_agent_sent": 0,
+  "agent_address": "0xc6f0c5c7aca59cd8ba4d56ed798102bc00cf66e5",
+  "agent_address_format": "0x + 40 hex",
+  "agent_address_public": true,
+  "key_path": "/root/.secrets/hl_agent_testnet.key",
+  "key_mode": "600",
+  "key_size_bytes": 65,
+  "key_owner": "root:root",
+  "key_parent_mode": "700",
+  "address_sidecar": "/root/.secrets/hl_agent_testnet.address",
+  "address_sidecar_mode": "644",
+  "separate_from_existing_wallet_json": true,
+  "derived_address_matches_recorded": true,
+  "info_reads": {
+    "clearinghouseState_agent": {
+      "http_status": 200,
+      "accountValue": "0.0",
+      "open_positions": 0
+    },
+    "userRole_agent": {
+      "http_status": 200,
+      "role": "missing"
+    },
+    "extraAgents_agent": {
+      "http_status": 200,
+      "count": 0
+    },
+    "extraAgents_master_0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82": {
+      "http_status": 200,
+      "count": 0,
+      "agent_approved": false
+    }
+  },
+  "http_500_count": 0,
+  "self_vectors": {
+    "keccak256_empty": "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+    "keccak256_abc": "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45",
+    "address_from_privkey_1": "0x7e5f4552091a69125d5dfcb7b8c2659029395bdf",
+    "pure_python_and_pycryptodome_agree": true
+  },
+  "tests": {
+    "command": ".venv/bin/python -m pytest tests/test_hl_exec_phase3_keygen.py tests/test_hl_exec_client.py -q",
+    "passed": 23,
+    "failed": 0
+  },
+  "secret_leak_scan": {
+    "method": "grep -F -f <key pattern> with -l / -c (matching lines never printed)",
+    "worktree_files_matched": 0,
+    "git_history_commits_scanned": 838,
+    "git_history_matches": 0,
+    "git_pack_matches": 0,
+    "hermes_log_files_matched": 0,
+    "kanban_db_matches": 0,
+    "worker_state_db_matches": 0,
+    "kanban_workspaces_matches": 0,
+    "evidence_file": "docs/evidence/hl_exec_phase3_20261102/grep_secret_scan.txt"
+  },
+  "artifacts": [
+    "scripts/hl_exec_phase3/gen_agent_key.py",
+    "scripts/hl_exec_phase3/verify_agent_key.py",
+    "tests/test_hl_exec_phase3_keygen.py",
+    "docs/HL_EXEC_APPROVEAGENT_RUNBOOK.md (section 8 = executable version with real address)",
+    "docs/evidence/hl_exec_phase3_20261102/"
+  ],
+  "not_done_by_design": [
+    "approveAgent (needs master signature)",
+    "any /exchange request",
+    "mainnet key generation",
+    "faucet claimDrip"
+  ]
+}

@@ -1,0 +1,187 @@
+# ruff: noqa: RUF001, E402, I001
+"""S-07 Hyperliquid テストネット・フォワード運用および事前凍結5条件判定器の単体テスト。"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import sys
+from typing import Any
+
+# Ensure scripts/hl_testnet_s07 is in sys.path
+_SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts" / "hl_testnet_s07"
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from s07_forward_evaluator import evaluate_5_conditions
+from s07_forward_runner import calculate_s07_indicators, execute_forward_cycle
+
+
+def _create_mock_candles(n: int = 60, base_price: float = 75000.0) -> list[dict[str, Any]]:
+    candles = []
+    for i in range(n):
+        px = base_price + i * 10.0
+        candles.append({
+            "t": 1700000000000 + i * 86400000,
+            "o": str(px),
+            "h": str(px + 50.0),
+            "l": str(px - 50.0),
+            "c": str(px + 10.0),
+            "v": "100.0",
+        })
+    return candles
+
+
+def test_calculate_s07_indicators() -> None:
+    candles = _create_mock_candles(60)
+    funding = [{"time": 1700000000000 + 59 * 86400000, "fundingRate": "0.0000125"}]
+    ind = calculate_s07_indicators(candles, funding)
+    assert ind["last_close"] > 0
+    assert ind["sma50"] > 0
+    assert ind["ema10"] > 0
+    assert ind["ema20"] > 0
+    assert ind["atr14"] > 0
+    assert "primary_direction" in ind
+    assert isinstance(ind["block_long"], bool)
+    assert isinstance(ind["block_short"], bool)
+
+
+def test_evaluate_5_conditions_inconclusive(tmp_path: Path) -> None:
+    # 往復 < 8回 のときは INCONCLUSIVE
+    ledger = {
+        "days": [
+            {
+                "day": "2026-11-04",
+                "equity": 99.95,
+                "position": 0.0,
+                "drawdown_pct": 0.05,
+                "governance": {"unfilled_orders_remaining": 0},
+            }
+        ]
+    }
+    (tmp_path / "daily_ledger.json").write_text(json.dumps(ledger))
+
+    trade = {
+        "day": "2026-11-04",
+        "net_pnl_usdc": 0.5,
+        "entry": {"fill_px": 75000.0, "slippage_bp": 1.0},
+        "exit": {"fill_px": 75100.0, "slippage_bp": 1.0},
+    }
+    (tmp_path / "trades.jsonl").write_text(json.dumps(trade) + "\n")
+
+    events = [
+        {"stage": "killswitch_lock_acquired"},
+        {"stage": "killswitch_lock_released"},
+    ]
+    with open(tmp_path / "raw_events.jsonl", "w") as f:
+        for ev in events:
+            f.write(json.dumps(ev) + "\n")
+
+    res = evaluate_5_conditions(tmp_path)
+    assert res["verdict"] == "INCONCLUSIVE"
+    assert res["conditions"]["1_activity"]["status"] == "INCONCLUSIVE"
+
+
+def test_evaluate_5_conditions_all_pass(tmp_path: Path) -> None:
+    # 往復 >= 8回、全条件クリアで PASS
+    ledger = {
+        "days": [
+            {
+                "day": f"2026-11-{i:02d}",
+                "equity": 100.0 + i * 0.1,
+                "position": 0.0,
+                "drawdown_pct": 0.0,
+                "governance": {"unfilled_orders_remaining": 0},
+            }
+            for i in range(1, 9)
+        ]
+    }
+    (tmp_path / "daily_ledger.json").write_text(json.dumps(ledger))
+
+    trades = [
+        {
+            "day": f"2026-11-{i:02d}",
+            "net_pnl_usdc": 0.1,
+            "entry": {"fill_px": 75000.0, "slippage_bp": 1.5},
+            "exit": {"fill_px": 75100.0, "slippage_bp": 2.0},
+        }
+        for i in range(1, 9)
+    ]
+    with open(tmp_path / "trades.jsonl", "w") as f:
+        for t in trades:
+            f.write(json.dumps(t) + "\n")
+
+    events = []
+    for _ in range(8):
+        events.append({"stage": "killswitch_lock_acquired"})
+        events.append({"stage": "killswitch_lock_released"})
+    with open(tmp_path / "raw_events.jsonl", "w") as f:
+        for ev in events:
+            f.write(json.dumps(ev) + "\n")
+
+    res = evaluate_5_conditions(tmp_path)
+    assert res["verdict"] == "PASS"
+    assert res["conditions"]["1_activity"]["status"] == "PASS"
+    assert res["conditions"]["2_net_pnl"]["status"] == "PASS"
+    assert res["conditions"]["3_drawdown"]["status"] == "PASS"
+    assert res["conditions"]["4_execution_quality"]["status"] == "PASS"
+    assert res["conditions"]["5_governance"]["status"] == "PASS"
+
+
+def test_evaluate_5_conditions_fail_strategy_healthy_exec(tmp_path: Path) -> None:
+    # 往復 >= 8回、損益マイナスだが執行健全 → FAIL_STRATEGY
+    ledger = {
+        "days": [
+            {
+                "day": f"2026-11-{i:02d}",
+                "equity": 100.0 - i * 0.1,
+                "position": 0.0,
+                "drawdown_pct": 0.8,
+                "governance": {"unfilled_orders_remaining": 0},
+            }
+            for i in range(1, 9)
+        ]
+    }
+    (tmp_path / "daily_ledger.json").write_text(json.dumps(ledger))
+
+    trades = [
+        {
+            "day": f"2026-11-{i:02d}",
+            "net_pnl_usdc": -0.1,
+            "entry": {"fill_px": 75000.0, "slippage_bp": 1.0},
+            "exit": {"fill_px": 74900.0, "slippage_bp": 1.0},
+        }
+        for i in range(1, 9)
+    ]
+    with open(tmp_path / "trades.jsonl", "w") as f:
+        for t in trades:
+            f.write(json.dumps(t) + "\n")
+
+    events = []
+    for _ in range(8):
+        events.append({"stage": "killswitch_lock_acquired"})
+        events.append({"stage": "killswitch_lock_released"})
+    with open(tmp_path / "raw_events.jsonl", "w") as f:
+        for ev in events:
+            f.write(json.dumps(ev) + "\n")
+
+    res = evaluate_5_conditions(tmp_path)
+    assert res["verdict"] == "FAIL"
+    assert "執行健全／戦略不合格" in res["verdict_reason"]
+    assert res["conditions"]["2_net_pnl"]["status"] == "FAIL"
+    assert res["conditions"]["4_execution_quality"]["status"] == "PASS"
+    assert res["conditions"]["5_governance"]["status"] == "PASS"
+
+
+def test_execute_forward_cycle_dryrun(tmp_path: Path) -> None:
+    ks_path = tmp_path / "HL_KILL_SWITCH_TEST"
+    data_dir = tmp_path / "data"
+    res = execute_forward_cycle(
+        killswitch_lock_path=ks_path,
+        data_dir=data_dir,
+        dry_run=True,
+    )
+    assert res["status"] == "ok"
+    assert "trade" in res
+    assert (data_dir / "daily_ledger.json").exists()
+    assert (data_dir / "trades.jsonl").exists()

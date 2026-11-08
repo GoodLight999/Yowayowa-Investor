@@ -1,0 +1,16 @@
+key_exists       : yes
+key_path         : /root/.secrets/hl_agent_testnet.key
+key_mode         : 0o600 (expect 0o600)
+key_owner_uid    : 0 (expect 0)
+key_shape        : 64 hex chars (内容は表示しない)
+key_bytes        : 65
+derived_address  : 0xc6f0c5c7aca59cd8ba4d56ed798102bc00cf66e5
+recorded_address : 0xc6f0c5c7aca59cd8ba4d56ed798102bc00cf66e5
+address_format   : OK 0x+40hex
+--- /info (read-only, no signature) ---
+POST /info clearinghouseState: HTTP 200 -> {"marginSummary": {"accountValue": "0.0", "totalNtlPos": "0.0", "totalRawUsd": "0.0", "totalMarginUsed": "0.0"}, "crossMarginSummary": {"accountValue": "0.0", "totalNtlPos": "0.0", "totalRawUsd": "0.0", "totalMarginUsed": "0.0"}, "crossMaintenanceMarginUsed": "0.0", "withdrawable": "0.0", "assetPosi
+POST /info userRole: HTTP 200 -> {"role": "missing"}
+POST /info extraAgents: HTTP 200 -> []
+POST /info extraAgents[master 0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82]: HTTP 200 -> []
+agent_approved_on_master: False (このカードでは承認しない)
+RESULT           : PASS

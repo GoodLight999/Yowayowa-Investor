@@ -1,0 +1,9 @@
+selftest         : OK (keccak256 vectors=2, address vector=1)
+network          : testnet (Hyperliquid Testnet / api.hyperliquid-testnet.xyz)
+agent_address    : 0xc6f0c5c7aca59cd8ba4d56ed798102bc00cf66e5
+address_len      : 42 (0x + 40 hex)
+key_path         : /root/.secrets/hl_agent_testnet.key
+key_mode         : 0o600
+key_bytes        : 65 (64 hex + LF)
+address_out      : /root/.secrets/hl_agent_testnet.address
+private_key      : NOT PRINTED (by design)

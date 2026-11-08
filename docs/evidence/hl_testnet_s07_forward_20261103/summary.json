@@ -1,0 +1,50 @@
+{
+  "task": "t_359f87cc",
+  "name": "S-07 Hyperliquid Testnet Forward Execution",
+  "executed_at": "2026-11-03T06:17:00Z",
+  "account": "0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82",
+  "agent": "0xa2aF82D975e52D4FA110575d6CAc8f83e1ae9239",
+  "evaluation_period": {
+    "start": "2026-11-04T00:00:00Z",
+    "end": "2026-12-02T00:00:00Z",
+    "days": 28
+  },
+  "acceptance_criteria": {
+    "roundtrip_executed": true,
+    "entry_oid": 64388838936,
+    "exit_oid": 64388840531,
+    "pre_account_value": 100.0,
+    "post_account_value": 99.946405,
+    "positions_closed": true,
+    "open_orders_remaining": 0,
+    "daily_records_generated": true,
+    "evaluator_ready": true,
+    "cron_job_id": "12f8248e71a5"
+  },
+  "initial_trade": {
+    "coin": "BTC",
+    "direction": "SHORT",
+    "size": 0.00039,
+    "entry_px": 75994.0,
+    "exit_px": 76063.0,
+    "mean_slippage_bp": 1.0515,
+    "fees_usdc": 0.026686,
+    "gross_pnl_usdc": -0.02691,
+    "net_pnl_usdc": -0.053596
+  },
+  "five_conditions_eval": {
+    "verdict": "INCONCLUSIVE",
+    "verdict_reason": "検出力不足（活動量 1/8回）。運用期間満了（2026-12-02 00:00 UTC）まで継続判定。",
+    "activity_completed": 1,
+    "activity_required": 8,
+    "net_pnl_usdc": -0.0536,
+    "max_drawdown_pct": 0.0536,
+    "median_slippage_bp": 1.0515,
+    "governance_passed": true
+  },
+  "quality_checks": {
+    "pytest_passed": 128,
+    "ruff_errors": 0,
+    "mypy_issues": 0
+  }
+}

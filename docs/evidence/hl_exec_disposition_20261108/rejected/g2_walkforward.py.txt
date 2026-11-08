@@ -1,0 +1,587 @@
+#!/usr/bin/env python3
+"""
+G2 Rolling Walk-Forward + Deflated Sharpe / PBO Gate Evaluation Script.
+Conforms to:
+  - docs/LIVE_GATES_G1_G5_DESIGN.md (§2)
+  - docs/G2_PREREGISTRATION_20261102.md
+  - time_series_backtest_overfitting_dsr_pbo_cscv.md (t_d6b600c1)
+
+Evaluates candidates C2 (s02_vol_target_15) and S-05 (s05_defensive_rotation)
+under strict pre-registered thresholds without modification.
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import itertools
+import json
+import math
+import os
+import socket
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
+import numpy as np
+import scipy.stats as stats
+
+# ============================================================================
+# Statistical Functions: DSR & CSCV / PBO
+# ============================================================================
+
+def probabilistic_sharpe_ratio(
+    observed_sr: float,
+    benchmark_sr: float,
+    n_samples: int,
+    skewness: float = 0.0,
+    kurtosis: float = 3.0,
+) -> float:
+    """Computes the Probabilistic Sharpe Ratio (PSR) under Mertens (2002)."""
+    if n_samples <= 1:
+        return 0.0
+    sr_variance = (1.0 - skewness * observed_sr + ((kurtosis - 1.0) / 4.0) * (observed_sr ** 2)) / (n_samples - 1.0)
+    if sr_variance <= 0:
+        return 1.0 if observed_sr > benchmark_sr else 0.0
+    z_stat = (observed_sr - benchmark_sr) / math.sqrt(sr_variance)
+    return float(stats.norm.cdf(z_stat))
+
+
+def expected_max_sharpe_ratio(
+    n_trials: int,
+    sr_std: float,
+    euler_gamma: float = 0.57721566490153286,
+) -> float:
+    """Estimates E[max(SR)] under the null hypothesis using Extreme Value Theory."""
+    if n_trials <= 1:
+        return 0.0
+    term1 = (1.0 - euler_gamma) * stats.norm.ppf(1.0 - 1.0 / n_trials)
+    term2 = euler_gamma * stats.norm.ppf(1.0 - 1.0 / (n_trials * math.e))
+    return float(sr_std * (term1 + term2))
+
+
+def deflated_sharpe_ratio(
+    trials_sr: np.ndarray,
+    target_sr: float,
+    n_samples: int,
+    skewness: float = 0.0,
+    kurtosis: float = 3.0,
+) -> Tuple[float, float, float]:
+    """Computes Deflated Sharpe Ratio (DSR). Returns (dsr, benchmark_sr, sr_std)."""
+    n_trials = len(trials_sr)
+    sr_std = float(np.std(trials_sr, ddof=1)) if n_trials > 1 else 0.0
+    benchmark_sr = expected_max_sharpe_ratio(n_trials, sr_std)
+    dsr = probabilistic_sharpe_ratio(target_sr, benchmark_sr, n_samples, skewness, kurtosis)
+    return dsr, benchmark_sr, sr_std
+
+
+def compute_cscv_pbo(return_matrix: np.ndarray, n_blocks: int = 16) -> Dict[str, Any]:
+    """
+    Computes Probability of Backtest Overfitting (PBO) via CSCV (Bailey et al. 2016).
+    return_matrix: shape (T, K) where T is session count, K is strategy count.
+    """
+    T, K = return_matrix.shape
+    if n_blocks % 2 != 0:
+        raise ValueError("n_blocks must be even.")
+    if T < n_blocks:
+        raise ValueError(f"T={T} < n_blocks={n_blocks}")
+    
+    k_half = n_blocks // 2
+    block_indices = np.array_split(np.arange(T), n_blocks)
+    all_combinations = list(itertools.combinations(range(n_blocks), k_half))
+    n_comb = len(all_combinations)
+
+    # Pre-extract block returns
+    block_data = [return_matrix[idx, :] for idx in block_indices]
+
+    underperformed_median = 0
+    logits = []
+    ranks = []
+
+    for comb in all_combinations:
+        is_set = set(comb)
+        oos_set = [b for b in range(n_blocks) if b not in is_set]
+
+        # Concatenate blocks for IS and OOS
+        is_ret = np.vstack([block_data[b] for b in comb])
+        oos_ret = np.vstack([block_data[b] for b in oos_set])
+
+        # Compute annualized Sharpe for each strategy
+        # sr = sqrt(252) * mean / std
+        is_mean = np.mean(is_ret, axis=0)
+        is_std = np.std(is_ret, axis=0, ddof=1)
+        is_std[is_std < 1e-12] = 1e-12
+        is_sr = np.sqrt(252.0) * is_mean / is_std
+
+        oos_mean = np.mean(oos_ret, axis=0)
+        oos_std = np.std(oos_ret, axis=0, ddof=1)
+        oos_std[oos_std < 1e-12] = 1e-12
+        oos_sr = np.sqrt(252.0) * oos_mean / oos_std
+
+        # Best IS strategy
+        best_is_idx = int(np.argmax(is_sr))
+
+        # OOS rank of best IS strategy (1-based rank, higher is better)
+        oos_ranks = stats.rankdata(oos_sr)  # smallest gets rank 1, largest gets rank K
+        best_oos_rank = oos_ranks[best_is_idx]
+        
+        # Relative rank omega in (0, 1)
+        rel_rank = best_oos_rank / (K + 1.0)
+        ranks.append(rel_rank)
+
+        if rel_rank <= 0.5:
+            underperformed_median += 1
+
+        # Logit
+        eps = 1e-6
+        clipped_rank = np.clip(rel_rank, eps, 1.0 - eps)
+        logit = math.log(clipped_rank / (1.0 - clipped_rank))
+        logits.append(logit)
+
+    pbo = underperformed_median / n_comb
+    return {
+        "pbo": float(pbo),
+        "n_combinations": n_comb,
+        "n_blocks": n_blocks,
+        "underperformed_median_count": underperformed_median,
+        "mean_relative_rank": float(np.mean(ranks)),
+        "mean_logit": float(np.mean(logits)),
+    }
+
+
+# ============================================================================
+# Window Metric Calculation
+# ============================================================================
+
+def calc_window_metrics(returns: np.ndarray) -> Dict[str, float]:
+    """Calculates Sharpe, CAGR, and MaxDD for a return sequence."""
+    n = len(returns)
+    if n == 0:
+        return {"sharpe": 0.0, "cagr": 0.0, "maxdd": 0.0}
+    
+    # Sharpe
+    mean_r = float(np.mean(returns))
+    std_r = float(np.std(returns, ddof=1)) if n > 1 else 0.0
+    sharpe = (math.sqrt(252.0) * mean_r / std_r) if std_r > 1e-12 else 0.0
+
+    # CAGR: (prod(1+r))^(252/n) - 1
+    cum_ret = float(np.prod(1.0 + returns))
+    if cum_ret > 0:
+        cagr = (cum_ret ** (252.0 / n)) - 1.0
+    else:
+        cagr = -1.0
+
+    # MaxDD
+    equity = np.cumprod(1.0 + returns)
+    peak = np.maximum.accumulate(equity)
+    dd = (equity - peak) / peak
+    maxdd = float(np.min(dd))
+
+    return {
+        "sharpe": sharpe,
+        "cagr": cagr,
+        "maxdd": maxdd,
+    }
+
+
+# ============================================================================
+# Main Evaluation Logic
+# ============================================================================
+
+TRIALS_DATA = [
+    # 22 pre-registered historical trials from G1 and research records
+    ("momentum_12_1", 0.84),
+    ("low_volatility", 1.07),
+    ("mean_reversion_20", 0.75),
+    ("equal_weight", 1.12),
+    ("crypto_trend_dual_ma_200", 0.78),
+    ("crypto_trend_dual_ma_150", 0.65),
+    ("crypto_trend_dual_ma_100", 0.52),
+    ("crypto_mean_reversion", 0.31),
+    ("crypto_equal_weight", 0.82),
+    ("s02_vol_target_10", 0.92),
+    ("s02_vol_target_15", 0.86),
+    ("s02_vol_target_20", 0.82),
+    ("s02_vol_target_15_daily", 0.85),
+    ("s02_baseline_ew_weekly", 0.83),
+    ("s02_baseline_ew_monthly", 0.83),
+    ("s03_garp_momentum_hybrid", 0.74),
+    ("s03_baseline_momentum_12_1", 0.84),
+    ("s03_reference_ew", 1.12),
+    ("s05_defensive_rotation", 0.87),
+    ("s05_defensive_rotation_daily", 0.48),
+    ("s05_baseline_momentum_12_1", 0.97),
+    ("s05_baseline_low_volatility", 0.83),
+]
+
+
+def evaluate_candidate(
+    candidate_id: str,
+    strat_dates: List[str],
+    strat_returns: np.ndarray,
+    base_returns: np.ndarray,
+    all_strat_return_matrix: np.ndarray,
+    output_dir: Path,
+) -> Dict[str, Any]:
+    T = len(strat_returns)
+    assert len(base_returns) == T
+    assert len(strat_dates) == T
+
+    # Pre-registered rolling walk-forward window parameters:
+    # burn_in = 504, window_len = 126, step = 63
+    burn_in = 504
+    window_len = 126
+    step = 63
+
+    windows = []
+    curr = burn_in
+    while curr + window_len <= T:
+        w_start = curr
+        w_end = curr + window_len
+        windows.append((w_start, w_end))
+        curr += step
+    
+    # If trailing edge has remaining sessions, ensure final window touches T
+    if windows[-1][1] < T:
+        final_start = T - window_len
+        if final_start > windows[-1][0]:
+            windows.append((final_start, T))
+
+    n_windows = len(windows)
+    print(f"[{candidate_id}] Total sessions: {T}, burn-in: {burn_in}, total windows: {n_windows}")
+    if n_windows < 8:
+        raise ValueError(f"Windows count {n_windows} < 8, unable to evaluate (status 2).")
+
+    # Evaluate each window
+    window_rows = []
+    concatenated_oos_returns = []
+    dd_better_count = 0
+    sharpe_pos_count = 0
+    both_pass_count = 0
+
+    for idx, (w_start, w_end) in enumerate(windows):
+        s_date = strat_dates[w_start]
+        e_date = strat_dates[w_end - 1]
+        
+        s_ret = strat_returns[w_start:w_end]
+        b_ret = base_returns[w_start:w_end]
+        concatenated_oos_returns.extend(s_ret)
+
+        s_m = calc_window_metrics(s_ret)
+        b_m = calc_window_metrics(b_ret)
+
+        # dd_better: strat maxdd is shallower than baseline maxdd (higher value since DD <= 0)
+        dd_better = bool(s_m["maxdd"] > b_m["maxdd"])
+        sharpe_pos = bool(s_m["sharpe"] > 0.0)
+        win_pass = bool(dd_better and sharpe_pos)
+
+        if dd_better:
+            dd_better_count += 1
+        if sharpe_pos:
+            sharpe_pos_count += 1
+        if win_pass:
+            both_pass_count += 1
+
+        window_rows.append({
+            "window_index": idx,
+            "start_date": s_date,
+            "end_date": e_date,
+            "start_idx": w_start,
+            "end_idx": w_end,
+            "strat_sharpe": round(s_m["sharpe"], 4),
+            "strat_cagr": round(s_m["cagr"] * 100, 2),
+            "strat_maxdd": round(s_m["maxdd"] * 100, 2),
+            "base_sharpe": round(b_m["sharpe"], 4),
+            "base_cagr": round(b_m["cagr"] * 100, 2),
+            "base_maxdd": round(b_m["maxdd"] * 100, 2),
+            "dd_better": dd_better,
+            "sharpe_pos": sharpe_pos,
+            "window_pass": win_pass,
+        })
+
+    # Save windows CSV
+    csv_path = output_dir / "G2_windows.csv"
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        fieldnames = list(window_rows[0].keys())
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(window_rows)
+
+    # W1: Ratio of windows with dd_better and sharpe_pos >= 0.60
+    w1_ratio = both_pass_count / n_windows
+    w1_pass = bool(w1_ratio >= 0.60)
+
+    # W2: Concatenated OOS Sharpe > 0
+    concat_arr = np.array(concatenated_oos_returns)
+    concat_metrics = calc_window_metrics(concat_arr)
+    w2_sharpe = concat_metrics["sharpe"]
+    w2_pass = bool(w2_sharpe > 0.0)
+
+    # W3: Worst window MaxDD shallower than baseline worst window MaxDD
+    worst_strat_dd = min(row["strat_maxdd"] for row in window_rows)
+    worst_base_dd = min(row["base_maxdd"] for row in window_rows)
+    w3_pass = bool(worst_strat_dd > worst_base_dd)
+
+    # W4: Deflated Sharpe Ratio (DSR) >= 0.90
+    trials_sr = np.array([x[1] for x in TRIALS_DATA])
+    skewness = float(stats.skew(concat_arr))
+    kurtosis = float(stats.kurtosis(concat_arr, fisher=False))  # normal = 3.0
+    dsr, bench_sr, sr_std = deflated_sharpe_ratio(
+        trials_sr=trials_sr,
+        target_sr=w2_sharpe,
+        n_samples=len(concat_arr),
+        skewness=skewness,
+        kurtosis=kurtosis,
+    )
+    w4_pass = bool(dsr >= 0.90)
+
+    # W5: PBO <= 0.10 (strict) / < 0.50 (absolute limit)
+    pbo_res = compute_cscv_pbo(all_strat_return_matrix, n_blocks=16)
+    pbo = pbo_res["pbo"]
+    w5_pass = bool(pbo <= 0.10)
+    w5_no_critical = bool(pbo < 0.50)
+
+    # Overall Pass: All W1 - W5 must be True
+    overall_pass = bool(w1_pass and w2_pass and w3_pass and w4_pass and w5_pass)
+
+    result_json = {
+        "gate": "G2",
+        "candidate": candidate_id,
+        "pass": overall_pass,
+        "runner_host": socket.gethostname(),
+        "evaluated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "total_sessions": T,
+        "n_windows": n_windows,
+        "checks": {
+            "W1_win_rate": {
+                "metric": "dd_better_and_sharpe_pos_ratio",
+                "value": round(w1_ratio, 4),
+                "threshold": 0.60,
+                "pass": w1_pass,
+                "both_pass_count": both_pass_count,
+                "dd_better_count": dd_better_count,
+                "sharpe_pos_count": sharpe_pos_count,
+            },
+            "W2_concat_sharpe": {
+                "metric": "concatenated_oos_sharpe",
+                "value": round(w2_sharpe, 4),
+                "threshold": 0.00,
+                "pass": w2_pass,
+                "concat_cagr": round(concat_metrics["cagr"] * 100, 2),
+                "concat_maxdd": round(concat_metrics["maxdd"] * 100, 2),
+            },
+            "W3_worst_maxdd": {
+                "metric": "worst_window_maxdd_vs_baseline",
+                "strat_worst_maxdd": worst_strat_dd,
+                "base_worst_maxdd": worst_base_dd,
+                "shallower": round(worst_strat_dd - worst_base_dd, 2),
+                "pass": w3_pass,
+            },
+            "W4_dsr": {
+                "metric": "deflated_sharpe_ratio",
+                "value": round(dsr, 4),
+                "threshold": 0.90,
+                "pass": w4_pass,
+                "benchmark_sr": round(bench_sr, 4),
+                "trials_n": len(trials_sr),
+                "trials_sr_std": round(sr_std, 4),
+                "oos_skewness": round(skewness, 4),
+                "oos_kurtosis": round(kurtosis, 4),
+            },
+            "W5_pbo": {
+                "metric": "probability_of_backtest_overfitting",
+                "value": round(pbo, 4),
+                "threshold": 0.10,
+                "pass": w5_pass,
+                "no_critical_overfitting_lt_0_5": w5_no_critical,
+                "cscv_combinations": pbo_res["n_combinations"],
+                "cscv_blocks": pbo_res["n_blocks"],
+                "mean_relative_rank": round(pbo_res["mean_relative_rank"], 4),
+            },
+        },
+        "windows_summary": {
+            "strat_sharpe_mean": round(float(np.mean([r["strat_sharpe"] for r in window_rows])), 4),
+            "strat_sharpe_std": round(float(np.std([r["strat_sharpe"] for r in window_rows], ddof=1)), 4),
+            "strat_cagr_mean": round(float(np.mean([r["strat_cagr"] for r in window_rows])), 2),
+            "strat_maxdd_mean": round(float(np.mean([r["strat_maxdd"] for r in window_rows])), 2),
+            "base_sharpe_mean": round(float(np.mean([r["base_sharpe"] for r in window_rows])), 4),
+            "base_cagr_mean": round(float(np.mean([r["base_cagr"] for r in window_rows])), 2),
+            "base_maxdd_mean": round(float(np.mean([r["base_maxdd"] for r in window_rows])), 2),
+        },
+    }
+
+    json_path = output_dir / "G2.json"
+    with json_path.open("w", encoding="utf-8") as f:
+        json.dump(result_json, f, indent=2)
+
+    return result_json
+
+
+def load_c2_data(results_dir: Path) -> Tuple[List[str], np.ndarray, np.ndarray, np.ndarray]:
+    s02_path = results_dir / "s02_new.json"
+    with s02_path.open("r", encoding="utf-8") as f:
+        d = json.load(f)
+
+    # Candidate: s02_vol_target_15
+    diag_c2 = d["diagnostics"]["s02_vol_target_15"]["full"]["exposure_path"]
+    dates = [x["date"] for x in diag_c2]
+    c2_returns = np.array([float(x["daily_return"]) for x in diag_c2])
+
+    # Baseline: s02_baseline_ew_weekly
+    diag_base = d["diagnostics"]["s02_baseline_ew_weekly"]["full"]["exposure_path"]
+    base_returns = np.array([float(x["daily_return"]) for x in diag_base])
+
+    # CSCV matrix of all S02 variants
+    variants = [
+        "s02_vol_target_10",
+        "s02_vol_target_15",
+        "s02_vol_target_20",
+        "s02_vol_target_15_daily",
+        "s02_baseline_ew_weekly",
+        "s02_baseline_ew_monthly",
+    ]
+    mat = []
+    for v in variants:
+        v_path = d["diagnostics"][v]["full"]["exposure_path"]
+        mat.append([float(x["daily_return"]) for x in v_path])
+    matrix = np.array(mat).T  # Shape: (1440, 6)
+
+    return dates, c2_returns, base_returns, matrix
+
+
+def load_s05_data(
+    results_dir: Path, data_dir: Path, iso_dir: Path
+) -> Tuple[List[str], np.ndarray, np.ndarray, np.ndarray]:
+    s05_path = results_dir / "s05_new.json"
+    with s05_path.open("r", encoding="utf-8") as f:
+        d = json.load(f)
+
+    # Candidate: s05_defensive_rotation
+    diag_s05 = d["diagnostics"]["s05_defensive_rotation"]["full"]["daily_path"]
+    dates = [x["date"] for x in diag_s05]
+    s05_returns = np.array([float(x["daily_return"]) for x in diag_s05])
+
+    # Daily variant
+    diag_s05_daily = d["diagnostics"]["s05_defensive_rotation_daily"]["full"]["daily_path"]
+    s05_daily_returns = np.array([float(x["daily_return"]) for x in diag_s05_daily])
+
+    # S-05 Baselines generated through adapter
+    sys.path.insert(0, str(iso_dir))
+    sys.path.insert(0, str(iso_dir / "repo" / "src"))
+    sys.path.insert(0, str(iso_dir / "repo"))
+
+    import x23_ledger_v3
+    from yowayowa.services import backtest as engine
+    import run_backtests_defensive_rotation as s05_mod
+
+    adapter = x23_ledger_v3.LedgerAdapter(engine)
+    adapter.activate()
+
+    store = s05_mod.default_store(data_dir)
+    histories = {s: store.read(s, provider="alpaca", limit=10_000) for s in s05_mod.UNIVERSE}
+    defs = {d_item.id: d_item for d_item in s05_mod.definitions()}
+
+    from datetime import date
+    member_dates = [{date.fromisoformat(str(row["as_of"])[:10]) for row in histories[s]} for s in s05_mod.UNIVERSE]
+    common = sorted(set.intersection(*member_dates))
+    start, end = max(common[0], date(2021, 1, 4)), common[-1]
+
+    # 1. Momentum baseline (primary baseline)
+    req_mom = s05_mod.BacktestRunRequest(
+        strategy_id="s05_baseline_momentum_12_1",
+        start=start,
+        end=end,
+        commission_bps=10,
+        slippage_bps=5,
+        bootstrap_samples=0,
+    )
+    full_mom = s05_mod.run_backtest(req_mom, defs["s05_baseline_momentum_12_1"], histories)
+    mom_returns = np.array([float(pt.daily_return) for pt in full_mom.equity_curve])
+
+    # 2. Low-vol baseline
+    req_lv = s05_mod.BacktestRunRequest(
+        strategy_id="s05_baseline_low_volatility",
+        start=start,
+        end=end,
+        commission_bps=10,
+        slippage_bps=5,
+        bootstrap_samples=0,
+    )
+    full_lv = s05_mod.run_backtest(req_lv, defs["s05_baseline_low_volatility"], histories)
+    lv_returns = np.array([float(pt.daily_return) for pt in full_lv.equity_curve])
+
+    # 3. EW baseline
+    req_ew = s05_mod.BacktestRunRequest(
+        strategy_id="s05_baseline_ew",
+        start=start,
+        end=end,
+        commission_bps=10,
+        slippage_bps=5,
+        bootstrap_samples=0,
+    )
+    full_ew = s05_mod.run_backtest(req_ew, defs["s05_baseline_ew"], histories)
+    ew_returns = np.array([float(pt.daily_return) for pt in full_ew.equity_curve])
+
+    # CSCV matrix of 5 strategies in S05 universe
+    matrix = np.column_stack([
+        s05_returns,
+        s05_daily_returns,
+        mom_returns,
+        lv_returns,
+        ew_returns,
+    ])  # Shape: (1440, 5)
+
+    # Return primary baseline as momentum baseline (per G1 criteria)
+    return dates, s05_returns, mom_returns, matrix
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Evaluate G2 Gate for C2 and S-05")
+    parser.add_argument("--candidate", choices=["C2", "S05", "all"], default="all")
+    parser.add_argument("--results-dir", type=Path, default=Path("/home/good-light/vps-work/kanban-workspaces/t_c707cb4c_iso_v5/results_v6"))
+    parser.add_argument("--data-dir", type=Path, default=Path("/home/good-light/vps-work/kanban-workspaces/t_c707cb4c/tr2/data"))
+    parser.add_argument("--iso-dir", type=Path, default=Path("/home/good-light/vps-work/kanban-workspaces/t_c707cb4c_iso_v5"))
+    parser.add_argument("--output-base", type=Path, default=Path("data/gates"))
+    args = parser.parse_args()
+
+    candidates = ["C2", "S05"] if args.candidate == "all" else [args.candidate]
+    summaries = {}
+
+    for cand in candidates:
+        print(f"\n========================================================")
+        print(f"Executing G2 Gate Evaluation for candidate: {cand}")
+        print(f"========================================================")
+        cand_out_dir = args.output_base / cand
+        cand_out_dir.mkdir(parents=True, exist_ok=True)
+
+        if cand == "C2":
+            dates, strat_ret, base_ret, matrix = load_c2_data(args.results_dir)
+        elif cand == "S05":
+            dates, strat_ret, base_ret, matrix = load_s05_data(args.results_dir, args.data_dir, args.iso_dir)
+        else:
+            raise ValueError(f"Unknown candidate {cand}")
+
+        res = evaluate_candidate(
+            candidate_id=cand,
+            strat_dates=dates,
+            strat_returns=strat_ret,
+            base_returns=base_ret,
+            all_strat_return_matrix=matrix,
+            output_dir=cand_out_dir,
+        )
+        summaries[cand] = res
+        print(f"[{cand}] Evaluation complete. Overall Pass: {res['pass']}")
+        for k, v in res["checks"].items():
+            print(f"  {k}: pass={v['pass']}, val={v.get('value', v.get('shallower'))}")
+
+    print("\n========================================================")
+    print("All requested candidates evaluated successfully.")
+    for cand, res in summaries.items():
+        print(f"Candidate {cand}: {'PASS' if res['pass'] else 'FAIL'}")
+
+
+if __name__ == "__main__":
+    main()
+

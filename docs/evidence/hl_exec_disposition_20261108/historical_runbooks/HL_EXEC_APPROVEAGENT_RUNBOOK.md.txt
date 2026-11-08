@@ -1,0 +1,132 @@
+# approveAgent 手順書（テストネット・1画面・所要1〜2分）
+
+Hyperliquid テストネット口座 **`0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82`** に、実行システム用の
+エージェント鍵（APIウォレット）を1つ承認する手順。
+
+**第3段で鍵はシステム側で生成済み。マスターに渡すのはアドレス1つだけ**
+＝ **`0xc6f0c5c7aca59cd8ba4d56ed798102bc00cf66e5`**（テストネット用）。秘密鍵は `/root/.secrets/hl_agent_testnet.key`
+（mode 600）にあり、チャット・カード・ログ・git のどこにも出していない。
+**コピペだけで終わる実行版は §8**（所要1〜2分）。署名・発注・approveAgent の実行は本カードでも 0 件。
+
+---
+
+## 1. 何を承認するのか
+
+| 項目 | 内容 |
+| --- | --- |
+| 承認されるもの | エージェント（API）ウォレットのアドレス1つ |
+| できること | 発注・注文取消・時限取消（scheduleCancel）・レバレッジ変更・分離証拠金変更 |
+| **できないこと** | **出金（withdraw）・送金（usdSend）・新たなエージェントの追加**（プロトコル仕様） |
+| 公式UIの文言 | 「API wallets (also known as agent wallets) can perform actions on behalf of an account **without having withdrawal permissions**」（2026-11-02 実測・`docs/evidence/hl_exec_phase2_20261102/ui_api_page_observation.md`） |
+| 鍵が漏れた場合 | 資金の外部持ち出しは不可。被害は「建玉の操作」に限定され、`HL_KILL_SWITCH` と取消で止められる |
+| 登録上限 | 名前付き 3個＋名前なし 1個（公式ドキュメント）。同名で再承認すると**同名の旧エージェントは失効**する |
+| 有効期限 | 名前の末尾に `valid_until {unix ms}` を付けると最大180日。UIの「Valid Until」列に反映される。付けなければ無期限 |
+
+## 2. 前提（マスター側）
+
+1. ブラウザに、テスト口座 `0xF6cB…Dd82` を所有するマスターウォレット（MetaMask 等）が入っている。
+2. 実行システムから**エージェントのアドレス（`0x` + 40桁）だけ**を受け取っている。
+   ※ 秘密鍵は受け取らない・入力しない・画面に出さない。**このアドレスは公開情報**。
+3. 鍵はシステム側で生成済み（第3段）: `/root/.secrets/hl_agent_testnet.key`（**mode 600**・テストネット専用）。
+   アドレス控えは `/root/.secrets/hl_agent_testnet.address`。**この手順書では鍵を生成しない。**
+
+## 3. 手順（1画面・約1〜2分）
+
+1. **`https://app.hyperliquid-testnet.xyz/API`** を開く（メインネットは `app.hyperliquid.xyz`。間違えないこと）。
+2. 画面右上の **`Connect`** を押し、マスターウォレットを接続する（ウォレット側で接続許可）。
+3. `API Wallet Name` 欄に名前を入れる。例: **`yowayowa-exec`**
+   （期限を切るなら `yowayowa-exec valid_until 1796179200000` のように ms タイムスタンプを続ける）。
+4. `API Wallet Address` 欄に、**システムから渡されたエージェントアドレスを貼り付ける**。
+   ⚠ この欄の右にある小さな **`Generate`** は**押さない**。ブラウザ内で鍵を生成するリンクで、秘密鍵が画面に表示される経路と推定される（実測は未実施＝鍵生成を避けたため）。本運用では鍵はシステム側が持つ。
+5. 同じ行の右端の **`Connect`** ボタンを押す（右上の Connect とは別。フォーム行のボタン）。
+6. ウォレットに署名要求（`approveAgent`）が出るので内容を確認して**承認**
+   （承認はマスター鍵の署名が必要という仕様からの手順。ウォレット側の表示文言は未実測）。
+7. 一覧テーブルに `Name / Address / Valid Until` の行が増えていれば**完了**。
+
+## 4. 完了確認（読み取りのみ・鍵不要・所要5秒）
+
+VPS で以下を実行（`/info` のみ・送信なし）:
+
+```
+cd /root/current-work/yowayowa-investor
+.venv/bin/python scripts/hl_exec_phase2/check_agents.py
+```
+
+期待結果:
+
+```
+POST /info extraAgents: HTTP 200 -> [{"address":"0x…","name":"yowayowa-exec","validUntil":…}]
+POST /info userRole:    HTTP 200 -> {"role": "user"}
+```
+
+- `extraAgents` が **非空** なら承認済み（本手順書作成時点の実測は `[]` ＝ 未承認）。
+- `extraAgents` が空のままなら、手順5のボタン押下または手順6の署名が完了していない。
+
+## 5. 失敗したときの戻し方
+
+| 症状 | 戻し方 |
+| --- | --- |
+| 手順6で署名をキャンセルした / ウォレットが出ない | **何も登録されない**（approveAgent は署名が成立しなければオンチェーン変更なし）。`extraAgents` が `[]` のままであることを確認して、手順3からやり直す |
+| 間違ったアドレスを承認してしまった | 一覧の該当行の `Action` 列から解除する（行の削除＝承認取消）。削除UIの正確な表記は未承認状態では行が無いため実測できていない。**確実な代替**: 同じ名前で正しいアドレスを再承認すると、**同名の旧エージェントは失効**する（公式仕様） |
+| 名前を間違えた | 同名で正しい名前を再承認（旧名は別エージェントとして残るので、上記 Action 列から旧方を解除） |
+| 承認後に残高が 0 になった | 残高0の口座のエージェントは自動的に pruning される（公式仕様）。再度承認し直す |
+| ウォレットがテストネットを向いていない | 本手順はテストネットUI（`app.hyperliquid-testnet.xyz`）で行う。署名先チェーンも Testnet になる |
+
+## 6. この手順で絶対にやらないこと
+
+- `Generate` を押してブラウザに鍵を作らせない（秘密鍵が画面に出る）。
+- 秘密鍵・シードフレーズをチャット・カード・ログ・画面共有に載せない。
+- メインネットUI（`app.hyperliquid.xyz`）で承認しない（残高0だが環境混同の元）。
+- `approveAgent` をAPI/スクリプトから送らない（マスター鍵の署名が必要＝VPSにマスター鍵を置かない設計§2.1）。
+
+## 7. 根拠（実測）
+
+- UI構造の実測: `docs/evidence/hl_exec_phase2_20261102/ui_api_page_observation.md`（フォームは「名前＋アドレス＋Connect」の1行、アドレスは外から入力可能）
+- アクション仕様: Hyperliquid Docs「Approve an API wallet」— `{"type":"approveAgent","hyperliquidChain":"Testnet","agentAddress":…,"agentName":…,"nonce":…}`、`agentName` は最大3個の名前付き＋無期限なし1個、`valid_until` は最大180日
+- 承認状況の読み取り: `{"type":"extraAgents","user":…}` / `{"type":"userRole","user":…}` が HTTP 200 で応答（実測）
+
+## 8. 実行版（第3段で確定した実アドレス入り・コピペ用）
+
+### 8.1 貼り付ける値
+
+| 欄 | 値 |
+| --- | --- |
+| 開く画面 | `https://app.hyperliquid-testnet.xyz/API`（**テストネット**） |
+| `API Wallet Name` | `yowayowa-exec` |
+| `API Wallet Address` | `0xc6f0c5c7aca59cd8ba4d56ed798102bc00cf66e5` |
+
+- このアドレスは**テストネット用エージェント鍵の公開アドレス**（秘密鍵は `/root/.secrets/hl_agent_testnet.key`・mode 600・出力0件）。
+- `Generate` は押さない（ブラウザに鍵を作らせない）。
+- 名前の末尾に有効期限を付ける場合は `yowayowa-exec valid_until 1796179200000` のように ms を続ける。付けなければ無期限。
+
+### 8.2 手順（この順で4操作）
+
+1. `https://app.hyperliquid-testnet.xyz/API` を開く（右上が `Connect` のままなら未接続）。
+2. 右上 **`Connect`** → マスターウォレットを接続（テストネットに切り替わっていることを確認）。
+3. フォームの1行に **名前 `yowayowa-exec`** と **上のアドレス** を貼り、その行の右端の **`Connect`** を押す。
+4. ウォレットの `approveAgent` 署名要求を確認して**承認**。一覧に行が増えれば完了。
+
+### 8.3 完了確認（マスター側の追加作業なし・VPSで読み取りのみ）
+
+```
+cd /root/current-work/yowayowa-investor
+.venv/bin/python scripts/hl_exec_phase2/check_agents.py
+.venv/bin/python scripts/hl_exec_phase3/verify_agent_key.py
+```
+
+期待結果（承認後の `check_agents.py`）:
+
+```
+POST /info extraAgents: HTTP 200 -> [{"address":"0xc6f0c5c7aca59cd8ba4d56ed798102bc00cf66e5","name":"yowayowa-exec","validUntil":...}]
+POST /info userRole:    HTTP 200 -> {"role": "user"}
+```
+
+- 承認前の実測（2026-11-02・第3段）: `extraAgents` は `[]`、エージェント側 `userRole` は `{"role":"missing"}`、
+  `clearinghouseState` は HTTP 200 で `accountValue 0.0`（未承認・未入金でも**読み取りは通る**）。
+- `verify_agent_key.py` は鍵ファイルの mode 600・再導出アドレス一致・`/info` 3種の HTTP 200 を毎回まとめて確認する
+  （秘密鍵は表示しない）。
+
+### 8.4 承認後にこちらでやること（マスターの作業ではない）
+
+本番の署名経路（`/exchange`）はまだ結線していない。承認後に、エージェント鍵での発注経路の実装と
+テストネット実注文の可否を別カードで裁可に回す。**承認＝実注文の許可ではない。**

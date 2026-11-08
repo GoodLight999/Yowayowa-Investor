@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+# ruff: noqa: RUF001, RUF002, RUF003
+"""第3段で生成したエージェント鍵の検証（秘密鍵は一切出力しない）。
+
+検証項目:
+  1. 秘密鍵ファイルが存在し、mode が 600、内容が 32 バイト hex（65文字+LF）である
+  2. 保存された秘密鍵から再導出したアドレスが、アドレス控え（公開情報）と一致する
+  3. そのアドレスが `0x` + 40桁である
+  4. テストネット `/info` の `clearinghouseState` / `userRole` / `extraAgents` に
+     そのアドレスを入れても 500 にならない（未承認エージェントでも読み取りは通る）
+
+`/exchange`（署名・発注・approveAgent）へは一切送らない。読み取り専用。
+
+使い方:
+    python scripts/hl_exec_phase3/verify_agent_key.py
+    python scripts/hl_exec_phase3/verify_agent_key.py --expected 0x...
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from gen_agent_key import DEFAULT_ADDRESS_OUT, DEFAULT_OUT, derive_address, keccak256
+
+INFO_URL_TESTNET = "https://api.hyperliquid-testnet.xyz/info"
+ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+
+
+def post(payload: dict) -> tuple[int, object]:
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        INFO_URL_TESTNET,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "yowayowa-hl-exec/0.1 (read-only)",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:  # 固定 https
+            return resp.getcode(), json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:  # 500 などはここに来る（握りつぶさず記録）
+        raw = exc.read().decode(errors="replace")[:200]
+        return exc.code, {"error_body": raw}
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="エージェント鍵の検証（秘密鍵は非出力）")
+    ap.add_argument("--key", default=str(DEFAULT_OUT))
+    ap.add_argument("--address-file", default=str(DEFAULT_ADDRESS_OUT))
+    ap.add_argument("--expected", default=None, help="期待アドレス（省略時はアドレス控えを使う）")
+    ap.add_argument(
+        "--dump-dir",
+        default=None,
+        help="生レスポンスを JSON で保存するディレクトリ（証跡用）",
+    )
+    args = ap.parse_args(argv)
+
+    key_path = Path(args.key)
+    failures: list[str] = []
+    dump = Path(args.dump_dir) if args.dump_dir else None
+    if dump is not None:
+        dump.mkdir(parents=True, exist_ok=True)
+
+    # 1. ファイル属性
+    if not key_path.is_file():
+        print(f"FAIL: {key_path} が存在しない")
+        return 1
+    st = key_path.stat()
+    mode = st.st_mode & 0o777
+    print("key_exists       : yes")
+    print(f"key_path         : {key_path}")
+    print(f"key_mode         : {oct(mode)} (expect 0o600)")
+    print(f"key_owner_uid    : {st.st_uid} (expect {os.getuid()})")
+    if mode != 0o600:
+        failures.append(f"mode={oct(mode)} != 0o600")
+    if st.st_uid != os.getuid():
+        failures.append(f"owner uid {st.st_uid} != {os.getuid()}")
+
+    raw = key_path.read_text(encoding="utf-8").strip()
+    shape_ok = bool(re.fullmatch(r"[0-9a-f]{64}", raw))
+    print(f"key_shape        : {'64 hex chars' if shape_ok else 'UNEXPECTED'} (内容は表示しない)")
+    print(f"key_bytes        : {st.st_size}")
+    if not shape_ok:
+        failures.append("key is not 64 lowercase hex chars")
+        _report(failures)
+        return 1
+
+    # 2. 再導出
+    derived = derive_address(int(raw, 16))
+    sidecar = Path(args.address_file)
+    recorded = sidecar.read_text(encoding="utf-8").strip() if sidecar.is_file() else None
+    expected = args.expected or recorded
+    print(f"derived_address  : {derived}")
+    print(f"recorded_address : {recorded}")
+    if expected is None:
+        failures.append("no expected address (sidecar missing and --expected not given)")
+    elif derived.lower() != expected.lower():
+        failures.append(f"derived {derived} != expected {expected}")
+
+    # 3. 形式
+    print(f"address_format   : {'OK 0x+40hex' if ADDRESS_RE.match(derived) else 'BAD'}")
+    if not ADDRESS_RE.match(derived):
+        failures.append("address format invalid")
+
+    # keccak 自己検証（壊れた実装で判定しないため）
+    if keccak256(b"").hex() != "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470":
+        failures.append("keccak256 self-vector mismatch")
+
+    # 4. 読み取り専用の /info 照会
+    print("--- /info (read-only, no signature) ---")
+    queries = (
+        {"type": "clearinghouseState", "user": derived},
+        {"type": "userRole", "user": derived},
+        {"type": "extraAgents", "user": derived},
+    )
+    for payload in queries:
+        status, body = post(payload)
+        text = json.dumps(body, ensure_ascii=False)
+        print(f"POST /info {payload['type']}: HTTP {status} -> {text[:300]}")
+        if status != 200:
+            failures.append(f"{payload['type']} returned HTTP {status}")
+        if dump is not None:
+            record = {"request": payload, "http_status": status, "response": body}
+            (dump / f"info_{payload['type']}_agent.json").write_text(
+                json.dumps(record, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+    # 承認状況の参考表示（マスター口座側。未承認なら []）
+    master = "0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82"
+    status, body = post({"type": "extraAgents", "user": master})
+    print(
+        f"POST /info extraAgents[master {master}]: HTTP {status} "
+        f"-> {json.dumps(body, ensure_ascii=False)[:300]}"
+    )
+    if dump is not None:
+        record = {
+            "request": {"type": "extraAgents", "user": master},
+            "http_status": status,
+            "response": body,
+        }
+        (dump / "info_extraAgents_master.json").write_text(
+            json.dumps(record, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    approved = isinstance(body, list) and any(
+        isinstance(a, dict) and str(a.get("address", "")).lower() == derived.lower() for a in body
+    )
+    print(f"agent_approved_on_master: {approved} (このカードでは承認しない)")
+
+    return _report(failures)
+
+
+def _report(failures: list[str]) -> int:
+    if failures:
+        print("RESULT           : FAIL")
+        for f in failures:
+            print(f"  - {f}")
+        return 1
+    print("RESULT           : PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

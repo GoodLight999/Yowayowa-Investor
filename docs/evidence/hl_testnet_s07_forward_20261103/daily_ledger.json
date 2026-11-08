@@ -1,0 +1,26 @@
+{
+  "evaluation_period": {
+    "start": "2026-11-04T00:00:00Z",
+    "end": "2026-12-02T00:00:00Z",
+    "days_total": 28
+  },
+  "days": [
+    {
+      "day": "2026-11-03",
+      "equity": 99.9464,
+      "position": 0.0,
+      "daily_pnl": -0.0536,
+      "cumulative_pnl": -0.0536,
+      "peak_equity": 100.0,
+      "drawdown_pct": 0.0536,
+      "funding_balance": 0.0,
+      "trades_count": 1,
+      "governance": {
+        "position_returned_to_zero": true,
+        "killswitch_lock_logged": true,
+        "unfilled_orders_remaining": 0
+      }
+    }
+  ],
+  "initial_equity": 100.0
+}

@@ -1,0 +1,121 @@
+# ruff: noqa: RUF002, RUF003 — 日本語の句読点（全角）は本文テキストであり誤字ではない
+"""第3段エージェント鍵生成の単体テスト（実ネットワーク・実秘密鍵に触れない）。
+
+検証:
+  * keccak-256 の既知ベクタ（純 Python 実装と既定実装の両方）
+  * 秘密鍵 1 → 既知アドレス（導出経路の正しさ）
+  * 生成した鍵が mode 600 で、**戻り値の出力に秘密鍵が含まれない**こと
+  * 既存ファイルを上書きしないこと / testnet 以外を拒否すること
+  * 再導出したアドレスがアドレス控えと一致すること
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import stat
+import sys
+from pathlib import Path
+
+import pytest
+
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "hl_exec_phase3" / "gen_agent_key.py"
+
+
+def load_module():
+    spec = importlib.util.spec_from_file_location("gen_agent_key_phase3", SCRIPT)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+gen = load_module()
+
+
+VEC_EMPTY = "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+VEC_ABC = "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45"
+
+
+def test_keccak_known_vectors_both_implementations() -> None:
+    for fn in (gen._keccak256_pure, gen.keccak256):
+        assert fn(b"").hex() == VEC_EMPTY
+        assert fn(b"abc").hex() == VEC_ABC
+
+
+def test_keccak_multi_block_lengths() -> None:
+    # rate=136 バイト境界をまたぐ入力を、2実装が一致することで確認する
+    for n in (135, 136, 137, 272):
+        data = bytes(range(256))[:n] if n <= 256 else (b"x" * n)
+        assert gen._keccak256_pure(data) == gen.keccak256(data)
+
+
+def test_address_derivation_known_vector() -> None:
+    # 導出は小文字 hex を返す（EIP-55 チェックサム表記とは比較時に正規化する）
+    assert gen.derive_address(1).lower() == "0x7e5f4552091a69125d5dfcb7b8c2659029395bdf"
+
+
+def test_selftest_is_clean() -> None:
+    assert gen.selftest() == []
+
+
+def test_generate_writes_600_and_never_prints_secret(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir(mode=0o700)
+    key_path = secrets_dir / "hl_agent_testnet.key"
+    addr_path = secrets_dir / "hl_agent_testnet.address"
+
+    rc = gen.generate(key_path, addr_path)
+    out = capsys.readouterr()
+    assert rc == 0
+
+    assert key_path.is_file()
+    assert stat.S_IMODE(key_path.stat().st_mode) == 0o600
+
+    raw = key_path.read_text(encoding="utf-8").strip()
+    assert len(raw) == 64
+    # 出力（stdout/stderr）に秘密鍵文字列が現れない
+    combined = out.out + out.err
+    assert raw not in combined
+    assert raw.upper() not in combined
+    assert "NOT PRINTED" in combined
+
+    address = addr_path.read_text(encoding="utf-8").strip()
+    assert address in combined
+    assert gen.derive_address(int(raw, 16)) == address
+
+    # 2回目は上書き拒否
+    assert gen.generate(key_path, addr_path) == 2
+    assert key_path.read_text(encoding="utf-8").strip() == raw
+
+
+def test_generate_refuses_loose_parent_mode(tmp_path: Path) -> None:
+    loose = tmp_path / "loose"
+    loose.mkdir()
+    loose.chmod(0o755)
+    assert gen.generate(loose / "k.key", loose / "k.address") == 1
+    assert not (loose / "k.key").exists()
+
+
+def test_main_rejects_mainnet_network(tmp_path: Path) -> None:
+    rc = gen.main(
+        [
+            "--network",
+            "mainnet",
+            "--out",
+            str(tmp_path / "k.key"),
+            "--address-out",
+            str(tmp_path / "k.address"),
+        ]
+    )
+    assert rc == 1
+    assert not (tmp_path / "k.key").exists()
+
+
+def test_main_selftest_creates_nothing(tmp_path: Path) -> None:
+    out = tmp_path / "k.key"
+    rc = gen.main(["--selftest", "--out", str(out), "--address-out", str(tmp_path / "k.address")])
+    assert rc == 0
+    assert not out.exists()
