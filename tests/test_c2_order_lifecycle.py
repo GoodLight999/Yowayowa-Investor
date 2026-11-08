@@ -905,3 +905,193 @@ def test_weekly_rerun_same_day_leaves_one_live_order_per_symbol(
     }
     live = [o for o in broker.orders if o["status"] in ol.OPEN_STATUSES]
     assert len(live) == 4, "re-running the weekly must not stack a second book"
+
+
+# --------------------------------------------------------------------------- #
+# 9. positions read: an API failure must never be mistaken for a flat book
+#    (review finding 2026-11-09, round 2 -- injected /positions 503)
+# --------------------------------------------------------------------------- #
+class PositionsOutageBroker(FakeBroker):
+    """``/positions`` fails from the Nth read on (HTTP 503 injected by the audit)."""
+
+    def __init__(self, *args: Any, fail_from_call: int = 1, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.fail_from_call = fail_from_call
+        self.positions_calls = 0
+
+    def get_positions(self) -> list[dict[str, Any]]:
+        self.positions_calls += 1
+        if self.positions_calls >= self.fail_from_call:
+            raise RuntimeError(
+                "Failed to read Alpaca positions: {'http_code': 503, "
+                "'message': 'injected positions outage'}"
+            )
+        return super().get_positions()
+
+
+def test_daily_positions_outage_blocks_the_resend(tmp_path: Path) -> None:
+    """Confirmed cancels + unreadable positions => residual unknowable => send nothing."""
+    broker = PositionsOutageBroker(
+        session_date=SESSION,
+        orders=[_order(f"c2_{s}_buy_2026-11-03", symbol=s, status="accepted") for s in SYMBOLS],
+        # 10 SPY shares filled before the cancel: a correct retry would send 23, not 33.
+        positions=[{"symbol": "SPY", "qty": "10"}],
+        fail_from_call=1,
+    )
+
+    res = _run(broker, tmp_path)
+
+    assert res["status"] == "error"
+    assert res["submitted"] == []
+    assert broker.submitted == [], "no order may be sent while the position book is unreadable"
+    assert len(res["stale_canceled"]) == 4
+    assert any(e.startswith("account_or_positions_read_failed") for e in res["errors"])
+    ledger = tmp_path / "order_lifecycle.jsonl"
+    assert json.loads(ledger.read_text(encoding="utf-8").strip().splitlines()[-1])["status"] == (
+        "error"
+    )
+
+
+def test_daily_empty_book_is_still_a_valid_flat_account(tmp_path: Path) -> None:
+    """Control: a genuinely empty read still re-sends the whole target book."""
+    broker = FakeBroker(
+        session_date=SESSION,
+        orders=[_order(f"c2_{s}_buy_2026-11-03", symbol=s, status="canceled") for s in SYMBOLS],
+        positions=[],
+    )
+
+    res = _run(broker, tmp_path)
+
+    assert res["status"] == "ok"
+    assert len(res["submitted"]) == 4
+    assert len(broker.submitted) == 4
+
+
+def test_weekly_positions_outage_blocks_every_submission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _prepare_weekly(monkeypatch, tmp_path)
+    broker = PositionsOutageBroker(
+        session_date=date(2026, 11, 3),
+        positions=[{"symbol": "SPY", "qty": "10"}],
+        fail_from_call=1,
+    )
+    monkeypatch.setattr(c2_runner, "AlpacaPaperClient", lambda *a, **k: broker)
+
+    res = _weekly(tmp_path)
+
+    assert res["status"] == "success"
+    assert res["orders_placed"] == []
+    assert broker.submitted == []
+    blocked = [b for b in res["orders_blocked"] if b["reason"] == "positions_unreadable"]
+    assert len(blocked) == 1
+    assert "503" in blocked[0]["detail"]
+
+
+def test_weekly_residual_reread_failure_blocks_that_symbol(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first read works; the post-cancel re-read (fill raced) fails => SPY withheld."""
+    _prepare_weekly(monkeypatch, tmp_path)
+    prequeued = _order(
+        "c2_SPY_buy_2026-11-03_a1",
+        symbol="SPY",
+        status="accepted",
+        expires_at="2026-11-03T21:00:00Z",
+        updated_at="2026-11-03T00:05:00Z",
+    )
+    broker = PositionsOutageBroker(
+        session_date=date(2026, 11, 3),
+        orders=[prequeued],
+        fail_from_call=2,
+    )
+    monkeypatch.setattr(c2_runner, "AlpacaPaperClient", lambda *a, **k: broker)
+
+    res = _weekly(tmp_path)
+
+    assert broker.canceled == ["id-c2_SPY_buy_2026-11-03_a1"]
+    assert [o["symbol"] for o in broker.submitted] == ["IWM", "JNJ", "PG"]
+    blocked = [
+        b for b in res["orders_blocked"] if b["reason"] == "positions_unreadable_after_cancel"
+    ]
+    assert [b["symbol"] for b in blocked] == ["SPY"]
+
+
+def test_real_adapter_positions_503_raises_instead_of_returning_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The adapter itself must distinguish a failed read from a flat account."""
+    from scripts.paper_c2.alpaca_paper_client import AlpacaPaperClient
+
+    client = AlpacaPaperClient(
+        key_id="test-key",
+        secret_key="test-secret",
+        base_url="https://paper-api.alpaca.markets/v2",
+    )
+    monkeypatch.setattr(
+        client,
+        "_request",
+        lambda *a, **k: {"http_code": 503, "message": "injected positions outage"},
+    )
+    with pytest.raises(RuntimeError, match="positions"):
+        client.get_positions()
+    with pytest.raises(RuntimeError, match="positions"):
+        client.get_positions_strict()
+
+    # a real flat account is still an empty list, not an error
+    monkeypatch.setattr(client, "_request", lambda *a, **k: [])
+    assert client.get_positions() == []
+
+
+def test_daily_retry_through_the_real_adapter_sends_nothing_on_positions_503(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end through AlpacaPaperClient (the audit probe's injection point)."""
+    from scripts.paper_c2.alpaca_paper_client import AlpacaPaperClient
+
+    client = AlpacaPaperClient(
+        key_id="test-key",
+        secret_key="test-secret",
+        base_url="https://paper-api.alpaca.markets/v2",
+    )
+
+    def fake_request(
+        url: str, method: str = "GET", data: dict[str, Any] | None = None, timeout: float = 30.0
+    ) -> Any:
+        if url.endswith("/positions"):
+            return {"http_code": 503, "message": "injected positions outage"}
+        if url.endswith("/account"):
+            return {
+                "id": "acct-1234567890",
+                "status": "ACTIVE",
+                "currency": "USD",
+                "equity": "100000",
+                "cash": "100000",
+                "buying_power": "400000",
+            }
+        if "/orders?status=all" in url:
+            return []
+        if url.endswith("/clock"):
+            return {
+                "is_open": False,
+                "next_open": "2026-11-10T09:30:00-05:00",
+                "next_close": "2026-11-10T16:00:00-05:00",
+            }
+        raise AssertionError(f"unexpected request {method} {url}")
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    res = ol.run_order_lifecycle(
+        client,
+        state=_state(),
+        as_of_date=date(2026, 11, 9),
+        prices=PRICES,
+        universe=SYMBOLS,
+        now=NOW,
+        ledger_path=tmp_path / "order_lifecycle.jsonl",
+        cancel_poll_interval_s=0.0,
+    )
+
+    assert res["status"] == "error"
+    assert res["submitted"] == []
+    assert any("account_or_positions_read_failed" in e for e in res["errors"])

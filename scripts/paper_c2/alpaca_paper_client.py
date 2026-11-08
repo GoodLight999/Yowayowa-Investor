@@ -150,8 +150,25 @@ class AlpacaPaperClient:
         return self._request(f"{self.base_url}/clock")
 
     def get_positions(self) -> list[dict[str, Any]]:
+        """Read the position book, raising instead of returning ``[]`` on error.
+
+        ``[]`` must mean "flat", never "the read failed". The order-lifecycle
+        retry sizes its residual from this payload, so collapsing an HTTP 503
+        into an empty list would be read as "no positions" and re-send the full
+        target next to a position that had already filled (review finding
+        2026-11-09). Callers that decide whether to send an order treat an
+        exception as "do not submit".
+        """
         res = self._request(f"{self.base_url}/positions")
-        return res if isinstance(res, list) else []
+        if isinstance(res, dict) and (res.get("http_code") or res.get("error")):
+            raise RuntimeError(f"Failed to read Alpaca positions: {res}")
+        if not isinstance(res, list):
+            raise RuntimeError(f"Unexpected Alpaca positions payload: {type(res).__name__}")
+        return res
+
+    def get_positions_strict(self) -> list[dict[str, Any]]:
+        """Alias of :meth:`get_positions` (same strict, raise-on-failure contract)."""
+        return self.get_positions()
 
     def get_daily_bars(
         self,

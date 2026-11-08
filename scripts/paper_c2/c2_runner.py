@@ -343,8 +343,35 @@ def run_weekly_cycle(
                 state["current_equity_15"] = acct.equity
                 state["peak_equity_15"] = max(state.get("peak_equity_15", acct.equity), acct.equity)
                 state["alpaca_paper_equity"] = acct.equity
-            # Fetch existing positions for delta rebalancing
-            positions_list = client.get_positions()
+            # Fetch existing positions for delta rebalancing. A failed read must
+            # never look like a flat book: ``get_positions`` raises on HTTP /
+            # connection failure, and sizing every symbol from an empty dict
+            # would re-send the full target next to positions that already
+            # exist (review finding 2026-11-09). Fail closed here instead.
+            positions_gate: str | None = None
+            try:
+                positions_list = client.get_positions()
+                if not isinstance(positions_list, list):
+                    raise RuntimeError(
+                        f"unexpected /positions payload: {type(positions_list).__name__}"
+                    )
+            except Exception as exc:
+                positions_gate = f"positions_unreadable: {exc}"
+                positions_list = []
+                orders_blocked.append(
+                    {
+                        "as_of_date": seq_date,
+                        "symbol": None,
+                        "side": None,
+                        "reason": "positions_unreadable",
+                        "detail": str(exc),
+                    }
+                )
+                logger.error(
+                    "Alpaca submission skipped for %s: cannot read positions (%s)",
+                    seq_date,
+                    exc,
+                )
             current_positions: dict[str, float] = {
                 p["symbol"]: float(p.get("qty", 0.0)) for p in positions_list if "symbol" in p
             }
@@ -355,8 +382,8 @@ def run_weekly_cycle(
             # Refusing here keeps a mislabelled order out of the book -- the exact
             # 2026-11-02 defect (order labelled 2026-11-03, expires_at 2026-11-02).
             session = resolve_session(client, datetime.now(UTC))
-            session_gate: str | None = None
-            if session.session_date != as_of_date:
+            session_gate: str | None = positions_gate
+            if session_gate is None and session.session_date != as_of_date:
                 session_gate = (
                     f"session_mismatch: order submitted now would live in "
                     f"{session.session_date} ({session.source}) but the decision session "
