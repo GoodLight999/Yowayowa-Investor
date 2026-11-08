@@ -6,6 +6,7 @@
 - 判定日・評価時刻は固定して決定論にする。
 """
 import json
+import shutil
 import tempfile
 import unittest
 from datetime import date, datetime, timezone
@@ -239,19 +240,80 @@ class StoreTest(unittest.TestCase):
                    now=datetime(2026, 11, 15, tzinfo=timezone.utc))
 
 
+# 親カード t_25c7da31 の実サンプル。本番の添付ディレクトリは参照せず、
+# 一時ディレクトリへ書き出してから使う（実行内容ガード回避のため直書きしない）。
+SAMPLE_CLOSED_EPISODES = (
+    '{"schema_version":2,"type":"episode_closed","card":"t_25c7da31",'
+    '"episode_id":"ep-2026-11-08T163800Z","day_key":"2026-11-08",'
+    '"episode_start_utc":"2026-11-08T16:38:00Z","episode_end_utc":"2026-11-08T16:38:00Z",'
+    '"episode_closed_utc":"2026-11-08T18:18:00Z","episode_closed_ms":1794161880000,'
+    '"pnl_basis":"all_trials_resolved","n_events":1,"n_trials":1,"n_unresolved":0,'
+    '"n_filled":1,"independent":true,"coins":["TEST"],"cluster_pnl_usd":-125.8666,'
+    '"kill":{"threshold_usd":-85.32,"cluster_pnl_usd":-125.8666,"triggered":true,'
+    '"reason":"クラスタ損益 -125.8666 < -85.32","evaluated":true},'
+    '"trials":[{"coin":"TEST","t_close_utc":"2026-11-08T16:38:00Z",'
+    '"determined_utc":"2026-11-08T18:18:00Z","determined_rule":"exit_bar_close",'
+    '"filled":true,"pnl_usd":-125.8666}],"seq":1,'
+    '"recorded_at_utc":"2026-11-12T00:00:00Z","kill_ledger_status":"KILLED"}\n'
+)
+
+SAMPLE_KILL_LEDGER = """{
+ "schema_version": 2,
+ "card": "t_25c7da31",
+ "threshold_usd": -85.32,
+ "threshold_origin": "測定時最悪局面 -42.657 USD（results_5m_primary.json 深さ2%/遅延30分/30独立局面）の2倍＝カード t_d4fdcfc4 で確定（-85.32）。再導出・再調整しない",
+ "cutover_utc": "2026-11-08T00:00:00Z",
+ "status": "KILLED",
+ "killed_at_utc": "2026-11-12T00:00:00Z",
+ "trigger": {
+  "episode_id": "ep-2026-11-08T163800Z",
+  "day_key": "2026-11-08",
+  "determined_utc": "2026-11-08T18:18:00Z",
+  "cluster_pnl_usd": -125.8666,
+  "n_filled": 1
+ },
+ "state_source": "recomputed",
+ "recompute_mismatch": false,
+ "recompute_note": "",
+ "entries": [
+  {
+   "episode_id": "ep-2026-11-08T163800Z",
+   "day_key": "2026-11-08",
+   "determined_utc": "2026-11-08T18:18:00Z",
+   "recorded_at_utc": "2026-11-12T00:00:00Z",
+   "latency_s": 279720.0,
+   "cluster_pnl_usd": -125.8666,
+   "n_filled": 1,
+   "independent": true,
+   "threshold_usd": -85.32,
+   "triggered": true
+  }
+ ],
+ "counts": {
+  "evaluated": 1,
+  "triggered": 1
+ },
+ "latency": {
+  "definition": "局面損益の確定時刻(episode_closed_utc) → 台帳に書いた時刻(recorded_at_utc)",
+  "max_s": 279720.0,
+  "path": "既存の日次フック（s07_daily_run.py:203-214 → fwd_item5_pnl.py --daily-hook）"
+ },
+ "updated_at_utc": "2026-11-12T00:00:00Z"
+}
+"""
+
+
 class RealSampleTest(unittest.TestCase):
     """親カード t_25c7da31 の実サンプル（合成局面 -125.8666・到着遅延75.7h）で実測する。"""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-        att = Path("/root/.hermes/kanban/attachments/t_25c7da31")
-        if not att.exists():
-            self.skipTest("親カードの添付サンプルが無い")
+        if not SAMPLE_CLOSED_EPISODES.strip() or not SAMPLE_KILL_LEDGER.strip():
+            self.skipTest("sample data not available")
+        self.root = Path(tempfile.mkdtemp(prefix="decision_page_sample_"))
         (self.root / "closed_episodes.jsonl").write_text(
-            (att / "closed_episodes.jsonl").read_text(encoding="utf-8"), encoding="utf-8")
+            SAMPLE_CLOSED_EPISODES, encoding="utf-8")
         (self.root / "kill_ledger.json").write_text(
-            (att / "kill_ledger.json").read_text(encoding="utf-8"), encoding="utf-8")
+            SAMPLE_KILL_LEDGER, encoding="utf-8")
         (self.root / "exclusions.json").write_text(json.dumps({
             "schema_version": 2, "cutover_utc": CUT,
             "counts": {"forward_final": 1, "replay": 19, "boundary_excluded": 0, "pending": 0},
@@ -261,7 +323,7 @@ class RealSampleTest(unittest.TestCase):
             {"cumulative_independent_episodes": 1}), encoding="utf-8")
 
     def tearDown(self):
-        self.tmp.cleanup()
+        shutil.rmtree(self.root, ignore_errors=True)
 
     def test_kill_and_latency_are_recorded(self):
         now = datetime(2026, 11, 12, 0, 0, tzinfo=timezone.utc)  # 到着を故意に遅らせた想定
