@@ -86,6 +86,7 @@ def test_runner_idempotency_no_duplicate_equity_drag(tmp_path: Path, monkeypatch
     state_file = tmp_path / "state.json"
     mtm_file = tmp_path / "mtm_history.jsonl"
     ledger_file = tmp_path / "decisions.jsonl"
+    monkeypatch.setattr(c2_runner, "DATA_DIR", tmp_path)
     monkeypatch.setattr(c2_runner, "STATE_FILE", state_file)
     monkeypatch.setattr(c2_runner, "MTM_FILE", mtm_file)
     # Redirect the attribution/orders outputs too: they are module-level constants bound

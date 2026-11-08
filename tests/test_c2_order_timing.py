@@ -10,6 +10,7 @@ import pytest
 
 from scripts.paper_c2 import c2_runner
 from scripts.paper_c2.alpaca_paper_client import AlpacaAccountSummary
+from tests.c2_synthetic_history import detached_copy, synthetic_base_history
 
 
 def test_weekly_cycle_skips_broker_submission_when_prior_to_decision_date(
@@ -26,10 +27,16 @@ def test_weekly_cycle_skips_broker_submission_when_prior_to_decision_date(
     test_orders_file = tmp_path / "orders.jsonl"
     test_ledger_file = tmp_path / "decisions.jsonl"
 
+    monkeypatch.setattr("scripts.paper_c2.c2_runner.DATA_DIR", tmp_path)
     monkeypatch.setattr("scripts.paper_c2.c2_runner.STATE_FILE", test_state_file)
     monkeypatch.setattr("scripts.paper_c2.c2_runner.ORDERS_FILE", test_orders_file)
     monkeypatch.setattr("scripts.paper_c2.c2_runner.DEFAULT_LEDGER_PATH", test_ledger_file)
     monkeypatch.setattr("scripts.paper_c2.c2_runner.PHASE_START_DATE", date(2026, 11, 1))
+
+    monkeypatch.setattr(
+        c2_runner, "load_local_history", lambda: detached_copy(synthetic_base_history())
+    )
+    monkeypatch.setattr("scripts.paper_c2.c2_features._load_latest_dgs1", lambda target_date: 0.04)
 
     initial_state = {
         "alpaca_paper_equity": 100000.0,
@@ -135,10 +142,16 @@ def test_weekly_cycle_submits_day_orders_on_decision_date(
     test_orders_file = tmp_path / "orders.jsonl"
     test_ledger_file = tmp_path / "decisions.jsonl"
 
+    monkeypatch.setattr("scripts.paper_c2.c2_runner.DATA_DIR", tmp_path)
     monkeypatch.setattr("scripts.paper_c2.c2_runner.STATE_FILE", test_state_file)
     monkeypatch.setattr("scripts.paper_c2.c2_runner.ORDERS_FILE", test_orders_file)
     monkeypatch.setattr("scripts.paper_c2.c2_runner.DEFAULT_LEDGER_PATH", test_ledger_file)
     monkeypatch.setattr("scripts.paper_c2.c2_runner.PHASE_START_DATE", date(2026, 11, 1))
+
+    monkeypatch.setattr(
+        c2_runner, "load_local_history", lambda: detached_copy(synthetic_base_history())
+    )
+    monkeypatch.setattr("scripts.paper_c2.c2_features._load_latest_dgs1", lambda target_date: 0.04)
 
     initial_state = {
         "alpaca_paper_equity": 100000.0,
@@ -242,10 +255,16 @@ def test_prior_execution_skipped_allows_full_execution_on_decision_date_without_
     test_orders_file = tmp_path / "orders.jsonl"
     test_ledger_file = tmp_path / "decisions.jsonl"
 
+    monkeypatch.setattr("scripts.paper_c2.c2_runner.DATA_DIR", tmp_path)
     monkeypatch.setattr("scripts.paper_c2.c2_runner.STATE_FILE", test_state_file)
     monkeypatch.setattr("scripts.paper_c2.c2_runner.ORDERS_FILE", test_orders_file)
     monkeypatch.setattr("scripts.paper_c2.c2_runner.DEFAULT_LEDGER_PATH", test_ledger_file)
     monkeypatch.setattr("scripts.paper_c2.c2_runner.PHASE_START_DATE", date(2026, 11, 1))
+
+    monkeypatch.setattr(
+        c2_runner, "load_local_history", lambda: detached_copy(synthetic_base_history())
+    )
+    monkeypatch.setattr("scripts.paper_c2.c2_features._load_latest_dgs1", lambda target_date: 0.04)
 
     initial_state = {
         "alpaca_paper_equity": 100000.0,

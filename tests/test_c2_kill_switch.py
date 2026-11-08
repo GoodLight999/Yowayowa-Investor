@@ -147,6 +147,7 @@ def test_kill_switch_liquidation_and_halt_integration(
 
     state_file = tmp_path / "state.json"
     mtm_file = tmp_path / "mtm_history.jsonl"
+    monkeypatch.setattr(c2_runner, "DATA_DIR", tmp_path)
     monkeypatch.setattr(c2_runner, "STATE_FILE", state_file)
     monkeypatch.setattr(c2_runner, "MTM_FILE", mtm_file)
     # run_daily_cycle also writes attribution/orders via module-level constants that are
