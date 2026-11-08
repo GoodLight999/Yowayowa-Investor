@@ -1,4 +1,4 @@
-# ruff: noqa: E501
+# ruff: noqa: E501, RUF001
 """Unit tests for C2 Gate Evaluator (§7.1, §7.2, §8, §5.2).
 
 Validates:
@@ -12,12 +12,15 @@ Validates:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from scripts.paper_c2.c2_gate import (
+    INPUT_MISSING_EXIT_CODE,
+    INPUT_MISSING_VERDICT,
     MAX_DD_THRESHOLD,
     SHARPE_THRESHOLD,
     compute_forward_score,
@@ -56,6 +59,34 @@ def base_attrib_pass() -> dict[str, Any]:
     }
 
 
+# Mandatory "5-input set" fixed by t_313bbfbb. The gate is fail-closed on these,
+# so every evaluate_c2_gate() test must materialise the whole set.
+MINIMAL_MTM_ROW: dict[str, Any] = {
+    "date": "2026-11-03",
+    "daily_return_10": 0.0,
+    "daily_return_15": 0.0,
+    "equity_10": 100000.0,
+    "equity_15": 100000.0,
+}
+MINIMAL_ATTRIBUTION: dict[str, Any] = {"matrix_rows": [], "overwrite_assessment": {}}
+
+
+def write_required_inputs(data_dir: Path, state: dict[str, Any] | None = None) -> Path:
+    """Write the mandatory input set (state/mtm/decisions/orders/attribution)."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    if state is not None:
+        (data_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    (data_dir / "mtm_history.jsonl").write_text(
+        json.dumps(MINIMAL_MTM_ROW) + "\n", encoding="utf-8"
+    )
+    for name in ("decisions.jsonl", "orders.jsonl"):
+        (data_dir / name).write_text("{}\n", encoding="utf-8")
+    (data_dir / "attribution_summary.json").write_text(
+        json.dumps(MINIMAL_ATTRIBUTION), encoding="utf-8"
+    )
+    return data_dir
+
+
 # ==============================================================================
 # TEST 1: PASS CASE (§8.1)
 # ==============================================================================
@@ -76,7 +107,7 @@ def test_gate_pass_both_series(
         "consecutive_api_failures": 0,
         "kill_switch_triggered": False,
     }
-    (data_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    write_required_inputs(data_dir, state)
 
     # Evaluate with 60 days
     verdict = evaluate_c2_gate(
@@ -281,7 +312,7 @@ def test_both_series_fail_gives_overall_fail(
         "consecutive_api_failures": 0,
         "kill_switch_triggered": False,
     }
-    (data_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    write_required_inputs(data_dir, state)
 
     # Low Sharpe returns
     bad_returns = [0.001, -0.001] * 30
@@ -313,7 +344,7 @@ def test_inconclusive_unmatured_period(tmp_path: Path) -> None:
         "missed_rebalance_days": 0,
         "consecutive_api_failures": 0,
     }
-    (data_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    write_required_inputs(data_dir, state)
 
     verdict = evaluate_c2_gate(data_dir=data_dir, override_completed_days=2)
     assert verdict.verdict == "INCONCLUSIVE"
@@ -332,7 +363,7 @@ def test_inconclusive_consecutive_missed_days(tmp_path: Path) -> None:
         "missed_rebalance_days": 0,
         "consecutive_api_failures": 3,
     }
-    (data_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    write_required_inputs(data_dir, state)
 
     verdict = evaluate_c2_gate(data_dir=data_dir)
     assert verdict.verdict == "INCONCLUSIVE"
@@ -349,7 +380,7 @@ def test_inconclusive_cumulative_missed_days(tmp_path: Path) -> None:
         "missed_rebalance_days": 0,
         "consecutive_api_failures": 1,
     }
-    (data_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    write_required_inputs(data_dir, state)
 
     verdict = evaluate_c2_gate(data_dir=data_dir)
     assert verdict.verdict == "INCONCLUSIVE"
@@ -366,7 +397,7 @@ def test_inconclusive_missed_rebalance_days(tmp_path: Path) -> None:
         "missed_rebalance_days": 2,
         "consecutive_api_failures": 1,
     }
-    (data_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    write_required_inputs(data_dir, state)
 
     verdict = evaluate_c2_gate(data_dir=data_dir)
     assert verdict.verdict == "INCONCLUSIVE"
@@ -383,6 +414,114 @@ def test_inconclusive_design_doc_hash_mismatch(tmp_path: Path) -> None:
     verdict = evaluate_c2_gate(data_dir=data_dir, design_doc_path=fake_doc)
     assert verdict.verdict == "INCONCLUSIVE"
     assert "設計書 SHA256 不一致" in verdict.reason
+
+
+# ==============================================================================
+# TEST 3b: FAIL-CLOSED ON MISSING / UNREADABLE MANDATORY INPUTS (t_dbf3fb69)
+# ==============================================================================
+STATE_4_DAYS: dict[str, Any] = {
+    "completed_trading_days": ["2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06"],
+    "missed_trading_days": 0,
+    "missed_rebalance_days": 0,
+    "consecutive_api_failures": 0,
+    "kill_switch_triggered": False,
+}
+
+
+def test_input_missing_when_all_five_inputs_absent(tmp_path: Path) -> None:
+    """① All five data inputs absent -> INPUT_MISSING, never '0 business days'."""
+    data_dir = tmp_path / "paper_c2"
+    data_dir.mkdir(parents=True)
+
+    verdict = evaluate_c2_gate(data_dir=data_dir)
+
+    assert verdict.verdict == INPUT_MISSING_VERDICT == "INPUT_MISSING"
+    assert verdict.verdict != "INCONCLUSIVE"  # not a period/abort inconclusive
+    assert "必須入力の欠損" in verdict.reason
+    assert "期間未達（判定営業日" not in verdict.reason  # the old fail-open wording
+    assert len(verdict.missing_inputs) >= 5
+    for name in ("state.json", "mtm_history.jsonl", "decisions.jsonl", "orders.jsonl",
+                 "attribution_summary.json"):
+        assert any(name in item for item in verdict.missing_inputs), name
+    payload = verdict.to_dict()
+    assert payload["verdict"] == "INPUT_MISSING"
+    assert payload["missing_inputs"] == list(verdict.missing_inputs)
+
+
+def test_input_missing_when_state_json_only_absent(tmp_path: Path) -> None:
+    """② Only state.json absent -> INPUT_MISSING (the exact t_313bbfbb fail-open case)."""
+    data_dir = write_required_inputs(tmp_path / "paper_c2", STATE_4_DAYS)
+    (data_dir / "state.json").unlink()
+
+    verdict = evaluate_c2_gate(data_dir=data_dir)
+
+    assert verdict.verdict == INPUT_MISSING_VERDICT
+    assert any("state.json" in item for item in verdict.missing_inputs)
+    assert not any(
+        other in item
+        for item in verdict.missing_inputs
+        for other in ("mtm_history.jsonl", "decisions.jsonl", "orders.jsonl",
+                      "attribution_summary.json")
+    )
+    assert "0 営業日目" not in verdict.reason
+    assert verdict.judged_business_days == 0
+
+
+def test_unmatured_period_still_reports_4_of_60(tmp_path: Path) -> None:
+    """③ Normal case (all five inputs) keeps the existing '4/60' behaviour."""
+    data_dir = write_required_inputs(tmp_path / "paper_c2", STATE_4_DAYS)
+
+    verdict = evaluate_c2_gate(data_dir=data_dir)
+
+    assert verdict.verdict == "INCONCLUSIVE"
+    assert verdict.reason == "期間未達（判定営業日 60 未達、現在 4 営業日目）"
+    assert verdict.judged_business_days == 4
+    assert verdict.target_business_days == 60
+    assert verdict.missing_inputs == ()
+
+
+def test_input_missing_when_design_doc_absent(tmp_path: Path) -> None:
+    """Design doc absence is INPUT_MISSING (not a silent pass, not 期間未達)."""
+    data_dir = write_required_inputs(tmp_path / "paper_c2", STATE_4_DAYS)
+
+    verdict = evaluate_c2_gate(
+        data_dir=data_dir, design_doc_path=tmp_path / "missing_design.md"
+    )
+
+    assert verdict.verdict == INPUT_MISSING_VERDICT
+    assert any("設計書" in item for item in verdict.missing_inputs)
+
+
+def test_input_missing_when_state_lacks_completed_days_key(tmp_path: Path) -> None:
+    """A state.json without completed_trading_days must not be read as day 0."""
+    data_dir = write_required_inputs(tmp_path / "paper_c2")
+    (data_dir / "state.json").write_text(
+        json.dumps({"missed_trading_days": 0}), encoding="utf-8"
+    )
+
+    verdict = evaluate_c2_gate(data_dir=data_dir)
+
+    assert verdict.verdict == INPUT_MISSING_VERDICT
+    assert any("completed_trading_days" in item for item in verdict.missing_inputs)
+
+
+def test_cli_exits_nonzero_on_input_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLI (normal and cron mode) must fail closed with a non-zero exit code."""
+    from scripts.paper_c2 import c2_gate as gate_module
+
+    data_dir = tmp_path / "paper_c2"
+    data_dir.mkdir(parents=True)
+    base_argv = ["c2_gate", "--data-dir", str(data_dir), "--dry-run"]
+
+    monkeypatch.setattr(sys, "argv", base_argv)
+    assert gate_module.main() == INPUT_MISSING_EXIT_CODE
+    assert INPUT_MISSING_EXIT_CODE != 0
+
+    # cron-mode must not silence a broken pipeline
+    monkeypatch.setattr(sys, "argv", [*base_argv, "--cron-mode"])
+    assert gate_module.main() == INPUT_MISSING_EXIT_CODE
 
 
 # ==============================================================================

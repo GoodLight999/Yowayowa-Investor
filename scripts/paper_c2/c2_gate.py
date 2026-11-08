@@ -40,6 +40,33 @@ PHASE_START_DATE: date = date(2026, 11, 3)
 PROJECTED_FINAL_SESSION_DATE: date = date(2027, 1, 29)
 PROJECTED_JUDGEMENT_DATE: date = date(2027, 2, 1)
 
+# Mandatory Input Contract (fail-closed, t_dbf3fb69)
+# The gate must never report a missing/unreadable mandatory input as "0 business days
+# (期間未達)". Absence or read failure yields an explicit INPUT_MISSING verdict, a
+# non-zero process exit, and the list of missing files in the output.
+INPUT_MISSING_VERDICT: str = "INPUT_MISSING"
+INPUT_MISSING_EXIT_CODE: int = 3
+
+# The "5 input set" fixed by t_313bbfbb (all machine-generated under data/paper_c2).
+REQUIRED_DATA_INPUTS: tuple[tuple[str, str], ...] = (
+    ("state.json", "運用状態（営業日数・欠測・キルスイッチ）"),
+    ("mtm_history.jsonl", "日次MTM系列（Sharpe/MaxDD/CAGR/PF）"),
+    ("decisions.jsonl", "判断ログ（上書き率・ハッシュ鎖）"),
+    ("orders.jsonl", "発注ログ（約定・リバランス欠測）"),
+    ("attribution_summary.json", "帰属集計（判定④⑤）"),
+)
+# Required keys per structural input (missing keys would otherwise silently default
+# to values that can pass criteria, e.g. attribution defaults to 100% win rate).
+REQUIRED_STATE_KEYS: tuple[str, ...] = ("completed_trading_days",)
+REQUIRED_ATTRIBUTION_KEYS: tuple[str, ...] = ("overwrite_assessment", "matrix_rows")
+REQUIRED_MTM_ROW_KEYS: tuple[str, ...] = (
+    "daily_return_10",
+    "daily_return_15",
+    "equity_10",
+    "equity_15",
+)
+TRADING_CALENDAR_LABEL: str = "営業日カレンダー (yowayowa/trading_sessions.py)"
+
 # §7.1 Thresholds (The 7 Mandatory Criteria)
 # ① Forward Sharpe >= 0.50
 SHARPE_THRESHOLD: float = 0.50
@@ -150,9 +177,12 @@ class GateVerdict:
     recommended_candidate: str | None
     evaluations: dict[str, SeriesGateEvaluation]
     input_files_sha256: dict[str, str]
+    # Only populated for INPUT_MISSING (fail-closed); kept empty otherwise so the
+    # normal-path JSON stays byte-identical to the pre-change output.
+    missing_inputs: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "verdict": self.verdict,
             "reason": self.reason,
             "design_doc": {
@@ -177,6 +207,9 @@ class GateVerdict:
             },
             "input_files_sha256": self.input_files_sha256,
         }
+        if self.missing_inputs:
+            out["missing_inputs"] = list(self.missing_inputs)
+        return out
 
 
 # ==============================================================================
@@ -199,6 +232,121 @@ def verify_design_doc(doc_path: Path = DESIGN_DOC_PATH) -> tuple[bool, str]:
     if not actual_sha:
         return False, "File not found"
     return (actual_sha == EXPECTED_DESIGN_DOC_SHA256), actual_sha
+
+
+def check_required_inputs(data_dir: Path) -> list[str]:
+    """Detect missing, unreadable or structurally-invalid mandatory data inputs.
+
+    Fail-closed contract (t_dbf3fb69): an absent or unreadable input is NOT
+    "0 business days". Every problem found is returned as a human-readable string
+    (empty list = all mandatory inputs usable).
+    """
+    problems: list[str] = []
+    for name, description in REQUIRED_DATA_INPUTS:
+        path = data_dir / name
+        if not path.is_file():
+            problems.append(f"{name}（不在: {description}）")
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            problems.append(f"{name}（読取失敗: {type(exc).__name__}）")
+            continue
+
+        if name.endswith(".jsonl"):
+            rows = [line for line in text.splitlines() if line.strip()]
+            if not rows:
+                problems.append(f"{name}（データ行なし）")
+                continue
+            for lineno, line in enumerate(rows, 1):
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    problems.append(f"{name}（JSON解析失敗: {lineno}行目）")
+                    break
+                if not isinstance(row, dict):
+                    problems.append(f"{name}（{lineno}行目がJSONオブジェクトでない）")
+                    break
+                if name == "mtm_history.jsonl":
+                    absent = [k for k in REQUIRED_MTM_ROW_KEYS if k not in row]
+                    if absent:
+                        problems.append(
+                            f"{name}（{lineno}行目に必須キー欠落: {', '.join(absent)}）"
+                        )
+                        break
+            continue
+
+        # .json inputs
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            problems.append(f"{name}（JSON解析失敗: {exc.lineno}行目）")
+            continue
+        if not isinstance(payload, dict):
+            problems.append(f"{name}（JSONオブジェクトでない）")
+            continue
+        if name == "state.json":
+            if not isinstance(payload.get("completed_trading_days"), list):
+                problems.append(
+                    "state.json（completed_trading_days 欠落またはlist以外 — "
+                    "営業日数を0と誤読するため判定不能）"
+                )
+        elif name == "attribution_summary.json":
+            for key in REQUIRED_ATTRIBUTION_KEYS:
+                if key not in payload:
+                    problems.append(f"attribution_summary.json（必須キー欠落: {key}）")
+    return problems
+
+
+def check_trading_calendar() -> list[str]:
+    """Verify the trading-calendar input (git-tracked module) is present and usable."""
+    module = sys.modules.get("yowayowa.trading_sessions")
+    module_path = Path(getattr(module, "__file__", "") or "")
+    if module is None or not module_path.is_file():
+        return [f"{TRADING_CALENDAR_LABEL}（不在）"]
+    try:
+        if not isinstance(is_session_day(PHASE_START_DATE), bool):
+            return [f"{TRADING_CALENDAR_LABEL}（判定不能: is_session_day がbool以外を返す）"]
+        is_session_day(PROJECTED_FINAL_SESSION_DATE)
+    except Exception as exc:  # any failure means the calendar is unusable
+        return [f"{TRADING_CALENDAR_LABEL}（評価失敗: {type(exc).__name__}: {exc}）"]
+    return []
+
+
+def build_input_missing_verdict(
+    missing_inputs: list[str],
+    design_doc_sha256: str,
+    design_doc_valid: bool,
+    input_files_sha256: dict[str, str],
+) -> GateVerdict:
+    """Explicit fail-closed verdict: mandatory input absent/unreadable.
+
+    Deliberately worded so it can never be read as "period not yet reached (0/60)".
+    """
+    listed = "; ".join(missing_inputs)
+    return GateVerdict(
+        verdict=INPUT_MISSING_VERDICT,
+        reason=(
+            "必須入力の欠損または読取失敗により判定不能（INPUT_MISSING）。"
+            "これは「期間未達（0/60）」ではなく、入力が存在しないことと営業日経過を混同しない。"
+            f" 欠損: {listed}"
+        ),
+        design_doc_sha256=design_doc_sha256,
+        design_doc_valid=design_doc_valid,
+        judged_business_days=0,
+        target_business_days=TARGET_BUSINESS_DAYS,
+        start_date=PHASE_START_DATE.isoformat(),
+        projected_final_date=PROJECTED_FINAL_SESSION_DATE.isoformat(),
+        projected_judgement_date=PROJECTED_JUDGEMENT_DATE.isoformat(),
+        actual_judgement_date=None,
+        missed_trading_days=0,
+        missed_rebalance_days=0,
+        consecutive_missed_days=0,
+        recommended_candidate=None,
+        evaluations={},
+        input_files_sha256=input_files_sha256,
+        missing_inputs=tuple(missing_inputs),
+    )
 
 
 def compute_sharpe(daily_returns: list[float]) -> float:
@@ -448,11 +596,39 @@ def evaluate_c2_gate(
     """Main gate evaluation pipeline fulfilling §7.1, §7.2, §8, §5.2."""
     input_files_sha256 = {}
 
-    # 1. Verify Design Doc SHA256 (§3 Requirement)
-    design_doc_valid, doc_sha = verify_design_doc(design_doc_path)
+    state_file = data_dir / "state.json"
+    mtm_file = data_dir / "mtm_history.jsonl"
+    decisions_file = data_dir / "decisions.jsonl"
+    orders_file = data_dir / "orders.jsonl"
+    attribution_file = data_dir / "attribution_summary.json"
+
+    # 1. Mandatory Input Contract (fail-closed, t_dbf3fb69):
+    # absence or read failure is INPUT_MISSING, never "0 business days (期間未達)".
+    missing_inputs: list[str] = []
+
+    design_doc_present = design_doc_path.is_file()
+    if not design_doc_present:
+        missing_inputs.append(f"設計書 {design_doc_path}（不在）")
+        design_doc_valid, doc_sha = False, ""
+    else:
+        try:
+            design_doc_valid, doc_sha = verify_design_doc(design_doc_path)
+        except OSError as exc:
+            missing_inputs.append(
+                f"設計書 {design_doc_path}（読取失敗: {type(exc).__name__}）"
+            )
+            design_doc_valid, doc_sha = False, ""
     input_files_sha256["design_doc"] = doc_sha
 
-    if not design_doc_valid:
+    # Evidence hashes (read-only) for whichever inputs exist.
+    input_files_sha256["state.json"] = file_sha256(state_file)
+    input_files_sha256["mtm_history.jsonl"] = file_sha256(mtm_file)
+    input_files_sha256["decisions.jsonl"] = file_sha256(decisions_file)
+    input_files_sha256["orders.jsonl"] = file_sha256(orders_file)
+
+    # 2. Verify Design Doc SHA256 (§3 Requirement) — governance stop takes precedence
+    # when the doc exists but is tampered with (existing INCONCLUSIVE contract).
+    if design_doc_present and not design_doc_valid:
         return GateVerdict(
             verdict="INCONCLUSIVE",
             reason=(
@@ -475,22 +651,21 @@ def evaluate_c2_gate(
             input_files_sha256=input_files_sha256,
         )
 
-    # 2. Load Persisted Operational State & Logs (Read-Only)
-    state_file = data_dir / "state.json"
-    mtm_file = data_dir / "mtm_history.jsonl"
-    decisions_file = data_dir / "decisions.jsonl"
-    orders_file = data_dir / "orders.jsonl"
-    attribution_file = data_dir / "attribution_summary.json"
+    # 2b. Data inputs (5-point set) and the trading calendar.
+    missing_inputs.extend(check_required_inputs(data_dir))
+    missing_inputs.extend(check_trading_calendar())
 
-    input_files_sha256["state.json"] = file_sha256(state_file)
-    input_files_sha256["mtm_history.jsonl"] = file_sha256(mtm_file)
-    input_files_sha256["decisions.jsonl"] = file_sha256(decisions_file)
-    input_files_sha256["orders.jsonl"] = file_sha256(orders_file)
+    if missing_inputs:
+        return build_input_missing_verdict(
+            missing_inputs,
+            design_doc_sha256=doc_sha,
+            design_doc_valid=design_doc_valid,
+            input_files_sha256=input_files_sha256,
+        )
 
-    state: dict[str, Any] = {}
-    if state_file.exists():
-        with contextlib.suppress(Exception):
-            state = json.loads(state_file.read_text(encoding="utf-8"))
+    # 3. Load Persisted Operational State & Logs (Read-Only)
+    # Existence/readability/structure already proven by check_required_inputs above.
+    state: dict[str, Any] = json.loads(state_file.read_text(encoding="utf-8"))
 
     completed_days_list = state.get("completed_trading_days", [])
     completed_days_count = (
@@ -751,6 +926,7 @@ def format_gate_markdown(verdict: GateVerdict) -> str:
         "PASS": "**【合格 (PASS)】**",
         "FAIL": "**【不合格 (FAIL)】**",
         "INCONCLUSIVE": "**【判定不能 (INCONCLUSIVE)】**",
+        "INPUT_MISSING": "**【必須入力欠損 (INPUT_MISSING)】**",
     }.get(verdict.verdict, verdict.verdict)
 
     lines = [
@@ -772,13 +948,24 @@ def format_gate_markdown(verdict: GateVerdict) -> str:
     ]
 
     if not verdict.evaluations:
-        lines.extend(
-            [
-                "> [!NOTE]",
-                f"> 現在は {verdict.judged_business_days} 営業日目（期間未達）または外的中断のため、先出しの7項目確定値評価は保留されています。",
-                "",
-            ]
-        )
+        if verdict.verdict == INPUT_MISSING_VERDICT:
+            lines.extend(
+                [
+                    "> [!WARNING]",
+                    "> 必須入力の欠損・読取失敗により判定不能（INPUT_MISSING）。",
+                    "> **これは「期間未達」ではない**（入力を0営業日目として扱わない）。",
+                    f"> 欠損: {'; '.join(verdict.missing_inputs)}",
+                    "",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "> [!NOTE]",
+                    f"> 現在は {verdict.judged_business_days} 営業日目（期間未達）または外的中断のため、先出しの7項目確定値評価は保留されています。",
+                    "",
+                ]
+            )
     else:
         for s_name, eval_res in verdict.evaluations.items():
             s_title = "C2 15% 系列 (vol_target_15)" if "15" in s_name else "C2 10% 系列 (vol_target_10)"
@@ -890,6 +1077,20 @@ def main() -> int:
         out_json_path.parent.mkdir(parents=True, exist_ok=True)
         out_json_path.write_bytes(json_bytes)
         out_md_path.write_text(md_str, encoding="utf-8")
+
+    # Fail-closed: mandatory input missing/unreadable -> explicit verdict, non-zero exit.
+    # This takes precedence over cron-mode silence: a broken pipeline must be loud.
+    if verdict.verdict == INPUT_MISSING_VERDICT:
+        print(
+            f"C2 GATE EVAL: verdict={verdict.verdict} (必須入力欠損 — 期間未達ではない)",
+            file=sys.stderr,
+        )
+        print(f"C2 GATE REASON: {verdict.reason}", file=sys.stderr)
+        for item in verdict.missing_inputs:
+            print(f"C2 GATE MISSING INPUT: {item}", file=sys.stderr)
+        if not args.dry_run:
+            print(f"C2 GATE VERDICT JSON: {out_json_path}", file=sys.stderr)
+        return INPUT_MISSING_EXIT_CODE
 
     # In cron mode, if it's period unmatured, be completely silent and exit 0
     if args.cron_mode:
