@@ -1,0 +1,10 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.7, pytest-8.4.2, pluggy-1.7.0
+rootdir: /home/good-light/vps-work/sessions/t_49064d09/repo
+configfile: pyproject.toml
+plugins: socket-0.8.1, playwright-0.9.0, base-url-2.1.0, anyio-4.15.1, cov-6.3.0, httpx-0.35.0
+collected 34 items / 30 deselected / 4 selected
+
+tests/test_hl_exec_sdk_boundary_guards.py ....                           [100%]
+
+======================= 4 passed, 30 deselected in 0.99s =======================

@@ -33,6 +33,8 @@ FAKE_KEY = "0x" + "1" * 64
 class MockExchange:
     """Hyperliquid 公式 SDK Exchange のモック。"""
 
+    base_url = "https://api.hyperliquid-testnet.xyz"
+
     def __init__(self) -> None:
         self.orders: list[dict[str, Any]] = []
         self.cancels: list[dict[str, Any]] = []

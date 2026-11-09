@@ -1,0 +1,159 @@
+..........................FF.FF.FF...................................... [ 93%]
+.....                                                                    [100%]
+=================================== FAILURES ===================================
+_________________ test_real_sdk_wire_receives_normalized_cloid _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79e04370fa80>
+
+    def test_real_sdk_wire_receives_normalized_cloid(monkeypatch: pytest.MonkeyPatch) -> None:
+        exchange = _real_exchange(monkeypatch)
+        actions: list[dict[str, Any]] = []
+    
+        def capture(action: dict[str, Any], _signature: Any, _nonce: int) -> dict[str, str]:
+            actions.append(action)
+            return {"status": "ok"}
+    
+        monkeypatch.setattr(exchange, "_post_action", capture)
+        client = HyperliquidExchangeClient(ADDRESS, "unused", exchange=exchange)
+        client.order("BTC", False, 0.0002, 75000.0, {"limit": {"tif": "Ioc"}}, cloid=UPPER_CLOID)
+    
+        assert len(actions) == 1
+>       assert actions[0]["orders"][0]["c"] == CANONICAL_CLOID
+E       AssertionError: assert '0xABABABABAB...BABABABABABAB' == '0xababababab...babababababab'
+E         
+E         - 0xabababababababababababababababab
+E         + 0xABABABABABABABABABABABABABABABAB
+
+tests/test_hl_exec_sdk_boundary_guards.py:267: AssertionError
+____________ test_real_sdk_cancel_by_cloid_receives_official_cloid _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x79e042a1f3f0>
+
+    def test_real_sdk_cancel_by_cloid_receives_official_cloid(monkeypatch: pytest.MonkeyPatch) -> None:
+        exchange = _real_exchange(monkeypatch)
+        actions: list[dict[str, Any]] = []
+    
+        def capture(action: dict[str, Any], _signature: Any, _nonce: int) -> dict[str, str]:
+            actions.append(action)
+            return {"status": "ok"}
+    
+        monkeypatch.setattr(exchange, "_post_action", capture)
+        client = HyperliquidExchangeClient(ADDRESS, "unused", exchange=exchange)
+>       client.cancel_by_cloid("BTC", UPPER_CLOID)
+
+tests/test_hl_exec_sdk_boundary_guards.py:280: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/yowayowa/hl_exec/client.py:337: in cancel_by_cloid
+    res: Any = self._exchange.cancel_by_cloid(coin, cloid)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../t_f840d5bc/sdk-venv/lib/python3.14/site-packages/hyperliquid/exchange.py:304: in cancel_by_cloid
+    return self.bulk_cancel_by_cloid([{"coin": name, "cloid": cloid}])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <hyperliquid.exchange.Exchange object at 0x79e042b27890>
+cancel_requests = [{'cloid': '0xABABABABABABABABABABABABABABABAB', 'coin': 'BTC'}]
+
+    def bulk_cancel_by_cloid(self, cancel_requests: List[CancelByCloidRequest]) -> Any:
+        timestamp = get_timestamp_ms()
+    
+        cancel_action = {
+            "type": "cancelByCloid",
+            "cancels": [
+                {
+                    "asset": self.info.name_to_asset(cancel["coin"]),
+>                   "cloid": cancel["cloid"].to_raw(),
+                             ^^^^^^^^^^^^^^^^^^^^^^
+                }
+                for cancel in cancel_requests
+            ],
+        }
+E       AttributeError: 'str' object has no attribute 'to_raw'
+
+../../t_f840d5bc/sdk-venv/lib/python3.14/site-packages/hyperliquid/exchange.py:341: AttributeError
+____________ test_client_accepts_normalized_trailing_slash_and_443 _____________
+
+    def test_client_accepts_normalized_trailing_slash_and_443() -> None:
+        exchange = _FakeExchange(result={"status": "ok"})
+>       client = HyperliquidExchangeClient(
+            ADDRESS, "unused", base_url=TESTNET_API_URL + ":443/", exchange=exchange
+        )
+
+tests/test_hl_exec_sdk_boundary_guards.py:314: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <[AttributeError("'HyperliquidExchangeClient' object has no attribute '_account_address'") raised in repr()] HyperliquidExchangeClient object at 0x79e042b27250>
+account_address = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+agent_key = 'unused'
+
+    def __init__(
+        self,
+        account_address: str,
+        agent_key: str | Path,
+        *,
+        base_url: str = TESTNET_API_URL,
+        killswitch: Any | None = None,
+        exchange: Any | None = None,
+    ) -> None:
+        _validate_address(account_address)
+        # 送信系の接続先は正規テストネットの完全一致のみ（部分一致・成りすまし
+        # ・パス付き・http・メインネットを全部拒否する）。メインネット
+        # （api.hyperliquid.xyz）への接続もこの検査で厳格に禁止（即時例外）。
+        if base_url != TESTNET_API_URL:
+>           raise ValueError(
+                "order path must use the canonical Hyperliquid testnet endpoint "
+                f"({TESTNET_API_URL}); got: {base_url!r}"
+            )
+E           ValueError: order path must use the canonical Hyperliquid testnet endpoint (https://api.hyperliquid-testnet.xyz); got: 'https://api.hyperliquid-testnet.xyz:443/'
+
+src/yowayowa/hl_exec/client.py:245: ValueError
+____________ test_client_rejects_injected_exchange_without_base_url ____________
+
+    def test_client_rejects_injected_exchange_without_base_url() -> None:
+        class Bare:
+            def order(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover - not reached
+                raise AssertionError("must not be used")
+    
+>       with pytest.raises(ValueError, match="no base_url"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'ValueError'>
+
+tests/test_hl_exec_sdk_boundary_guards.py:325: Failed
+________________ test_client_normalizes_cloid_before_transport _________________
+
+    def test_client_normalizes_cloid_before_transport() -> None:
+        exchange = _FakeExchange(
+            result={
+                "status": "ok",
+                "response": {"data": {"statuses": [{"resting": {"oid": 1}}]}},
+            }
+        )
+        client = HyperliquidExchangeClient(ADDRESS, "unused", exchange=exchange)
+        client.order("BTC", False, 0.0002, 75000.0, {"limit": {"tif": "Ioc"}}, cloid=UPPER_CLOID)
+        sent = exchange.calls[0]["kwargs"]["cloid"]
+        assert isinstance(sent, sdk_types.Cloid)
+>       assert str(sent) == CANONICAL_CLOID
+E       AssertionError: assert '0xABABABABAB...BABABABABABAB' == '0xababababab...babababababab'
+E         
+E         - 0xabababababababababababababababab
+E         + 0xABABABABABABABABABABABABABABABAB
+
+tests/test_hl_exec_sdk_boundary_guards.py:347: AssertionError
+______________ test_client_rejects_invalid_cloid_before_transport ______________
+
+    def test_client_rejects_invalid_cloid_before_transport() -> None:
+        exchange = _FakeExchange(result={"status": "ok"})
+        client = HyperliquidExchangeClient(ADDRESS, "unused", exchange=exchange)
+>       with pytest.raises(CloidContractError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'yowayowa.hl_exec.guards.cloid.CloidContractError'>
+
+tests/test_hl_exec_sdk_boundary_guards.py:353: Failed
+=========================== short test summary info ============================
+FAILED tests/test_hl_exec_sdk_boundary_guards.py::test_real_sdk_wire_receives_normalized_cloid
+FAILED tests/test_hl_exec_sdk_boundary_guards.py::test_real_sdk_cancel_by_cloid_receives_official_cloid
+FAILED tests/test_hl_exec_sdk_boundary_guards.py::test_client_accepts_normalized_trailing_slash_and_443
+FAILED tests/test_hl_exec_sdk_boundary_guards.py::test_client_rejects_injected_exchange_without_base_url
+FAILED tests/test_hl_exec_sdk_boundary_guards.py::test_client_normalizes_cloid_before_transport
+FAILED tests/test_hl_exec_sdk_boundary_guards.py::test_client_rejects_invalid_cloid_before_transport
+6 failed, 71 passed in 2.40s

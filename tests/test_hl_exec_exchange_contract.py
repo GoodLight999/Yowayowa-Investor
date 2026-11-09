@@ -4,13 +4,15 @@ from typing import Any
 
 import pytest
 
-from yowayowa.hl_exec.client import HLError, HyperliquidExchangeClient
+from yowayowa.hl_exec.client import TESTNET_API_URL, HLError, HyperliquidExchangeClient
 from yowayowa.hl_exec.killswitch import KillSwitch
 
 ADDRESS = "0x" + "a" * 40
 
 
 class RecordingExchange:
+    base_url = TESTNET_API_URL
+
     def __init__(self, result: Any = None, error: Exception | None = None) -> None:
         self.calls: list[dict[str, Any]] = []
         self.result = {"status": "ok"} if result is None else result
@@ -59,6 +61,8 @@ def test_default_order_is_not_reduce_only() -> None:
 
 def test_legacy_mock_is_rejected_instead_of_dropping_reduce_only() -> None:
     class LegacyExchange:
+        base_url = TESTNET_API_URL
+
         def __init__(self) -> None:
             self.calls = 0
 

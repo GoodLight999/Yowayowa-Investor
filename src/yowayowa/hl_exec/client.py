@@ -29,9 +29,16 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from yowayowa.hl_exec.guards import (
+    CANONICAL_TESTNET_BASE_URL,
+    assert_testnet_exchange,
+    canonicalize_testnet_url,
+    to_sdk_cloid,
+)
+
 INFO_URL_MAINNET = "https://api.hyperliquid.xyz/info"
 INFO_URL_TESTNET = "https://api.hyperliquid-testnet.xyz/info"
-TESTNET_API_URL = "https://api.hyperliquid-testnet.xyz"
+TESTNET_API_URL = CANONICAL_TESTNET_BASE_URL
 USER_AGENT = "yowayowa-hl-exec/0.1 (read-only)"
 
 _EVM_ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
@@ -239,27 +246,16 @@ class HyperliquidExchangeClient:
     ) -> None:
         _validate_address(account_address)
         # 送信系の接続先は正規テストネットの完全一致のみ（部分一致・成りすまし
-        # ・パス付き・http・メインネットを全部拒否する）。メインネット
-        # （api.hyperliquid.xyz）への接続もこの検査で厳格に禁止（即時例外）。
-        if base_url != TESTNET_API_URL:
-            raise ValueError(
-                "order path must use the canonical Hyperliquid testnet endpoint "
-                f"({TESTNET_API_URL}); got: {base_url!r}"
-            )
+        # ・パス付き・http・メインネットを全部拒否する）。正規化規則は
+        # guards.urls が正本で、mainnet（api.hyperliquid.xyz）もここで拒否される。
         self._account_address = account_address
-        self._base_url = base_url
+        self._base_url = canonicalize_testnet_url(base_url)
         self._killswitch = killswitch
 
         if exchange is not None:
-            # 注入トランスポートも接続先の契約に従う。base_url を名乗る
-            # 注入物が正規テストネット以外を向いていれば拒否する
-            # （属性を持たない単純テストダブルは検証不能なため許容）。
-            injected_base_url = getattr(exchange, "base_url", None)
-            if injected_base_url is not None and injected_base_url != TESTNET_API_URL:
-                raise ValueError(
-                    "injected exchange must itself use the canonical Hyperliquid "
-                    f"testnet endpoint ({TESTNET_API_URL}); got: {injected_base_url!r}"
-                )
+            # 注入トランスポートも同じ allowlist で照合する。base_url を名乗らない
+            # 注入物は「照合不能」であり、fail-closed として生成時点で拒否する。
+            assert_testnet_exchange(exchange)
             self._exchange = exchange
         else:
             try:
@@ -309,13 +305,9 @@ class HyperliquidExchangeClient:
         """注文を発注する。発注前にキルスイッチの取引可否を検証する。"""
         if self._killswitch is not None:
             self._killswitch.ensure_may_trade()
-        # 公式SDKのtransportは Cloid インスタンスを期待する。検証済みhex文字列を
-        # ここで公式型へ変換し、wire上の値は変えない。
-        sdk_cloid: Any = None
-        if cloid is not None:
-            from hyperliquid.utils.types import Cloid
-
-            sdk_cloid = Cloid(cloid)
+        # 公式SDKのtransportは Cloid インスタンスを期待する。文字列のまま渡す
+        # 経路を残さず、ここで検証・正規化した公式型へ変換する。
+        sdk_cloid = None if cloid is None else to_sdk_cloid(cloid)
         # Order submission is not retry-safe: a TypeError can occur after acceptance.
         # Keep reduce_only intact; SDK-incompatible test doubles must be fixed in tests.
         res: Any = self._exchange.order(
@@ -333,8 +325,8 @@ class HyperliquidExchangeClient:
         return res
 
     def cancel_by_cloid(self, coin: str, cloid: str) -> dict[str, Any]:
-        """cloid で未約定注文を取り消す。"""
-        res: Any = self._exchange.cancel_by_cloid(coin, cloid)
+        """cloid で未約定注文を取り消す（公式Cloid型へ変換して送る）。"""
+        res: Any = self._exchange.cancel_by_cloid(coin, to_sdk_cloid(cloid))
         if not isinstance(res, dict):
             raise HLError(f"unexpected exchange cancel_by_cloid response: {type(res).__name__}")
         return res
