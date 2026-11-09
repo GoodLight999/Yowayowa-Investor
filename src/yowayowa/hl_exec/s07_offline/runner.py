@@ -1,5 +1,5 @@
 # ruff: noqa: RUF002, RUF003 — 日本語の句読点（全角）は本文テキストであり誤字ではない
-"""S-07 オフライン検証の別入口（隔離モジュール・dry-run 専用）。
+r"""S-07 オフライン検証の別入口（隔離モジュール・dry-run 専用）。
 
 この runner は **ネットワーク・署名器・注文クライアントを一切持たない**。
 入力は呼出側が明示したローカル JSON（合成 fixture）だけで、出力は
@@ -9,9 +9,15 @@
 
 CLI::
 
+    # --input は絶対パス必須。相対パスは IsolationError: input path must be absolute
+    # （exit 2）で拒否される。--out のベースディレクトリは事前に存在が必要で
+    # 自動作成されない（fail closed）。同じ run-id の再実行も
+    # 「run root already exists」で拒否されるため、毎回新しいベースを作る。
+    OUT=$(mktemp -d /tmp/s07-offline.XXXXXX)
     python -m yowayowa.hl_exec.s07_offline.runner \
-        --input tests/fixtures/s07_offline_synthetic/run_synthetic_A02A07A08.json \
-        --out /tmp/s07-offline --run-id synthetic-a02-a07-a08
+        --input "$PWD/tests/fixtures/s07_offline_synthetic/run_synthetic_A02_A07_A08.json" \
+        --out "$OUT" --run-id synthetic-a02-a07-a08 \
+        --repo-root "$PWD"
 
 終了コード:
 
