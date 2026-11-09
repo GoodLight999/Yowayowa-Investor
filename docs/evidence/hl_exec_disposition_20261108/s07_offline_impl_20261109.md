@@ -145,9 +145,14 @@ PYTHONPATH=$P:src:$S/lib/python3.14/site-packages \
   $V/bin/python -m pytest tests/test_s07_offline_*.py --disable-socket
 
 # 別入口（合成 fixture → dry-run/<run_id>/ のみ）
+# --input は絶対パス必須。相対パスを渡すと
+# S07_OFFLINE_ABORTED: IsolationError: input path must be absolute （exit 2）で拒否される。
+# --out のベースディレクトリは事前に存在している必要があり、自動作成されない（fail closed）。
+# 同じ run-id の再実行も「run root already exists」で拒否されるため、毎回新しいベースを作る。
+OUT=$(mktemp -d /tmp/s07-offline.XXXXXX)
 PYTHONPATH=src:$S/lib/python3.14/site-packages \
   $V/bin/python -m yowayowa.hl_exec.s07_offline.runner \
-    --input tests/fixtures/s07_offline_synthetic/run_synthetic_A02_A07_A08.json \
-    --out /tmp/s07-offline --run-id synthetic-a02-a07-a08 \
+    --input "$PWD/tests/fixtures/s07_offline_synthetic/run_synthetic_A02_A07_A08.json" \
+    --out "$OUT" --run-id synthetic-a02-a07-a08 \
     --repo-root "$PWD"
 ```
