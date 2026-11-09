@@ -1,0 +1,34 @@
+usage: runner.py [-h] --day DAY --market-json MARKET_JSON --out OUT --data-dir
+                 DATA_DIR --account ACCOUNT --fills-json FILLS_JSON
+                 --funding-json FUNDING_JSON --state-json STATE_JSON
+                 --orders-json ORDERS_JSON [--enable-order-path]
+
+S-07 本番代替 runner（既定 dry-run・発注経路は fail-closed）。 契約は
+``docs/s07_x3_contract.md``。旧 ``scripts/hl_testnet_s07/s07_daily_forward.py``
+（停止標識）、本番台帳、cron には触れず、出力は隔離ディレクトリだけに書く。 構造上の安全策: * 既定は dry-
+run。``enable_order_path`` が明示されない限り発注経路に入らない。 * 起動時に X1 真正性検証を呼び、``exit_code
+== 0`` かつ ``verdict == "PASS"`` 以外は 決定・台帳・レポートのどれよりも前に停止する。 * CLI は sender
+を注入しない。したがって CLI の ``--enable-order-path`` は必ず fail-closed
+で停止し、実送信・署名・鍵・ブローカー接続へは到達しない。 * 発注経路の送信先は注入された ``unittest.mock`` のテストダブルだけ
+（:mod:`yowayowa.hl_exec.s07_forward.order_gate`）。 * 台帳 ``ledger.jsonl``
+は追記専用・1 日 1 行。同日再実行では追記せず発注もしない。 * 不明な注文状態は再送しない。取消確認記録がある場合だけ、テストダブルへの 再送を 1
+回許す。送信直前に排他的マーカーを作り、二重送信を不可能にする。 CLI:: PYTHONPATH=src python -m
+yowayowa.hl_exec.s07_forward.runner \ --day 2026-11-08 --market-json
+/abs/market.json --out /abs/out \ --data-dir /abs/data --account 0x... \
+--fills-json /abs/userFills.json --funding-json /abs/userFunding.json \
+--state-json /abs/clearinghouseState.json --orders-json /abs/openOrders.json
+終了コード: 0=成功（dry-run 完了または同日記録済み）/ 2=不正入力・X1 失敗・発注遮断。
+
+options:
+  -h, --help            show this help message and exit
+  --day DAY             ISO UTC day (YYYY-MM-DD)
+  --market-json MARKET_JSON
+  --out OUT             existing empty isolated output directory
+  --data-dir DATA_DIR
+  --account ACCOUNT
+  --fills-json FILLS_JSON
+  --funding-json FUNDING_JSON
+  --state-json STATE_JSON
+  --orders-json ORDERS_JSON
+  --enable-order-path   request the test-only order path; the CLI injects no
+                        sender and fails closed

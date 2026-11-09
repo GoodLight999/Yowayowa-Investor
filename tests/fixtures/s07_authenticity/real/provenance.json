@@ -1,0 +1,26 @@
+{
+  "data_kind": "real",
+  "account": "0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82",
+  "network": "testnet",
+  "endpoint": "https://api.hyperliquid-testnet.xyz/info",
+  "fetched_at": "2026-11-09T03:07:10Z",
+  "note": "公開アドレス経路の POST /info 応答と、その時点の data/hl_testnet_s07 を固定したもの。鍵・署名・送信は含まない。",
+  "ledger_source": "/root/current-work/yowayowa-investor/data/hl_testnet_s07",
+  "requests": [
+    {"type": "userFills", "user": "0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82"},
+    {"type": "userFunding", "user": "0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82", "startTime": 1793000000000},
+    {"type": "clearinghouseState", "user": "0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82"},
+    {"type": "openOrders", "user": "0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82"}
+  ],
+  "files": {
+    "data/execution_journal.jsonl": {"sha256": "a6f4fcbefaac482f87bd4103f89865802265b4fd8baf89dedc97fa16c39dd242", "rows": 30},
+    "data/trades.jsonl": {"sha256": "eee11c4b6916cf48fc9890e06b1f4cef6c1e0aaf09daae9b658ad8c2c79bad62", "rows": 6},
+    "data/raw_events.jsonl": {"sha256": "13e2f6559e2b3c631f567c58c9d9675efdf8bae54d35d1a4c58a823f4a921df3", "rows": 60},
+    "data/daily_ledger.json": {"sha256": "7a124d030283020dd8d88b1fee57ab914ed02d121c1efc024a42c6468db8efae", "rows": 105},
+    "data/reports/S07_TESTNET_SCORECARD.md": {"sha256": "9de1627f5d31986f659a61fef1ceac5523fd0843fe009caaf99297e8a77d32a0", "rows": 66},
+    "info/userFills.json": {"sha256": "84bce355a943d29e69b5570d50edf333d055257f3764f9aa52b8f34fd1911ab3", "rows": 16},
+    "info/userFunding.json": {"sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945", "rows": 0},
+    "info/clearinghouseState.json": {"sha256": "42970c2123b837e13bd71a11394d0e46644331b30831c7c9c11a2ab06d3c78cf", "rows": 1},
+    "info/openOrders.json": {"sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945", "rows": 0}
+  }
+}

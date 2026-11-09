@@ -1,0 +1,12 @@
+## git status --porcelain
+?? docs/evidence/s07_x3_forward_20261109/
+?? docs/s07_x3_contract.md
+?? docs/s07_x3_red_log.txt
+?? src/yowayowa/hl_exec/s07_forward/
+?? tests/test_s07_forward_daily.py
+?? tests/test_s07_forward_dryrun.py
+?? tests/test_s07_forward_runner_guards.py
+?? tests/test_s07_runner_acceptance.py
+## git diff (tracked)
+## crontab s07
+(none)
