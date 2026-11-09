@@ -1,0 +1,220 @@
+{
+  "fixture_note": "SYNTHETIC DATA ONLY - not an operating record",
+  "network": "testnet",
+  "rows": [
+    {
+      "tid": 1,
+      "oid": 1001,
+      "time": 1793840400000,
+      "coin": "BTC",
+      "side": "B",
+      "sz": "0.004",
+      "px": "78000",
+      "fee": "0.08",
+      "feeToken": "USDC",
+      "closedPnl": "0"
+    },
+    {
+      "tid": 2,
+      "oid": 1001,
+      "time": 1793840460000,
+      "coin": "BTC",
+      "side": "B",
+      "sz": "0.006",
+      "px": "78050",
+      "fee": "0.12",
+      "feeToken": "USDC",
+      "closedPnl": "0"
+    },
+    {
+      "tid": 3,
+      "oid": 1002,
+      "time": 1793930400000,
+      "coin": "BTC",
+      "side": "A",
+      "sz": "0.005",
+      "px": "79000",
+      "fee": "0.09",
+      "feeToken": "USDC",
+      "closedPnl": "4.97"
+    },
+    {
+      "tid": 4,
+      "oid": 1002,
+      "time": 1793930460000,
+      "coin": "BTC",
+      "side": "A",
+      "sz": "0.005",
+      "px": "79050",
+      "fee": "0.09",
+      "feeToken": "USDC",
+      "closedPnl": "4.98"
+    },
+    {
+      "tid": 5,
+      "oid": 1003,
+      "time": 1794013200000,
+      "coin": "BTC",
+      "side": "B",
+      "sz": "0.007",
+      "px": "78500",
+      "fee": "0.05",
+      "feeToken": "USDC",
+      "closedPnl": "0"
+    },
+    {
+      "tid": 1,
+      "oid": 1001,
+      "time": 1793840400000,
+      "coin": "BTC",
+      "side": "B",
+      "sz": "0.004",
+      "px": "78000",
+      "fee": "0.08",
+      "feeToken": "USDC",
+      "closedPnl": "0"
+    },
+    {
+      "tid": 9,
+      "oid": 1009,
+      "time": 1793707200000,
+      "coin": "BTC",
+      "side": "B",
+      "sz": "0.001",
+      "px": "77000",
+      "fee": "0.01",
+      "feeToken": "USDC",
+      "closedPnl": "0"
+    }
+  ],
+  "funding": [
+    {
+      "time": 1793840400000,
+      "delta": "-0.05",
+      "token": "USDC",
+      "coin": "BTC"
+    }
+  ],
+  "orders": [
+    {
+      "cloid": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requested_sz": "0.010",
+      "fill_tids": [
+        1,
+        2
+      ]
+    },
+    {
+      "cloid": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "requested_sz": "0.010",
+      "fill_tids": [
+        3,
+        4
+      ]
+    },
+    {
+      "cloid": "0xcccccccccccccccccccccccccccccccc",
+      "requested_sz": "0.020",
+      "fill_tids": [
+        5
+      ],
+      "cancel_after_ms": 1794016800000
+    },
+    {
+      "cloid": "0xdddddddddddddddddddddddddddddddd",
+      "requested_sz": "0.005",
+      "fill_tids": [],
+      "transport_failure": true
+    }
+  ],
+  "round_trips": [
+    {
+      "coin": "BTC",
+      "entry_tids": [
+        1,
+        2
+      ],
+      "exit_tids": [
+        3,
+        4
+      ],
+      "position_sz": 0,
+      "open_order_count": 0,
+      "reconciled": true
+    }
+  ],
+  "reference_prices": [
+    {
+      "tid": 1,
+      "reference_px": "78000"
+    },
+    {
+      "tid": 2,
+      "reference_px": "78050"
+    },
+    {
+      "tid": 3,
+      "reference_px": "79000"
+    },
+    {
+      "tid": 4,
+      "reference_px": "79050"
+    }
+  ],
+  "pages": [
+    {
+      "index": 0,
+      "rows": [
+        {
+          "tid": 1,
+          "oid": 1001,
+          "time": 1793840400000,
+          "coin": "BTC",
+          "side": "B",
+          "sz": "0.004",
+          "px": "78000",
+          "fee": "0.08",
+          "feeToken": "USDC",
+          "closedPnl": "0"
+        },
+        {
+          "tid": 2,
+          "oid": 1001,
+          "time": 1793840460000,
+          "coin": "BTC",
+          "side": "B",
+          "sz": "0.006",
+          "px": "78050",
+          "fee": "0.12",
+          "feeToken": "USDC",
+          "closedPnl": "0"
+        },
+        {
+          "tid": 3,
+          "oid": 1002,
+          "time": 1793930400000,
+          "coin": "BTC",
+          "side": "A",
+          "sz": "0.005",
+          "px": "79000",
+          "fee": "0.09",
+          "feeToken": "USDC",
+          "closedPnl": "4.97"
+        },
+        {
+          "tid": 4,
+          "oid": 1002,
+          "time": 1793930460000,
+          "coin": "BTC",
+          "side": "A",
+          "sz": "0.005",
+          "px": "79050",
+          "fee": "0.09",
+          "feeToken": "USDC",
+          "closedPnl": "4.98"
+        }
+      ],
+      "limit": 2000
+    }
+  ]
+}

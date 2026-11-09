@@ -1,0 +1,10 @@
+$ git diff --stat
+ docs/BACKTEST_REPORT_S02_VOL_TARGET.md |   2 +
+ docs/DEMO_LOOP_V1_OPS.md               | 261 ++++++++++++++++++++++++++++++++-
+ 2 files changed, 258 insertions(+), 5 deletions(-)
+
+$ git diff -- scripts/hl_testnet_s07/s07_daily_forward.py
+exit=0
+
+$ sha256sum scripts/hl_testnet_s07/s07_daily_forward.py
+88f5b3d6bdd2c8e830410c9b2eb095e7a0de91c01f3a558859f913eb8e872338  scripts/hl_testnet_s07/s07_daily_forward.py

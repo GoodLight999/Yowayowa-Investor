@@ -1,0 +1,10 @@
+host=TSUKUMO-KUN
+python=Python 3.14.7
+pytest=pytest 8.4.2
+sdk_path=/home/good-light/vps-work/sessions/t_f840d5bc/sdk-venv/lib/python3.14/site-packages/hyperliquid/exchange.py
+network=blocked via pytest --disable-socket plus per-test socket.create_connection deny fixture and positive control
+repo=/home/good-light/vps-work/sessions/t_b92fb6b1/repo
+head_commit=snapshot-no-git
+pytest_socket=0.8.1
+pytest=9.2.0
+strict_mode_note=the --disable-socket run uses pylibs pytest 9.2.0 + pytest-socket 0.8.1 on the same Python 3.14.7 interpreter; the normal run uses verify-venv pytest 8.4.2

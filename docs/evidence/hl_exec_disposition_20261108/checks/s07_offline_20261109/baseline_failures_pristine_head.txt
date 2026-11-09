@@ -1,0 +1,302 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+______________ test_committed_baseline_matches_generated_document ______________
+
+    def test_committed_baseline_matches_generated_document() -> None:
+>       assert describe_differences(load_baseline(), current_spec()) == []
+E       AssertionError: assert ['schema or v...erated)', ...] == []
+E         
+E         Left contains 42 more items, first extra item: 'schema or value differences: 52 (baseline -> generated)'
+E         Use -v to get more diff
+
+tests/test_openapi_baseline.py:27: AssertionError
+____________________ test_gate_thresholds_match_prereg_text ____________________
+
+    def test_gate_thresholds_match_prereg_text() -> None:
+        """Frozen thresholds are 1:1 with the pre-registered wording."""
+    
+        assert pl.A_HALF_20BD_BUSINESS_DAYS == 20  # 20営業日連続
+        assert pl.A_HALF_20BD_RULES == {
+            "equity_net_min": 1.0,  # 費用控除後 equity >= 1.0
+            "max_drawdown_max": 0.03,  # 最大DD <= 3.0%
+            "dd_vs_benchmark": 0.6,  # DD比 <= 0.6
+        }
+        prereg = [
+            row
+            for row in pl._rows_from_jsonl(pl.prereg_path(pl.loop_root(Path("./data"))))
+            if row.get("book_id") == pl.BOOK_A_HALF
+        ]
+>       assert len(prereg) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_paperloop_a_half_20bd.py:286: AssertionError
+_________________ test_non_sqlite_alter_failure_is_fail_closed _________________
+
+self = <test_positions_constraint_sql_dialect.test_non_sqlite_alter_failure_is_fail_closed.<locals>._FailingConn object at 0x7f1ecf724980>
+_clause = <sqlalchemy.sql.elements.TextClause object at 0x7f1ecf9bbc50>
+
+    def execute(self, _clause):
+>       raise RuntimeError("simulated migration failure")
+E       RuntimeError: simulated migration failure
+
+tests/test_positions_constraint_sql_dialect.py:67: RuntimeError
+
+The above exception was the direct cause of the following exception:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1ecfdb67b0>
+
+    def test_non_sqlite_alter_failure_is_fail_closed(monkeypatch) -> None:
+        """A failed non-SQLite ALTER must record the reason and propagate.
+    
+        Swallowing it let startup continue without the unique key; the caller now
+        sees the failure and the operator payload still names the exception class.
+        """
+    
+        import pytest
+    
+        import yowayowa.db as db_module
+    
+        engine = cast(Any, SimpleNamespace(dialect=SimpleNamespace(name="postgresql")))
+    
+        class _FailingConn:
+            def __enter__(self):
+                return self
+    
+            def __exit__(self, *exc_info):
+                return False
+    
+            def execute(self, _clause):
+                raise RuntimeError("simulated migration failure")
+    
+        engine.begin = lambda *a, **k: _FailingConn()
+    
+        class _EmptyResult:
+            def fetchall(self):
+                return []
+    
+        class _EmptyConn:
+            def __enter__(self):
+                return self
+    
+            def __exit__(self, *exc_info):
+                return False
+    
+            def execute(self, _clause):
+                return _EmptyResult()
+    
+        engine.connect = lambda *a, **k: _EmptyConn()
+    
+        # Bypass the inspector short-circuits so execution reaches the ALTER branch.
+        fake_inspector = SimpleNamespace(
+            get_table_names=lambda: ["positions"],
+            get_unique_constraints=lambda table: [],
+            get_columns=lambda table: [],
+        )
+        monkeypatch.setattr(db_module, "inspect", lambda _engine: fake_inspector)
+    
+        db_module._reset_positions_constraint_blocker()
+        try:
+            with pytest.raises(RuntimeError, match="simulated migration failure"):
+>               db_module._ensure_positions_unique_constraint(engine)
+
+tests/test_positions_constraint_sql_dialect.py:98: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+engine = namespace(dialect=namespace(name='postgresql'), begin=<function test_non_sqlite_alter_failure_is_fail_closed.<locals>....t 0x7f1ecfbc7e20>, connect=<function test_non_sqlite_alter_failure_is_fail_closed.<locals>.<lambda> at 0x7f1ecfbc7cc0>)
+
+    def _ensure_positions_unique_constraint(engine: Engine) -> None:
+        """Idempotent migration to ensure UniqueConstraint on (portfolio_id, symbol).
+    
+        For SQLite: create_all does not alter existing tables. We inspect existing
+        unique constraints on 'positions'. If the unique constraint is missing, we
+        verify there are no duplicate (portfolio_id, symbol) rows (failing closed if
+        any duplicates exist), and rebuild the table safely preserving all rows.
+    
+        Fail-closed here means *do not apply* the constraint, report the blocker,
+        and raise so the caller cannot continue as if the write-side guard were
+        installed. A silent skip is the defect this guards against: the process
+        keeps accepting writes that the schema is supposed to reject, and nothing
+        except a log line says so. Startup therefore refuses rather than serving
+        traffic under a missing integrity guarantee; the duplicates are preserved
+        untouched for an explicit operator repair. See
+        ``positions_unique_constraint_status`` for the recorded reason.
+        """
+        inspector = inspect(engine)
+        if "positions" not in inspector.get_table_names():
+            return
+    
+        unique_constraints = inspector.get_unique_constraints("positions")
+        for uc in unique_constraints:
+            if set(uc.get("column_names") or []) == {"portfolio_id", "symbol"}:
+                return
+    
+        # Check for duplicate entries before migration
+        with engine.connect() as conn:
+            dup_query = text(
+                "SELECT portfolio_id, symbol, COUNT(*) AS cnt "
+                "FROM positions "
+                "GROUP BY portfolio_id, symbol "
+                "HAVING COUNT(*) > 1"
+            )
+            duplicates = conn.execute(dup_query).fetchall()
+            if duplicates:
+                detail = ", ".join(
+                    f"(portfolio_id={row[0]}, symbol={row[1]!r}, count={row[2]})" for row in duplicates
+                )
+                reason = "existing duplicates found: " + detail
+                _record_positions_constraint_blocker(reason)
+                # Keep every row (no delete, no rewrite) and refuse to claim the
+                # constraint is installed. Raising, not logging, is what stops a
+                # caller from writing into a table with no composite unique key.
+                raise PositionsConstraintBlockedError(
+                    "positions unique constraint migration blocked: " + reason
+                )
+    
+        dialect = engine.dialect.name
+        if dialect == "sqlite":
+            columns = {c["name"] for c in inspector.get_columns("positions")}
+            has_version = "version" in columns
+            with engine.begin() as conn:
+                conn.execute(text("PRAGMA foreign_keys = OFF"))
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE positions_new (
+                            id INTEGER NOT NULL PRIMARY KEY,
+                            portfolio_id INTEGER NOT NULL,
+                            symbol VARCHAR(32) NOT NULL,
+                            quantity NUMERIC(28, 10) NOT NULL,
+                            average_cost NUMERIC(28, 10),
+                            currency VARCHAR(3) NOT NULL,
+                            version INTEGER NOT NULL DEFAULT 1,
+                            FOREIGN KEY(portfolio_id) REFERENCES portfolios (id) ON DELETE CASCADE,
+                            CONSTRAINT uq_positions_portfolio_symbol UNIQUE (portfolio_id, symbol)
+                        )
+                        """
+                    )
+                )
+                if has_version:
+                    conn.execute(
+                        text(
+                            "INSERT INTO positions_new "
+                            "(id, portfolio_id, symbol, quantity, average_cost, currency, version)\n"
+                            "SELECT id, portfolio_id, symbol, quantity, average_cost, currency, "
+                            "version FROM positions"
+                        )
+                    )
+                else:
+                    conn.execute(
+                        text(
+                            "INSERT INTO positions_new "
+                            "(id, portfolio_id, symbol, quantity, average_cost, currency, version)\n"
+                            "SELECT id, portfolio_id, symbol, quantity, average_cost, currency, 1 "
+                            "FROM positions"
+                        )
+                    )
+                conn.execute(text("DROP TABLE positions"))
+                conn.execute(text("ALTER TABLE positions_new RENAME TO positions"))
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_positions_portfolio_id "
+                        "ON positions (portfolio_id)"
+                    )
+                )
+                conn.execute(
+                    text("CREATE INDEX IF NOT EXISTS ix_positions_symbol ON positions (symbol)")
+                )
+                conn.execute(text("PRAGMA foreign_keys = ON"))
+        else:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE positions ADD CONSTRAINT uq_positions_portfolio_symbol "
+                            "UNIQUE (portfolio_id, symbol)"
+                        )
+                    )
+            except Exception as exc:
+                # Only downgrade when rollback is known to have completed and the
+                # connection remains queryable. Otherwise preserve startup failure.
+                try:
+                    with engine.connect() as verify_conn:
+                        verify_conn.execute(text("SELECT 1"))
+                except Exception:
+                    raise
+                reason = f"constraint application failed: {type(exc).__name__}"
+                _record_positions_constraint_blocker(reason)
+>               raise PositionsConstraintBlockedError(reason) from exc
+E               yowayowa.db.PositionsConstraintBlockedError: constraint application failed: RuntimeError
+
+src/yowayowa/db.py:794: PositionsConstraintBlockedError
+
+During handling of the above exception, another exception occurred:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f1ecfdb67b0>
+
+    def test_non_sqlite_alter_failure_is_fail_closed(monkeypatch) -> None:
+        """A failed non-SQLite ALTER must record the reason and propagate.
+    
+        Swallowing it let startup continue without the unique key; the caller now
+        sees the failure and the operator payload still names the exception class.
+        """
+    
+        import pytest
+    
+        import yowayowa.db as db_module
+    
+        engine = cast(Any, SimpleNamespace(dialect=SimpleNamespace(name="postgresql")))
+    
+        class _FailingConn:
+            def __enter__(self):
+                return self
+    
+            def __exit__(self, *exc_info):
+                return False
+    
+            def execute(self, _clause):
+                raise RuntimeError("simulated migration failure")
+    
+        engine.begin = lambda *a, **k: _FailingConn()
+    
+        class _EmptyResult:
+            def fetchall(self):
+                return []
+    
+        class _EmptyConn:
+            def __enter__(self):
+                return self
+    
+            def __exit__(self, *exc_info):
+                return False
+    
+            def execute(self, _clause):
+                return _EmptyResult()
+    
+        engine.connect = lambda *a, **k: _EmptyConn()
+    
+        # Bypass the inspector short-circuits so execution reaches the ALTER branch.
+        fake_inspector = SimpleNamespace(
+            get_table_names=lambda: ["positions"],
+            get_unique_constraints=lambda table: [],
+            get_columns=lambda table: [],
+        )
+        monkeypatch.setattr(db_module, "inspect", lambda _engine: fake_inspector)
+    
+        db_module._reset_positions_constraint_blocker()
+        try:
+>           with pytest.raises(RuntimeError, match="simulated migration failure"):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: Regex pattern did not match.
+E            Regex: 'simulated migration failure'
+E            Input: 'constraint application failed: RuntimeError'
+
+tests/test_positions_constraint_sql_dialect.py:97: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    yowayowa.db:db.py:654 positions_unique_constraint_migration_skipped reason=constraint application failed: RuntimeError
+=========================== short test summary info ============================
+FAILED tests/test_openapi_baseline.py::test_committed_baseline_matches_generated_document
+FAILED tests/test_paperloop_a_half_20bd.py::test_gate_thresholds_match_prereg_text
+FAILED tests/test_positions_constraint_sql_dialect.py::test_non_sqlite_alter_failure_is_fail_closed
+3 failed in 7.95s
+exit=1

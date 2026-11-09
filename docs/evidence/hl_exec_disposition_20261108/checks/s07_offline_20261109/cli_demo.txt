@@ -1,0 +1,16 @@
+{"status": "COMPLETED", "exit_code": 0, "run_id": "cli-synthetic-demo", "problems": []}
+exit=0
+out=/tmp/s07_cli_demo.kLgMFE
+-rw------- 1322 /tmp/s07_cli_demo.kLgMFE/dry-run/cli-synthetic-demo/state.json
+-rw------- 2105 /tmp/s07_cli_demo.kLgMFE/dry-run/cli-synthetic-demo/events.jsonl
+-rw------- 3527 /tmp/s07_cli_demo.kLgMFE/dry-run/cli-synthetic-demo/report.md
+-rw------- 6039 /tmp/s07_cli_demo.kLgMFE/dry-run/cli-synthetic-demo/report.json
+---
+# S-07 offline verification report (SYNTHETIC)
+
+> **SYNTHETIC DATA / 合成データ — 本レポートは合成データによる試験であり、運用成績ではない。PASS は試験アサーションの PASS であり実績ではない。**
+>
+> `official_result: false` — 試験の PASS は運用実績ではない。
+
+- data_kind: `synthetic`
+- run_id: `cli-synthetic-demo`
