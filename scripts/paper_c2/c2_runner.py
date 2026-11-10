@@ -12,10 +12,12 @@ import argparse
 import json
 import logging
 from datetime import UTC, date, datetime, timedelta
+from datetime import time as dt_time
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
-from .alpaca_paper_client import AlpacaPaperClient
+from .alpaca_paper_client import KILL_SWITCH_CANCEL_REASON, AlpacaPaperClient
 from .c2_attribution import (
     compute_attribution_matrix,
     format_attribution_markdown,
@@ -57,6 +59,23 @@ ATTRIBUTION_MD = DATA_DIR / "attribution_summary.md"
 
 PHASE_START_DATE = date(2026, 11, 3)
 SLIPPAGE_TOLERANCE_BPS = 50.0  # 0.50% institutional slippage limit
+
+# Where the limit price's reference came from. Persisted per order so a later
+# reader can tell a live-quote order from a stale-close one and from a
+# market-fallback replacement.
+REFERENCE_PRICE_SOURCE_STALE = "stale_close"
+REFERENCE_PRICE_SOURCE_LIVE = "live_quote"
+REFERENCE_PRICE_SOURCE_FALLBACK = "market_fallback"
+
+# A live print further than this from the previous session close is treated as
+# bad data rather than as a gap: the close is used and the reason recorded.
+MAX_REFERENCE_DEVIATION_BPS = 2000.0  # 20%
+
+# Fallback window: 10:00 ET (30 minutes after the open) up to the close.
+MARKET_FALLBACK_CUTOFF_ET = dt_time(10, 0)
+MARKET_CLOSE_ET = dt_time(16, 0)
+EASTERN = ZoneInfo("America/New_York")
+OPEN_ORDER_STATUSES = {"new", "accepted", "pending_new", "partially_filled", "open", "held"}
 
 
 def load_state() -> dict[str, Any]:
@@ -152,6 +171,337 @@ def _run_order_lifecycle_step(
         return {"status": "error", "errors": [str(exc)]}
     logger.info("Order lifecycle: %s", summarize_order_lifecycle(result))
     return result
+def resolve_reference_prices(
+    client: AlpacaPaperClient,
+    symbols: list[str],
+    stale_closes: dict[str, float],
+) -> dict[str, dict[str, Any]]:
+    """Re-base limit-order references on the freshest price available now.
+
+    Priority per symbol: latest trade -> latest quote mid -> previous session
+    close. This is the fix for the 2026-11-02 batch, whose limit prices were
+    computed off a reference one session old: SPY opened +49.4bps against a
+    +50bps cap (0.66bps of headroom) and IWM never filled at the open at all.
+
+    A live print more than ``MAX_REFERENCE_DEVIATION_BPS`` away from the close
+    is treated as bad data: the close is kept and the reason is recorded, so a
+    single bogus print cannot move an order ~50% away from the market.
+
+    Returns ``{symbol: {price, source, as_of_utc, stale_close, detail}}`` where
+    ``source`` is ``REFERENCE_PRICE_SOURCE_LIVE`` or ``..._STALE``.
+    """
+    resolved: dict[str, dict[str, Any]] = {}
+    if not symbols:
+        return resolved
+
+    trades: dict[str, dict[str, Any]] = {}
+    quotes: dict[str, dict[str, Any]] = {}
+    trade_error = quote_error = None
+
+    try:
+        trades = client.get_latest_trades(symbols)
+    except Exception as exc:
+        trade_error = str(exc)
+
+    missing = [s for s in symbols if s not in trades]
+    if missing:
+        try:
+            quotes = client.get_latest_quotes(missing)
+        except Exception as exc:
+            quote_error = str(exc)
+
+    for sym in symbols:
+        stale_raw = stale_closes.get(sym)
+        stale = float(stale_raw) if stale_raw else 0.0
+        live = trades.get(sym)
+        live_kind = "trade"
+        if live is None and sym in quotes:
+            live = quotes[sym]
+            live_kind = "quote_mid"
+
+        if live is None or stale <= 0:
+            resolved[sym] = {
+                "price": stale,
+                "source": REFERENCE_PRICE_SOURCE_STALE,
+                "as_of_utc": None,
+                "stale_close": stale if stale else None,
+                "detail": trade_error or quote_error or "no_live_print",
+            }
+            continue
+
+        price = float(live["price"])
+        deviation_bps = abs(price / stale - 1.0) * 10000.0
+        if deviation_bps > MAX_REFERENCE_DEVIATION_BPS:
+            logger.warning(
+                "Ignoring %s %s print %.4f: %.0fbps from last close %.4f exceeds %.0fbps guard",
+                sym,
+                live_kind,
+                price,
+                deviation_bps,
+                stale,
+                MAX_REFERENCE_DEVIATION_BPS,
+            )
+            resolved[sym] = {
+                "price": stale,
+                "source": REFERENCE_PRICE_SOURCE_STALE,
+                "as_of_utc": None,
+                "stale_close": stale,
+                "detail": f"live_{live_kind}_deviation_{deviation_bps:.0f}bps",
+            }
+            continue
+
+        resolved[sym] = {
+            "price": price,
+            "source": REFERENCE_PRICE_SOURCE_LIVE,
+            "as_of_utc": live.get("timestamp"),
+            "stale_close": stale,
+            "detail": f"live_{live_kind}",
+        }
+    return resolved
+
+
+def _latest_trade_price(client: AlpacaPaperClient, symbol: str) -> tuple[float | None, str | None]:
+    """Best-effort last price for one symbol (never raises)."""
+    try:
+        trades = client.get_latest_trades([symbol])
+    except Exception:
+        return None, None
+    row = trades.get(symbol)
+    if not row:
+        return None, None
+    return float(row["price"]), row.get("timestamp")
+
+
+def _is_c2_order_for_session(order: dict[str, Any], seq_date: str) -> bool:
+    """True for an open C2 parent order belonging to the given session.
+
+    Fallback replacements are named ``..._<session>_fb`` and therefore never
+    match, which keeps the step idempotent.
+    """
+    cid = str(order.get("client_order_id") or "")
+    return cid.startswith("c2_") and cid.endswith(seq_date)
+
+
+def _existing_fallback_symbols(seq_date: str) -> set[str]:
+    """Symbols already replaced by a market fallback for this session."""
+    found: set[str] = set()
+    if not ORDERS_FILE.exists():
+        return found
+    for line in ORDERS_FILE.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except Exception:
+            continue
+        if (
+            row.get("as_of_date") == seq_date
+            and row.get("reference_price_source") == REFERENCE_PRICE_SOURCE_FALLBACK
+            and row.get("symbol")
+        ):
+            found.add(str(row["symbol"]))
+    return found
+
+
+def run_market_fallback(
+    as_of_date: date,
+    dry_run: bool = False,
+    client: AlpacaPaperClient | None = None,
+) -> dict[str, Any]:
+    """10:00 ET step: replace unfilled C2 day limits with market orders.
+
+    Deliberately a standalone step, not part of the weekly batch: the batch has
+    returned hours before 10:00 ET, and a thread/child process inside it would
+    die with the cron job. Creating the cron entry for this step is a separate
+    decision (COO approval) and is not part of this function.
+
+    Scope is narrow and fail-closed:
+    - only orders whose ``client_order_id`` is ``c2_<sym>_<side>_<session>``
+    - only while the session is open and 10:00 ET <= now < 16:00 ET
+    - cancel one order at a time via ``cancel_order`` (never ``cancel_all_orders``)
+    - the market order is submitted only AFTER the open-order list no longer
+      contains the canceled id, so a failed cancel cannot leave two live orders
+    - TIF stays ``day`` (no GTC: pre-start contamination and double-position risk)
+    """
+    logger.info("Starting C2 market fallback step for session: %s", as_of_date)
+    seq_date = as_of_date.isoformat()
+    state = load_state()
+
+    if state.get("kill_switch_triggered"):
+        logger.critical(
+            "TRADING HALTED: kill switch triggered (%s); market fallback does nothing.",
+            state.get("kill_switch_event"),
+        )
+        return {
+            "status": "halted_by_kill_switch",
+            "as_of_date": seq_date,
+            "kill_switch_event": state.get("kill_switch_event"),
+        }
+
+    if as_of_date < PHASE_START_DATE:
+        return {
+            "status": "skipped_before_phase_start",
+            "as_of_date": seq_date,
+            "phase_start_date": PHASE_START_DATE.isoformat(),
+        }
+
+    now_utc = datetime.now(UTC)
+    now_et = now_utc.astimezone(EASTERN)
+    if now_utc.date() != as_of_date:
+        return {
+            "status": "skipped_wrong_session",
+            "as_of_date": seq_date,
+            "now_utc": now_utc.isoformat(),
+        }
+    if now_et.time() < MARKET_FALLBACK_CUTOFF_ET:
+        return {
+            "status": "skipped_before_fallback_cutoff",
+            "as_of_date": seq_date,
+            "now_et": now_et.isoformat(),
+            "cutoff_et": MARKET_FALLBACK_CUTOFF_ET.strftime("%H:%M"),
+        }
+    if now_et.time() >= MARKET_CLOSE_ET:
+        # Day-TIF orders are already dead by the close; replacing them now would
+        # create orders for the next session, which the phase rules forbid.
+        return {
+            "status": "skipped_after_market_close",
+            "as_of_date": seq_date,
+            "now_et": now_et.isoformat(),
+        }
+    if state.get("last_market_fallback_date") == seq_date and not dry_run:
+        return {"status": "already_executed", "as_of_date": seq_date}
+
+    if client is None:
+        client = AlpacaPaperClient()
+
+    open_orders = client.get_orders("open")
+    if not isinstance(open_orders, list):
+        open_orders = []
+    targets = [
+        o
+        for o in open_orders
+        if isinstance(o, dict)
+        and str(o.get("status", "new")).lower() in OPEN_ORDER_STATUSES
+        and _is_c2_order_for_session(o, seq_date)
+    ]
+
+    already_replaced = _existing_fallback_symbols(seq_date)
+    replaced: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    submitted = 0
+
+    if not targets:
+        logger.info("No open C2 orders for %s; nothing to replace.", seq_date)
+        return {"status": "no_open_orders", "as_of_date": seq_date, "replaced": [], "skipped": []}
+
+    for order in targets:
+        order_id = str(order.get("id") or "")
+        cid = str(order.get("client_order_id") or "")
+        sym = str(order.get("symbol") or "")
+        side = str(order.get("side") or "").lower()
+        try:
+            remaining = float(order.get("qty") or 0.0) - float(order.get("filled_qty") or 0.0)
+        except (TypeError, ValueError):
+            remaining = 0.0
+
+        if not order_id or sym not in C2_UNIVERSE or side not in ("buy", "sell") or remaining <= 0:
+            skipped.append({"order_id": order_id, "symbol": sym, "reason": "unusable_order"})
+            continue
+        if sym in already_replaced:
+            skipped.append(
+                {"order_id": order_id, "symbol": sym, "reason": "already_replaced_this_session"}
+            )
+            continue
+
+        qty: int | float = int(remaining) if remaining == int(remaining) else remaining
+        new_cid = f"c2_{sym}_{side}_{seq_date}_fb"
+
+        if dry_run:
+            replaced.append(
+                {
+                    "symbol": sym,
+                    "side": side,
+                    "qty": qty,
+                    "order_id": order_id,
+                    "client_order_id": cid,
+                    "dry_run": True,
+                }
+            )
+            continue
+
+        cancel_res = client.cancel_order(order_id)
+        still_open = {
+            str(o.get("id")) for o in (client.get_orders("open") or []) if isinstance(o, dict)
+        }
+        if order_id in still_open:
+            logger.error(
+                "Cancel not confirmed for %s (%s); refusing to submit a second live order.",
+                order_id,
+                sym,
+            )
+            skipped.append(
+                {
+                    "order_id": order_id,
+                    "symbol": sym,
+                    "reason": "cancel_not_confirmed",
+                    "cancel_response": cancel_res,
+                }
+            )
+            continue
+
+        ref_price, ref_ts = _latest_trade_price(client, sym)
+        order_res = client.submit_paper_order(
+            symbol=sym,
+            qty=qty,
+            side=side,
+            order_type="market",
+            time_in_force="day",
+            client_order_id=new_cid,
+        )
+        record = {
+            "as_of_date": seq_date,
+            "timestamp_utc": datetime.now(UTC).isoformat(),
+            "symbol": sym,
+            "side": side,
+            "qty": qty,
+            "order_type": "market",
+            "time_in_force": "day",
+            "reference_price": ref_price,
+            "reference_price_source": REFERENCE_PRICE_SOURCE_FALLBACK,
+            "reference_price_as_of_utc": ref_ts,
+            "limit_price": None,
+            "slippage_tolerance_bps": None,
+            "replaces_order_id": order_id,
+            "replaces_client_order_id": cid,
+            "cancel_response": cancel_res,
+            "client_order_id": new_cid,
+            "alpaca_response": order_res,
+        }
+        record_order_event(record)
+        replaced.append(record)
+        submitted += 1
+        logger.warning(
+            "Replaced unfilled limit order %s (%s %s %s) with market order %s after 10:00 ET",
+            order_id,
+            side,
+            qty,
+            sym,
+            new_cid,
+        )
+
+    if submitted:
+        state["last_market_fallback_date"] = seq_date
+        save_state(state)
+
+    status = "success" if submitted else ("dry_run" if dry_run and replaced else "nothing_replaced")
+    return {
+        "status": status,
+        "as_of_date": seq_date,
+        "now_et": now_et.isoformat(),
+        "replaced": replaced,
+        "skipped": skipped,
+        "replaced_count": submitted if not dry_run else len(replaced),
+    }
 
 
 def run_weekly_cycle(
@@ -422,6 +772,12 @@ def run_weekly_cycle(
                     queued_for_session.setdefault(
                         (str(existing.get("symbol")), str(existing.get("side"))), []
                     ).append(existing)
+            # Re-base the limit reference on the price quoted now, not on the last
+            # session close. On 2026-11-02 the stale-close reference left SPY only
+            # 0.66bps under the +50bps cap and IWM never filled at the open.
+            reference_prices = resolve_reference_prices(
+                client, list(C2_UNIVERSE), context.universe_closes
+            )
 
             # Submit rebalance orders targeting final_w_15 with limit slippage guard
             for sym in C2_UNIVERSE:
@@ -429,7 +785,11 @@ def run_weekly_cycle(
                     break
                 target_w = final_w_15.get(sym, 0.0)
                 target_notional = acct.equity * target_w
-                sym_price = context.universe_closes.get(sym, 100.0)
+                ref = reference_prices.get(sym) or {}
+                sym_price = float(ref.get("price") or context.universe_closes.get(sym, 0.0) or 0.0)
+                if sym_price <= 0:
+                    logger.warning("No usable reference price for %s; skipping order.", sym)
+                    continue
                 target_shares = int(target_notional / sym_price) if sym_price > 0 else 0
                 curr_shares = int(current_positions.get(sym, 0.0))
                 delta_shares = target_shares - curr_shares
@@ -584,6 +944,10 @@ def run_weekly_cycle(
                     "order_type": "limit",
                     "time_in_force": "day",
                     "reference_price": sym_price,
+                    "reference_price_source": ref.get("source", REFERENCE_PRICE_SOURCE_STALE),
+                    "reference_price_as_of_utc": ref.get("as_of_utc"),
+                    "reference_detail": ref.get("detail"),
+                    "stale_close_price": ref.get("stale_close"),
                     "limit_price": limit_price,
                     "slippage_tolerance_bps": SLIPPAGE_TOLERANCE_BPS,
                     "client_order_id": client_order_id,
@@ -797,7 +1161,7 @@ def run_daily_cycle(
             "timestamp_utc": now_iso,
         }
         try:
-            client.cancel_all_orders()
+            client.cancel_all_orders(reason=KILL_SWITCH_CANCEL_REASON)
             liq_res = client.close_all_positions(cancel_orders=True)
             logger.warning("Emergency liquidation completed: %s", liq_res)
         except Exception as exc:
@@ -864,7 +1228,9 @@ def run_daily_cycle(
 def main() -> None:
     parser = argparse.ArgumentParser(description="C2 (vol_target 10/15 parallel) paper runner")
     parser.add_argument("--date", type=str, default="2026-11-03", help="Date in YYYY-MM-DD")
-    parser.add_argument("--action", choices=["weekly", "daily", "full"], default="weekly")
+    parser.add_argument(
+        "--action", choices=["weekly", "daily", "full", "fallback"], default="weekly"
+    )
     parser.add_argument("--dry-run", action="store_true", help="Do not submit broker orders")
     parser.add_argument(
         "--force", action="store_true", help="Force re-run even if already executed"
@@ -909,6 +1275,18 @@ def main() -> None:
         if "kill_switch_eval" in d_res:
             ks = d_res["kill_switch_eval"]
             print(f"Kill Switch: {ks.action} ({ks.verdict})")
+
+    if args.action == "fallback":
+        f_res = run_market_fallback(as_of_date=target_date, dry_run=args.dry_run)
+        print("=== MARKET FALLBACK RESULT ===")
+        print(f"Status: {f_res.get('status')}")
+        print(f"Replaced: {f_res.get('replaced_count', 0)}")
+        for row in f_res.get("replaced", []):
+            print(
+                f"  {row.get('symbol')} {row.get('side')} {row.get('qty')} -> {row.get('status', '')}"
+            )
+        for row in f_res.get("skipped", []):
+            print(f"  skipped {row.get('symbol')} {row.get('reason')}")
 
 
 if __name__ == "__main__":

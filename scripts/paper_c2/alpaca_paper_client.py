@@ -31,6 +31,11 @@ SECRET_ENV_PATH = Path("/root/.secrets/alpaca_paper.env")
 HERMES_ENV_PATH = Path("/root/.hermes/.env")
 PHASE_START_DATE = date(2026, 11, 3)
 
+# The only code path allowed to issue the blanket DELETE /v2/orders is the kill
+# switch. That exact call silently canceled the whole 2026-11-02 batch 3h28m
+# before the open, so it now requires an explicit reason token.
+KILL_SWITCH_CANCEL_REASON = "kill_switch"
+
 
 @dataclass(frozen=True)
 class AlpacaAccountSummary:
@@ -197,8 +202,91 @@ class AlpacaPaperClient:
             return {s: [] for s in symbols}
         return {s: bars_dict.get(s, []) for s in symbols}
 
-    def cancel_all_orders(self) -> list[dict[str, Any]]:
-        """Cancel all open orders in the paper account."""
+    def get_latest_trades(self, symbols: list[str], feed: str = "iex") -> dict[str, dict[str, Any]]:
+        """Last trade per symbol from the Alpaca data API.
+
+        Returns ``{symbol: {"price": float, "timestamp": str}}`` for symbols that
+        answered. Used to re-base limit orders on the price actually quoted at
+        submission time instead of the previous session's close.
+        """
+        params = urllib.parse.urlencode({"symbols": ",".join(symbols), "feed": feed})
+        res = self._request(f"{self.data_url}/stocks/trades/latest?{params}")
+        trades = res.get("trades", {})
+        if not isinstance(trades, dict):
+            return {}
+        out: dict[str, dict[str, Any]] = {}
+        for sym in symbols:
+            row = trades.get(sym)
+            if not isinstance(row, dict):
+                continue
+            try:
+                price = float(row.get("p") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if price > 0:
+                out[sym] = {"price": price, "timestamp": row.get("t")}
+        return out
+
+    def get_latest_quotes(self, symbols: list[str], feed: str = "iex") -> dict[str, dict[str, Any]]:
+        """Latest NBBO-ish quote per symbol; price is the mid of bid/ask.
+
+        Used only when no fresh trade print is available (pre-market). Falls back
+        to whichever side exists when the other is zero/absent.
+        """
+        params = urllib.parse.urlencode({"symbols": ",".join(symbols), "feed": feed})
+        res = self._request(f"{self.data_url}/stocks/quotes/latest?{params}")
+        quotes = res.get("quotes", {})
+        if not isinstance(quotes, dict):
+            return {}
+        out: dict[str, dict[str, Any]] = {}
+        for sym in symbols:
+            row = quotes.get(sym)
+            if not isinstance(row, dict):
+                continue
+            try:
+                bid = float(row.get("bp") or 0.0)
+                ask = float(row.get("ap") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if bid > 0 and ask > 0:
+                price = (bid + ask) / 2.0
+            elif ask > 0:
+                price = ask
+            elif bid > 0:
+                price = bid
+            else:
+                continue
+            out[sym] = {"price": price, "timestamp": row.get("t"), "bid": bid, "ask": ask}
+        return out
+
+    def cancel_order(self, order_id: str) -> dict[str, Any]:
+        """Cancel a single order (DELETE /v2/orders/{id}).
+
+        This is the only cancellation the execution model may use outside the
+        kill switch: it is scoped to one order and cannot wipe the batch.
+        """
+        self._enforce_safety_invariants()
+        if not order_id:
+            raise ValueError("order_id is required")
+        res = self._request(
+            f"{self.base_url}/orders/{urllib.parse.quote(order_id, safe='')}", method="DELETE"
+        )
+        return res if isinstance(res, dict) else {}
+
+    def cancel_all_orders(self, *, reason: str) -> list[dict[str, Any]]:
+        """Cancel every open order in the paper account. KILL SWITCH ONLY.
+
+        ``reason`` must be exactly ``KILL_SWITCH_CANCEL_REASON``. The blanket
+        DELETE /v2/orders is what canceled all four 2026-11-02 orders 3h28m
+        before the open, so every other path — rebalances, fallbacks, manual
+        runs — must go through ``cancel_order`` instead.
+        """
+        if reason != KILL_SWITCH_CANCEL_REASON:
+            raise PermissionError(
+                "cancel_all_orders is reserved for the kill-switch path "
+                f"(reason={KILL_SWITCH_CANCEL_REASON!r}); got reason={reason!r}. "
+                "Use cancel_order(order_id) for a single order."
+            )
         self._enforce_safety_invariants()
         res = self._request(f"{self.base_url}/orders", method="DELETE")
         return res if isinstance(res, list) else []
@@ -262,14 +350,6 @@ class AlpacaPaperClient:
         if not isinstance(res, list):
             raise RuntimeError(f"Unexpected Alpaca orders payload: {type(res).__name__}")
         return res
-
-    def cancel_order(self, order_id: str) -> dict[str, Any]:
-        """Cancel a single order (paper only)."""
-        self._enforce_safety_invariants()
-        res = self._request(
-            f"{self.base_url}/orders/{urllib.parse.quote(str(order_id))}", method="DELETE"
-        )
-        return res if isinstance(res, dict) else {}
 
     def submit_paper_order(
         self,

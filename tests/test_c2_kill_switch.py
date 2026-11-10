@@ -189,7 +189,8 @@ def test_kill_switch_liquidation_and_halt_integration(
 
             return Acct()
 
-        def cancel_all_orders(self):
+        def cancel_all_orders(self, *, reason: str):
+            assert reason == "kill_switch", f"cancel_all_orders requires kill_switch, got {reason}"
             cancelled_orders.append(True)
             return []
 
