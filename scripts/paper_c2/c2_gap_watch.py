@@ -88,6 +88,54 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _zero_exposure_streak(mtm_rows: list[dict[str, Any]], target_abs_sum: float) -> int:
+    """Trailing count of sessions with zero exposure while the target is invested.
+
+    A day counts only when the broker book held no position and the target weights say
+    it should be invested (``Σ|target_weights_15| > 0``). Unknown exposure breaks the
+    streak so a missing field can never fabricate an alarm.
+    """
+    if target_abs_sum <= 0:
+        return 0
+    streak = 0
+    for row in reversed(mtm_rows):
+        if not isinstance(row, dict) or not row.get("date"):
+            break
+        exposure = _session_exposure(row)
+        if exposure is None or exposure > 0.0:
+            break
+        streak += 1
+    return streak
+
+
+NON_FRESH_POSITION_SOURCES = frozenset({"carried_forward", "unknown"})
+
+
+def _session_exposure(row: dict[str, Any]) -> float | None:
+    """Gross exposure for one MTM session (None when the row carries no fresh evidence).
+
+    Rows written before ``gross_exposure_15`` existed have no exposure field. For
+    those, lane15 equity is the broker equity, so an exactly flat day is the
+    cash-only signature (no position held); a non-zero move means a position existed.
+
+    ``positions_source`` (added together with the field) says where the number came
+    from. ``carried_forward`` reuses the previous session's observation and
+    ``unknown`` has none at all: neither proves the book was flat that day, so both
+    break the streak instead of feeding a false "no fills" alarm.
+    """
+    source = row.get("positions_source")
+    if isinstance(source, str) and source in NON_FRESH_POSITION_SOURCES:
+        return None
+    raw = row.get("gross_exposure_15")
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if row.get("daily_return_15") == 0.0:
+        return 0.0
+    return None
+
+
 def _last_ohlcv_date(path: Path) -> date | None:
     """Read only the tail of the OHLCV file to find the newest as_of date."""
     try:
@@ -261,6 +309,28 @@ def collect_problems(
         if missed > 0:
             problems.append(f"state.missed_trading_days={missed}")
 
+    # Non-fill surveillance: the target says "invested" but the broker book is flat.
+    # target_weights_15 falls back to current_weights_15 for pre-split state.json.
+    # USD is the cash weight, not a position, so it is excluded from the sum.
+    target_weights = state.get("target_weights_15")
+    if not isinstance(target_weights, dict):
+        target_weights = state.get("current_weights_15") or {}
+    target_abs_sum = sum(
+        abs(float(weight))
+        for symbol, weight in target_weights.items()
+        if str(symbol).upper() != "USD"
+        and isinstance(weight, (int, float))
+        and not isinstance(weight, bool)
+    )
+    zero_exposure_streak = _zero_exposure_streak(mtm_rows, target_abs_sum)
+    facts["target_weight_abs_sum"] = round(target_abs_sum, 6)
+    facts["zero_exposure_streak"] = zero_exposure_streak
+    if zero_exposure_streak >= 2 and target_abs_sum > 0:
+        problems.append(
+            f"zero exposure for {zero_exposure_streak} consecutive sessions "
+            f"while target gross weight={target_abs_sum:.4f}"
+        )
+
     decision_ids: list[str] = []
     for row in _read_jsonl(data_dir / "decisions.jsonl"):
         if isinstance(row, dict) and row.get("decision_id"):
@@ -295,8 +365,7 @@ def collect_problems(
             problems.append(f"no MTM row for expected session {expected}")
         elif last_row_date < expected.isoformat():
             problems.append(
-                f"no new MTM row for expected session {expected} "
-                f"(last={last_row_date})"
+                f"no new MTM row for expected session {expected} (last={last_row_date})"
             )
     elif latest_bar >= phase_start and latest_bar.isoformat() > str(
         state.get("last_mtm_bar_date") or ""

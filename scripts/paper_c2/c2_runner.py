@@ -56,6 +56,25 @@ MTM_FILE = DATA_DIR / "mtm_history.jsonl"
 ORDERS_FILE = DATA_DIR / "orders.jsonl"
 ATTRIBUTION_JSON = DATA_DIR / "attribution_summary.json"
 ATTRIBUTION_MD = DATA_DIR / "attribution_summary.md"
+ORDER_STATUS_FILENAME = "order_status_history.jsonl"
+ORDER_STATUS_FILE = DATA_DIR / ORDER_STATUS_FILENAME
+
+
+def _default_order_status_file() -> Path:
+    """Resolve the observation history from the *current* ``DATA_DIR``.
+
+    A module-level constant is resolved once at import, so a test or replay that
+    isolates itself by patching ``c2_runner.DATA_DIR`` would still append to the
+    live paper book. Measured 2026-11-10: the order-lifecycle tests appended 16
+    synthetic rows to the real ``data/paper_c2/order_status_history.jsonl``.
+    Callers keep passing ``path`` explicitly; this is only the default.
+    """
+    return Path(DATA_DIR) / ORDER_STATUS_FILENAME
+
+
+# Submission snapshots that are not terminal yet: the broker may still fill, cancel
+# or expire them, so the daily cycle has to look their final status up.
+UNSETTLED_ORDER_STATUSES = frozenset({"pending_new", "new", "accepted", "partially_filled"})
 
 PHASE_START_DATE = date(2026, 11, 3)
 SLIPPAGE_TOLERANCE_BPS = 50.0  # 0.50% institutional slippage limit
@@ -171,6 +190,8 @@ def _run_order_lifecycle_step(
         return {"status": "error", "errors": [str(exc)]}
     logger.info("Order lifecycle: %s", summarize_order_lifecycle(result))
     return result
+
+
 def resolve_reference_prices(
     client: AlpacaPaperClient,
     symbols: list[str],
@@ -504,6 +525,213 @@ def run_market_fallback(
     }
 
 
+def ledger_orders_with_unsettled_status(
+    orders_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Return order-ledger rows whose submission-time status is not terminal yet.
+
+    Read-only: ``orders.jsonl`` is never rewritten. One row per ``client_order_id``
+    (a later submission of the same id wins) whose recorded ``alpaca_response.status``
+    is in :data:`UNSETTLED_ORDER_STATUSES`.
+    """
+    path = orders_path if orders_path is not None else ORDERS_FILE
+    if not path.exists():
+        return []
+    by_client_id: dict[str, dict[str, Any]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        response = row.get("alpaca_response")
+        if not isinstance(response, dict):
+            continue
+        if response.get("status") not in UNSETTLED_ORDER_STATUSES:
+            continue
+        client_order_id = str(row.get("client_order_id") or response.get("client_order_id") or "")
+        if client_order_id:
+            by_client_id[client_order_id] = row
+    return list(by_client_id.values())
+
+
+def _append_order_status_record(record: dict[str, Any], path: Path | None = None) -> None:
+    target = path if path is not None else _default_order_status_file()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+def _recorded_terminal_order_ids(path: Path | None = None) -> set[str]:
+    """Client order ids whose final status is already in the observation history.
+
+    The order ledger is append-only, so its submission snapshots stay ``pending_new``
+    forever. Without this, every daily run would re-query the broker for orders that
+    were settled long ago.
+    """
+    target = path if path is not None else _default_order_status_file()
+    settled: set[str] = set()
+    if not target.exists():
+        return settled
+    for line in target.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        client_order_id = record.get("client_order_id")
+        status = record.get("status")
+        if (
+            client_order_id
+            and isinstance(status, str)
+            and status
+            and status not in UNSETTLED_ORDER_STATUSES
+        ):
+            settled.add(str(client_order_id))
+    return settled
+
+
+def reconcile_order_statuses(
+    client: AlpacaPaperClient,
+    orders_path: Path | None = None,
+    history_path: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Append the broker's final status for orders the ledger left unsettled.
+
+    ``GET /orders?status=all`` is issued at most once and only when ``orders.jsonl``
+    still holds a non-terminal submission snapshot (no wasted GET on quiet days).
+    Terminal statuses, missing orders and API failures all become one appended line
+    in ``order_status_history.jsonl``; this function never raises, so a broker hiccup
+    cannot stop the daily mark-to-market.
+    """
+    unsettled = ledger_orders_with_unsettled_status(orders_path)
+    if unsettled:
+        already_recorded = _recorded_terminal_order_ids(history_path)
+        unsettled = [
+            row
+            for row in unsettled
+            if str(
+                row.get("client_order_id")
+                or (row.get("alpaca_response") or {}).get("client_order_id")
+                or ""
+            )
+            not in already_recorded
+        ]
+    result: dict[str, Any] = {
+        "unsettled": len(unsettled),
+        "api_called": False,
+        "appended": 0,
+        "error": None,
+    }
+    if not unsettled:
+        return result
+
+    checked_at = (now or datetime.now(UTC)).isoformat()
+    result["api_called"] = True
+    try:
+        # Prefer the strict reader: it raises on HTTP/connection failure and asks for a
+        # 500-row window. The lenient ``get_orders`` maps failures to ``[]`` and uses
+        # Alpaca's 50-row default, which would quietly record settled orders as
+        # "not found" once the paper book grows past that window. Fake brokers in tests
+        # only expose the lenient one, so fall back to it.
+        strict_reader = getattr(client, "get_orders_strict", None)
+        lenient_reader = getattr(client, "get_orders", None)
+        broker_orders: Any = None
+        if callable(strict_reader):
+            try:
+                broker_orders = strict_reader(status="all")
+            except Exception:
+                broker_orders = None
+        if not isinstance(broker_orders, list) and callable(lenient_reader):
+            broker_orders = lenient_reader(status="all")
+    except Exception as exc:
+        message = f"{type(exc).__name__}: {exc}"
+        _append_order_status_record({"checked_at": checked_at, "error": message}, history_path)
+        result["appended"] = 1
+        result["error"] = message
+        return result
+
+    if not isinstance(broker_orders, list):
+        broker_orders = []
+    if not broker_orders:
+        # An empty book while the ledger still holds unsettled rows is an inconsistency,
+        # not a fill: record it as an error so the next run sees the gap.
+        message = (
+            "get_orders(status=all) returned no orders while "
+            f"{len(unsettled)} unsettled ledger order(s) exist"
+        )
+        _append_order_status_record({"checked_at": checked_at, "error": message}, history_path)
+        result["appended"] = 1
+        result["error"] = message
+        return result
+
+    by_client_id = {
+        str(order.get("client_order_id")): order
+        for order in broker_orders
+        if isinstance(order, dict) and order.get("client_order_id")
+    }
+    for row in unsettled:
+        response = row.get("alpaca_response")
+        response = response if isinstance(response, dict) else {}
+        client_order_id = str(row.get("client_order_id") or response.get("client_order_id") or "")
+        order = by_client_id.get(client_order_id)
+        _append_order_status_record(
+            {
+                "checked_at": checked_at,
+                "client_order_id": client_order_id or None,
+                "symbol": (order or {}).get("symbol") or row.get("symbol"),
+                "status": (order or {}).get("status"),
+                "filled_qty": (order or {}).get("filled_qty"),
+                "filled_avg_price": (order or {}).get("filled_avg_price"),
+                "canceled_at": (order or {}).get("canceled_at"),
+                "expired_at": (order or {}).get("expired_at"),
+                "found": order is not None,
+            },
+            history_path,
+        )
+        result["appended"] += 1
+    return result
+
+
+def _positions_snapshot(raw_positions: Any) -> dict[str, dict[str, float]]:
+    """Normalise ``GET /positions`` into ``{symbol: {qty, market_value}}`` floats."""
+    snapshot: dict[str, dict[str, float]] = {}
+    if not isinstance(raw_positions, list):
+        return snapshot
+    for position in raw_positions:
+        if not isinstance(position, dict):
+            continue
+        symbol = position.get("symbol")
+        if not symbol:
+            continue
+        try:
+            qty = float(position.get("qty") or 0.0)
+            market_value = float(position.get("market_value") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if qty == 0.0:
+            continue
+        snapshot[str(symbol)] = {"qty": qty, "market_value": market_value}
+    return snapshot
+
+
+def _gross_exposure(positions: dict[str, dict[str, Any]], equity: float) -> float:
+    """Σ|market_value| / equity; 0.0 when equity is unknown or non-positive."""
+    if equity <= 0:
+        return 0.0
+    gross = sum(abs(float(p.get("market_value") or 0.0)) for p in positions.values())
+    return gross / equity
+
+
 def run_weekly_cycle(
     as_of_date: date,
     dry_run: bool = False,
@@ -569,6 +797,7 @@ def run_weekly_cycle(
             "as_of_date": seq_date,
             "weights_10": state.get("current_weights_10"),
             "weights_15": state.get("current_weights_15"),
+            "target_weights_15": state.get("target_weights_15", state.get("current_weights_15")),
         }
 
     client = AlpacaPaperClient()
@@ -978,7 +1207,11 @@ def run_weekly_cycle(
     # 11. Update state
     state["last_decision_date"] = seq_date
     state["current_weights_10"] = final_w_10
+    # current_weights_15 stays for backward compatibility (other readers depend on it),
+    # but it mirrors the TARGET only: the weekly cycle never observes holdings, so it
+    # must not claim the target was achieved.
     state["current_weights_15"] = final_w_15
+    state["target_weights_15"] = dict(final_w_15)
     save_state(state)
 
     return {
@@ -1031,6 +1264,14 @@ def run_daily_cycle(
     if client is None:
         client = AlpacaPaperClient()
 
+    # 1b. Order settlement reconciliation (append-only observation history).
+    # Runs at the top of the cycle and never raises: a broker hiccup must not stop MTM.
+    try:
+        order_status = reconcile_order_statuses(client)
+    except Exception as exc:  # defensive: reconcile_order_statuses is fail-safe already
+        logger.warning("Order status reconciliation skipped: %s", exc)
+        order_status = {"unsettled": 0, "api_called": False, "appended": 0, "error": str(exc)}
+
     # 2. Query Paper Account
     paper_equity = state.get("alpaca_paper_equity", 100000.0)
     try:
@@ -1044,6 +1285,48 @@ def run_daily_cycle(
         logger.warning("Failed to query Alpaca paper account in daily cycle: %s", exc)
         state["consecutive_api_failures"] = state.get("consecutive_api_failures", 0) + 1
         state["missed_trading_days"] = state.get("missed_trading_days", 0) + 1
+
+    # 2b. Actual holdings snapshot. Refreshed here (daily) only: the weekly cycle updates
+    # target_weights_15 and must not record holdings as achieved.
+    #
+    # "Flat book" and "broker did not answer" are different facts. A failed
+    # GET /positions raises (see AlpacaPaperClient.get_positions), so it can neither
+    # overwrite the last observation with 0 nor label this session as a fresh zero.
+    positions_source = "unknown"
+    positions_error: str | None = None
+    actual_positions: dict[str, dict[str, float]] = {}
+    try:
+        actual_positions = _positions_snapshot(client.get_positions())
+        positions_source = "fresh"
+    except Exception as exc:
+        positions_error = f"{type(exc).__name__}: {exc}"
+        logger.warning("Failed to fetch Alpaca positions in daily cycle: %s", exc)
+        stored = state.get("actual_positions_15")
+        if isinstance(stored, dict) and stored:
+            # Keep the last observed holdings rather than claiming a flat book.
+            actual_positions = {
+                str(symbol): {
+                    "qty": float(values.get("qty") or 0.0),
+                    "market_value": float(values.get("market_value") or 0.0),
+                }
+                for symbol, values in stored.items()
+                if isinstance(values, dict)
+            }
+            positions_source = "carried_forward"
+
+    if positions_source == "fresh":
+        long_market_value = sum(p["market_value"] for p in actual_positions.values())
+        exposure_15 = max(0.0, long_market_value) / paper_equity if paper_equity > 0 else 0.0
+        state["actual_positions_15"] = actual_positions
+        state["exposure_15"] = round(exposure_15, 6)
+
+    # A non-fresh row must not assert numbers: positions_count / gross_exposure_15 stay
+    # null when no observation exists at all (legacy key types, null only on this path).
+    positions_count: int | None = None
+    gross_exposure_15: float | None = None
+    if positions_source != "unknown":
+        positions_count = len(actual_positions)
+        gross_exposure_15 = round(_gross_exposure(actual_positions, paper_equity), 6)
 
     # 3. Market Features and Bar Date (post-close includes session date bar)
     history = override_history if override_history is not None else load_local_history()
@@ -1132,7 +1415,19 @@ def run_daily_cycle(
         "daily_return_15": round(ret_day_15, 6),
         "drawdown_10": round(dd_10, 6),
         "drawdown_15": round(dd_15, 6),
+        # Exposure evidence: existing keys above are never removed or renamed
+        # (c2_gate.py / verify_contract_points.py read them).
+        # positions_source says how the two fields below were obtained: "fresh" (the
+        # broker answered for this session), "carried_forward" (last observation reused
+        # after a failed GET) or "unknown" (no observation exists -> both are null).
+        # Only "fresh" rows are evidence of a flat book; gap_watch counts the streak on
+        # those alone.
+        "positions_count": positions_count,
+        "gross_exposure_15": gross_exposure_15,
+        "positions_source": positions_source,
     }
+    if positions_error is not None:
+        mtm_record["positions_error"] = positions_error
 
     MTM_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(MTM_FILE, "a", encoding="utf-8") as f:
@@ -1211,6 +1506,9 @@ def run_daily_cycle(
 
     state["last_mtm_date"] = seq_date
     state["last_mtm_bar_date"] = last_bar
+    # Backward compatibility: a state.json written before target_weights_15 existed
+    # still carries the target under current_weights_15.
+    state.setdefault("target_weights_15", dict(state.get("current_weights_15") or {}))
     if seq_date not in state.get("completed_trading_days", []):
         state.setdefault("completed_trading_days", []).append(seq_date)
     save_state(state)
@@ -1222,6 +1520,7 @@ def run_daily_cycle(
         "kill_switch_eval": kill_eval,
         "attribution_matrix": attribution_matrix,
         "order_lifecycle": order_lifecycle,
+        "order_status": order_status,
     }
 
 
