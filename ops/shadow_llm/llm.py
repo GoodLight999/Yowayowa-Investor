@@ -96,6 +96,9 @@ def call(cfg: dict[str, Any], messages: list[dict[str, str]]) -> dict[str, Any]:
     started = time.monotonic()
     last_error = ""
     status: int | None = None
+    finish_seen: str | None = None
+    usage_seen: dict[str, Any] = {}
+    head_seen = ""
     for attempt in range(1, cfg["max_attempts"] + 1):
         req = urllib.request.Request(cfg["endpoint"], data=body, headers={
             "Authorization": "Bearer " + str(cfg["api_key"]),
@@ -124,6 +127,12 @@ def call(cfg: dict[str, Any], messages: list[dict[str, str]]) -> dict[str, Any]:
                     "finish_reason": finish_reason,
                 }
             last_error = "finish_reason=length" if finish_reason == "length" else "empty_content"
+            # evidence for the rejected attempt (usage/content head): without
+            # this the journal only says "length" and the truncation itself is
+            # unmeasurable (11-10..12 incident)
+            finish_seen = finish_reason
+            usage_seen = usage if isinstance(usage, dict) else {}
+            head_seen = content[:200]
         except urllib.error.HTTPError as exc:
             status = exc.code
             last_error = f"HTTP {exc.code}: {exc.read()[:200].decode('utf-8', 'replace')}"
@@ -142,7 +151,9 @@ def call(cfg: dict[str, Any], messages: list[dict[str, str]]) -> dict[str, Any]:
         "content": "",
         "attempts": cfg["max_attempts"],
         "latency_ms": int((time.monotonic() - started) * 1000),
-        "usage": {},
+        "usage": usage_seen,
         "error": last_error,
         "http_status": status,
+        "finish_reason": finish_seen,
+        "fail_content_head": head_seen,
     }

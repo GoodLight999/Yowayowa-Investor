@@ -23,7 +23,9 @@ DEFAULTS = {
     "base_url": "https://opengateway.gitlawb.com/v1",
     "key_env": "MINIMAX_M3_API_KEY",
     "timeout_seconds": 180,
-    "max_tokens": 4096,
+    # 4096 was exceeded by the free lane's hidden reasoning on 11-10..12
+    # (finish_reason=length, 3 days in a row); 8192 keeps the same model
+    "max_tokens": 8192,
     "temperature": 0.0,
     "max_attempts": 2,  # 1 call + at most 1 retry (task constraint)
     "json_mode": True,  # ask the gateway for a JSON object answer

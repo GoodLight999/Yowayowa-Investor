@@ -172,3 +172,44 @@ journal には `cost_usd` と `cost_measured_zero` を毎行記録している�
 - 約定（`apply_fill`）・mtm・weekly への結線（§7-1 の「既存機構をそのまま使う」部分）。今は決定と記録だけ。
 - 20 営業日の判定（§7-5）と対照（同じ平均グロスでの機械的縮小）。判定は §7-4 の事前登録どおり別カードで行う。
 - 帳簿を 1 本増やす改修（`paperloop.py` の 11 分岐）と「帳簿 A の決定 32 本がバイト一致」の golden テスト（§7-3）。
+
+## 障害と復帰の実測（2026-11-10〜11-13）
+
+### 何が起きたか
+
+11-10 / 11-11 / 11-12 の日次 tick が 3 日連続で `finish_reason=length`（§5-3 どおり未回答扱い・規則は変更しない）。
+contract 不合格 → 前日 hold フォールバック・発注 0。起動元 cron は journal が増えるだけを見て ok を返し続け、監視に映らなかった。
+
+### 原因の実測（journal 26 行 + 生 probe 1 回）
+
+- 入力は膨らんでいない: MATERIAL PACKET は bytes 1941-1963 / token_estimate 約 975 / prompt_tokens 1556-1579 で全期間ほぼ一定。
+- **真因はモデルの隠れ推論（reasoning）**: contract ok 日の `raw_output`（純 JSON）は 486-917 文字なのに、
+  `usage.completion_tokens` は 1485-3374。gateway が content から除去する推論が completion に計上される。
+  11-13 の生 probe では gateway が `completion_tokens_details.reasoning_tokens=5645` を直接返し、これを確定させた
+  （content は 695 文字の純 JSON、completion 合計 5905）。
+- 推論量は日により変動（2796 / 1849 / 3085 …）し、11-10〜11-12 は推論+JSON が 4096 を超えて毎日 length で打ち切られた。
+  max_tokens 4096 はこのモデルには小さすぎた、が結論。(b) 入力膨張説は prompt_tokens 一定により棄却。
+
+### 修正（3 ファイル + 起動スクリプト、モデルは不変）
+
+1. `config.py`: `max_tokens` 4096 → **8192**。モデルは `nvidia/nemotron-3-ultra-550b-a55b:free` のまま、`:free` ガード不変。
+2. `llm.py`: 失敗 attempt も `usage` / `finish_reason` / 本文先頭 200 文字（`fail_content_head`）を返す
+   （旧実装は破棄し、journal の length 日は `usage=null` で証跡が残らなかった）。
+3. `run_once.py`: journal の `llm` に `fail_content_head` を記録。
+4. 起動スクリプト（profile 側 `shadow_llm_tick.sh`）: journal が増えても run_once の rc を握り潰さず `exit "$RC"`
+   （rc=3 = contract 拒否 → cron が失敗を記録する）。
+
+### 復帰の実測（2026-11-13 09:11 JST）
+
+| 項目 | 値 |
+|---|---|
+| probe（max_tokens 8192） | HTTP 200・`finish_reason=stop`・completion 5905（reasoning 5645・content 695 文字の純 JSON） |
+| 手動 run_once 1 回 | `tick_id=20261113T001134Z`・attempts 1・HTTP 200・**`finish_reason=stop`・`contract.ok=true`**（9 チェック全通） |
+| usage | prompt 1546 / completion 4822 / total 6368 |
+| その他 | fallback=false・orders_placed=0・journal 27→28 行・rc=0 |
+
+### 盲点修正の実測（2026-11-12）
+
+config の base_url を一時的に死んだ URL へ差し替えて `hermes cron run` → journal 1 行追記（fallback 行）・rc=3 →
+**cron `last_status=error`・"Script exited with code 3"・failure_streak=1**（旧実装は journal が増えると無条件に ok を返した）。
+注入は復元済み。以後、contract 不合格の tick は cron の監視に失敗として映る。

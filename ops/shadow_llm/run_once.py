@@ -162,6 +162,7 @@ def run_once(offline: bool | None = None, append: bool = True) -> dict[str, Any]
             "cost_measured_zero": cost in (0, 0.0),
             "answer_sha256": _sha256(response["content"]) if response["content"] else None,
             "raw_output": response["content"],
+            "fail_content_head": response.get("fail_content_head") or None,
             "error": response.get("error") or None,
         },
         "contract": {
