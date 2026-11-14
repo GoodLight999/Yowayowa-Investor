@@ -1,0 +1,16 @@
+# 鍵ファイルの属性（内容は表示しない）
+$ stat -c '%n mode=%a size=%s owner=%U:%G' /root/.secrets/hl_agent_testnet.key /root/.secrets/hl_agent_testnet.address
+/root/.secrets/hl_agent_testnet.key mode=600 size=65 owner=root:root
+/root/.secrets/hl_agent_testnet.address mode=644 size=43 owner=root:root
+
+$ ls -la /root/.secrets
+total 24
+drwx------  2 root root 4096 Nov  2 12:03 .
+drwx------ 91 root root 4096 Nov  2 09:11 ..
+-rw-------  1 root root   93 Oct 29 18:30 commandcode.txt
+-rw-r--r--  1 root root   43 Nov  2 12:03 hl_agent_testnet.address
+-rw-------  1 root root   65 Nov  2 12:03 hl_agent_testnet.key
+-rw-------  1 root root   87 Oct 28 22:36 mf_mizuho.txt
+
+$ ls -ld /root/.secrets
+drwx------ 2 root root 4096 Nov  2 12:03 /root/.secrets

@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+# ruff: noqa: RUF001, RUF002, E501, E402, SIM105
+"""S-07 テストネット・フォワード運用 日次オーケストレータ。
+
+1日1回の cron（no_agent）から呼び出され、以下を順次実行する:
+  1. execute_forward_cycle: テストネットで発注→約定→決済の1サイクル実行
+  2. evaluate_5_conditions: 事前凍結の5条件による機械的3値判定（PASS/FAIL/INCONCLUSIVE）
+  3. generate_scorecard_md: 詳細Markdown成績表の更新とワークスペース同期
+  4. 1行サマリを stdout に出力
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import shutil
+import sys
+from pathlib import Path
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "src"))
+
+from s07_forward_evaluator import evaluate_5_conditions
+from s07_forward_runner import DEFAULT_DATA_DIR, WORKSPACE_DIR, execute_forward_cycle
+
+SCORECARD_PATH = DEFAULT_DATA_DIR / "reports" / "S07_TESTNET_SCORECARD.md"
+WORKSPACE_REPORT = WORKSPACE_DIR / "S07_TESTNET_FORWARD_EVALUATION.md"
+
+
+def generate_scorecard_md(eval_res: dict[str, Any], data_dir: Path = DEFAULT_DATA_DIR) -> str:
+    ledger_path = data_dir / "daily_ledger.json"
+    trades_path = data_dir / "trades.jsonl"
+
+    ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {}
+    days = ledger.get("days", [])
+
+    trades = []
+    if trades_path.exists():
+        for line in trades_path.read_text().splitlines():
+            if line.strip():
+                try:
+                    trades.append(json.loads(line))
+                except Exception:
+                    pass
+
+    now_utc = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    md = []
+    md.append("# Hyperliquid テストネット S-07 フォワード運用 評価レポート")
+    md.append("")
+    md.append(f"- **最終更新日時**: {now_utc}")
+    md.append("- **対象口座**: `0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82` (Hyperliquid Testnet)")
+    md.append("- **承認エージェント**: `0xa2aF82D975e52D4FA110575d6CAc8f83e1ae9239` (yowayowa-acct)")
+    md.append("- **評価期間**: 2026-11-04 00:00 UTC 〜 2026-12-02 00:00 UTC（28日間）")
+    md.append(f"- **現在判定**: **【{eval_res['verdict']}】** ({eval_res['verdict_reason']})")
+    md.append("")
+    md.append("---")
+    md.append("")
+    md.append("## 【重要なお断り・テストネット運用の留保事項】")
+    md.append("> **[重要]** テストネットの流動性および板（Orderbook）環境は本番メインネットとは異なります。")
+    md.append("> 約定力やスリッページの評価値は本番環境より楽観的に出る可能性があります。")
+    md.append("> 本フォワード運用により得られる証拠は「**発注・約定・決済・キルスイッチ統制の執行経路が健全に稼働していること**」")
+    md.append("> および「**戦略方向性の暫定証拠**」であり、本番環境における絶対的な収益性を保証するものではありません。")
+    md.append("> （本番資金100 USDはマスター指示に従い完全分離枠として保護されています）")
+    md.append("")
+    md.append("---")
+    md.append("")
+    md.append("## 1. 事前凍結 5条件の機械判定結果（3値判定）")
+    md.append("")
+    md.append("| # | 評価項目 | 事前凍結基準 | 実測値 | 判定 |")
+    md.append("|---|---|---|---|:---:|")
+
+    conds = eval_res.get("conditions", {})
+    order = ["1_activity", "2_net_pnl", "3_drawdown", "4_execution_quality", "5_governance"]
+    for k in order:
+        if k in conds:
+            item = conds[k]
+            name = item["name"]
+            status = item["status"]
+            detail = item["detail"]
+            req = "往復 >= 8回" if "1" in k else ("Net PnL > 0" if "2" in k else ("MaxDD <= 10%" if "3" in k else ("全約定記録 & スリッページ中央値 <= 5bp" if "4" in k else "建玉0未復帰0日 / 全日ロック / 未約定0")))
+            badge = f"**{status}**"
+            md.append(f"| {k[0]} | {name} | {req} | {detail} | {badge} |")
+
+    md.append("")
+    md.append(f"**総合判定**: **【{eval_res['verdict']}】** — *{eval_res['verdict_reason']}*")
+    md.append("")
+    md.append("---")
+    md.append("")
+    md.append("## 2. 実運用トレード実績（約定・スリッページ・手数料・損益）")
+    md.append("")
+    if trades:
+        md.append("| トレード# | 日付 | 方向 | エントリー(OID/約定値) | 決済(OID/約定値) | スリッページ(Entry/Exit/平均) | 手数料 | 純損益 | 約定方式 | 決済理由 |")
+        md.append("|---|---|:---:|---|---|:---:|:---:|:---:|:---:|---|")
+        for i, t in enumerate(trades, 1):
+            day = t.get("day")
+            dir_str = t.get("direction")
+            entry = t.get("entry", {})
+            exit_order = t.get("exit", {})
+            e_oid = entry.get("oid")
+            e_px = entry.get("fill_px")
+            x_oid = exit_order.get("oid")
+            x_px = exit_order.get("fill_px")
+            e_slip = entry.get("slippage_bp", 0.0)
+            x_slip = exit_order.get("slippage_bp", 0.0)
+            m_slip = t.get("mean_slippage_bp", 0.0)
+            fees = t.get("fees_usdc", 0.0)
+            net = t.get("net_pnl_usdc", 0.0)
+            fill_type = entry.get("fill_type", "limit_ioc_taker")
+            exit_reason = exit_order.get("exit_reason", "daily_settle")
+
+            md.append(
+                f"| #{i} | {day} | `{dir_str}` | OID `{e_oid}` @ {e_px:.1f} | OID `{x_oid}` @ {x_px:.1f} | "
+                f"{e_slip:.1f}bp / {x_slip:.1f}bp / **{m_slip:.1f}bp** | {fees:.4f} USDC | **{net:+.4f} USDC** | `{fill_type}` | `{exit_reason}` |"
+            )
+    else:
+        md.append("（現在記録されたトレードはありません）")
+
+    md.append("")
+    md.append("---")
+    md.append("")
+    md.append("## 3. 日次運用台帳（Equity・日次損益・累計損益・DD）")
+    md.append("")
+    if days:
+        md.append("| 日付 | Equity (USDC) | 建玉 | 当日PnL | 累積PnL | ピークEquity | MaxDD | Funding | ロック記録 | 未約定残留 |")
+        md.append("|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|")
+        for d in days:
+            day = d.get("day")
+            eq = d.get("equity")
+            pos = d.get("position")
+            dpnl = d.get("daily_pnl")
+            cpnl = d.get("cumulative_pnl")
+            peak = d.get("peak_equity")
+            dd = d.get("drawdown_pct")
+            fbal = d.get("funding_balance", 0.0)
+            gov = d.get("governance", {})
+            lock_ok = "PASS" if gov.get("killswitch_lock_logged") else "FAIL"
+            unf = gov.get("unfilled_orders_remaining", 0)
+
+            md.append(
+                f"| {day} | {eq:.4f} | {pos:.5f} | {dpnl:+.4f} | {cpnl:+.4f} | {peak:.4f} | {dd:.2f}% | {fbal:+.4f} | `{lock_ok}` | `{unf}` |"
+            )
+    else:
+        md.append("（現在記録された日次データはありません）")
+
+    md.append("")
+    md.append("---")
+    md.append("")
+    md.append("## 4. 実行経路とガバナンス健全性の証明")
+    md.append("")
+    md.append("- **キルスイッチ排他制御**: 全トレードで発注直前にロック取得、正常終了時に解放を検証")
+    md.append("- **日次建玉スクエア化**: 日次サイクル終了時点で建玉0（フラット）への完全決済を実施")
+    md.append("- **未約定注文残留ゼロ**: 取引終了後の `openOrders` が常に 0 件であることを取引所APIで照合")
+    md.append("- **三段ログの完全性**: `journal.py`（改ざん不能ハッシュチェーン）により `SIGNAL` → `INTENT` → `ORDER` を全件チェーン検証")
+    md.append("- **メインネット接続ゼロ**: `HyperliquidExchangeClient` ガードにより、テストネット（`api.hyperliquid-testnet.xyz`）以外への通信を物理遮断")
+
+    return "\n".join(md) + "\n"
+
+
+def run_daily_orchestration(*, dry_run: bool = False) -> dict[str, Any]:
+    # 1. テストネット往復執行
+    cycle_res = execute_forward_cycle(dry_run=dry_run)
+
+    # 2. 5条件機械判定
+    eval_res = evaluate_5_conditions()
+
+    # 3. Markdownレポート生成 & 同期
+    content = generate_scorecard_md(eval_res)
+    SCORECARD_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SCORECARD_PATH.write_text(content, encoding="utf-8")
+
+    WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+    WORKSPACE_REPORT.write_text(content, encoding="utf-8")
+
+    # 4. ワークスペースへ ledger/trades/raw_events もコピー
+    for fn in ("daily_ledger.json", "trades.jsonl", "execution_journal.jsonl"):
+        src_f = DEFAULT_DATA_DIR / fn
+        if src_f.exists():
+            shutil.copy2(src_f, WORKSPACE_DIR / fn)
+
+    # 5. 1行サマリ生成
+    t = cycle_res.get("trade", {})
+    net = t.get("net_pnl_usdc", 0.0)
+    direction = cycle_res.get("direction", "SHORT")
+    oneline = (
+        f"[HL-Testnet S-07] Day {cycle_res.get('day')} {direction} "
+        f"Equity={cycle_res.get('post_account_value'):.4f}USDC "
+        f"NetPnL={net:+.4f}USDC RoundTrips={eval_res.get('total_roundtrips')}/8 "
+        f"Verdict={eval_res.get('verdict')} OpenPos=0 OpenOrders=0"
+    )
+
+    return {
+        "status": "ok",
+        "oneline": oneline,
+        "cycle": cycle_res,
+        "evaluation": eval_res,
+        "scorecard_path": str(SCORECARD_PATH),
+    }
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="S-07 Daily Forward Runner Orchestration")
+    parser.add_argument("--dry-run", action="store_true", help="ドライラン")
+    args = parser.parse_args()
+
+    out = run_daily_orchestration(dry_run=args.dry_run)
+    print(out["oneline"])

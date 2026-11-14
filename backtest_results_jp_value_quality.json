@@ -1,0 +1,822 @@
+{
+  "window": {
+    "start": "2022-08-01",
+    "end": "2026-10-21"
+  },
+  "in_sample": {
+    "start": "2022-08-01",
+    "end": "2025-02-07"
+  },
+  "out_of_sample": {
+    "start": "2025-02-10",
+    "end": "2026-10-21"
+  },
+  "universe": {
+    "tier": "all",
+    "members": 2950,
+    "with_prices": 445,
+    "with_fundamentals": 445,
+    "source": {
+      "label": "JPX 東証上場銘柄一覧",
+      "url": "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx",
+      "page_url": "https://www.jpx.co.jp/markets/statistics-equities/misc/01.html",
+      "license_class": "official_public",
+      "retrieved_at": "2026-10-21T06:36:41.938723+00:00"
+    },
+    "criteria": {
+      "market": [
+        "プライム（内国株式）",
+        "スタンダード（内国株式）"
+      ],
+      "excluded_sectors33": [
+        "銀行業",
+        "証券、商品先物取引業",
+        "保険業",
+        "その他金融業"
+      ],
+      "tiers": {
+        "all_non_financial": "全銘柄（プライム・スタンダード、金融4業種除く）",
+        "topix500": "上記のうち TOPIX規模区分 Core30/Large70/Mid400"
+      },
+      "duplicate_codes": "removed (first occurrence kept)"
+    }
+  },
+  "assumptions": {
+    "disclosure_lag_days": 120,
+    "cost_bps_one_way": 15.0,
+    "rebalance": "first session of each month, execute at that session's open",
+    "benchmark": "1306.T (price-only, dividends excluded)",
+    "op_simple_basis_default": "reported (company forecasts are not available historically)"
+  },
+  "variants": {
+    "mode_v1_forecast": {
+      "label": "v1 (equal weights, strict missing, OP_simple=company forecast)",
+      "start": "2022-08-01",
+      "end": "2026-10-21",
+      "sessions": 1032,
+      "rebalances": 51,
+      "total_return": 0.8338174228180708,
+      "annual_return": 0.15446442213783995,
+      "cagr": 0.1622199515990972,
+      "sharpe": 0.9386180908601065,
+      "sortino": 1.3067939685688963,
+      "max_drawdown": -0.19400889791618348,
+      "hit_rate": 0.5668604651162791,
+      "annual_turnover": 3.782754351168331,
+      "average_holdings": 18.725490196078432,
+      "max_holdings": 20,
+      "missing_rate": {
+        "value": 0.2161484130846038,
+        "quality": 1.0,
+        "safety": 0.21437652952190966,
+        "catalyst": 1.0
+      },
+      "lookahead_violations": 0,
+      "stale_marks": 0,
+      "yearly_returns": {
+        "2022": -0.09737972877467338,
+        "2023": 0.18185525553986115,
+        "2024": 0.17407329909412517,
+        "2025": 0.2422168884390008,
+        "2026": 0.18962265990833993
+      },
+      "notes": []
+    },
+    "mode_v1_actual": {
+      "label": "v1 (equal weights, strict missing, OP_simple=reported)",
+      "start": "2022-08-01",
+      "end": "2026-10-21",
+      "sessions": 1032,
+      "rebalances": 51,
+      "total_return": 1.0382462552001392,
+      "annual_return": 0.18373070622535526,
+      "cagr": 0.19260493610764784,
+      "sharpe": 1.0064828901637355,
+      "sortino": 1.4238802834338318,
+      "max_drawdown": -0.21517740016854991,
+      "hit_rate": 0.561046511627907,
+      "annual_turnover": 4.310073093031124,
+      "average_holdings": 18.725490196078432,
+      "max_holdings": 20,
+      "missing_rate": {
+        "value": 0.2161484130846038,
+        "quality": 0.47748225735546884,
+        "safety": 0.21437652952190966,
+        "catalyst": 1.0
+      },
+      "lookahead_violations": 0,
+      "stale_marks": 0,
+      "yearly_returns": {
+        "2022": -0.09737972877467338,
+        "2023": 0.18185525553986115,
+        "2024": 0.1857666219669647,
+        "2025": 0.3595816363501938,
+        "2026": 0.19618379881732118
+      },
+      "notes": []
+    },
+    "baseline_all": {
+      "label": "baseline §3-A hard filter (all passers, equal weight)",
+      "start": "2022-08-01",
+      "end": "2026-10-21",
+      "sessions": 1032,
+      "rebalances": 51,
+      "total_return": 2.43586974768173,
+      "annual_return": 0.33958347210684114,
+      "cagr": 0.3517384907271133,
+      "sharpe": 1.2926272430489043,
+      "sortino": 1.8710921461256529,
+      "max_drawdown": -0.26992097459006215,
+      "hit_rate": 0.47189922480620156,
+      "annual_turnover": 4.778388099368143,
+      "average_holdings": 4.627450980392157,
+      "max_holdings": 12,
+      "missing_rate": {
+        "value": 0.2161484130846038,
+        "quality": 0.47748225735546884,
+        "safety": 0.21437652952190966,
+        "catalyst": 1.0
+      },
+      "lookahead_violations": 0,
+      "stale_marks": 0,
+      "yearly_returns": {
+        "2022": 0.0,
+        "2023": 0.44740984043751264,
+        "2024": 0.24216926271989325,
+        "2025": 0.6743163794471754,
+        "2026": 0.14137108542551458
+      },
+      "notes": []
+    },
+    "baseline_top20": {
+      "label": "baseline §3-A hard filter (20 lowest PBR)",
+      "start": "2022-08-01",
+      "end": "2026-10-21",
+      "sessions": 1032,
+      "rebalances": 51,
+      "total_return": 2.43586974768173,
+      "annual_return": 0.33958347210684114,
+      "cagr": 0.3517384907271133,
+      "sharpe": 1.2926272430489043,
+      "sortino": 1.8710921461256529,
+      "max_drawdown": -0.26992097459006215,
+      "hit_rate": 0.47189922480620156,
+      "annual_turnover": 4.778388099368143,
+      "average_holdings": 4.627450980392157,
+      "max_holdings": 12,
+      "missing_rate": {
+        "value": 0.2161484130846038,
+        "quality": 0.47748225735546884,
+        "safety": 0.21437652952190966,
+        "catalyst": 1.0
+      },
+      "lookahead_violations": 0,
+      "stale_marks": 0,
+      "yearly_returns": {
+        "2022": 0.0,
+        "2023": 0.44740984043751264,
+        "2024": 0.24216926271989325,
+        "2025": 0.6743163794471754,
+        "2026": 0.14137108542551458
+      },
+      "notes": []
+    }
+  },
+  "mode_v2": {
+    "label": "quality_heavy/graceful/top10",
+    "start": "2022-08-01",
+    "end": "2026-10-21",
+    "sessions": 1032,
+    "rebalances": 51,
+    "total_return": 1.8861469969114388,
+    "annual_return": 0.2853889843193209,
+    "cagr": 0.29832609098098506,
+    "sharpe": 1.2826936557869173,
+    "sortino": 1.8599917408182784,
+    "max_drawdown": -0.24788092659243077,
+    "hit_rate": 0.562015503875969,
+    "annual_turnover": 5.090923852913652,
+    "average_holdings": 9.72549019607843,
+    "max_holdings": 10,
+    "missing_rate": {
+      "value": 0.21442059209075745,
+      "quality": 0.21690346385948586,
+      "safety": 0.21437652952190966,
+      "catalyst": 1.0
+    },
+    "lookahead_violations": 0,
+    "stale_marks": 0,
+    "yearly_returns": {
+      "2022": -0.08102767498898278,
+      "2023": 0.24880964354376545,
+      "2024": 0.20550912797076704,
+      "2025": 0.5606845263223847,
+      "2026": 0.34911599207186406
+    },
+    "notes": []
+  },
+  "benchmark": {
+    "label": "benchmark",
+    "start": "2022-08-01",
+    "end": "2026-10-21",
+    "sessions": 1032,
+    "rebalances": 0,
+    "total_return": 1.1079743386308576,
+    "annual_return": 0.19319997275463274,
+    "cagr": 0.19994156593876644,
+    "sharpe": 1.0402670956090516,
+    "sortino": null,
+    "max_drawdown": -0.234441180772752,
+    "hit_rate": 0.553831231813773,
+    "annual_turnover": null,
+    "average_holdings": null,
+    "max_holdings": null,
+    "missing_rate": {},
+    "lookahead_violations": 0,
+    "stale_marks": 0,
+    "yearly_returns": {
+      "2022": -0.022040599716530385,
+      "2023": 0.25322866939879773,
+      "2024": 0.1796322388217264,
+      "2025": 0.22610483514914215,
+      "2026": 0.18915902028937315
+    },
+    "notes": [
+      "price-only buy-and-hold (dividends excluded)"
+    ]
+  },
+  "grid_in_sample": [
+    {
+      "label": "quality_heavy/graceful/top10",
+      "weights": "quality_heavy",
+      "missing_policy": "graceful",
+      "top_n": 10,
+      "is_total_return": 0.3385243736837449,
+      "is_annual_return": 0.12258032665382923,
+      "is_sharpe": 0.7108497020494513,
+      "is_max_drawdown": -0.24788092659243077
+    },
+    {
+      "label": "value_heavy/graceful/top10",
+      "weights": "value_heavy",
+      "missing_policy": "graceful",
+      "top_n": 10,
+      "is_total_return": 0.3153379676615835,
+      "is_annual_return": 0.11482785523565986,
+      "is_sharpe": 0.6928357270569001,
+      "is_max_drawdown": -0.23909423003331587
+    },
+    {
+      "label": "quality_heavy/strict/top20",
+      "weights": "quality_heavy",
+      "missing_policy": "strict",
+      "top_n": 20,
+      "is_total_return": 0.29018763361084754,
+      "is_annual_return": 0.10632492127118898,
+      "is_sharpe": 0.661540854370441,
+      "is_max_drawdown": -0.2293863312148703
+    },
+    {
+      "label": "value_heavy/strict/top20",
+      "weights": "value_heavy",
+      "missing_policy": "strict",
+      "top_n": 20,
+      "is_total_return": 0.27500925257868714,
+      "is_annual_return": 0.10114486615164964,
+      "is_sharpe": 0.6449339859518635,
+      "is_max_drawdown": -0.2227769302992757
+    },
+    {
+      "label": "value_heavy/graceful/top30",
+      "weights": "value_heavy",
+      "missing_policy": "graceful",
+      "top_n": 30,
+      "is_total_return": 0.25933118551625034,
+      "is_annual_return": 0.09575506054097338,
+      "is_sharpe": 0.6307688573307791,
+      "is_max_drawdown": -0.20619028119562277
+    },
+    {
+      "label": "quality_heavy/strict/top30",
+      "weights": "quality_heavy",
+      "missing_policy": "strict",
+      "top_n": 30,
+      "is_total_return": 0.2581624012168928,
+      "is_annual_return": 0.09535163801590896,
+      "is_sharpe": 0.6200967675933907,
+      "is_max_drawdown": -0.22296799318349458
+    },
+    {
+      "label": "quality_heavy/graceful/top30",
+      "weights": "quality_heavy",
+      "missing_policy": "graceful",
+      "top_n": 30,
+      "is_total_return": 0.2602177059625661,
+      "is_annual_return": 0.09606090503170761,
+      "is_sharpe": 0.6121116051605565,
+      "is_max_drawdown": -0.2305617122777257
+    },
+    {
+      "label": "equal/strict/top10",
+      "weights": "equal",
+      "missing_policy": "strict",
+      "top_n": 10,
+      "is_total_return": 0.2559333123246752,
+      "is_annual_return": 0.09458160889884093,
+      "is_sharpe": 0.6060851832254951,
+      "is_max_drawdown": -0.22615157679489262
+    },
+    {
+      "label": "quality_heavy/graceful/top20",
+      "weights": "quality_heavy",
+      "missing_policy": "graceful",
+      "top_n": 20,
+      "is_total_return": 0.26288682049057055,
+      "is_annual_return": 0.09698095119381112,
+      "is_sharpe": 0.5955934036373283,
+      "is_max_drawdown": -0.2521014831956079
+    },
+    {
+      "label": "value_heavy/strict/top10",
+      "weights": "value_heavy",
+      "missing_policy": "strict",
+      "top_n": 10,
+      "is_total_return": 0.24985070866360704,
+      "is_annual_return": 0.09247619513180827,
+      "is_sharpe": 0.5914954433681828,
+      "is_max_drawdown": -0.21834325012459432
+    },
+    {
+      "label": "value_heavy/strict/top30",
+      "weights": "value_heavy",
+      "missing_policy": "strict",
+      "top_n": 30,
+      "is_total_return": 0.23544853395139143,
+      "is_annual_return": 0.0874662944629665,
+      "is_sharpe": 0.5821963824274018,
+      "is_max_drawdown": -0.2136297460529074
+    },
+    {
+      "label": "value_heavy/graceful/top20",
+      "weights": "value_heavy",
+      "missing_policy": "graceful",
+      "top_n": 20,
+      "is_total_return": 0.2247848489228521,
+      "is_annual_return": 0.08373410400489201,
+      "is_sharpe": 0.5593331283021342,
+      "is_max_drawdown": -0.209173193930275
+    },
+    {
+      "label": "equal/strict/top20",
+      "weights": "equal",
+      "missing_policy": "strict",
+      "top_n": 20,
+      "is_total_return": 0.21977033238458832,
+      "is_annual_return": 0.08197229060214384,
+      "is_sharpe": 0.5492024757293015,
+      "is_max_drawdown": -0.21517740016854991
+    },
+    {
+      "label": "quality_heavy/strict/top10",
+      "weights": "quality_heavy",
+      "missing_policy": "strict",
+      "top_n": 10,
+      "is_total_return": 0.20898850528201707,
+      "is_annual_return": 0.07816931805566929,
+      "is_sharpe": 0.5200780570265411,
+      "is_max_drawdown": -0.2246733347699239
+    },
+    {
+      "label": "safety_heavy/strict/top10",
+      "weights": "safety_heavy",
+      "missing_policy": "strict",
+      "top_n": 10,
+      "is_total_return": 0.1955130500154083,
+      "is_annual_return": 0.07338736176725513,
+      "is_sharpe": 0.5128709044965223,
+      "is_max_drawdown": -0.20539684029065164
+    },
+    {
+      "label": "equal/graceful/top10",
+      "weights": "equal",
+      "missing_policy": "graceful",
+      "top_n": 10,
+      "is_total_return": 0.20113799784022235,
+      "is_annual_return": 0.07538738873481976,
+      "is_sharpe": 0.5113529858258904,
+      "is_max_drawdown": -0.23962791466956146
+    },
+    {
+      "label": "safety_heavy/strict/top30",
+      "weights": "safety_heavy",
+      "missing_policy": "strict",
+      "top_n": 30,
+      "is_total_return": 0.18973181582120446,
+      "is_annual_return": 0.07132583903072276,
+      "is_sharpe": 0.5020315169108511,
+      "is_max_drawdown": -0.20999736651203804
+    },
+    {
+      "label": "equal/strict/top30",
+      "weights": "equal",
+      "missing_policy": "strict",
+      "top_n": 30,
+      "is_total_return": 0.18820707442312234,
+      "is_annual_return": 0.07078112658245517,
+      "is_sharpe": 0.49985238685032896,
+      "is_max_drawdown": -0.21478322132202798
+    },
+    {
+      "label": "safety_heavy/graceful/top10",
+      "weights": "safety_heavy",
+      "missing_policy": "graceful",
+      "top_n": 10,
+      "is_total_return": 0.1846156725362995,
+      "is_annual_return": 0.06949643262551142,
+      "is_sharpe": 0.4883326919141873,
+      "is_max_drawdown": -0.22998065280834468
+    },
+    {
+      "label": "equal/graceful/top20",
+      "weights": "equal",
+      "missing_policy": "graceful",
+      "top_n": 20,
+      "is_total_return": 0.18745980004443874,
+      "is_annual_return": 0.07051400948493303,
+      "is_sharpe": 0.48606670585561546,
+      "is_max_drawdown": -0.23142162287512436
+    },
+    {
+      "label": "equal/graceful/top30",
+      "weights": "equal",
+      "missing_policy": "graceful",
+      "top_n": 30,
+      "is_total_return": 0.16091864096349018,
+      "is_annual_return": 0.06096016749949129,
+      "is_sharpe": 0.43812052025176595,
+      "is_max_drawdown": -0.2281506662830014
+    },
+    {
+      "label": "safety_heavy/graceful/top20",
+      "weights": "safety_heavy",
+      "missing_policy": "graceful",
+      "top_n": 20,
+      "is_total_return": 0.12925865104964274,
+      "is_annual_return": 0.049389722955339055,
+      "is_sharpe": 0.38331418785052385,
+      "is_max_drawdown": -0.2257684420128918
+    },
+    {
+      "label": "safety_heavy/graceful/top30",
+      "weights": "safety_heavy",
+      "missing_policy": "graceful",
+      "top_n": 30,
+      "is_total_return": 0.1221352384287544,
+      "is_annual_return": 0.04675951169355441,
+      "is_sharpe": 0.3703259477715346,
+      "is_max_drawdown": -0.217003711680829
+    },
+    {
+      "label": "safety_heavy/strict/top20",
+      "weights": "safety_heavy",
+      "missing_policy": "strict",
+      "top_n": 20,
+      "is_total_return": 0.08948363838349338,
+      "is_annual_return": 0.03457262543252648,
+      "is_sharpe": 0.3066617771503319,
+      "is_max_drawdown": -0.200337896280399
+    }
+  ],
+  "best_in_sample": {
+    "label": "quality_heavy/graceful/top10",
+    "weights": "quality_heavy",
+    "missing_policy": "graceful",
+    "top_n": 10,
+    "is_total_return": 0.3385243736837449,
+    "is_annual_return": 0.12258032665382923,
+    "is_sharpe": 0.7108497020494513,
+    "is_max_drawdown": -0.24788092659243077
+  },
+  "walk_forward": {
+    "in_sample": {
+      "mode_v1": {
+        "label": "v1 (equal weights, strict missing, OP_simple=reported)",
+        "start": "2022-08-01",
+        "end": "2025-02-07",
+        "sessions": 619,
+        "rebalances": 31,
+        "total_return": 0.21977033238458832,
+        "annual_return": 0.08197229060214384,
+        "cagr": 0.08832626750425199,
+        "sharpe": 0.5492024757293015,
+        "sortino": 0.7525612362443432,
+        "max_drawdown": -0.21517740016854991,
+        "hit_rate": 0.5411954765751211,
+        "annual_turnover": 4.867357028961502,
+        "average_holdings": 17.903225806451612,
+        "max_holdings": 20,
+        "missing_rate": {
+          "value": 0.3525482159624006,
+          "quality": 0.7566926069242449,
+          "safety": 0.3511587384530047,
+          "catalyst": 1.0
+        },
+        "lookahead_violations": 0,
+        "stale_marks": 0,
+        "yearly_returns": {
+          "2022": -0.09737972877467338,
+          "2023": 0.18185525553986115,
+          "2024": 0.1857666219669647,
+          "2025": -0.02674953689944015
+        },
+        "notes": []
+      },
+      "mode_v2": {
+        "label": "quality_heavy/graceful/top10",
+        "start": "2022-08-01",
+        "end": "2025-02-07",
+        "sessions": 619,
+        "rebalances": 31,
+        "total_return": 0.3385243736837449,
+        "annual_return": 0.12258032665382923,
+        "cagr": 0.1302778144027512,
+        "sharpe": 0.7108497020494513,
+        "sortino": 0.9773735106867041,
+        "max_drawdown": -0.24788092659243077,
+        "hit_rate": 0.5589660743134087,
+        "annual_turnover": 5.246523141030913,
+        "average_holdings": 9.548387096774194,
+        "max_holdings": 10,
+        "missing_rate": {
+          "value": 0.3511587384530047,
+          "quality": 0.35444394942392393,
+          "safety": 0.3511587384530047,
+          "catalyst": 1.0
+        },
+        "lookahead_violations": 0,
+        "stale_marks": 0,
+        "yearly_returns": {
+          "2022": -0.08102767498898278,
+          "2023": 0.24880964354376545,
+          "2024": 0.20550912797076704,
+          "2025": -0.023499990372813806
+        },
+        "notes": []
+      },
+      "baseline": {
+        "label": "baseline §3-A hard filter (20 lowest PBR)",
+        "start": "2022-08-01",
+        "end": "2025-02-07",
+        "sessions": 619,
+        "rebalances": 31,
+        "total_return": 0.7201339054193876,
+        "annual_return": 0.23999300018415815,
+        "cagr": 0.2470944180727701,
+        "sharpe": 1.204886251893109,
+        "sortino": 1.6628391627651555,
+        "max_drawdown": -0.2584208881688552,
+        "hit_rate": 0.40064620355411956,
+        "annual_turnover": 3.3448341566958386,
+        "average_holdings": 4.096774193548387,
+        "max_holdings": 10,
+        "missing_rate": {
+          "value": 0.3525482159624006,
+          "quality": 0.7566926069242449,
+          "safety": 0.3511587384530047,
+          "catalyst": 1.0
+        },
+        "lookahead_violations": 0,
+        "stale_marks": 0,
+        "yearly_returns": {
+          "2022": 0.0,
+          "2023": 0.44740984043751264,
+          "2024": 0.24216926271989325,
+          "2025": -0.04326875620686621
+        },
+        "notes": []
+      },
+      "benchmark": {
+        "label": "benchmark",
+        "start": "2022-08-01",
+        "end": "2025-02-07",
+        "sessions": 619,
+        "rebalances": 0,
+        "total_return": 0.42298165665259657,
+        "annual_return": 0.15015335110945371,
+        "cagr": 0.1547012027456025,
+        "sharpe": 0.8903757922619125,
+        "sortino": null,
+        "max_drawdown": -0.234441180772752,
+        "hit_rate": 0.5469255663430421,
+        "annual_turnover": null,
+        "average_holdings": null,
+        "max_holdings": null,
+        "missing_rate": {},
+        "lookahead_violations": 0,
+        "stale_marks": 0,
+        "yearly_returns": {
+          "2022": -0.022040599716530385,
+          "2023": 0.25322866939879773,
+          "2024": 0.1796322388217264,
+          "2025": -0.015758842753340163
+        },
+        "notes": [
+          "price-only buy-and-hold (dividends excluded)"
+        ]
+      }
+    },
+    "out_of_sample": {
+      "mode_v1": {
+        "label": "v1 (equal weights, strict missing, OP_simple=reported)",
+        "start": "2025-02-10",
+        "end": "2026-10-21",
+        "sessions": 413,
+        "rebalances": 51,
+        "total_return": 0.6702909380093642,
+        "annual_return": 0.3541740023205415,
+        "cagr": 0.368582276114668,
+        "sharpe": 1.6313646259158676,
+        "sortino": 2.4064864388092118,
+        "max_drawdown": -0.1691591207940608,
+        "hit_rate": 0.5898058252427184,
+        "annual_turnover": 0.0,
+        "average_holdings": 18.725490196078432,
+        "max_holdings": 20,
+        "missing_rate": {
+          "value": 0.2161484130846038,
+          "quality": 0.47748225735546884,
+          "safety": 0.21437652952190966,
+          "catalyst": 1.0
+        },
+        "lookahead_violations": 0,
+        "stale_marks": 0,
+        "yearly_returns": {
+          "2025": 0.3963497412862449,
+          "2026": 0.1961837988173214
+        },
+        "notes": []
+      },
+      "mode_v2": {
+        "label": "quality_heavy/graceful/top10",
+        "start": "2025-02-10",
+        "end": "2026-10-21",
+        "sessions": 413,
+        "rebalances": 51,
+        "total_return": 1.1716808028424834,
+        "annual_return": 0.5814409168776069,
+        "cagr": 0.6069465522754798,
+        "sharpe": 2.005845004554316,
+        "sortino": 3.0733396431118365,
+        "max_drawdown": -0.1914579225523283,
+        "hit_rate": 0.5679611650485437,
+        "annual_turnover": 0.0,
+        "average_holdings": 9.72549019607843,
+        "max_holdings": 10,
+        "missing_rate": {
+          "value": 0.21442059209075745,
+          "quality": 0.21690346385948586,
+          "safety": 0.21437652952190966,
+          "catalyst": 1.0
+        },
+        "lookahead_violations": 0,
+        "stale_marks": 0,
+        "yearly_returns": {
+          "2025": 0.6097065156772696,
+          "2026": 0.3491159920718643
+        },
+        "notes": []
+      },
+      "baseline": {
+        "label": "baseline §3-A hard filter (20 lowest PBR)",
+        "start": "2025-02-10",
+        "end": "2026-10-21",
+        "sessions": 413,
+        "rebalances": 51,
+        "total_return": 1.0067813927140268,
+        "annual_return": 0.5093272481215536,
+        "cagr": 0.5311731747352637,
+        "sharpe": 1.4591479441037536,
+        "sortino": 2.174126107347079,
+        "max_drawdown": -0.26992097459006514,
+        "hit_rate": 0.5800970873786407,
+        "annual_turnover": 0.0,
+        "average_holdings": 4.627450980392157,
+        "max_holdings": 12,
+        "missing_rate": {
+          "value": 0.2161484130846038,
+          "quality": 0.47748225735546884,
+          "safety": 0.21437652952190966,
+          "catalyst": 1.0
+        },
+        "lookahead_violations": 0,
+        "stale_marks": 0,
+        "yearly_returns": {
+          "2025": 0.7582199324471923,
+          "2026": 0.14137108542551458
+        },
+        "notes": []
+      },
+      "benchmark": {
+        "label": "benchmark",
+        "start": "2025-02-10",
+        "end": "2026-10-21",
+        "sessions": 413,
+        "rebalances": 0,
+        "total_return": 0.4829268505349009,
+        "annual_return": 0.2622200729232125,
+        "cagr": 0.27252248581443705,
+        "sharpe": 1.2421491350550469,
+        "sortino": null,
+        "max_drawdown": -0.17709744594925092,
+        "hit_rate": 0.5655339805825242,
+        "annual_turnover": null,
+        "average_holdings": null,
+        "max_holdings": null,
+        "missing_rate": {},
+        "lookahead_violations": 0,
+        "stale_marks": 0,
+        "yearly_returns": {
+          "2025": 0.24703830625953005,
+          "2026": 0.18915902028937226
+        },
+        "notes": [
+          "price-only buy-and-hold (dividends excluded)"
+        ]
+      }
+    }
+  },
+  "manifest": {
+    "generated_at": "2026-10-21T06:48:24.953441+00:00",
+    "universe": {
+      "all_non_financial": 2950,
+      "topix500": 445
+    },
+    "prices": {
+      "records": 445,
+      "with_data": 445,
+      "errors": 0,
+      "first_bar": "2016-10-21",
+      "last_bar": "2026-10-21"
+    },
+    "fundamentals": {
+      "records": 445,
+      "errors": 0,
+      "annual_periods": 2107
+    },
+    "benchmark": {
+      "records": 2,
+      "with_data": 2,
+      "errors": 0,
+      "first_bar": "2016-10-21",
+      "last_bar": "2026-10-21"
+    },
+    "provenance": {
+      "jpx": {
+        "label": "JPX 東証上場銘柄一覧",
+        "url": "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx",
+        "page_url": "https://www.jpx.co.jp/markets/statistics-equities/misc/01.html",
+        "license_class": "official_public",
+        "retrieved_at": "2026-10-21T06:36:41.938723+00:00"
+      },
+      "yahoo": {
+        "label": "Yahoo Finance via yfinance (daily closes, annual statements)",
+        "license_class": "personal_only",
+        "note": "Personal-use classification: derived research artefacts are not redistributed by this repository."
+      }
+    }
+  },
+  "data_quality": {
+    "symbols_with_split_neutralisation": 1,
+    "split_neutralised_dates": 1,
+    "repaired_bad_ticks": 0,
+    "benchmark_split_neutralised_dates": 0,
+    "benchmark_repaired_bad_ticks": 2
+  },
+  "excess_vs_benchmark": {
+    "mode_v1_forecast": {
+      "total": -0.2741569158127868,
+      "annual": -0.03873555061679279
+    },
+    "mode_v1_actual": {
+      "total": -0.06972808343071835,
+      "annual": -0.009469266529277487
+    },
+    "baseline_all": {
+      "total": 1.3278954090508726,
+      "annual": 0.1463834993522084
+    },
+    "baseline_top20": {
+      "total": 1.3278954090508726,
+      "annual": 0.1463834993522084
+    },
+    "mode_v2": {
+      "total": 0.7781726582805812,
+      "annual": 0.09218901156468817
+    }
+  },
+  "out_of_sample_excess_vs_benchmark": {
+    "mode_v1": 0.18736408747446331,
+    "mode_v2": 0.6887539523075825,
+    "baseline": 0.5238545421791259
+  }
+}

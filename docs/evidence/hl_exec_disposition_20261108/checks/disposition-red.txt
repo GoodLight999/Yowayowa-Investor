@@ -1,0 +1,52 @@
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+_________ test_retired_forward_entrypoint_refuses_before_any_io[args0] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-good-light/pytest-2/test_retired_forward_entrypoin0')
+args = []
+
+    @pytest.mark.parametrize("args", [[], ["--dry-run"]])
+    def test_retired_forward_entrypoint_refuses_before_any_io(tmp_path: Path, args: list[str]) -> None:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/hl_testnet_s07/s07_daily_forward.py"), *args],
+            cwd=tmp_path,
+            env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"},
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        assert result.returncode == 2
+        assert result.stdout == ""
+>       assert "DISABLED: t_f840d5bc" in result.stderr
+E       assert 'DISABLED: t_f840d5bc' in "/home/good-light/vps-work/current-work/yowayowa-investor/.venv/bin/python: can't open file '/home/good-light/vps-work/sessions/t_f840d5bc/repo/scripts/hl_testnet_s07/s07_daily_forward.py': [Errno 2] No such file or directory\n"
+E        +  where "/home/good-light/vps-work/current-work/yowayowa-investor/.venv/bin/python: can't open file '/home/good-light/vps-work/sessions/t_f840d5bc/repo/scripts/hl_testnet_s07/s07_daily_forward.py': [Errno 2] No such file or directory\n" = CompletedProcess(args=['/home/good-light/vps-work/current-work/yowayowa-investor/.venv/bin/python', '/home/good-light/...vps-work/sessions/t_f840d5bc/repo/scripts/hl_testnet_s07/s07_daily_forward.py': [Errno 2] No such file or directory\n").stderr
+
+tests/test_hl_exec_disposition.py:26: AssertionError
+_________ test_retired_forward_entrypoint_refuses_before_any_io[args1] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-good-light/pytest-2/test_retired_forward_entrypoin1')
+args = ['--dry-run']
+
+    @pytest.mark.parametrize("args", [[], ["--dry-run"]])
+    def test_retired_forward_entrypoint_refuses_before_any_io(tmp_path: Path, args: list[str]) -> None:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/hl_testnet_s07/s07_daily_forward.py"), *args],
+            cwd=tmp_path,
+            env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"},
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        assert result.returncode == 2
+        assert result.stdout == ""
+>       assert "DISABLED: t_f840d5bc" in result.stderr
+E       assert 'DISABLED: t_f840d5bc' in "/home/good-light/vps-work/current-work/yowayowa-investor/.venv/bin/python: can't open file '/home/good-light/vps-work/sessions/t_f840d5bc/repo/scripts/hl_testnet_s07/s07_daily_forward.py': [Errno 2] No such file or directory\n"
+E        +  where "/home/good-light/vps-work/current-work/yowayowa-investor/.venv/bin/python: can't open file '/home/good-light/vps-work/sessions/t_f840d5bc/repo/scripts/hl_testnet_s07/s07_daily_forward.py': [Errno 2] No such file or directory\n" = CompletedProcess(args=['/home/good-light/vps-work/current-work/yowayowa-investor/.venv/bin/python', '/home/good-light/...vps-work/sessions/t_f840d5bc/repo/scripts/hl_testnet_s07/s07_daily_forward.py': [Errno 2] No such file or directory\n").stderr
+
+tests/test_hl_exec_disposition.py:26: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_hl_exec_disposition.py::test_retired_forward_entrypoint_refuses_before_any_io[args0]
+FAILED tests/test_hl_exec_disposition.py::test_retired_forward_entrypoint_refuses_before_any_io[args1]
+2 failed, 1 passed in 1.01s

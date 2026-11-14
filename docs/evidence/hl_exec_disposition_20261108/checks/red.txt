@@ -1,0 +1,57 @@
+FF...F..                                                                 [100%]
+=================================== FAILURES ===================================
+______ test_transport_typeerror_is_propagated_without_resubmission[False] ______
+
+reduce_only = False
+
+    @pytest.mark.parametrize("reduce_only", [False, True])
+    def test_transport_typeerror_is_propagated_without_resubmission(reduce_only: bool) -> None:
+        error = TypeError("failure after possible acceptance")
+        exchange = RecordingExchange(error=error)
+        with pytest.raises(TypeError) as raised:
+            place(client(exchange), reduce_only=reduce_only)
+        assert raised.value is error
+>       assert len(exchange.calls) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = len([{'args': ('BTC', False, 0.0002, 75000.0, {'limit': {'tif': 'Ioc'}}), 'cloid': None, 'reduce_only': False}, {'args': ('BTC', False, 0.0002, 75000.0, {'limit': {'tif': 'Ioc'}}), 'cloid': None}])
+E        +    where [{'args': ('BTC', False, 0.0002, 75000.0, {'limit': {'tif': 'Ioc'}}), 'cloid': None, 'reduce_only': False}, {'args': ('BTC', False, 0.0002, 75000.0, {'limit': {'tif': 'Ioc'}}), 'cloid': None}] = <test_hl_exec_exchange_contract.RecordingExchange object at 0x7e7b63fbba10>.calls
+
+tests/test_hl_exec_exchange_contract.py:42: AssertionError
+______ test_transport_typeerror_is_propagated_without_resubmission[True] _______
+
+reduce_only = True
+
+    @pytest.mark.parametrize("reduce_only", [False, True])
+    def test_transport_typeerror_is_propagated_without_resubmission(reduce_only: bool) -> None:
+        error = TypeError("failure after possible acceptance")
+        exchange = RecordingExchange(error=error)
+        with pytest.raises(TypeError) as raised:
+            place(client(exchange), reduce_only=reduce_only)
+        assert raised.value is error
+>       assert len(exchange.calls) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = len([{'args': ('BTC', False, 0.0002, 75000.0, {'limit': {'tif': 'Ioc'}}), 'cloid': None, 'reduce_only': True}, {'args': ('BTC', False, 0.0002, 75000.0, {'limit': {'tif': 'Ioc'}}), 'cloid': None}])
+E        +    where [{'args': ('BTC', False, 0.0002, 75000.0, {'limit': {'tif': 'Ioc'}}), 'cloid': None, 'reduce_only': True}, {'args': ('BTC', False, 0.0002, 75000.0, {'limit': {'tif': 'Ioc'}}), 'cloid': None}] = <test_hl_exec_exchange_contract.RecordingExchange object at 0x7e7b63e49950>.calls
+
+tests/test_hl_exec_exchange_contract.py:42: AssertionError
+_________ test_legacy_mock_is_rejected_instead_of_dropping_reduce_only _________
+
+    def test_legacy_mock_is_rejected_instead_of_dropping_reduce_only() -> None:
+        class LegacyExchange:
+            def __init__(self) -> None:
+                self.calls = 0
+    
+            def order(self, *args: Any, cloid: Any = None) -> dict[str, str]:
+                self.calls += 1
+                return {"status": "ok"}
+    
+        exchange = LegacyExchange()
+>       with pytest.raises(TypeError, match="reduce_only"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE <class 'TypeError'>
+
+tests/test_hl_exec_exchange_contract.py:70: Failed
+=========================== short test summary info ============================
+FAILED tests/test_hl_exec_exchange_contract.py::test_transport_typeerror_is_propagated_without_resubmission[False]
+FAILED tests/test_hl_exec_exchange_contract.py::test_transport_typeerror_is_propagated_without_resubmission[True]
+FAILED tests/test_hl_exec_exchange_contract.py::test_legacy_mock_is_rejected_instead_of_dropping_reduce_only

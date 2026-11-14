@@ -1,0 +1,132 @@
+{
+  "task": "t_38935611",
+  "title": "保存済み合成板の出所訂正: 7203 を実フィード扱いしない",
+  "parent": "t_10288965",
+  "date_jst": "2026-10-23",
+  "target": "data/orderbooks/7203/latest.json",
+  "scope": "provenance only; bids/asks/metrics/as_of/retrieved_at unchanged",
+  "files": {
+    "original_preserved": {
+      "path": "docs/evidence/20261023/orderbook_7203_latest_ORIGINAL_3f96822b.json",
+      "sha256": "3f96822b1986cdac3fa1c13689aade4ca633fa362e8263f68478b0ad4d021658",
+      "bytes": 2367,
+      "verified_identical_to_pre_change_target": true,
+      "method": "cp -p then cmp (exit 0) + sha256sum of both paths equal",
+      "original_deleted": false
+    },
+    "corrected": {
+      "path": "data/orderbooks/7203/latest.json",
+      "sha256_before": "3f96822b1986cdac3fa1c13689aade4ca633fa362e8263f68478b0ad4d021658",
+      "sha256_after": "794cf30dd889bc4b297d31c4068c936fb7b941fa4946607f1caa6d7765d4eee0",
+      "bytes_before": 2367,
+      "bytes_after": 2667
+    }
+  },
+  "provenance_change": {
+    "provider": ["jpx-tse-feed", "synthetic-seed-orderbook"],
+    "source": [
+      "Yowayowa L2 Orderbook Provider",
+      "Yowayowa synthetic seed orderbook (not an exchange feed)"
+    ],
+    "license_class": ["official_public", "synthetic"],
+    "notes": {
+      "before": ["Generated realistic multi-level market depth"],
+      "after": [
+        "Synthetic multi-level depth generated locally; not live exchange data.",
+        "provenance corrected 2026-10-23: this stored board previously carried a real-exchange feed label with an official-public licence class. It is locally generated synthetic data; prices, sizes, metrics and timestamps were not modified."
+      ]
+    },
+    "unchanged": {
+      "symbol": "7203",
+      "as_of": "2026-10-02T13:28:38.939638Z",
+      "provenance.retrieved_at": "2026-10-02T13:28:38.939638Z",
+      "provenance.source_url": null,
+      "provenance.as_of": null,
+      "bids": "10 levels, byte-identical",
+      "asks": "10 levels, byte-identical",
+      "metrics": "byte-identical"
+    },
+    "new_timestamps_created": 0
+  },
+  "origin_evidence": {
+    "roundtrip_identity": {
+      "check": "json.dumps(json.loads(original), ensure_ascii=False, indent=2) == original bytes",
+      "result": true,
+      "why": "the file was written by OrderbookService.record_snapshot with exactly this dumping call; re-serialising reproduces it byte for byte, so the after-file diff is provably confined to the edited provenance lines"
+    },
+    "matches_seed_generator": {
+      "check": "generate_seed_orderbook('7203').model_dump(mode='json') vs stored bids/asks/metrics",
+      "bids_identical": true,
+      "asks_identical": true,
+      "metrics_identical": true,
+      "levels_checked": 10
+    },
+    "formula_identity": {
+      "check": "every level equals base=2850.0, tick=1.0, lot=1000.0 scaffolding: bid price 2850-i, bid size 1000*(1+0.25i), bid order_count 3+i, ask price 2850+i, ask size 1000*(0.9+0.3i), ask order_count 2+i",
+      "result": true
+    },
+    "timestamp_signature": {
+      "check": "as_of == provenance.retrieved_at (both 2026-10-02T13:28:38.939638Z) — the generator stamps both with one datetime.now(UTC); a captured feed would carry a venue as_of distinct from retrieval time",
+      "result": true
+    },
+    "no_real_producer_in_repo": {
+      "check": "grep -rn 'jpx-tse-feed|binance-orderbook|ose-derivatives-feed|market-depth-sim' src/",
+      "result": "0 hits after t_10288965",
+      "note": "src/yowayowa/providers/ contains no L2 orderbook provider for any venue; the only producers of data/orderbooks/*/latest.json are generate_seed_orderbook and the POST /v1/orderbook/{symbol}/snapshots ingest endpoint. The stored 7203 board therefore cannot have come from an exchange feed."
+    },
+    "sqlite_secondary_store": {
+      "check": "sqlite3 -readonly data/yowayowa.db .tables",
+      "result": "no orderbook/snapshot-of-orderbook table (only strategy_research_snapshots, portfolio_snapshots); file store is the single source"
+    }
+  },
+  "verification": {
+    "api_local_in_process": {
+      "client": "fastapi.testclient.TestClient (no network)",
+      "GET /v1/orderbook/7203": {
+        "status": 200,
+        "provider": "synthetic-seed-orderbook",
+        "license_class": "synthetic",
+        "best_bid": 2849.0,
+        "best_ask": 2851.0,
+        "mid_price": 2850.0,
+        "bid_depth_total": 23750.0,
+        "ask_depth_total": 25500.0,
+        "equals_stored_json": true
+      },
+      "GET /v1/orderbook/7203/depth": {
+        "status": 200,
+        "provider": "synthetic-seed-orderbook",
+        "license_class": "synthetic",
+        "bids_cumulative": 10,
+        "asks_cumulative": 10
+      },
+      "GET /v1/orderbook/7203/metrics": {"status": 200, "mid_price": 2850.0, "spread": 2.0},
+      "POST /v1/orderbook/7203/impact": {
+        "status": 200,
+        "banned_labels_present": []
+      },
+      "real_feed_name_shown_as_own_provenance": 0
+    },
+    "cli": {
+      "command": ".venv/bin/yowayowa orderbook show 7203",
+      "source_line": "As of: 2026-10-02T13:28:38.939638+00:00 (Yowayowa synthetic seed orderbook (not an exchange feed))",
+      "shows_synthetic_source": true,
+      "note": "The CLI 'show' panel prints only provenance.source (its single provenance line, unchanged display code); provider/license_class are exposed by the API. Before the correction this line read 'Yowayowa L2 Orderbook Provider' with no synthetic marker; it now states that the board is not an exchange feed."
+    },
+    "grep_data_orderbooks": {
+      "command": "grep -rn 'jpx-tse-feed|official_public|binance-orderbook|ose-derivatives-feed|market-depth-sim' data/orderbooks/",
+      "hits": 0
+    },
+    "regression": {
+      "pytest tests/test_orderbook.py tests/test_licensing.py": "18 passed",
+      "normal_path": "OrderbookService.get_snapshot on a scratch copy of the corrected file returns provider=synthetic-seed-orderbook / license=synthetic and model_dump equals the stored JSON exactly; no corrupt_reads ledger created",
+      "degraded_path": "truncated ETH scratch copy -> provider=synthetic-seed-orderbook, license=synthetic, degraded note present, file bytes unchanged, corrupt_reads.jsonl row with matching sha256 (27 bytes)",
+      "real_file_unchanged_during_regression": true
+    }
+  },
+  "not_done_by_design": [
+    "No other stored data was relabelled by inference (only data/orderbooks/7203/latest.json exists).",
+    "No new migration/backup mechanism was added to the repo: the preserved copy lives under the existing docs/evidence/YYYYMMDD convention and the correction was a one-shot script outside the repo.",
+    "No external re-fetch, order, push, billing, or model-setting change."
+  ]
+}

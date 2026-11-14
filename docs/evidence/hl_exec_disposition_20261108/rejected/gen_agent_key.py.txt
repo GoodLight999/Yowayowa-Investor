@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+# ruff: noqa: RUF001, RUF002, RUF003
+"""テストネット用エージェント（API）ウォレット鍵を生成する。
+
+方針（第3段）:
+  * 生成はシステム側で行い、**マスターへ渡すのはアドレス1つだけ**。
+  * 秘密鍵は stdout / stderr / ログ / git に出さない。出力するのは
+    アドレス・保存先パス・パーミッション・ネットワーク種別のみ。
+  * 秘密鍵ファイルは `/root/.secrets/hl_agent_testnet.key`（mode 600・既存は上書きしない）。
+  * テストネット専用。メインネット用の鍵は作らない（`--network` は testnet 固定で他は拒否）。
+
+依存: `cryptography`（secp256k1 の公開鍵導出）と keccak-256。
+keccak-256 は pycryptodome があれば使い、無ければ同梱の純 Python 実装を使う。
+生成前に keccak と導出経路を既知ベクタで自己検証する（壊れた実装で鍵を作らないため）。
+
+使い方:
+    python scripts/hl_exec_phase3/gen_agent_key.py            # 既定の保存先へ生成
+    python scripts/hl_exec_phase3/gen_agent_key.py --selftest # 既知ベクタ検証のみ
+
+終了コード: 0=生成成功 / 1=前提不足 / 2=既存ファイルあり（上書き拒否） / 3=自己検証失敗
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import secrets
+import sys
+from pathlib import Path
+
+# --- テストネット固定（メインネット鍵を作らせない） -------------------------
+ALLOWED_NETWORK = "testnet"
+DEFAULT_OUT = Path("/root/.secrets/hl_agent_testnet.key")
+DEFAULT_ADDRESS_OUT = Path("/root/.secrets/hl_agent_testnet.address")
+
+# secp256k1 の群位数
+SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
+# 既知ベクタ（keccak-256）
+KECCAK_VECTORS = {
+    b"": "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+    b"abc": "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45",
+}
+# 既知ベクタ（秘密鍵 1 → アドレス）
+ADDRESS_VECTOR_PRIVKEY = 1
+ADDRESS_VECTOR_ADDRESS = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
+
+
+# --- keccak-256 ------------------------------------------------------------
+def _keccak256_pure(data: bytes) -> bytes:
+    """Keccak-256（Ethereum の padding: 0x01 … 0x80）純 Python 実装。"""
+    rate = 136  # 1088 bit
+    rc = [
+        0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,
+        0x000000000000808B, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
+        0x000000000000008A, 0x0000000000000088, 0x0000000080008009, 0x000000008000000A,
+        0x000000008000808B, 0x800000000000008B, 0x8000000000008089, 0x8000000000008003,
+        0x8000000000008002, 0x8000000000000080, 0x000000000000800A, 0x800000008000000A,
+        0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
+    ]
+    rot = [
+        [0, 36, 3, 41, 18], [1, 44, 10, 45, 2], [62, 6, 43, 15, 61],
+        [28, 55, 25, 21, 56], [27, 20, 39, 8, 14],
+    ]
+    mask = (1 << 64) - 1
+
+    def rol(v: int, n: int) -> int:
+        n %= 64
+        return ((v << n) | (v >> (64 - n))) & mask
+
+    a = [[0] * 5 for _ in range(5)]
+
+    def keccak_f() -> None:
+        for rnd in range(24):
+            c = [a[x][0] ^ a[x][1] ^ a[x][2] ^ a[x][3] ^ a[x][4] for x in range(5)]
+            d = [c[(x - 1) % 5] ^ rol(c[(x + 1) % 5], 1) for x in range(5)]
+            for x in range(5):
+                for y in range(5):
+                    a[x][y] ^= d[x]
+            b = [[0] * 5 for _ in range(5)]
+            for x in range(5):
+                for y in range(5):
+                    b[y][(2 * x + 3 * y) % 5] = rol(a[x][y], rot[x][y])
+            for x in range(5):
+                for y in range(5):
+                    a[x][y] = b[x][y] ^ ((~b[(x + 1) % 5][y]) & b[(x + 2) % 5][y]) & mask
+            a[0][0] ^= rc[rnd]
+
+    # パディング（Keccak: 0x01 … 0x80）
+    padded = bytearray(data)
+    padded.append(0x01)
+    while len(padded) % rate != 0:
+        padded.append(0x00)
+    padded[-1] |= 0x80
+
+    for off in range(0, len(padded), rate):
+        block = padded[off : off + rate]
+        for i in range(rate // 8):
+            lane = int.from_bytes(block[i * 8 : i * 8 + 8], "little")
+            a[i % 5][i // 5] ^= lane
+        keccak_f()
+
+    out = bytearray()
+    for i in range(4):
+        out += a[i % 5][i // 5].to_bytes(8, "little")
+    return bytes(out[:32])
+
+
+def keccak256(data: bytes) -> bytes:
+    try:  # あれば高速な実装を使う
+        from Crypto.Hash import keccak as _k  # type: ignore
+
+        h = _k.new(digest_bits=256)
+        h.update(data)
+        return h.digest()
+    except Exception:
+        return _keccak256_pure(data)
+
+
+# --- secp256k1 -------------------------------------------------------------
+def derive_address(privkey_int: int) -> str:
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    key = ec.derive_private_key(privkey_int, ec.SECP256K1())
+    nums = key.public_key().public_numbers()
+    raw = b"\x04" + nums.x.to_bytes(32, "big") + nums.y.to_bytes(32, "big")
+    return "0x" + keccak256(raw[1:])[12:].hex()
+
+
+def selftest() -> list[str]:
+    """keccak の2実装（純 Python / pycryptodome）と導出経路を既知ベクタで検証する。"""
+    problems: list[str] = []
+    for name, fn in (("pure", _keccak256_pure), ("default", keccak256)):
+        for msg, want in KECCAK_VECTORS.items():
+            got = fn(msg).hex()
+            if got != want:
+                problems.append(f"keccak256[{name}]({msg!r}) = {got} != {want}")
+    got_addr = derive_address(ADDRESS_VECTOR_PRIVKEY)
+    if got_addr.lower() != ADDRESS_VECTOR_ADDRESS.lower():
+        problems.append(f"address(privkey=1) = {got_addr} != {ADDRESS_VECTOR_ADDRESS}")
+    return problems
+
+
+# --- 生成 ------------------------------------------------------------------
+def generate(out: Path, address_out: Path) -> int:
+    if out.exists():
+        print(f"REFUSED: {out} が既に存在する（上書きしない）。意図的に作り直すなら先に退避せよ。")
+        return 2
+    parent = out.parent
+    if not parent.is_dir():
+        print(f"REFUSED: {parent} が無い。")
+        return 1
+    mode_dir = parent.stat().st_mode & 0o777
+    if mode_dir & 0o077:
+        print(f"REFUSED: {parent} の mode が {oct(mode_dir)}（700 であるべき）。")
+        return 1
+
+    priv = secrets.randbelow(SECP256K1_N - 1) + 1  # 1 <= priv < n
+    address = derive_address(priv)
+
+    # 0o600 で排他作成（黙って緩い umask に負けないよう os.open を使う）
+    try:
+        fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        print(f"REFUSED: {out} が既に存在する（上書きしない）。")
+        return 2
+    try:
+        os.write(fd, f"{priv:064x}\n".encode())
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.chmod(out, 0o600)
+
+    st = out.stat()
+    file_mode = st.st_mode & 0o777
+    if file_mode != 0o600:
+        print(f"FAILED: {out} の mode が {oct(file_mode)}（600 でない）。")
+        return 1
+
+    # アドレス（公開情報）は別ファイルにも置く。秘密鍵はここでも出力しない。
+    address_out.write_text(address + "\n", encoding="utf-8")
+    os.chmod(address_out, 0o644)
+
+    # 読み戻して再導出（書けた鍵が壊れていないことの確認）
+    relisted = derive_address(int(out.read_text(encoding="utf-8").strip(), 16))
+    if relisted != address:
+        print("FAILED: 書き込んだ鍵から同じアドレスが再導出できない。")
+        return 1
+
+    print("network          : testnet (Hyperliquid Testnet / api.hyperliquid-testnet.xyz)")
+    print(f"agent_address    : {address}")
+    print(f"address_len      : {len(address)} (0x + 40 hex)")
+    print(f"key_path         : {out}")
+    print(f"key_mode         : {oct(file_mode)}")
+    print(f"key_bytes        : {st.st_size} (64 hex + LF)")
+    print(f"address_out      : {address_out}")
+    print("private_key      : NOT PRINTED (by design)")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        description="Hyperliquid テストネット用エージェント鍵の生成（秘密鍵は非出力）",
+    )
+    ap.add_argument(
+        "--out",
+        default=str(DEFAULT_OUT),
+        help="秘密鍵の保存先（既定 /root/.secrets/hl_agent_testnet.key）",
+    )
+    ap.add_argument(
+        "--address-out",
+        default=str(DEFAULT_ADDRESS_OUT),
+        help="アドレス（公開情報）の保存先",
+    )
+    ap.add_argument("--network", default=ALLOWED_NETWORK, help="testnet 固定")
+    ap.add_argument("--selftest", action="store_true", help="既知ベクタの自己検証のみ行う")
+    args = ap.parse_args(argv)
+
+    if args.network != ALLOWED_NETWORK:
+        print(f"REFUSED: network={args.network!r}。テストネット専用で、メインネット鍵は作らない。")
+        return 1
+
+    problems = selftest()
+    if problems:
+        print("SELFTEST FAILED:")
+        for p in problems:
+            print(f"  - {p}")
+        return 3
+    print(f"selftest         : OK (keccak256 vectors={len(KECCAK_VECTORS)}, address vector=1)")
+    if args.selftest:
+        return 0
+
+    return generate(Path(args.out), Path(args.address_out))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

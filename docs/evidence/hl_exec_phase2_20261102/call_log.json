@@ -1,0 +1,92 @@
+{
+  "calls": [
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "clearinghouseState",
+        "user": "0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82"
+      },
+      "http_status": 200,
+      "elapsed_ms": 135.1,
+      "response_bytes": 319
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "meta"
+      },
+      "http_status": 200,
+      "elapsed_ms": 162.9,
+      "response_bytes": 16879
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "l2Book",
+        "coin": "BTC"
+      },
+      "http_status": 200,
+      "elapsed_ms": 86.8,
+      "response_bytes": 1547
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "meta"
+      },
+      "http_status": 200,
+      "elapsed_ms": 97.1,
+      "response_bytes": 16879
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "l2Book",
+        "coin": "BTC"
+      },
+      "http_status": 200,
+      "elapsed_ms": 87.9,
+      "response_bytes": 1547
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "l2Book",
+        "coin": "ETH"
+      },
+      "http_status": 200,
+      "elapsed_ms": 85.9,
+      "response_bytes": 1468
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "l2Book",
+        "coin": "SOL"
+      },
+      "http_status": 200,
+      "elapsed_ms": 86.2,
+      "response_bytes": 1379
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "l2Book",
+        "coin": "DOGE"
+      },
+      "http_status": 200,
+      "elapsed_ms": 84.6,
+      "response_bytes": 1563
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "l2Book",
+        "coin": "HYPE"
+      },
+      "http_status": 200,
+      "elapsed_ms": 83.6,
+      "response_bytes": 796
+    }
+  ]
+}

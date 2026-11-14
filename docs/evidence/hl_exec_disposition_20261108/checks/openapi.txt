@@ -1,0 +1,4 @@
+/home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/bin/python -m yowayowa.cli_shim export-openapi
+Wrote openapi.json
+/home/good-light/vps-work/sessions/t_f840d5bc/verify-venv/bin/python scripts/check_openapi_baseline.py
+OpenAPI baseline matches the generated document (161 operations, /home/good-light/vps-work/sessions/t_f840d5bc/repo/docs/openapi_baseline.json).

@@ -1,0 +1,30 @@
+{
+  "fixture_note": "SYNTHETIC DATA ONLY",
+  "samples": [
+    {
+      "time": 1793404800000,
+      "equity": "999",
+      "source": "synthetic_out_of_window"
+    },
+    {
+      "time": 1793750400000,
+      "equity": "100",
+      "source": "synthetic"
+    },
+    {
+      "time": 1793836800000,
+      "equity": "120",
+      "source": "synthetic"
+    },
+    {
+      "time": 1793923200000,
+      "equity": "108",
+      "source": "synthetic"
+    },
+    {
+      "time": 1794009600000,
+      "equity": "115",
+      "source": "synthetic"
+    }
+  ]
+}

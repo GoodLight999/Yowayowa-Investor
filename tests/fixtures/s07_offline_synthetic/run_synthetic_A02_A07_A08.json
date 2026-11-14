@@ -1,0 +1,369 @@
+{
+  "fixture_note": "SYNTHETIC DATA ONLY - not an operating record",
+  "data_kind": "synthetic",
+  "bars": {
+    "manifest_version": 1,
+    "network": "testnet",
+    "coin": "BTC",
+    "interval": "1d",
+    "source_url": "https://api.hyperliquid-testnet.xyz/info",
+    "retrieved_at": "2026-11-08T00:00:00Z",
+    "as_of": "2026-11-08T00:00:00Z",
+    "data_kind": "synthetic",
+    "response": [
+      {
+        "t": 1793404800000,
+        "T": 1793491199999,
+        "o": "99000",
+        "h": "99500",
+        "l": "98500",
+        "c": "99050",
+        "v": "10"
+      },
+      {
+        "t": 1793491200000,
+        "T": 1793577599999,
+        "o": "100100",
+        "h": "100600",
+        "l": "99600",
+        "c": "100200",
+        "v": "20"
+      },
+      {
+        "t": 1793577600000,
+        "T": 1793663999999,
+        "o": "100200",
+        "h": "100700",
+        "l": "99700",
+        "c": "100300",
+        "v": "20"
+      },
+      {
+        "t": 1793664000000,
+        "T": 1793750399999,
+        "o": "100300",
+        "h": "100800",
+        "l": "99800",
+        "c": "100400",
+        "v": "20"
+      },
+      {
+        "t": 1793750400000,
+        "T": 1793836799999,
+        "o": "100400",
+        "h": "100900",
+        "l": "99900",
+        "c": "100500",
+        "v": "20"
+      },
+      {
+        "t": 1793836800000,
+        "T": 1793923199999,
+        "o": "100500",
+        "h": "101000",
+        "l": "100000",
+        "c": "100600",
+        "v": "20"
+      },
+      {
+        "t": 1793923200000,
+        "T": 1794009599999,
+        "o": "100600",
+        "h": "101100",
+        "l": "100100",
+        "c": "100700",
+        "v": "20"
+      },
+      {
+        "t": 1794009600000,
+        "T": 1794095999999,
+        "o": "100700",
+        "h": "101200",
+        "l": "100200",
+        "c": "100800",
+        "v": "20"
+      },
+      {
+        "t": 1794096000000,
+        "T": 1794182399999,
+        "o": "100900",
+        "h": "101500",
+        "l": "100400",
+        "c": "101000",
+        "v": "5"
+      },
+      {
+        "t": 1794182400000,
+        "T": 1794268799999,
+        "o": "101000",
+        "h": "101600",
+        "l": "100500",
+        "c": "101100",
+        "v": "5"
+      }
+    ],
+    "response_sha256": "04026c58124479fc348f5ffb6e11754f1e571753bc4d1d0c0c77d22ef69e23c0"
+  },
+  "fills": {
+    "network": "testnet",
+    "rows": [
+      {
+        "tid": 1,
+        "oid": 1001,
+        "time": 1793840400000,
+        "coin": "BTC",
+        "side": "B",
+        "sz": "0.004",
+        "px": "78000",
+        "fee": "0.08",
+        "feeToken": "USDC",
+        "closedPnl": "0"
+      },
+      {
+        "tid": 2,
+        "oid": 1001,
+        "time": 1793840460000,
+        "coin": "BTC",
+        "side": "B",
+        "sz": "0.006",
+        "px": "78050",
+        "fee": "0.12",
+        "feeToken": "USDC",
+        "closedPnl": "0"
+      },
+      {
+        "tid": 3,
+        "oid": 1002,
+        "time": 1793930400000,
+        "coin": "BTC",
+        "side": "A",
+        "sz": "0.005",
+        "px": "79000",
+        "fee": "0.09",
+        "feeToken": "USDC",
+        "closedPnl": "4.97"
+      },
+      {
+        "tid": 4,
+        "oid": 1002,
+        "time": 1793930460000,
+        "coin": "BTC",
+        "side": "A",
+        "sz": "0.005",
+        "px": "79050",
+        "fee": "0.09",
+        "feeToken": "USDC",
+        "closedPnl": "4.98"
+      },
+      {
+        "tid": 5,
+        "oid": 1003,
+        "time": 1794013200000,
+        "coin": "BTC",
+        "side": "B",
+        "sz": "0.007",
+        "px": "78500",
+        "fee": "0.05",
+        "feeToken": "USDC",
+        "closedPnl": "0"
+      },
+      {
+        "tid": 1,
+        "oid": 1001,
+        "time": 1793840400000,
+        "coin": "BTC",
+        "side": "B",
+        "sz": "0.004",
+        "px": "78000",
+        "fee": "0.08",
+        "feeToken": "USDC",
+        "closedPnl": "0"
+      },
+      {
+        "tid": 9,
+        "oid": 1009,
+        "time": 1793707200000,
+        "coin": "BTC",
+        "side": "B",
+        "sz": "0.001",
+        "px": "77000",
+        "fee": "0.01",
+        "feeToken": "USDC",
+        "closedPnl": "0"
+      }
+    ]
+  },
+  "funding": [
+    {
+      "time": 1793840400000,
+      "delta": "-0.05",
+      "token": "USDC",
+      "coin": "BTC"
+    }
+  ],
+  "equity": [
+    {
+      "time": 1793750400000,
+      "equity": "100",
+      "source": "synthetic"
+    },
+    {
+      "time": 1793836800000,
+      "equity": "120",
+      "source": "synthetic"
+    },
+    {
+      "time": 1793923200000,
+      "equity": "108",
+      "source": "synthetic"
+    },
+    {
+      "time": 1794009600000,
+      "equity": "115",
+      "source": "synthetic"
+    }
+  ],
+  "orders": [
+    {
+      "cloid": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requested_sz": "0.010",
+      "fill_tids": [
+        1,
+        2
+      ]
+    },
+    {
+      "cloid": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "requested_sz": "0.010",
+      "fill_tids": [
+        3,
+        4
+      ]
+    },
+    {
+      "cloid": "0xcccccccccccccccccccccccccccccccc",
+      "requested_sz": "0.020",
+      "fill_tids": [
+        5
+      ],
+      "cancel_after_ms": 1794016800000
+    },
+    {
+      "cloid": "0xdddddddddddddddddddddddddddddddd",
+      "requested_sz": "0.005",
+      "fill_tids": [],
+      "transport_failure": true
+    }
+  ],
+  "round_trips": [
+    {
+      "coin": "BTC",
+      "entry_tids": [
+        1,
+        2
+      ],
+      "exit_tids": [
+        3,
+        4
+      ],
+      "position_sz": 0,
+      "open_order_count": 0,
+      "reconciled": true
+    }
+  ],
+  "reference_prices": [
+    {
+      "tid": 1,
+      "reference_px": "78000"
+    },
+    {
+      "tid": 2,
+      "reference_px": "78050"
+    },
+    {
+      "tid": 3,
+      "reference_px": "79000"
+    },
+    {
+      "tid": 4,
+      "reference_px": "79050"
+    }
+  ],
+  "pages": [
+    {
+      "index": 0,
+      "rows": [
+        {
+          "tid": 1,
+          "oid": 1001,
+          "time": 1793840400000,
+          "coin": "BTC",
+          "side": "B",
+          "sz": "0.004",
+          "px": "78000",
+          "fee": "0.08",
+          "feeToken": "USDC",
+          "closedPnl": "0"
+        },
+        {
+          "tid": 2,
+          "oid": 1001,
+          "time": 1793840460000,
+          "coin": "BTC",
+          "side": "B",
+          "sz": "0.006",
+          "px": "78050",
+          "fee": "0.12",
+          "feeToken": "USDC",
+          "closedPnl": "0"
+        },
+        {
+          "tid": 3,
+          "oid": 1002,
+          "time": 1793930400000,
+          "coin": "BTC",
+          "side": "A",
+          "sz": "0.005",
+          "px": "79000",
+          "fee": "0.09",
+          "feeToken": "USDC",
+          "closedPnl": "4.97"
+        },
+        {
+          "tid": 4,
+          "oid": 1002,
+          "time": 1793930460000,
+          "coin": "BTC",
+          "side": "A",
+          "sz": "0.005",
+          "px": "79050",
+          "fee": "0.09",
+          "feeToken": "USDC",
+          "closedPnl": "4.98"
+        }
+      ],
+      "limit": 2000
+    }
+  ],
+  "fills_complete": true,
+  "daily_end_flat": true,
+  "all_days_lock_recorded": true,
+  "unfilled_residual": 0,
+  "acceptance": [
+    {
+      "id": "S07-A02",
+      "status": "PASS",
+      "reason": "synthetic isolation contract"
+    },
+    {
+      "id": "S07-A07",
+      "status": "PASS",
+      "reason": "synthetic failure evidence contract"
+    },
+    {
+      "id": "S07-A08",
+      "status": "PASS",
+      "reason": "synthetic data_kind rendering contract"
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "evaluation_period": {
+    "start": "2026-11-04T00:00:00Z",
+    "end": "2026-12-02T00:00:00Z",
+    "days_total": 28
+  },
+  "days": [
+    {
+      "day": "2026-11-03",
+      "equity": 99.9464,
+      "position": 0.0,
+      "daily_pnl": -0.0536,
+      "cumulative_pnl": -0.0536,
+      "peak_equity": 100.0,
+      "drawdown_pct": 0.0536,
+      "funding_balance": 0.0,
+      "trades_count": 1,
+      "governance": {
+        "position_returned_to_zero": true,
+        "killswitch_lock_logged": true,
+        "unfilled_orders_remaining": 0
+      }
+    },
+    {
+      "day": "2026-11-04",
+      "equity": 99.9107,
+      "position": 0.0,
+      "daily_pnl": -0.0358,
+      "cumulative_pnl": -0.0893,
+      "peak_equity": 100.0,
+      "drawdown_pct": 0.0893,
+      "funding_balance": 0.0,
+      "trades_count": 2,
+      "governance": {
+        "position_returned_to_zero": true,
+        "killswitch_lock_logged": true,
+        "unfilled_orders_remaining": 0
+      }
+    },
+    {
+      "day": "2026-11-05",
+      "equity": 99.8629,
+      "position": 0.0,
+      "daily_pnl": -0.0477,
+      "cumulative_pnl": -0.1371,
+      "peak_equity": 100.0,
+      "drawdown_pct": 0.1371,
+      "funding_balance": 0.0,
+      "trades_count": 3,
+      "governance": {
+        "position_returned_to_zero": true,
+        "killswitch_lock_logged": true,
+        "unfilled_orders_remaining": 0
+      }
+    },
+    {
+      "day": "2026-11-06",
+      "equity": 99.8466,
+      "position": 0.0,
+      "daily_pnl": -0.0164,
+      "cumulative_pnl": -0.1534,
+      "peak_equity": 100.0,
+      "drawdown_pct": 0.1534,
+      "funding_balance": 0.0,
+      "trades_count": 4,
+      "governance": {
+        "position_returned_to_zero": true,
+        "killswitch_lock_logged": true,
+        "unfilled_orders_remaining": 0
+      }
+    },
+    {
+      "day": "2026-11-07",
+      "equity": 99.8195,
+      "position": 0.0,
+      "daily_pnl": -0.0271,
+      "cumulative_pnl": -0.1805,
+      "peak_equity": 100.0,
+      "drawdown_pct": 0.1805,
+      "funding_balance": 0.0,
+      "trades_count": 5,
+      "governance": {
+        "position_returned_to_zero": true,
+        "killswitch_lock_logged": true,
+        "unfilled_orders_remaining": 0
+      }
+    },
+    {
+      "day": "2026-11-08",
+      "equity": 99.7902,
+      "position": 0.0,
+      "daily_pnl": -0.0293,
+      "cumulative_pnl": -0.2098,
+      "peak_equity": 100.0,
+      "drawdown_pct": 0.2098,
+      "funding_balance": 0.0,
+      "trades_count": 6,
+      "governance": {
+        "position_returned_to_zero": true,
+        "killswitch_lock_logged": true,
+        "unfilled_orders_remaining": 0
+      }
+    }
+  ],
+  "initial_equity": 100.0
+}

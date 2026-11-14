@@ -1,0 +1,58 @@
+{
+  "task": "t_cad2ff49",
+  "review_item": "docs/PAPERLOOP_MONEY_REVIEW_20261023.md C-01",
+  "title": "EQUITY_EW no longer self-liquidates on the second Monday",
+  "root_cause": "paperloop.py run_daily_decide: after the benchmark's first fill the target_map is intentionally empty ('hold only'), and the delta=0 D7 exemption listed BENCH_CRYPTO_BOOK only, so EQUITY_EW read the empty map as target 0% and emitted sell decisions of delta = -held_weight.",
+  "fix": {
+    "file": "src/yowayowa/paperloop.py",
+    "function": "run_daily_decide",
+    "changed_lines": "1672-1712 (benchmark target_map/raw_map share one benchmark_bought flag; delta=0 exemption now applies to every benchmark book)",
+    "net_diff": "3 hunks inside run_daily_decide: +13 / -19 lines (target_map and raw_map now share one benchmark_bought flag; the delta=0 exemption covers every benchmark book)"
+  },
+  "reproduction": {
+    "harness": "synthetic journal (tests/test_paperloop.py::_prepare, 2026-09-21 first Monday) + 21 appended flat daily bars, decide -> fill -> decide for three Mondays",
+    "before": {
+      "monday_1": "[('SPY','buy',0.25),('IWM','buy',0.25),('JNJ','buy',0.25),('PG','buy',0.25)] cash 0.0",
+      "monday_2": "[('SPY','sell',-0.250873,'pending'),('IWM',...),('JNJ',...),('PG',...)]",
+      "monday_2_sell_fills": 4,
+      "sell_notional_sum": 0.9985,
+      "state_after": {"equity": 0.997002, "cash": 0.997002, "units": {"SPY": 0.0, "IWM": 0.0, "JNJ": 0.0, "PG": 0.0}},
+      "mtm": [["2026-09-21", 1.0, 1.0], ["2026-09-28", 1.003493, 0.0], ["2026-10-05", 0.997002, 0.997002]]
+    },
+    "after": {
+      "monday_1": "identical buy-in (4 buys, 0.25 each, cash 0.0)",
+      "monday_2": "[('SPY','hold',0.0,'skipped'),('IWM','hold'),('JNJ','hold'),('PG','hold')]",
+      "monday_3": "same hold-only rows",
+      "sell_fills": 0,
+      "state_after": {"equity": 1.003493, "cash": 0.0, "units": {"SPY": 0.002496, "IWM": 0.002496, "JNJ": 0.002496, "PG": 0.002496}},
+      "mtm": [["2026-09-21", 1.0, 1.0], ["2026-09-28", 1.003493, 0.0], ["2026-10-05", 1.003493, 0.0]]
+    },
+    "other_books_unchanged": "fingerprint (event, book, asset, date, side, fill_status, traded_notional, delta_weight, equity) of books A / C / CRYPTO_1N is identical before vs after (52 distinct keys, 0 differences)"
+  },
+  "tests": {
+    "new_file": "tests/test_paperloop_bench_hold.py",
+    "cases": [
+      "test_equity_ew_benchmark_holds_its_position_after_the_first_buy_in",
+      "test_equity_ew_benchmark_decision_rows_stay_in_the_journal"
+    ],
+    "green": "2 passed",
+    "red_proof": "run against HEAD's paperloop.py (unmodified) the same test fails: second Monday sides are ['sell','sell','sell','sell'] instead of ['hold',...]",
+    "related_suite": "tests/test_paperloop.py + tests/test_paperloop_bench_hold.py -> 37 passed (35 existing + 2 new; includes the 6 slow milestone tests, ~9 min wall)"
+  },
+  "static_checks": {
+    "ruff": "new test file clean; src/yowayowa/paperloop.py has 1 pre-existing SIM113 at line 1484 (present at HEAD:1473, untouched by this card)",
+    "mypy_ab": "same-environment A/B (mypy --no-incremental): HEAD paperloop.py and fixed paperloop.py both report the identical pre-existing error set; the only paperloop.py error is the union-attr at line 1612 (HEAD:1603) 'Item None of date | None has no attribute isoformat' - unchanged by this fix, no new errors"
+  },
+  "untouched_data": {
+    "journal_sha256": "5b746fdc33bf15785e4eaae612fc5985384483a07b516d31b7033d474e4ef859",
+    "journal_lines": 267,
+    "anchors_sha256": "3f7e09e6ff984f35ff04184f6479f38008eb73b2045d2d98f3b7ff05ac872ef3",
+    "prereg_sha256": "d18a1dd0be26ec7a86f375d21e396f8c3d0d3183e54e3a24ba6e7b0fc4e57083",
+    "weekly_summary_sha256": "48d039e453b1ab5b027c3e24005b600d02737178a5ff1fb5b177d4c7c7714ffd",
+    "note": "all four verified unchanged with sha256sum -c after the fix and after the test run; real runs used temporary copies only"
+  },
+  "residual_risk": [
+    "A partially rejected first-Monday buy-in (guard rejection on one symbol) leaves the book under-invested forever, because the hold-only rule freezes any later buy as well. This is the pre-existing CRYPTO_1N (D7) semantics and was deliberately left unchanged by this card; documenting it here as a separate candidate.",
+    "The fix does not re-balance drifts: EQUITY_EW is buy-once by specification, so held weights drift from 1/N over time."
+  ]
+}

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# S-07 Hyperliquid テストネット・フォワード運用 日次実行ラッパー
+# 1日1回 09:05 JST (00:05 UTC 日足確定直後) に実行
+set -euo pipefail
+
+REPO_DIR="/root/current-work/yowayowa-investor"
+SCRIPT_DIR="$REPO_DIR/scripts/hl_testnet_s07"
+VENV_PY="$REPO_DIR/.venv/bin/python"
+
+export PYTHONPATH="$REPO_DIR/src:$SCRIPT_DIR"
+
+cd "$REPO_DIR" || exit 1
+exec "$VENV_PY" "$SCRIPT_DIR/s07_daily_forward.py" "$@"

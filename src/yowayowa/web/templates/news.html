@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ t('news.title') }} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-head"><h1>{{ t('news.title') }}</h1></section>
+<form id="news-form" class="toolbar" role="search">
+  <label class="sr-only" for="news-scope">{{ c('calendar.scope') }}</label>
+  <select id="news-scope" aria-label="{{ c('calendar.scope') }}">
+    <option value="search">{{ t('common.search') }}</option>
+    <option value="all">{{ c('calendar.scope.saved') }}</option>
+  </select>
+  <label class="sr-only" for="news-query">{{ t('news.search_label') }}</label>
+  <input id="news-query" required autocomplete="off" placeholder="{{ u('dashboard.search_placeholder') }}">
+  <button class="primary" type="submit">{{ t('common.search') }}</button>
+</form>
+<section class="panel" style="margin-top:12px">
+  <div class="section-heading"><h2>{{ t('news.results') }}</h2><span id="news-as-of" class="pill">—</span></div>
+  <div id="news-results" class="list-state muted">{{ t('news.prompt') }}</div>
+</section>
+<section class="panel" style="margin-top:12px">
+  <div class="section-heading"><h2>{{ t('common.source') }}</h2></div>
+  <div id="news-provenance" class="provenance-card muted">—</div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="/static/news.js"></script>{% endblock %}

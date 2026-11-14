@@ -1,0 +1,873 @@
+{
+  "assumptions": {
+    "provider": "binance",
+    "quote_currency": "USDT",
+    "universe": [
+      "BTC",
+      "ETH"
+    ],
+    "annualization_days": 365,
+    "commission_bps_per_one_way_turnover": 10,
+    "slippage_bps_per_one_way_turnover": 5,
+    "execution": "next_open",
+    "rebalance": "daily",
+    "signal": "close(t-1) > SMA(lookback)(t-1); active 1/N; no active means cash",
+    "lookbacks": [
+      100,
+      150,
+      200,
+      300
+    ],
+    "bootstrap_samples": 1000,
+    "bootstrap_seed": 20260930,
+    "bootstrap": "IID daily-return percentile 95% CAGR CI for full, independent IS/OOS",
+    "split": "70% IS, purge effective lookback, independently initialized OOS",
+    "comparison_limit": "OOS start dates vary with lookback; no post-hoc best selection"
+  },
+  "results": [
+    {
+      "lookback": 100,
+      "strategy": {
+        "id": "crypto_trend_dual_ma",
+        "name": "Crypto dual-MA trend filter",
+        "description": "Daily absolute trend gate; active BTC/ETH equal weighted, else cash.",
+        "signal": "crypto_trend_dual_ma",
+        "universe": [
+          "BTC",
+          "ETH"
+        ],
+        "rebalance": "daily",
+        "max_positions": 2,
+        "weighting": "equal",
+        "execution": "next_open",
+        "lookback": 100
+      },
+      "start": "2023-01-01",
+      "end": "2026-09-29",
+      "status": "complete",
+      "sessions": 1368,
+      "trades": 1312,
+      "full_metrics": {
+        "annualization_days": 365,
+        "cagr": {
+          "value": 0.2498127623902171,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "sharpe_ratio": {
+          "value": 0.784678347974835,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "sortino_ratio": {
+          "value": 1.2315934582691919,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "max_drawdown": {
+          "value": -0.4518957376230177,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "calmar_ratio": {
+          "value": 0.5528106188923979,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "hit_rate": {
+          "value": 0.3019005847953216,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "annual_turnover": {
+          "value": 30.178009685591675,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "bootstrap_ci_95": [
+          -0.16665049615491878,
+          0.7776733020198634
+        ],
+        "bootstrap_status": "available"
+      },
+      "in_sample_metrics": {
+        "annualization_days": 365,
+        "cagr": {
+          "value": 0.4072986488948802,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "sharpe_ratio": {
+          "value": 1.0721486353911422,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "sortino_ratio": {
+          "value": 1.6587014707782792,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "max_drawdown": {
+          "value": -0.4518957376230177,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "calmar_ratio": {
+          "value": 0.9013111100301161,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "hit_rate": {
+          "value": 0.35214211076280044,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "annual_turnover": {
+          "value": 31.858122919984616,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "bootstrap_ci_95": [
+          -0.1177496081458238,
+          1.2944178229817354
+        ],
+        "bootstrap_status": "available"
+      },
+      "oos_metrics": {
+        "annualization_days": 365,
+        "cagr": {
+          "value": 0.16395523904986842,
+          "sample_count": 311,
+          "status": "available"
+        },
+        "sharpe_ratio": {
+          "value": 0.6719322710113991,
+          "sample_count": 311,
+          "status": "available"
+        },
+        "sortino_ratio": {
+          "value": 1.4911398358075456,
+          "sample_count": 311,
+          "status": "available"
+        },
+        "max_drawdown": {
+          "value": -0.20769293244053944,
+          "sample_count": 311,
+          "status": "available"
+        },
+        "calmar_ratio": {
+          "value": 0.7894117393561636,
+          "sample_count": 311,
+          "status": "available"
+        },
+        "hit_rate": {
+          "value": 0.15434083601286175,
+          "sample_count": 311,
+          "status": "available"
+        },
+        "annual_turnover": {
+          "value": 19.0704595866184,
+          "sample_count": 311,
+          "status": "available"
+        },
+        "bootstrap_ci_95": [
+          -0.3248451992361192,
+          1.106454490130826
+        ],
+        "bootstrap_status": "available"
+      },
+      "oos_start": "2025-11-23",
+      "purged_sessions": 100,
+      "cash_shift_statistics": {
+        "sessions": 1368,
+        "cash_sessions_by_asset": {
+          "BTC": 619,
+          "ETH": 706
+        },
+        "cash_asset_sessions_sum": 1325,
+        "all_cash_portfolio_sessions": 559,
+        "longest_cash_streak_by_asset": {
+          "BTC": 188,
+          "ETH": 100
+        },
+        "longest_all_cash_portfolio_streak": 100,
+        "any_asset_inactive_sessions": 766,
+        "active_asset_count_sessions": {
+          "0": 559,
+          "1": 207,
+          "2": 602
+        },
+        "cash_to_hold_by_asset": {
+          "BTC": 27,
+          "ETH": 31
+        },
+        "hold_to_cash_by_asset": {
+          "BTC": 26,
+          "ETH": 30
+        },
+        "switches_by_asset": {
+          "BTC": 53,
+          "ETH": 61
+        },
+        "definition": "Zero target means the asset is inactive, not that a fixed 50% cash sleeve exists. One active asset receives 100%, so only zero active assets is portfolio cash. Counts include warmup. Initial state is cash; first investment counts as entry. Price-drift-only rebalances are not gate switches."
+      },
+      "provenance": [
+        {
+          "symbol": "BTC",
+          "provider": "binance",
+          "source_url": "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:48:27.373052Z",
+          "as_of_start": "2023-01-01",
+          "as_of_end": "2026-09-29"
+        },
+        {
+          "symbol": "ETH",
+          "provider": "binance",
+          "source_url": "https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1d",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:48:27.636646Z",
+          "as_of_start": "2023-01-01",
+          "as_of_end": "2026-09-29"
+        }
+      ],
+      "warnings": [
+        "Insufficient pre-window lookback for BTC; it will not be selected until sufficient history exists.",
+        "Insufficient pre-window lookback for ETH; it will not be selected until sufficient history exists."
+      ]
+    },
+    {
+      "lookback": 150,
+      "strategy": {
+        "id": "crypto_trend_dual_ma",
+        "name": "Crypto dual-MA trend filter",
+        "description": "Daily absolute trend gate; active BTC/ETH equal weighted, else cash.",
+        "signal": "crypto_trend_dual_ma",
+        "universe": [
+          "BTC",
+          "ETH"
+        ],
+        "rebalance": "daily",
+        "max_positions": 2,
+        "weighting": "equal",
+        "execution": "next_open",
+        "lookback": 150
+      },
+      "start": "2023-01-01",
+      "end": "2026-09-29",
+      "status": "complete",
+      "sessions": 1368,
+      "trades": 1238,
+      "full_metrics": {
+        "annualization_days": 365,
+        "cagr": {
+          "value": 0.31357404120609056,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "sharpe_ratio": {
+          "value": 0.9274250591123874,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "sortino_ratio": {
+          "value": 1.4490344194819824,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "max_drawdown": {
+          "value": -0.33707991168427054,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "calmar_ratio": {
+          "value": 0.9302661782461928,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "hit_rate": {
+          "value": 0.2894736842105263,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "annual_turnover": {
+          "value": 16.85936841889893,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "bootstrap_ci_95": [
+          -0.11552895150268527,
+          0.8757237388552377
+        ],
+        "bootstrap_status": "available"
+      },
+      "in_sample_metrics": {
+        "annualization_days": 365,
+        "cagr": {
+          "value": 0.4982063012769027,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "sharpe_ratio": {
+          "value": 1.2288540547104296,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "sortino_ratio": {
+          "value": 1.9385635592410637,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "max_drawdown": {
+          "value": -0.33707991168427054,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "calmar_ratio": {
+          "value": 1.478006502338095,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "hit_rate": {
+          "value": 0.34169278996865204,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "annual_turnover": {
+          "value": 18.12196448511375,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "bootstrap_ci_95": [
+          -0.06310370431333001,
+          1.4897806440184915
+        ],
+        "bootstrap_status": "available"
+      },
+      "oos_metrics": {
+        "annualization_days": 365,
+        "cagr": {
+          "value": 0.16197422893101954,
+          "sample_count": 261,
+          "status": "available"
+        },
+        "sharpe_ratio": {
+          "value": 0.844825110472036,
+          "sample_count": 261,
+          "status": "available"
+        },
+        "sortino_ratio": {
+          "value": 1.5997144440953954,
+          "sample_count": 261,
+          "status": "available"
+        },
+        "max_drawdown": {
+          "value": -0.10781911162853808,
+          "sample_count": 261,
+          "status": "available"
+        },
+        "calmar_ratio": {
+          "value": 1.5022775321044977,
+          "sample_count": 261,
+          "status": "available"
+        },
+        "hit_rate": {
+          "value": 0.11494252873563218,
+          "sample_count": 261,
+          "status": "available"
+        },
+        "annual_turnover": {
+          "value": 10.016368918613697,
+          "sample_count": 261,
+          "status": "available"
+        },
+        "bootstrap_ci_95": [
+          -0.2583206453318767,
+          0.902776671903579
+        ],
+        "bootstrap_status": "available"
+      },
+      "oos_start": "2026-01-12",
+      "purged_sessions": 150,
+      "cash_shift_statistics": {
+        "sessions": 1368,
+        "cash_sessions_by_asset": {
+          "BTC": 635,
+          "ETH": 747
+        },
+        "cash_asset_sessions_sum": 1382,
+        "all_cash_portfolio_sessions": 604,
+        "longest_cash_streak_by_asset": {
+          "BTC": 185,
+          "ETH": 289
+        },
+        "longest_all_cash_portfolio_streak": 180,
+        "any_asset_inactive_sessions": 778,
+        "active_asset_count_sessions": {
+          "0": 604,
+          "1": 174,
+          "2": 590
+        },
+        "cash_to_hold_by_asset": {
+          "BTC": 19,
+          "ETH": 13
+        },
+        "hold_to_cash_by_asset": {
+          "BTC": 18,
+          "ETH": 12
+        },
+        "switches_by_asset": {
+          "BTC": 37,
+          "ETH": 25
+        },
+        "definition": "Zero target means the asset is inactive, not that a fixed 50% cash sleeve exists. One active asset receives 100%, so only zero active assets is portfolio cash. Counts include warmup. Initial state is cash; first investment counts as entry. Price-drift-only rebalances are not gate switches."
+      },
+      "provenance": [
+        {
+          "symbol": "BTC",
+          "provider": "binance",
+          "source_url": "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:48:27.373052Z",
+          "as_of_start": "2023-01-01",
+          "as_of_end": "2026-09-29"
+        },
+        {
+          "symbol": "ETH",
+          "provider": "binance",
+          "source_url": "https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1d",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:48:27.636646Z",
+          "as_of_start": "2023-01-01",
+          "as_of_end": "2026-09-29"
+        }
+      ],
+      "warnings": [
+        "Insufficient pre-window lookback for BTC; it will not be selected until sufficient history exists.",
+        "Insufficient pre-window lookback for ETH; it will not be selected until sufficient history exists."
+      ]
+    },
+    {
+      "lookback": 200,
+      "strategy": {
+        "id": "crypto_trend_dual_ma",
+        "name": "Crypto dual-MA trend filter",
+        "description": "Daily absolute trend gate; active BTC/ETH equal weighted, else cash.",
+        "signal": "crypto_trend_dual_ma",
+        "universe": [
+          "BTC",
+          "ETH"
+        ],
+        "rebalance": "daily",
+        "max_positions": 2,
+        "weighting": "equal",
+        "execution": "next_open",
+        "lookback": 200
+      },
+      "start": "2023-01-01",
+      "end": "2026-09-29",
+      "status": "complete",
+      "sessions": 1368,
+      "trades": 1149,
+      "full_metrics": {
+        "annualization_days": 365,
+        "cagr": {
+          "value": 0.21851010798488968,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "sharpe_ratio": {
+          "value": 0.7249690279018973,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "sortino_ratio": {
+          "value": 1.1055842383288814,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "max_drawdown": {
+          "value": -0.3974672801475573,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "calmar_ratio": {
+          "value": 0.5497562161689615,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "hit_rate": {
+          "value": 0.277046783625731,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "annual_turnover": {
+          "value": 15.462684594732913,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "bootstrap_ci_95": [
+          -0.15718956216054325,
+          0.7579922929932426
+        ],
+        "bootstrap_status": "available"
+      },
+      "in_sample_metrics": {
+        "annualization_days": 365,
+        "cagr": {
+          "value": 0.42269685639928256,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "sharpe_ratio": {
+          "value": 1.098692782301337,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "sortino_ratio": {
+          "value": 1.716482022503738,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "max_drawdown": {
+          "value": -0.3974672801475573,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "calmar_ratio": {
+          "value": 1.0634758570374874,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "hit_rate": {
+          "value": 0.33124346917450365,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "annual_turnover": {
+          "value": 16.076605757520205,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "bootstrap_ci_95": [
+          -0.07946137502187678,
+          1.3758296810735442
+        ],
+        "bootstrap_status": "available"
+      },
+      "oos_metrics": {
+        "annualization_days": 365,
+        "cagr": {
+          "value": 0.3632519450245304,
+          "sample_count": 211,
+          "status": "available"
+        },
+        "sharpe_ratio": {
+          "value": 1.5999922979145107,
+          "sample_count": 211,
+          "status": "available"
+        },
+        "sortino_ratio": {
+          "value": 3.4354747951199243,
+          "sample_count": 211,
+          "status": "available"
+        },
+        "max_drawdown": {
+          "value": -0.056396208392944125,
+          "sample_count": 211,
+          "status": "available"
+        },
+        "calmar_ratio": {
+          "value": 6.441070337451583,
+          "sample_count": 211,
+          "status": "available"
+        },
+        "hit_rate": {
+          "value": 0.10426540284360189,
+          "sample_count": 211,
+          "status": "available"
+        },
+        "annual_turnover": {
+          "value": 2.010769136294667,
+          "sample_count": 211,
+          "status": "available"
+        },
+        "bootstrap_ci_95": [
+          -0.16652141783258312,
+          1.431718552493558
+        ],
+        "bootstrap_status": "available"
+      },
+      "oos_start": "2026-03-03",
+      "purged_sessions": 200,
+      "cash_shift_statistics": {
+        "sessions": 1368,
+        "cash_sessions_by_asset": {
+          "BTC": 660,
+          "ETH": 810
+        },
+        "cash_asset_sessions_sum": 1470,
+        "all_cash_portfolio_sessions": 650,
+        "longest_cash_streak_by_asset": {
+          "BTC": 289,
+          "ETH": 281
+        },
+        "longest_all_cash_portfolio_streak": 281,
+        "any_asset_inactive_sessions": 820,
+        "active_asset_count_sessions": {
+          "0": 650,
+          "1": 170,
+          "2": 548
+        },
+        "cash_to_hold_by_asset": {
+          "BTC": 17,
+          "ETH": 13
+        },
+        "hold_to_cash_by_asset": {
+          "BTC": 16,
+          "ETH": 12
+        },
+        "switches_by_asset": {
+          "BTC": 33,
+          "ETH": 25
+        },
+        "definition": "Zero target means the asset is inactive, not that a fixed 50% cash sleeve exists. One active asset receives 100%, so only zero active assets is portfolio cash. Counts include warmup. Initial state is cash; first investment counts as entry. Price-drift-only rebalances are not gate switches."
+      },
+      "provenance": [
+        {
+          "symbol": "BTC",
+          "provider": "binance",
+          "source_url": "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:48:27.373052Z",
+          "as_of_start": "2023-01-01",
+          "as_of_end": "2026-09-29"
+        },
+        {
+          "symbol": "ETH",
+          "provider": "binance",
+          "source_url": "https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1d",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:48:27.636646Z",
+          "as_of_start": "2023-01-01",
+          "as_of_end": "2026-09-29"
+        }
+      ],
+      "warnings": [
+        "Insufficient pre-window lookback for BTC; it will not be selected until sufficient history exists.",
+        "Insufficient pre-window lookback for ETH; it will not be selected until sufficient history exists."
+      ]
+    },
+    {
+      "lookback": 300,
+      "strategy": {
+        "id": "crypto_trend_dual_ma",
+        "name": "Crypto dual-MA trend filter",
+        "description": "Daily absolute trend gate; active BTC/ETH equal weighted, else cash.",
+        "signal": "crypto_trend_dual_ma",
+        "universe": [
+          "BTC",
+          "ETH"
+        ],
+        "rebalance": "daily",
+        "max_positions": 2,
+        "weighting": "equal",
+        "execution": "next_open",
+        "lookback": 300
+      },
+      "start": "2023-01-01",
+      "end": "2026-09-29",
+      "status": "complete",
+      "sessions": 1368,
+      "trades": 1097,
+      "full_metrics": {
+        "annualization_days": 365,
+        "cagr": {
+          "value": 0.20301882995260145,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "sharpe_ratio": {
+          "value": 0.6662678073716278,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "sortino_ratio": {
+          "value": 1.0040138511945458,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "max_drawdown": {
+          "value": -0.4622665093251621,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "calmar_ratio": {
+          "value": 0.439181350708226,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "hit_rate": {
+          "value": 0.3121345029239766,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "annual_turnover": {
+          "value": 10.13204140892873,
+          "sample_count": 1368,
+          "status": "available"
+        },
+        "bootstrap_ci_95": [
+          -0.20130406229077336,
+          0.7596870917108727
+        ],
+        "bootstrap_status": "available"
+      },
+      "in_sample_metrics": {
+        "annualization_days": 365,
+        "cagr": {
+          "value": 0.5584675210737775,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "sharpe_ratio": {
+          "value": 1.2675269138409788,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "sortino_ratio": {
+          "value": 1.9795272401541448,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "max_drawdown": {
+          "value": -0.3863693869343878,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "calmar_ratio": {
+          "value": 1.44542383521864,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "hit_rate": {
+          "value": 0.36886102403343785,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "annual_turnover": {
+          "value": 7.677989366710187,
+          "sample_count": 957,
+          "status": "available"
+        },
+        "bootstrap_ci_95": [
+          -0.00801991234394972,
+          1.7036441615278801
+        ],
+        "bootstrap_status": "available"
+      },
+      "oos_metrics": {
+        "annualization_days": 365,
+        "cagr": {
+          "value": 0.22915477790229044,
+          "sample_count": 111,
+          "status": "available"
+        },
+        "sharpe_ratio": {
+          "value": 0.9818583343303666,
+          "sample_count": 111,
+          "status": "available"
+        },
+        "sortino_ratio": {
+          "value": 1.750677261815915,
+          "sample_count": 111,
+          "status": "available"
+        },
+        "max_drawdown": {
+          "value": -0.0563962083929439,
+          "sample_count": 111,
+          "status": "available"
+        },
+        "calmar_ratio": {
+          "value": 4.063301140843389,
+          "sample_count": 111,
+          "status": "available"
+        },
+        "hit_rate": {
+          "value": 0.18018018018018017,
+          "sample_count": 111,
+          "status": "available"
+        },
+        "annual_turnover": {
+          "value": 3.7768340931505526,
+          "sample_count": 111,
+          "status": "available"
+        },
+        "bootstrap_ci_95": [
+          -0.43928853834442827,
+          1.904655190715895
+        ],
+        "bootstrap_status": "available"
+      },
+      "oos_start": "2026-06-11",
+      "purged_sessions": 300,
+      "cash_shift_statistics": {
+        "sessions": 1368,
+        "cash_sessions_by_asset": {
+          "BTC": 592,
+          "ETH": 803
+        },
+        "cash_asset_sessions_sum": 1395,
+        "all_cash_portfolio_sessions": 559,
+        "longest_cash_streak_by_asset": {
+          "BTC": 300,
+          "ETH": 300
+        },
+        "longest_all_cash_portfolio_streak": 300,
+        "any_asset_inactive_sessions": 836,
+        "active_asset_count_sessions": {
+          "0": 559,
+          "1": 277,
+          "2": 532
+        },
+        "cash_to_hold_by_asset": {
+          "BTC": 6,
+          "ETH": 13
+        },
+        "hold_to_cash_by_asset": {
+          "BTC": 5,
+          "ETH": 12
+        },
+        "switches_by_asset": {
+          "BTC": 11,
+          "ETH": 25
+        },
+        "definition": "Zero target means the asset is inactive, not that a fixed 50% cash sleeve exists. One active asset receives 100%, so only zero active assets is portfolio cash. Counts include warmup. Initial state is cash; first investment counts as entry. Price-drift-only rebalances are not gate switches."
+      },
+      "provenance": [
+        {
+          "symbol": "BTC",
+          "provider": "binance",
+          "source_url": "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:48:27.373052Z",
+          "as_of_start": "2023-01-01",
+          "as_of_end": "2026-09-29"
+        },
+        {
+          "symbol": "ETH",
+          "provider": "binance",
+          "source_url": "https://api.binance.com/api/v3/klines?symbol=ETHUSDT&interval=1d",
+          "license_class": "personal_only",
+          "retrieved_at": "2026-09-30T02:48:27.636646Z",
+          "as_of_start": "2023-01-01",
+          "as_of_end": "2026-09-29"
+        }
+      ],
+      "warnings": [
+        "Insufficient pre-window lookback for BTC; it will not be selected until sufficient history exists.",
+        "Insufficient pre-window lookback for ETH; it will not be selected until sufficient history exists."
+      ]
+    }
+  ]
+}

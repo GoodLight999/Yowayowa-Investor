@@ -1,0 +1,8 @@
+.........................................................                [100%]
+=============================== warnings summary ===============================
+src/yowayowa/providers/sec.py:129
+  /home/good-light/vps-work/sessions/t_58ad2519_audit/repo/src/yowayowa/providers/sec.py:129: DeprecationWarning: The 'initial' parameter is deprecated, use 'multiplier' instead
+    wait=wait_exponential_jitter(initial=0.25, max=3),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+RC1=0

@@ -1,0 +1,10 @@
+{"ts": "2026-11-02T04:21:54.000000+00:00", "stage": "killswitch_lock_acquired", "lock_path": "/root/.secrets/HL_KILL_SWITCH", "engaged": true}
+{"ts": "2026-11-02T04:21:54.000000+00:00", "stage": "killswitch_lock_released", "lock_path": "/root/.secrets/HL_KILL_SWITCH", "engaged": false}
+{"ts": "2026-11-02T04:21:54.000000+00:00", "stage": "execution_lock_acquired", "lock_path": "/root/.secrets/HL_KILL_SWITCH_ROUNDTRIP_EXEC"}
+{"ts": "2026-11-02T04:21:55.000000+00:00", "stage": "pre_state", "accountValue": "100.0", "openPositions": 0, "bid": 78037.0, "ask": 78088.0}
+{"ts": "2026-11-02T04:21:56.000000+00:00", "stage": "place", "resp": {"status": "ok", "response": {"type": "order", "data": {"statuses": [{"resting": {"oid": 64298026132}}]}}}}
+{"ts": "2026-11-02T04:21:58.000000+00:00", "stage": "query_open_orders", "count": 1, "orders": [{"oid": 64298026132, "coin": "BTC", "side": "B", "sz": "0.0002", "px": null}]}
+{"ts": "2026-11-02T04:21:58.000000+00:00", "stage": "cancel", "oid": 64298026132, "resp": {"status": "ok", "response": {"type": "cancel", "data": {"statuses": ["success"]}}}}
+{"ts": "2026-11-02T04:22:01.000000+00:00", "stage": "post_cancel_open_orders", "count": 0}
+{"ts": "2026-11-02T04:22:01.000000+00:00", "stage": "post_state", "accountValue": "100.0", "openPositions": 0, "fills": 0}
+{"ts": "2026-11-02T04:22:01.000000+00:00", "stage": "execution_lock_released", "lock_path": "/root/.secrets/HL_KILL_SWITCH_ROUNDTRIP_EXEC"}

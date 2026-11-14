@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+# ruff: noqa: RUF001, RUF002, RUF003, E501, SIM105
+"""事前凍結の5条件による機械的3値判定器（PASS / FAIL / INCONCLUSIVE）。
+
+合格条件（設計正本）:
+  1. 活動量: 往復（entry→exit）>= 8回。これ未満は INCONCLUSIVE（戦略の可否ではなく検出力不足）
+  2. 純損益: 手数料・funding 控除後の net PnL > 0（判定日時点）
+  3. DD: ピーク比の MaxDD <= 10%（テストネットの equity 100 USDC 基準）
+  4. 執行品質: 全約定が記録され、スリッページ中央値 <= 5bp（想定価格との乖離）
+  5. 統制: 日次で建玉0に戻らない日が0日・キルスイッチのロック取得/解放が全日ログに残る・未約定注文の残留0
+
+判定規則:
+  * 1〜5すべて満たせば PASS。
+  * 活動量 < 8 回の期間中は「INCONCLUSIVE」（検出力不足・検証進行中）。
+  * 2（純損益）が負でも 4・5 が満たされていれば「執行は健全／戦略は不合格（FAIL_STRATEGY_HEALTHY_EXEC）」と分けて記録。
+  * 3, 4, 5 のいずれかに違反していれば「執行またはリスク管理不合格（FAIL_GOVERNANCE_OR_DD）」。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import statistics
+from pathlib import Path
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DATA_DIR = REPO_ROOT / "data" / "hl_testnet_s07"
+
+
+def evaluate_5_conditions(data_dir: Path = DEFAULT_DATA_DIR) -> dict[str, Any]:
+    ledger_path = data_dir / "daily_ledger.json"
+    trades_path = data_dir / "trades.jsonl"
+    raw_events_path = data_dir / "raw_events.jsonl"
+
+    if not ledger_path.exists():
+        return {
+            "verdict": "INCONCLUSIVE",
+            "verdict_reason": "No daily ledger found (forward test not started)",
+            "conditions": {},
+        }
+
+    ledger = json.loads(ledger_path.read_text())
+    days = ledger.get("days", [])
+
+    trades: list[dict[str, Any]] = []
+    if trades_path.exists():
+        for line in trades_path.read_text().splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    trades.append(json.loads(line))
+                except Exception:
+                    pass
+
+    raw_events: list[dict[str, Any]] = []
+    if raw_events_path.exists():
+        for line in raw_events_path.read_text().splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    raw_events.append(json.loads(line))
+                except Exception:
+                    pass
+
+    # 1. 活動量（Activity）: 往復 >= 8回
+    round_trips_count = len(trades)
+    c1_ok = round_trips_count >= 8
+    c1_status = "PASS" if c1_ok else "INCONCLUSIVE"
+    c1_detail = f"Completed {round_trips_count} / 8 required roundtrips"
+
+    # 2. 純損益（Net PnL）: 手数料・funding 控除後の net PnL > 0
+    total_net_pnl = sum(t.get("net_pnl_usdc", 0.0) for t in trades)
+    c2_ok = total_net_pnl > 0.0
+    c2_status = "PASS" if c2_ok else "FAIL"
+    c2_detail = f"Net PnL = {total_net_pnl:+.4f} USDC (target > 0.0000 USDC)"
+
+    # 3. ドローダウン（DD）: ピーク比の MaxDD <= 10% (100 USDC基準)
+    max_dd_pct = max([d.get("drawdown_pct", 0.0) for d in days] + [0.0]) if days else 0.0
+    c3_ok = max_dd_pct <= 10.0
+    c3_status = "PASS" if c3_ok else "FAIL"
+    c3_detail = f"MaxDD = {max_dd_pct:.2f}% (limit <= 10.00%)"
+
+    # 4. 執行品質（Execution Quality）: 全約定記録 & スリッページ中央値 <= 5bp
+    all_fills_recorded = True
+    slippages: list[float] = []
+    for t in trades:
+        entry = t.get("entry")
+        exit_order = t.get("exit")
+        if not entry or not exit_order or "fill_px" not in entry or "fill_px" not in exit_order:
+            all_fills_recorded = False
+            continue
+        slippages.append(float(entry.get("slippage_bp", 0.0)))
+        slippages.append(float(exit_order.get("slippage_bp", 0.0)))
+
+    median_slippage = statistics.median(slippages) if slippages else 0.0
+    c4_ok = all_fills_recorded and (len(slippages) == 2 * round_trips_count) and (median_slippage <= 5.0)
+    c4_status = "PASS" if c4_ok else "FAIL"
+    c4_detail = (
+        f"Fills recorded: {len(slippages)}/{2 * round_trips_count}, "
+        f"Median slippage: {median_slippage:.2f} bp (limit <= 5.00 bp)"
+    )
+
+    # 5. 統制（Governance）: 日次建玉0に戻らない日0日・ロック取得/解放全日記録・未約定0
+    days_with_open_position = sum(1 for d in days if d.get("position", 0.0) != 0.0)
+    days_unfilled_orders = sum(1 for d in days if d.get("governance", {}).get("unfilled_orders_remaining", 0) != 0)
+
+    # ロック取得と解放が各日ログに存在するか
+    lock_acq_count = sum(1 for ev in raw_events if ev.get("stage") == "killswitch_lock_acquired")
+    lock_rel_count = sum(1 for ev in raw_events if ev.get("stage") == "killswitch_lock_released")
+    lock_all_days = (lock_acq_count >= len(days)) and (lock_rel_count >= len(days))
+
+    c5_ok = (days_with_open_position == 0) and (days_unfilled_orders == 0) and lock_all_days
+    c5_status = "PASS" if c5_ok else "FAIL"
+    c5_detail = (
+        f"Non-zero position days: {days_with_open_position} (limit 0), "
+        f"Unfilled order days: {days_unfilled_orders} (limit 0), "
+        f"Killswitch lock logs: acq={lock_acq_count}/rel={lock_rel_count} for {len(days)} days"
+    )
+
+    # 総合判定（3値判定）
+    if not c1_ok:
+        verdict = "INCONCLUSIVE"
+        verdict_reason = f"検出力不足（活動量 {round_trips_count}/8回）。運用期間満了（2026-12-02 00:00 UTC）まで継続判定。"
+    elif c1_ok and c2_ok and c3_ok and c4_ok and c5_ok:
+        verdict = "PASS"
+        verdict_reason = "事前凍結の5条件をすべて達成。"
+    elif not c2_ok and c4_ok and c5_ok and c3_ok:
+        verdict = "FAIL"
+        verdict_reason = "執行健全／戦略不合格（執行品質・統制・DDは健全だが、純損益がマイナス）。"
+    else:
+        verdict = "FAIL"
+        verdict_reason = "統制・DD・執行品質のいずれかに不適合。"
+
+    return {
+        "verdict": verdict,
+        "verdict_reason": verdict_reason,
+        "evaluation_date_target": "2026-12-02T00:00:00Z",
+        "current_days_count": len(days),
+        "total_roundtrips": round_trips_count,
+        "total_net_pnl_usdc": round(total_net_pnl, 6),
+        "max_drawdown_pct": round(max_dd_pct, 4),
+        "median_slippage_bp": round(median_slippage, 4),
+        "conditions": {
+            "1_activity": {
+                "name": "活動量（往復 >= 8回）",
+                "status": c1_status,
+                "passed": c1_ok,
+                "detail": c1_detail,
+            },
+            "2_net_pnl": {
+                "name": "純損益（net PnL > 0）",
+                "status": c2_status,
+                "passed": c2_ok,
+                "detail": c2_detail,
+            },
+            "3_drawdown": {
+                "name": "最大DD（MaxDD <= 10%）",
+                "status": c3_status,
+                "passed": c3_ok,
+                "detail": c3_detail,
+            },
+            "4_execution_quality": {
+                "name": "執行品質（全約定記録 & スリッページ中央値 <= 5bp）",
+                "status": c4_status,
+                "passed": c4_ok,
+                "detail": c4_detail,
+            },
+            "5_governance": {
+                "name": "統制（日次建玉0戻り・全日ロック・未約定0）",
+                "status": c5_status,
+                "passed": c5_ok,
+                "detail": c5_detail,
+            },
+        },
+    }
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="S-07 5-Condition Mechanical Evaluator")
+    parser.add_argument("--json", action="store_true", help="JSON形式で出力")
+    args = parser.parse_args()
+
+    eval_res = evaluate_5_conditions()
+    if args.json:
+        print(json.dumps(eval_res, ensure_ascii=False, indent=2))
+    else:
+        print("=" * 70)
+        print(f"S-07 テストネット・フォワード運用 事前凍結5条件 判定結果: 【{eval_res['verdict']}】")
+        print(f"理由: {eval_res['verdict_reason']}")
+        print("=" * 70)
+        for _k, v in eval_res["conditions"].items():
+            print(f"[{v['status']:^12}] {v['name']}: {v['detail']}")
+        print("=" * 70)

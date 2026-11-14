@@ -1,0 +1,154 @@
+{
+ "journal_rows": 261,
+ "books": {
+  "A": {
+   "decisions": 28,
+   "first_decision": "2026-10-10",
+   "fills": 26,
+   "fills_rejected": 2,
+   "first_fill": "2026-10-10",
+   "mtm_rows": 16,
+   "last_mtm_recorded_at": "2026-10-23T00:21:06.011128+00:00",
+   "price_bar_date": "2026-10-22",
+   "equity": 0.966553196118262,
+   "cum_pnl": -0.03344680388173804,
+   "cum_pnl_jpy": -33446.803881738044,
+   "peak": 1.0081585571392127,
+   "max_drawdown": -0.041268668233111594,
+   "drawdown_now": -0.041268668233111594,
+   "cum_cost_assumed": 0.0018473489439777874,
+   "cum_cost_jpy": 1847.3489439777875,
+   "cum_turnover": 1.2315659626518587,
+   "equity_gross": 1.0003489442731692,
+   "gross_pnl_jpy": 348.94427316922713,
+   "units": {
+    "BTC": 5.8750280818675085e-06,
+    "ETH": 0.00019972277791589814
+   },
+   "halted": false,
+   "benchmark_book": "CRYPTO_1N",
+   "benchmark_equity": 0.9645580364049191,
+   "vs_benchmark_pp_cum": 0.19951597133428534,
+   "benchmark_max_drawdown": -0.04322386519071719,
+   "benchmark_cum_pnl": -0.035441963595080894,
+   "dd_vs_benchmark_ratio": 0.9547658001204044,
+   "comparison_start": "2026-10-10",
+   "comparison_reason": null
+  },
+  "CRYPTO_1N": {
+   "decisions": 28,
+   "first_decision": "2026-10-10",
+   "fills": 24,
+   "fills_rejected": 4,
+   "first_fill": "2026-10-10",
+   "mtm_rows": 16,
+   "last_mtm_recorded_at": "2026-10-23T00:21:06.011128+00:00",
+   "price_bar_date": "2026-10-22",
+   "equity": 0.9645580364049191,
+   "cum_pnl": -0.035441963595080894,
+   "cum_pnl_jpy": -35441.963595080895,
+   "peak": 1.0081334612272572,
+   "max_drawdown": -0.04322386519071719,
+   "drawdown_now": -0.04322386519071719,
+   "cum_cost_assumed": 0.0015,
+   "cum_cost_jpy": 1500.0,
+   "cum_turnover": 1.0,
+   "equity_gross": 1.0,
+   "gross_pnl_jpy": 0.0,
+   "units": {
+    "BTC": 6.00652084987608e-06,
+    "ETH": 0.0001990383963704646
+   },
+   "halted": false
+  },
+  "C": {
+   "decisions": 4,
+   "first_decision": "2026-10-19",
+   "fills": 4,
+   "fills_rejected": 0,
+   "first_fill": "2026-10-21",
+   "mtm_rows": 5,
+   "last_mtm_recorded_at": "2026-10-23T00:21:06.011128+00:00",
+   "price_bar_date": "2026-10-21",
+   "equity": 1.0063441897797,
+   "cum_pnl": 0.006344189779700082,
+   "cum_pnl_jpy": 6344.189779700082,
+   "peak": 1.0098584498692853,
+   "max_drawdown": -0.0034799531459484,
+   "drawdown_now": -0.0034799531459484,
+   "cum_cost_assumed": 0.0015,
+   "cum_cost_jpy": 1500.0,
+   "cum_turnover": 1.0,
+   "equity_gross": 1.0015008439609574,
+   "gross_pnl_jpy": 1500.8439609573986,
+   "units": {
+    "IWM": 0.0009183467000220735,
+    "JNJ": 0.0009811146484298235,
+    "PG": 0.0015812060556153799,
+    "SPY": 0.00032535875812989587
+   },
+   "halted": false,
+   "benchmark_book": "EQUITY_EW",
+   "benchmark_equity": 1.0,
+   "benchmark_fills": 0,
+   "benchmark_cum_pnl": null,
+   "benchmark_max_drawdown": null,
+   "vs_benchmark_pp_cum": null,
+   "dd_vs_benchmark_ratio": null,
+   "comparison_start": null,
+   "comparison_reason": "benchmark_has_no_fill",
+   "comparison_correction": {
+    "round": 2,
+    "at": "2026-10-23T01:24:08.015669+00:00",
+    "removed_round1_values": {
+     "benchmark_equity": 1.0,
+     "vs_benchmark_pp_cum": 0.6344189779700082,
+     "benchmark_max_drawdown": 0.0,
+     "benchmark_cum_pnl": 0.0
+    },
+    "why": "EQUITY_EW had no fill on 2026-10-23 (0 fills, still cash), so there was no comparison to report. The round-1 values were a difference against a cash benchmark and are not P&L.",
+    "evidence": "docs/evidence/20261023/comparison_line_review_r2.json"
+   }
+  },
+  "EQUITY_EW": {
+   "decisions": 0,
+   "first_decision": null,
+   "fills": 0,
+   "fills_rejected": 0,
+   "first_fill": null,
+   "mtm_rows": 1,
+   "last_mtm_recorded_at": "2026-10-23T00:21:06.011128+00:00",
+   "price_bar_date": "2026-10-21",
+   "equity": 1.0,
+   "cum_pnl": 0.0,
+   "cum_pnl_jpy": 0.0,
+   "peak": 1.0,
+   "max_drawdown": 0.0,
+   "drawdown_now": 0.0,
+   "cum_cost_assumed": 0.0,
+   "cum_cost_jpy": 0.0,
+   "cum_turnover": 0.0,
+   "equity_gross": 1.0,
+   "gross_pnl_jpy": 0.0,
+   "units": {},
+   "halted": false
+  }
+ },
+ "_review_corrections": [
+  {
+   "round": 2,
+   "reviewer": "audit-cld",
+   "at": "2026-10-23T01:24:08.015700+00:00",
+   "items": [
+    "C comparison fields nulled while EQUITY_EW has no fill (comparison_reason added)",
+    "comparison measured from a shared baseline date (comparison_start)",
+    "Book C's own cum_pnl kept as its book P&L from inception at 2026-10-19 (not a comparison)"
+   ],
+   "code": {
+    "old_sha256": "5572700777926e48e155ac2f370ca93c427815ac44361e9a16620ae5f728129f",
+    "new_sha256": "7f5e6589a294aa69d6a0129371ca3caa1e71b3d3ff0379e38ed086f70a92eace"
+   },
+   "journal_sha256": "ed12c32a717d730a6fccc983620cd6c70a4423216499585ad7605b57179c2428"
+  }
+ ]
+}

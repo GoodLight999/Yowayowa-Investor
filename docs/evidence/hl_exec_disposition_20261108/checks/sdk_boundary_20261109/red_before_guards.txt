@@ -1,0 +1,31 @@
+
+==================================== ERRORS ====================================
+__________ ERROR collecting tests/test_hl_exec_sdk_boundary_guards.py __________
+ImportError while importing test module '/home/good-light/vps-work/sessions/t_49064d09/repo/tests/test_hl_exec_sdk_boundary_guards.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../../../../.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_hl_exec_sdk_boundary_guards.py:22: in <module>
+    from yowayowa.hl_exec.client import TESTNET_API_URL, HyperliquidExchangeClient
+src/yowayowa/hl_exec/client.py:32: in <module>
+    from yowayowa.hl_exec.guards import (
+E   ModuleNotFoundError: No module named 'yowayowa.hl_exec.guards'
+___________ ERROR collecting tests/test_hl_exec_testnet_url_guard.py ___________
+ImportError while importing test module '/home/good-light/vps-work/sessions/t_49064d09/repo/tests/test_hl_exec_testnet_url_guard.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../../../../.local/share/uv/python/cpython-3.14.7-linux-x86_64-gnu/lib/python3.14/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_hl_exec_testnet_url_guard.py:10: in <module>
+    from yowayowa.hl_exec.client import TESTNET_API_URL
+src/yowayowa/hl_exec/client.py:32: in <module>
+    from yowayowa.hl_exec.guards import (
+E   ModuleNotFoundError: No module named 'yowayowa.hl_exec.guards'
+=========================== short test summary info ============================
+ERROR tests/test_hl_exec_sdk_boundary_guards.py
+ERROR tests/test_hl_exec_testnet_url_guard.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!!
+2 errors in 0.72s

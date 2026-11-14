@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{% if locale == 'ja' %}発注・約定{% else %}Orders & fills{% endif %} · Yowayowa-Investor{% endblock %}
+{% block content %}
+<section class="page-head broker-execution-head">
+  <div>
+    <h1>{% if locale == 'ja' %}発注・約定{% else %}Orders & fills{% endif %}</h1>
+    <p class="ux-subtitle">{% if locale == 'ja' %}記録済みの提案・評価、注文状況、約定を出典と基準時点を添えて確認します。{% else %}Review recorded proposals and evaluations, order status, and fills with their source and time basis.{% endif %}</p>
+  </div>
+  <div class="broker-execution-controls">
+    <label class="field compact-field">
+      <span>{% if locale == 'ja' %}市場{% else %}Market{% endif %}</span>
+      <select id="execution-market" aria-label="{% if locale == 'ja' %}市場{% else %}Market{% endif %}">
+        <option value="jp">JP</option>
+        <option value="us">US</option>
+      </select>
+    </label>
+    <button id="execution-refresh" class="primary" type="button">{{ t('common.refresh') }}</button>
+  </div>
+</section>
+<p class="broker-readonly-note" role="note">{% if locale == 'ja' %}閲覧専用です。この画面は提案評価・承認・発注・取消・保有反映を行いません。ゲート評価の記録は発注承認を意味しません。{% else %}View only. This page does not evaluate or approve proposals, submit or cancel orders, or update holdings. A recorded gate evaluation is not approval to place an order.{% endif %}</p>
+<p id="execution-updated" class="broker-updated muted" aria-live="polite">{% if locale == 'ja' %}読込前{% else %}Not loaded{% endif %}</p>
+
+<section class="panel broker-section" aria-labelledby="proposal-heading">
+  <div class="section-heading"><h2 id="proposal-heading">{% if locale == 'ja' %}提案・評価・実行記録{% else %}Proposals, evaluations & execution record{% endif %}</h2><span id="proposal-audit-state" class="broker-section-state muted" aria-live="polite">{% if locale == 'ja' %}読込中{% else %}Loading{% endif %}</span></div>
+  <div id="proposal-audit-warning" class="broker-warning" role="alert" hidden></div>
+  <div id="proposal-table" class="table-wrap broker-table-state" aria-live="polite">{% if locale == 'ja' %}提案記録を取得しています。{% else %}Loading proposal records.{% endif %}</div>
+</section>
+
+<section class="panel broker-section" aria-labelledby="orders-heading">
+  <div class="section-heading"><h2 id="orders-heading">{% if locale == 'ja' %}注文状況{% else %}Order status{% endif %}</h2><span id="orders-fetch-state" class="broker-section-state muted" aria-live="polite">{% if locale == 'ja' %}読込中{% else %}Loading{% endif %}</span></div>
+  <div id="orders-warning" class="broker-warning" role="alert" hidden></div>
+  <div id="orders-table" class="table-wrap broker-table-state" aria-live="polite">{% if locale == 'ja' %}注文状況を取得しています。{% else %}Loading order status.{% endif %}</div>
+  <div id="orders-provenance" class="broker-provenance muted"></div>
+</section>
+
+<section class="panel broker-section" aria-labelledby="fills-heading">
+  <div class="section-heading"><h2 id="fills-heading">{% if locale == 'ja' %}約定{% else %}Fills{% endif %}</h2><span id="fills-fetch-state" class="broker-section-state muted" aria-live="polite">{% if locale == 'ja' %}読込中{% else %}Loading{% endif %}</span></div>
+  <div id="fills-warning" class="broker-warning" role="alert" hidden></div>
+  <div id="fills-table" class="table-wrap broker-table-state" aria-live="polite">{% if locale == 'ja' %}約定を取得しています。{% else %}Loading fills.{% endif %}</div>
+  <div id="fills-provenance" class="broker-provenance muted"></div>
+</section>
+{% endblock %}

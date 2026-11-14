@@ -1,0 +1,13 @@
+Command: PATH=/root/current-work/yowayowa-investor/.venv/bin:$PATH python -m pytest tests/test_s07_runner_acceptance.py -q
+Exit code: 1
+Output excerpt:
+...FF...                                                                 [100%]
+E       TypeError: run_day() got an unexpected keyword argument 'sender'
+tests/test_s07_runner_acceptance.py:76: TypeError
+E       TypeError: run_day() got an unexpected keyword argument 'sender'
+tests/test_s07_runner_acceptance.py:84: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_s07_runner_acceptance.py::test_unknown_order_is_not_resent
+FAILED tests/test_s07_runner_acceptance.py::test_confirmed_cancel_allows_only_mock_resend
+
+The existing prototype lacks the specified test-only sender interface. These failures do not establish that the retry behavior has been exercised. Network calls were blocked and no real sender was used. Direct import audit is not a transitive key-access audit.

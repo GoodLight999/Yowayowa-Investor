@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-11-09T01:30:00Z",
+  "host": "TSUKUMO-KUN",
+  "data_kind": "synthetic",
+  "disclaimer": "SYNTHETIC DATA ONLY - PASS means an offline test assertion passed, never an operating result.",
+  "design": "docs/design/S07_REENTRY_DESIGN_20261109.md",
+  "entry_point": "python -m yowayowa.hl_exec.s07_offline.runner",
+  "items": [
+    {
+      "id": "S07-A01",
+      "requirement": 1,
+      "status": "PASS",
+      "tests": 15,
+      "evidence": "tests/test_s07_offline_marketdata_synthetic.py",
+      "reason": "confirmed bars only; unconfirmed/future excluded with reasons; mainnet/unknown/mixed/fake provenance rejected; response hash binding; UTC-day length; gaps detected without interpolation; warmup separated from the trading window.",
+      "limits": ["offline fixture proves only its own premise, not provider-side testnet authenticity"]
+    },
+    {
+      "id": "S07-A02",
+      "requirement": 2,
+      "status": "PASS",
+      "tests": 3,
+      "evidence": "tests/test_s07_offline_execution_synthetic.py",
+      "reason": "dry-run outputs live under <tmp>/dry-run/<run_id> with 0700/0600 and O_EXCL|O_NOFOLLOW; same/parent/child paths, relative paths, .., symlink components, symlinked container, run-root reuse and hardlinked outputs are rejected; a mock real-ledger tree is unchanged (inode/size/mtime/sha256) and received zero opens during the run; network blocked with a positive control.",
+      "limits": ["real ledger was not opened; a mock ledger stands in for it", "no file-lock API exists in this module, so lock attempts are zero by construction"]
+    },
+    {
+      "id": "S07-A03",
+      "requirement": 3,
+      "status": "PASS",
+      "tests": 4,
+      "evidence": "tests/test_s07_offline_execution_synthetic.py",
+      "reason": "individual fee and signed funding applied exactly once; rebate sign preserved; net = gross - fees + funding verified on synthetic fills; currency mismatch and missing fee become INCONCLUSIVE/rejected.",
+      "limits": ["S07-A03 real-trade authenticity: NOT-IMPLEMENTED (requires real account fills/funding and an independent adjudication)"]
+    },
+    {
+      "id": "S07-A04",
+      "requirement": 4,
+      "status": "PASS",
+      "tests": 4,
+      "evidence": "tests/test_s07_offline_reporting_synthetic.py",
+      "reason": "candidate peak-relative drawdown on [100,120,108] is 10% with the running peak as denominator; fixed-100 12% is explicitly excluded; outside-window samples excluded; daily-UTC-end frequency and non-guarantee of intraday max DD are reported; missing/non-positive/non-finite/external-flow become INCONCLUSIVE.",
+      "limits": ["official verdict is HELD_PENDING_ADJUDICATION because the frozen source's window semantics are unconfirmed"]
+    },
+    {
+      "id": "S07-A05",
+      "requirement": 5,
+      "status": "PASS",
+      "tests": 5,
+      "evidence": "tests/test_s07_offline_execution_synthetic.py",
+      "reason": "identical duplicates applied once with count/hash; same-id conflicts rejected; out-of-window fills quarantined with evidence; 2000-row saturation and exact-limit final pages cannot prove completeness; missing expected funding payments detected; corrections are append-only with source/reason and never overwrite the original fill.",
+      "limits": []
+    },
+    {
+      "id": "S07-A06",
+      "requirement": 6,
+      "status": "PASS",
+      "tests": 6,
+      "evidence": "tests/test_s07_offline_execution_synthetic.py",
+      "reason": "cumulative partial-fill quantity, remaining size, weighted price and fee sum verified; overfill rejected; cancel preserves fills; round trip completes only when entry/exit sizes match and position/open orders/reconciliation are closed; timeout goes through guards.send_order_once and is never resent (send count 1, unresolved raises).",
+      "limits": ["only synthetic fills and a fake exchange object; no real exchange state"]
+    },
+    {
+      "id": "S07-A07",
+      "requirement": 7,
+      "status": "PASS",
+      "tests": 6,
+      "evidence": "tests/test_s07_offline_execution_synthetic.py",
+      "reason": "events.jsonl records stage failures incrementally with fsync; report.json contains error class, safe message, input hash, retry decision and unresolved order ids; a refused report write exits 2 with stderr and no report.json; secrets are redacted; UNKNOWN order makes retryable=false.",
+      "limits": ["failure injection is synthetic; no real transport failure was produced"]
+    },
+    {
+      "id": "S07-A08",
+      "requirement": 8,
+      "status": "PASS",
+      "tests": 8,
+      "evidence": "tests/test_s07_offline_reporting_synthetic.py",
+      "reason": "JSON and Markdown require data_kind; synthetic/mixed are marked non-official with a Japanese disclaimer; missing/unknown labels are rejected; acceptance PASS is kept separate from official_result=false.",
+      "limits": []
+    },
+    {
+      "id": "S07-A09",
+      "requirement": 9,
+      "status": "PASS",
+      "tests": 5,
+      "evidence": "tests/test_s07_offline_reporting_synthetic.py",
+      "reason": "frozen values (8 round trips, net > 0, 10%, 5bp, 28-day window) and equality/inequality boundaries are asserted unchanged; 11/03 row is excluded from the active window; endpoint sensitivity is flagged and the official verdict stays held.",
+      "limits": ["official adjudication of the window endpoint: SKIP (requires the frozen-source owner's ruling, not code)"]
+    }
+  ]
+}

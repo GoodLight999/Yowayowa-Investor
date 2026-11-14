@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Yowayowa strategy research snapshot generation
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+Unit=yowayowa-snapshot.service
+
+[Install]
+WantedBy=timers.target

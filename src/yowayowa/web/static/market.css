@@ -1,0 +1,62 @@
+.market-hero { align-items: flex-start; }
+.market-overview { display: grid; gap: 18px; padding-top: 18px; }
+.market-category { display: grid; gap: 8px; }
+.market-category-heading { margin-bottom: 0; padding-inline: 1px; }
+.market-category-heading .eyebrow { margin-bottom: 3px; }
+.market-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+.market-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.market-card:hover { border-color: var(--line-strong); background: #16191e; }
+.market-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.market-card-heading small { color: var(--faint); font-family: var(--mono); font-size: 9px; letter-spacing: 0; }
+.market-card h3 { margin: 3px 0 0; font-size: 13px; letter-spacing: -.01em; }
+.market-value {
+  margin: 14px 0 11px;
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.025em;
+}
+.market-sparkline-wrap { width: 108px; min-width: 108px; height: 38px; }
+.market-sparkline { display: block; width: 100%; height: 100%; overflow: visible; }
+.market-sparkline polyline {
+  fill: none;
+  stroke: var(--accent-2);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.market-change-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+.market-change-grid span { display: grid; gap: 2px; min-width: 0; padding-right: 6px; }
+.market-change-grid small { color: var(--faint); font-size: 9px; letter-spacing: 0; }
+.market-change-grid strong {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.market-positive { color: var(--positive); }
+.market-negative { color: var(--negative); }
+.market-provenance-panel { margin-top: 18px; }
+
+@media (max-width: 800px) {
+  .market-card-grid { grid-template-columns: 1fr; }
+  .market-sparkline-wrap { width: 94px; min-width: 94px; }
+  .market-change-grid strong { font-size: 10px; }
+}

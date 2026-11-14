@@ -1,0 +1,8 @@
+{
+  "request": {
+    "type": "extraAgents",
+    "user": "0xc6f0c5c7aca59cd8ba4d56ed798102bc00cf66e5"
+  },
+  "http_status": 200,
+  "response": []
+}

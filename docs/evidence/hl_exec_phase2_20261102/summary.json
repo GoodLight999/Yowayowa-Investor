@@ -1,0 +1,548 @@
+{
+  "generated_at_jst": "2026-11-02T11:55:11+09:00",
+  "endpoint": "https://api.hyperliquid-testnet.xyz/info",
+  "account_address": "0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82",
+  "calls": [
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "clearinghouseState",
+        "user": "0xF6cB1079F73cA0163E2EfF24eFbB651f99E2Dd82"
+      },
+      "http_status": 200,
+      "elapsed_ms": 135.1,
+      "response_bytes": 319
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "meta"
+      },
+      "http_status": 200,
+      "elapsed_ms": 162.9,
+      "response_bytes": 16879
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "l2Book",
+        "coin": "BTC"
+      },
+      "http_status": 200,
+      "elapsed_ms": 86.8,
+      "response_bytes": 1547
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "meta"
+      },
+      "http_status": 200,
+      "elapsed_ms": 97.1,
+      "response_bytes": 16879
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "l2Book",
+        "coin": "BTC"
+      },
+      "http_status": 200,
+      "elapsed_ms": 87.9,
+      "response_bytes": 1547
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "l2Book",
+        "coin": "ETH"
+      },
+      "http_status": 200,
+      "elapsed_ms": 85.9,
+      "response_bytes": 1468
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "l2Book",
+        "coin": "SOL"
+      },
+      "http_status": 200,
+      "elapsed_ms": 86.2,
+      "response_bytes": 1379
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "l2Book",
+        "coin": "DOGE"
+      },
+      "http_status": 200,
+      "elapsed_ms": 84.6,
+      "response_bytes": 1563
+    },
+    {
+      "url": "https://api.hyperliquid-testnet.xyz/info",
+      "request": {
+        "type": "l2Book",
+        "coin": "HYPE"
+      },
+      "http_status": 200,
+      "elapsed_ms": 83.6,
+      "response_bytes": 796
+    }
+  ],
+  "account": {
+    "account_value": 100.0,
+    "total_margin_used": 0.0,
+    "total_ntl_pos": 0.0,
+    "withdrawable": 100.0,
+    "cross_account_value": "100.0",
+    "positions": [],
+    "time": 1793588110247
+  },
+  "btc": {
+    "ask": 77541.0,
+    "bid": 77511.0,
+    "mid": 77526.0,
+    "spread_bps": 3.869669530222119,
+    "szDecimals": 5,
+    "asset_index": 3,
+    "maxLeverage": 40
+  },
+  "risk": {
+    "equity_usdc": 100.0,
+    "withdrawable_usdc": 100.0,
+    "btc_ask": 77541.0,
+    "btc_mid": 77526.0,
+    "design_margin_cap_usdc": 10.0,
+    "design_notional_cap_usdc": 30.0,
+    "notional_from_leverage_usdc": 30.0,
+    "boundary": {
+      "max_size_allowed": 0.00038,
+      "max_size_notional_usdc": 29.46558,
+      "max_size_gates": [
+        {
+          "rule": "isolated_margin_per_position",
+          "ok": true,
+          "value": 10.0,
+          "limit": 20.0,
+          "reason": ""
+        },
+        {
+          "rule": "max_concurrent_positions",
+          "ok": true,
+          "value": 0.0,
+          "limit": 1.0,
+          "reason": ""
+        },
+        {
+          "rule": "position_notional_cap",
+          "ok": true,
+          "value": 29.46558,
+          "limit": 60.0,
+          "reason": ""
+        },
+        {
+          "rule": "min_notional",
+          "ok": true,
+          "value": 29.46558,
+          "limit": 10.0,
+          "reason": ""
+        },
+        {
+          "rule": "leverage_cap",
+          "ok": true,
+          "value": 2.946558,
+          "limit": 3.0,
+          "reason": ""
+        },
+        {
+          "rule": "margin_preflight",
+          "ok": true,
+          "value": 100.0,
+          "limit": 15.0,
+          "reason": ""
+        }
+      ],
+      "one_step_over_size": 0.00039,
+      "one_step_over_notional_usdc": 30.24099,
+      "one_step_over_gates": [
+        {
+          "rule": "isolated_margin_per_position",
+          "ok": true,
+          "value": 10.0,
+          "limit": 20.0,
+          "reason": ""
+        },
+        {
+          "rule": "max_concurrent_positions",
+          "ok": true,
+          "value": 0.0,
+          "limit": 1.0,
+          "reason": ""
+        },
+        {
+          "rule": "position_notional_cap",
+          "ok": true,
+          "value": 30.240990000000004,
+          "limit": 60.0,
+          "reason": ""
+        },
+        {
+          "rule": "min_notional",
+          "ok": true,
+          "value": 30.240990000000004,
+          "limit": 10.0,
+          "reason": ""
+        },
+        {
+          "rule": "leverage_cap",
+          "ok": false,
+          "value": 3.0240990000000005,
+          "limit": 3.0,
+          "reason": "leverage 3.0241 exceeds cap 3.0"
+        },
+        {
+          "rule": "margin_preflight",
+          "ok": true,
+          "value": 100.0,
+          "limit": 15.0,
+          "reason": ""
+        }
+      ],
+      "min_size_allowed": 0.00012,
+      "below_min_size": 0.00011,
+      "below_min_notional_usdc": 8.52951,
+      "below_min_gates": [
+        {
+          "rule": "isolated_margin_per_position",
+          "ok": true,
+          "value": 10.0,
+          "limit": 20.0,
+          "reason": ""
+        },
+        {
+          "rule": "max_concurrent_positions",
+          "ok": true,
+          "value": 0.0,
+          "limit": 1.0,
+          "reason": ""
+        },
+        {
+          "rule": "position_notional_cap",
+          "ok": true,
+          "value": 8.52951,
+          "limit": 60.0,
+          "reason": ""
+        },
+        {
+          "rule": "min_notional",
+          "ok": false,
+          "value": 8.52951,
+          "limit": 10.0,
+          "reason": "notional 8.52951 below floor 10.0"
+        },
+        {
+          "rule": "leverage_cap",
+          "ok": true,
+          "value": 0.852951,
+          "limit": 3.0,
+          "reason": ""
+        },
+        {
+          "rule": "margin_preflight",
+          "ok": true,
+          "value": 100.0,
+          "limit": 15.0,
+          "reason": ""
+        }
+      ],
+      "two_positions_gates": [
+        {
+          "rule": "isolated_margin_per_position",
+          "ok": true,
+          "value": 10.0,
+          "limit": 20.0,
+          "reason": ""
+        },
+        {
+          "rule": "max_concurrent_positions",
+          "ok": false,
+          "value": 2.0,
+          "limit": 1.0,
+          "reason": "2 open positions exceeds cap 1"
+        },
+        {
+          "rule": "position_notional_cap",
+          "ok": true,
+          "value": 29.46558,
+          "limit": 60.0,
+          "reason": ""
+        },
+        {
+          "rule": "min_notional",
+          "ok": true,
+          "value": 29.46558,
+          "limit": 10.0,
+          "reason": ""
+        },
+        {
+          "rule": "leverage_cap",
+          "ok": true,
+          "value": 2.946558,
+          "limit": 3.0,
+          "reason": ""
+        },
+        {
+          "rule": "margin_preflight",
+          "ok": true,
+          "value": 100.0,
+          "limit": 15.0,
+          "reason": ""
+        }
+      ]
+    },
+    "module_absolute_boundary": {
+      "module_margin_cap_usdc": 20.0,
+      "at_cap_ok": true,
+      "at_cap_usdc": 20.01,
+      "just_over_cap_ok": false,
+      "at_cap_share_of_real_equity": 0.2
+    },
+    "min_tradable_size": 0.00013,
+    "min_tradable_notional_usdc": 10.08033,
+    "stop_levels": {
+      "daily_loss_stop_threshold_usdc": 2.0,
+      "daily_loss_stop_triggered_at": -2.0,
+      "daily_stop_hit_at_threshold": true,
+      "daily_stop_hit_just_before": false,
+      "drawdown_stop_threshold_usdc": 4.0,
+      "drawdown_hit_at_threshold": true,
+      "drawdown_hit_just_before": false,
+      "liquidation_distance_ok_0_15": true,
+      "liquidation_distance_ok_0_1499": false
+    }
+  },
+  "rounding": {
+    "per_symbol_price_rounding": [
+      {
+        "coin": "BTC",
+        "szDecimals": 5,
+        "max_price_decimals": 1,
+        "mid_px": 77526.0,
+        "rounded_px": 77526.0,
+        "rounded_px_wire": "77526",
+        "price_is_valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "ETH",
+        "szDecimals": 4,
+        "max_price_decimals": 2,
+        "mid_px": 2304.75,
+        "rounded_px": 2304.7,
+        "rounded_px_wire": "2304.7",
+        "price_is_valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "SOL",
+        "szDecimals": 2,
+        "max_price_decimals": 4,
+        "mid_px": 97.483,
+        "rounded_px": 97.483,
+        "rounded_px_wire": "97.483",
+        "price_is_valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "DOGE",
+        "szDecimals": 0,
+        "max_price_decimals": 6,
+        "mid_px": 0.075521,
+        "rounded_px": 0.075521,
+        "rounded_px_wire": "0.075521",
+        "price_is_valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "HYPE",
+        "szDecimals": 2,
+        "max_price_decimals": 4,
+        "mid_px": 82.056,
+        "rounded_px": 82.056,
+        "rounded_px_wire": "82.056",
+        "price_is_valid": true,
+        "truncated": true
+      }
+    ],
+    "btc_size_rounding": {
+      "szDecimals": 5,
+      "tick": 1e-05,
+      "samples": [
+        {
+          "requested": 0.000789012,
+          "rounded": 0.00078,
+          "valid": true
+        },
+        {
+          "requested": 0.0012345,
+          "rounded": 0.00123,
+          "valid": true
+        },
+        {
+          "requested": 0.000999949,
+          "rounded": 0.00099,
+          "valid": true
+        },
+        {
+          "requested": 0.3333333333333333,
+          "rounded": 0.33333,
+          "valid": true
+        }
+      ]
+    },
+    "price_rule_examples": [
+      {
+        "coin": "BTC",
+        "szDecimals": 5,
+        "input": "78012.1",
+        "rounded": 78012.0,
+        "wire": "78012",
+        "valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "BTC",
+        "szDecimals": 5,
+        "input": "12345.6",
+        "rounded": 12345.0,
+        "wire": "12345",
+        "valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "BTC",
+        "szDecimals": 5,
+        "input": "1234.5",
+        "rounded": 1234.5,
+        "wire": "1234.5",
+        "valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "BTC",
+        "szDecimals": 5,
+        "input": "0.1234567",
+        "rounded": 0.1,
+        "wire": "0.1",
+        "valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "ETH",
+        "szDecimals": 4,
+        "input": "78012.1",
+        "rounded": 78012.0,
+        "wire": "78012",
+        "valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "ETH",
+        "szDecimals": 4,
+        "input": "12345.6",
+        "rounded": 12345.0,
+        "wire": "12345",
+        "valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "ETH",
+        "szDecimals": 4,
+        "input": "1234.5",
+        "rounded": 1234.5,
+        "wire": "1234.5",
+        "valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "ETH",
+        "szDecimals": 4,
+        "input": "0.1234567",
+        "rounded": 0.12,
+        "wire": "0.12",
+        "valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "DOGE",
+        "szDecimals": 0,
+        "input": "78012.1",
+        "rounded": 78012.0,
+        "wire": "78012",
+        "valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "DOGE",
+        "szDecimals": 0,
+        "input": "12345.6",
+        "rounded": 12345.0,
+        "wire": "12345",
+        "valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "DOGE",
+        "szDecimals": 0,
+        "input": "1234.5",
+        "rounded": 1234.5,
+        "wire": "1234.5",
+        "valid": true,
+        "truncated": true
+      },
+      {
+        "coin": "DOGE",
+        "szDecimals": 0,
+        "input": "0.1234567",
+        "rounded": 0.12345,
+        "wire": "0.12345",
+        "valid": true,
+        "truncated": true
+      }
+    ]
+  },
+  "assembled": {
+    "asset_index": 3,
+    "coin": "BTC",
+    "szDecimals": 5,
+    "assembled": {
+      "wire": {
+        "a": 3,
+        "b": true,
+        "p": "77541",
+        "s": "0.00038",
+        "r": false,
+        "t": {
+          "limit": {
+            "tif": "Ioc"
+          }
+        }
+      },
+      "coin": "BTC",
+      "is_buy": true,
+      "price": 77541.0,
+      "size": 0.00038,
+      "notional_usdc": 29.465580000000003,
+      "reduce_only": false,
+      "tif": "Ioc"
+    },
+    "notional_cap_oversize_rejected_with": "notional 119.41314 exceeds cap 60.0 USDC (reject before submit)",
+    "sent": false
+  },
+  "signature_calls": 0,
+  "exchange_calls": 0,
+  "key_reads": 0
+}
