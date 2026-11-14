@@ -22,14 +22,34 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+from .paths import (
+    DEFAULT_HERMES_ROOT,
+    DEFAULT_SECRETS_ROOT,
+    hermes_root,
+    read_env_lines,
+    secrets_root,
+)
+
 logger = logging.getLogger("paper_c2.alpaca")
 
 LIVE_API_PATTERN = re.compile(r"^https://api\.alpaca\.markets")
 DEFAULT_PAPER_BASE_URL = "https://paper-api.alpaca.markets/v2"
 DEFAULT_DATA_BASE_URL = "https://data.alpaca.markets/v2"
-SECRET_ENV_PATH = Path("/root/.secrets/alpaca_paper.env")
-HERMES_ENV_PATH = Path("/root/.hermes/.env")
+# 既定は現行の絶対パス。根だけ YOWAYOWA_SECRETS_ROOT / YOWAYOWA_HERMES_ROOT で
+# 差し替えられる（:func:`secrets_env_path` / :func:`hermes_env_path`）。
+SECRET_ENV_PATH = Path(DEFAULT_SECRETS_ROOT) / "alpaca_paper.env"
+HERMES_ENV_PATH = Path(DEFAULT_HERMES_ROOT) / ".env"
 PHASE_START_DATE = date(2026, 11, 3)
+
+
+def secrets_env_path() -> Path:
+    """Alpaca paper secret file (default ``/root/.secrets/alpaca_paper.env``)."""
+    return secrets_root() / SECRET_ENV_PATH.name
+
+
+def hermes_env_path() -> Path:
+    """Hermes ``.env`` fallback (default ``/root/.hermes/.env``)."""
+    return hermes_root() / HERMES_ENV_PATH.name
 
 # The only code path allowed to issue the blanket DELETE /v2/orders is the kill
 # switch. That exact call silently canceled the whole 2026-11-02 batch 3h28m
@@ -87,13 +107,12 @@ class AlpacaPaperClient:
         if os.environ.get(key_name):
             return os.environ[key_name].strip()
         # 2. /root/.secrets/alpaca_paper.env
-        if SECRET_ENV_PATH.exists():
-            for line in SECRET_ENV_PATH.read_text().splitlines():
-                if line.startswith(f"{key_name}="):
-                    return line.split("=", 1)[1].strip().strip('"').strip("'")
         # 3. /root/.hermes/.env
-        if HERMES_ENV_PATH.exists():
-            for line in HERMES_ENV_PATH.read_text().splitlines():
+        # 既定は現行の絶対パスのまま（YOWAYOWA_SECRETS_ROOT / YOWAYOWA_HERMES_ROOT で
+        # 根だけ差し替え可）。stat すら許されないホスト（例: CI ランナーの /root）でも
+        # 落ちないよう、読めないファイルは「無い」ものとして扱う。
+        for path in (secrets_env_path(), hermes_env_path()):
+            for line in read_env_lines(path):
                 if line.startswith(f"{key_name}="):
                     return line.split("=", 1)[1].strip().strip('"').strip("'")
         return ""

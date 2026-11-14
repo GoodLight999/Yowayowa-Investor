@@ -446,7 +446,12 @@ def test_cli_delete_force_flag_and_409_exit_code(monkeypatch: pytest.MonkeyPatch
 
 
 def test_cli_portfolio_delete_help_exits_zero() -> None:
-    result = runner.invoke(cli_app, ["portfolio", "delete", "--help"])
+    # 幅を明示する: Rich の help は端末幅依存で、狭い幅ではオプション名が
+    # ellipsis に畳まれて "--force" が消える (CI の verify で実際 1 件落ちた)。
+    # Rich は COLUMNS を読むので、端末幅の無いランナーでもこれで固定できる。
+    result = runner.invoke(
+        cli_app, ["portfolio", "delete", "--help"], env={"COLUMNS": "200", "TERM": "dumb"}
+    )
     assert result.exit_code == 0, result.output
     assert "--force" in result.output
     assert "--yes" in result.output

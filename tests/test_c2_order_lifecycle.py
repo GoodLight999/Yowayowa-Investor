@@ -26,6 +26,15 @@ WEIGHTS_25 = {"SPY": 0.25, "IWM": 0.25, "JNJ": 0.25, "PG": 0.25, "USD": 0.0}
 EQUITY = 100_000.0
 
 
+@pytest.fixture(autouse=True)
+def _isolate_c2_live_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """C2 の本番既定パス (`/root/...`) を tmp へ向ける (既定値は本番のまま)。"""
+    monkeypatch.setenv("C2_DGS1_PATHS", str(tmp_path / "no-dgs1.jsonl"))
+    monkeypatch.setenv("YOWAYOWA_DATA_ROOT", str(tmp_path / "no-data"))
+    monkeypatch.setenv("YOWAYOWA_HERMES_ROOT", str(tmp_path / "no-hermes"))
+    monkeypatch.setenv("YOWAYOWA_SECRETS_ROOT", str(tmp_path / "no-secrets"))
+
+
 # --------------------------------------------------------------------------- #
 # fake broker
 # --------------------------------------------------------------------------- #

@@ -47,11 +47,12 @@ from .c2_order_lifecycle import (
 )
 from .c2_order_lifecycle import summarize as summarize_order_lifecycle
 from .c2_strategy import compute_rule_weights
+from .paths import data_root
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("paper_c2.runner")
 
-DATA_DIR = Path("/root/current-work/yowayowa-investor/data/paper_c2")
+DATA_DIR = data_root() / "paper_c2"
 STATE_FILE = DATA_DIR / "state.json"
 MTM_FILE = DATA_DIR / "mtm_history.jsonl"
 ORDERS_FILE = DATA_DIR / "orders.jsonl"

@@ -30,6 +30,21 @@ from tests.c2_synthetic_history import detached_copy, synthetic_base_history
 C2_SYMBOLS = ("SPY", "IWM", "JNJ", "PG")
 SESSION_DATE = date(2026, 11, 3)
 
+
+@pytest.fixture(autouse=True)
+def _isolate_c2_live_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """C2 の本番既定パス (`/root/...`) を tmp へ向ける。
+
+    既定値は本番 (VPS の cron / systemd) 用にそのまま残し、テストからだけ
+    差し替える。CI ランナーは ``/root`` を stat できず、既定パスを素で触ると
+    PermissionError で落ちる (scripts/paper_c2/paths.py が解決する)。
+    """
+    monkeypatch.setenv("C2_DGS1_PATHS", str(tmp_path / "no-dgs1.jsonl"))
+    monkeypatch.setenv("YOWAYOWA_DATA_ROOT", str(tmp_path / "no-data"))
+    monkeypatch.setenv("YOWAYOWA_HERMES_ROOT", str(tmp_path / "no-hermes"))
+    monkeypatch.setenv("YOWAYOWA_SECRETS_ROOT", str(tmp_path / "no-secrets"))
+
+
 LEGACY_MTM_KEYS = {
     "date",
     "last_bar_date",
@@ -450,6 +465,9 @@ def _collect(data_dir: Path, tmp_path: Path) -> tuple[list[str], dict[str, Any]]
         job_id="test",
         phase_start=date(2026, 11, 3),
         now=datetime.fromisoformat("2026-11-06T09:30:00+09:00"),
+        # 明示的に隔離する: 既定は本番の cron 出力 (/root/.hermes/cron/output/<job>) で、
+        # stat すら許されないホストでは存在確認だけで落ちる。証跡の無い tmp を渡す。
+        output_dir=tmp_path / "no-cron-output",
     )
 
 

@@ -24,6 +24,9 @@ import yowayowa.paperloop as pl
 START = date(2026, 10, 26)  # Monday — the window starts here either way
 WINDOW = pl._a_half_20bd_business_days(START)
 STAMP_BASE = datetime(2026, 10, 1, 1, 0, tzinfo=UTC)
+# A_HALF の prereg 登録行 (2026-10-25 登録・row_hash 5cd8e914…) の複製。
+# 本番の data/demo-loop/prereg.jsonl は gitignore 配下で CI には無い。
+PREREG_FIXTURE = Path(__file__).parent / "fixtures" / "paperloop" / "prereg_a_half_20261025.jsonl"
 
 
 def _stamp(index: int) -> str:
@@ -269,6 +272,27 @@ def test_a_and_c_blocks_keep_their_shape(tmp_path: Path) -> None:
             assert set(collected[book]) == {"weeks"}, (book, collected[book].keys())
 
 
+def _prereg_rows() -> list[dict]:
+    """A_HALF の prereg 行 (本番の prereg が読めなければ複製 fixture)。
+
+    本番の prereg は ``data/demo-loop/prereg.jsonl`` (``.gitignore`` の ``data/``
+    配下) にあり、CI には存在しない。存在すればそれを、無ければ登録行をそのまま
+    複製した ``tests/fixtures/paperloop/prereg_a_half_20261025.jsonl`` を読む。
+    複製側は :func:`_assert_row_hash` で本文から row_hash を再計算して改変を弾く。
+    """
+    live = pl.prereg_path(pl.loop_root(Path("./data")))
+    source = live if live.is_file() else PREREG_FIXTURE
+    return [row for row in pl._rows_from_jsonl(source) if row.get("book_id") == pl.BOOK_A_HALF]
+
+
+def _assert_row_hash(row: dict) -> None:
+    """row_hash は「row_hash 以外の全項目」の canonical JSON の sha256 (pl と同じ式)。"""
+    body = json.dumps(
+        {k: v for k, v in row.items() if k != "row_hash"}, sort_keys=True, default=str
+    )
+    assert row["row_hash"] == pl._sha256(body)
+
+
 def test_gate_thresholds_match_prereg_text() -> None:
     """Frozen thresholds are 1:1 with the pre-registered wording."""
 
@@ -278,12 +302,9 @@ def test_gate_thresholds_match_prereg_text() -> None:
         "max_drawdown_max": 0.03,  # 最大DD <= 3.0%
         "dd_vs_benchmark": 0.6,  # DD比 <= 0.6
     }
-    prereg = [
-        row
-        for row in pl._rows_from_jsonl(pl.prereg_path(pl.loop_root(Path("./data"))))
-        if row.get("book_id") == pl.BOOK_A_HALF
-    ]
+    prereg = _prereg_rows()
     assert len(prereg) == 1
+    _assert_row_hash(prereg[0])
     rule = prereg[0]["judgment_rule"]
     assert "20営業日連続" in rule
     assert "equity>=1.0" in rule

@@ -49,6 +49,8 @@ from typing import Any
 
 from yowayowa.trading_sessions import is_session_day
 
+from .paths import hermes_root, safe_is_dir
+
 JST = timezone(timedelta(hours=9))
 DEFAULT_DATA_DIR = Path("/root/current-work/yowayowa-investor/data/paper_c2")
 DEFAULT_OHLCV_DIR = Path("/root/current-work/yowayowa-investor/data/stock-ohlcv")
@@ -59,7 +61,17 @@ JOB_ID = "9f57d9154cfb"
 # finished run, filename <YYYY-MM-DD>_HH-MM-SS.md in server-local = JST days;
 # pruned to the newest cron.output_retention = 50 files per job). This is the
 # durable "did it run today" evidence, unlike the executions.db rolling window.
+#
+# 既定は現行の絶対パス（/root/.hermes/cron/output/<JOB_ID>）のまま。別ホストで
+# 動かすときは YOWAYOWA_HERMES_ROOT で根を差し替える（scripts/paper_c2/paths.py）。
 DEFAULT_OUTPUT_DIR = Path("/root/.hermes/cron/output") / JOB_ID
+
+
+def default_output_dir() -> Path:
+    """Per-run stdout root, resolved per call so ``YOWAYOWA_HERMES_ROOT`` applies."""
+    return hermes_root() / "cron" / "output" / JOB_ID
+
+
 PHASE_START = date(2026, 11, 3)
 UNIVERSE = ("SPY", "IWM", "JNJ", "PG")
 
@@ -238,7 +250,7 @@ def _today_output_file(output_dir: Path, today_jst: date) -> dict[str, Any] | No
     way an executions.db row can. Filename dates are server-local days (JST here:
     hermes_time.now has no timezone override on this host).
     """
-    if not output_dir.is_dir():
+    if not safe_is_dir(output_dir):
         return None
     best: dict[str, Any] | None = None
     best_mtime = -1.0
@@ -319,7 +331,7 @@ def collect_problems(
     facts["mtm_rows"] = len(mtm_rows)
 
     if output_dir is None:
-        output_dir = DEFAULT_OUTPUT_DIR
+        output_dir = default_output_dir()
     if today >= phase_start:
         # --- 本日実行の判定根拠（t_cb7127a7）-----------------------------------
         # 主根拠: cron runner 自身の per-run stdout 証跡

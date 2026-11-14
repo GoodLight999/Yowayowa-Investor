@@ -21,6 +21,8 @@ from pathlib import Path
 from statistics import fmean, stdev
 from typing import Any
 
+from .paths import data_root, read_text_or_none
+
 C2_UNIVERSE = ["SPY", "IWM", "JNJ", "PG"]
 VOL_SYMBOL = "SPY"
 LOOKBACK_VOL = 21
@@ -204,31 +206,51 @@ def _extract_date(bar: dict[str, Any]) -> date | None:
         return None
 
 
+def _last_value_in(path: Path) -> float | None:
+    """Last DGS1-shaped value in ``path`` (``None`` if absent/unreadable/empty)."""
+    text = read_text_or_none(path)
+    if text is None:
+        return None
+    for line in reversed(text.splitlines()):
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if "DGS1" in row:
+            val = float(row["DGS1"])
+            return val / 100.0 if val > 1.0 else val
+        if row.get("series") == "DGS1" and "value" in row:
+            val = float(row["value"])
+            return val / 100.0 if val > 1.0 else val
+    return None
+
+
+def _default_dgs1_paths() -> list[Path]:
+    """VPS 既定の探索順（``YOWAYOWA_DATA_ROOT`` で差し替え可能）。
+
+    既定は現行の絶対パスと同じ並び。ここを変えると本番の DGS1 読み取りが
+    変わるため、既定値は動かさない。
+    """
+    root = data_root()
+    return [
+        root / "macro-observations" / "fred.jsonl",
+        root / "macro-observations" / "treasury.jsonl",
+        root / "gates" / "dgs1.jsonl",
+    ]
+
+
 def _load_latest_dgs1(as_of: date) -> float:
     """Read DGS1 rate from local files or default to 0.0412 (4.12%)."""
     configured_paths = os.environ.get("C2_DGS1_PATHS")
     search_paths = (
         [Path(path) for path in configured_paths.split(os.pathsep) if path]
         if configured_paths is not None
-        else [
-            Path("/root/current-work/yowayowa-investor/data/macro-observations/fred.jsonl"),
-            Path("/root/current-work/yowayowa-investor/data/macro-observations/treasury.jsonl"),
-            Path("/root/current-work/yowayowa-investor/data/gates/dgs1.jsonl"),
-        ]
+        else _default_dgs1_paths()
     )
     for p in search_paths:
-        if p.exists():
-            try:
-                for line in reversed(p.read_text().splitlines()):
-                    if not line.strip():
-                        continue
-                    row = json.loads(line)
-                    if "DGS1" in row:
-                        val = float(row["DGS1"])
-                        return val / 100.0 if val > 1.0 else val
-                    if row.get("series") == "DGS1" and "value" in row:
-                        val = float(row["value"])
-                        return val / 100.0 if val > 1.0 else val
-            except Exception:
-                continue
+        try:
+            val = _last_value_in(p)
+        except Exception:
+            continue
+        if val is not None:
+            return val
     return 0.0412  # Standard 4.12% Treasury rate benchmark
