@@ -18,6 +18,8 @@ full bootstrap CIは[-2.9049%, 16.2959%]でゼロを跨ぐ。full/OOS CAGRはEW 
 決定日より厳密に前のSPY終値lookback+1本からlookback個のリターンを作り、標本標準偏差σ21を計算。`σ*=target_vol/sqrt(252)`、`w=min(1,σ*/σ21)`、各株式w/4。σ=0はw=1、履歴不足・非有限σはw=0。ゼロでも4銘柄を含む明示dictで旧保有を全売却する。既存inverse_volatility/rankingは使わず、warmup/purge=22。現金はUSD無利息、w<=1。
 既存の売買・損益計算ループは無改修。テストで(a)リバランス後かつintraday横ばい時cash==equity*(1-w)を厳密比較、(b)w<1・価格横ばい時の日次リターンはコストのみ、(c)w=1→0.5はturnover=0.5・cost=0.5*0.0015、全売却と非リバランスのovernight/intradayドリフトで現金残高不変（浮動小数誤差1e-15許容）を固定した。横ばい全期間にw<1を保つ検査では非ゼロσだけを制御し、現金・P&L・ターゲット分岐は実エンジンを使用。実際の変動pre-window履歴→横ばいリバランスの厳密現金値も別テストで確認。
 
+12週マイルストーンのswitch期待値年率（`MILESTONE_SWITCH_EXPECTED_ANNUAL` の帳簿C/S-02分）の凍結値は、本レポートのバックテスト本体とは別の専用採番runが出所: 実装定義ミラー（SMA200クロス・資産別カーソル）で窓2021-01-04..2026-09-28（本レポートの評価期間と同一）を生価格basisで数え、rate = switches/span_days × 365、1dp ROUND_HALF_UP。採番スクリプト `scripts/research/book_c_switch_rate_numbering.py`（コミット 6d9459664e044cf085572525d521488afab05bd0）・成果物 `scripts/research/book_c_switch_rate_numbering_result.json`（sha256 3c14ffb1…、値は `results.<SYMBOL>.primary.rate_1dp` を逐語使用）。凍結は役員決定 t_be52f5bc 決定A、配線は t_5a2489f5: SPY=5.6 / IWM=7.7 / JNJ=10.5 / PG=14.6。採番は生価格basis（ランタイムのデータストアと同一・TR調整なし）のため、ランタイムのデータbasisがTR調整に変わった場合（AS-TR-01/02 の是正時）はBOOK_Cのレートを再採番して凍結し直す。
+
 ## 実測比較 — full / IS / purge / OOS
 
 ISは既存エンジンの`int(len(window_dates)*0.7)`で1007観測（2021-01-04〜2025-01-03）。浮動小数点のint規約を変更していない。S-02は22観測purge（2025-01-06〜2025-02-06）後、2025-02-07から411観測OOS。EWはpurge=0、2025-01-06から433観測OOS。
