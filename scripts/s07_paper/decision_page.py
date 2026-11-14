@@ -49,6 +49,9 @@ CI_LABEL = "bootstrap 2,000回・seed=20261107（cascade_sim.boot_ci）"
 
 SCHEMA_VERSION = 1
 CARD = "t_437a9f72"
+# キル成立後の扱い（カード t_f2c6f343）。事前登録 t_0d06b1de の「この系統は全部終了」に対応し、
+# キル発動時は判定資料そのものに「再挑戦しない・実資金/判定の候補から除外」を1行で残す。
+KILL_DECISION_DOC = "docs/S07_ITEM5_KILL_DECISION_20261112.md"
 TOP_DIR_NAME = "funding_top20"
 OUT_DIR_NAME = "fwd_item5"
 DEFAULT_DATA_DIR = Path("/root/current-work/yowayowa-investor/data/s07_paper")
@@ -459,6 +462,10 @@ def render_page(result: dict, inputs: dict, decision_ledger: dict, *, generated_
         "",
         f"**判定: {verdict}** — {result['reason']}",
         "",
+        # キル確定後は、この判定資料自体に「除外・再挑戦しない」を残す（カード t_f2c6f343）。
+        *([f"- **扱い（KILL 確定）: この系統（深さ2%・遅延30分および深さ・遅延の他の組み合わせ）は"
+           f"再挑戦しない。実資金・判定の候補から除外**（判定文書: {KILL_DECISION_DOC}）",
+           ""] if verdict == "キル発動" else []),
         f"- 判定日（as_of, UTC）: {result['as_of_utc']}／期限: {result['deadline_utc']}"
         f"（期限到達: {'はい' if result['deadline_reached'] else 'いいえ'}）",
         f"- トリガ: 期限 or 独立局面 {result['target_episodes']}件（到達: "
