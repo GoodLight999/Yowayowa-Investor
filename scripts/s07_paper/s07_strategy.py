@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 MS_PER_DAY = 86_400_000
 MS_PER_HOUR = 3_600_000
@@ -47,7 +48,7 @@ def ema_series(values: list[float], window: int) -> list[float | None]:
     return out
 
 
-def atr_series(candles: list[dict], window: int) -> list[float | None]:
+def atr_series(candles: list[dict[str, Any]], window: int) -> list[float | None]:
     """Wilder の ATR。"""
     n = len(candles)
     out: list[float | None] = [None] * n
@@ -69,11 +70,11 @@ def atr_series(candles: list[dict], window: int) -> list[float | None]:
 
 
 def funding_annualized_pct(
-    funding: list[dict], day_end_ms: int, window_h: int = 24
+    funding: list[dict[str, Any]], day_end_ms: int, window_h: int = 24
 ) -> float | None:
     """day_end_ms 直前 window_h 時間の平均funding率を年率%に直す。"""
     lo = day_end_ms - window_h * MS_PER_HOUR
-    rates = [f["rate"] for f in funding if lo <= f["time"] < day_end_ms]
+    rates: list[float] = [f["rate"] for f in funding if lo <= f["time"] < day_end_ms]
     if len(rates) < window_h // 2:  # 半分も揃わなければ判定不能
         return None
     mean_hourly = sum(rates) / len(rates)
@@ -101,7 +102,7 @@ class DayDecision:
     warm: bool
     note: str = ""
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "sma200": self.sma200,
             "ema20": self.ema20,
@@ -122,7 +123,12 @@ class DayDecision:
 class Strategy:
     """日足配列に対する S-07 の判定器。指標は生成時に一度だけ計算する。"""
 
-    def __init__(self, candles: list[dict], funding: list[dict], cfg: dict | None = None):
+    def __init__(
+        self,
+        candles: list[dict[str, Any]],
+        funding: list[dict[str, Any]],
+        cfg: dict[str, Any] | None = None,
+    ):
         self.candles = candles
         self.funding = funding
         self.cfg = {**DEFAULTS, **(cfg or {})}
@@ -156,6 +162,9 @@ class Strategy:
                 day, idx, c["c"], s200, e20, e50, atr, prev_high, prev_low, fann,
                 False, False, False, False, False, False, False, "warmup",
             )
+        # warm 判定の結果を型にも写す（mypy は all(...) の内包を絞り込まない）。
+        assert s200 is not None and e20 is not None and e50 is not None
+        assert atr is not None and prev_high is not None and prev_low is not None
 
         long_sig = c["c"] > s200 and e20 > e50 and c["h"] >= prev_high
         short_sig = c["c"] < s200 and e20 < e50 and c["l"] <= prev_low
@@ -170,7 +179,7 @@ class Strategy:
             long_sig, short_sig, exit_long, exit_short, block_long, block_short, True,
         )
 
-    def size_position(self, equity: float, price: float, atr: float) -> dict:
+    def size_position(self, equity: float, price: float, atr: float) -> dict[str, Any]:
         """設計書 §4.3 のロットサイジング。返り値 notional<=0 なら見送り。"""
         cfg = self.cfg
         stop_dist = cfg["stop_atr_mult"] * atr

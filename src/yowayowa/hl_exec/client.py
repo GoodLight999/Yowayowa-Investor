@@ -168,6 +168,18 @@ class HyperliquidInfoClient:
         raw = self._post({"type": "userFills", "user": user})
         return self._require_list(raw, what="userFills")
 
+    def user_funding(self, user: str, *, start_time_ms: int | None = None) -> list[Any]:
+        """口座の funding 支払い履歴（``userFunding``）。公開アドレスだけで読める。
+
+        s07_authenticity の live 取得が参照する（未実装だと AttributeError になる）。
+        ``start_time_ms`` を渡すと、その時刻以降の記録だけを要求する。
+        """
+        _validate_address(user)
+        payload: dict[str, Any] = {"type": "userFunding", "user": user}
+        if start_time_ms is not None:
+            payload["startTime"] = int(start_time_ms)
+        return self._require_list(self._post(payload), what="userFunding")
+
     def l2_book(self, coin: str = "BTC") -> dict[str, Any]:
         """板情報（L2）。生応答をそのまま返す。"""
         if not isinstance(coin, str) or not coin:
