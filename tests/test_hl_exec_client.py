@@ -103,6 +103,31 @@ def test_top_of_book_normalizes_levels() -> None:
     assert top["spread_bps"] == pytest.approx(2.0 / 78011.0 * 10_000.0)
 
 
+def test_history_requests_use_info_transport_and_utc_windows() -> None:
+    transport = RecordingTransport([[{"t": 1794268800000}], [{"time": 1794186000000}]])
+    client = make_client(transport)
+    bars = client.fetch_daily_bars("2026-11-09", network="testnet")
+    funding = client.fetch_funding_history("2026-11-09")
+    assert bars == [{"t": 1794268800000}]
+    assert transport.calls[0]["url"] == INFO_URL_TESTNET
+    assert transport.calls[0]["payload"] == {
+        "type": "candleSnapshot",
+        "req": {
+            "coin": "BTC",
+            "interval": "1d",
+            "startTime": 1794182400000,
+            "endTime": 1794268800000,
+        },
+    }
+    assert funding == [{"time": 1794186000000}]
+    assert transport.calls[1]["payload"] == {
+        "type": "fundingHistory",
+        "coin": "BTC",
+        "startTime": 1794182400000,
+        "endTime": 1794268799999,
+    }
+
+
 def test_empty_book_raises() -> None:
     transport = RecordingTransport([{"levels": [[], []]}])
     with pytest.raises(HLError, match="empty"):

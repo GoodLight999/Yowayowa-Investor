@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import re
@@ -69,6 +70,16 @@ def _validate_address(user: str) -> str:
     return user
 
 
+def _utc_day_bounds_ms(day: str) -> tuple[int, int]:
+    """YYYY-MM-DD UTC日の [開始, 翌日開始) をUnixミリ秒で返す。"""
+    parsed = dt.date.fromisoformat(day)
+    if parsed.isoformat() != day:
+        raise ValueError("day must use YYYY-MM-DD")
+    start = dt.datetime.combine(parsed, dt.time.min, tzinfo=dt.UTC)
+    end = start + dt.timedelta(days=1)
+    return int(start.timestamp() * 1000), int(end.timestamp() * 1000)
+
+
 def _default_transport(payload: dict[str, Any], url: str, timeout: float) -> Any:
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -106,11 +117,11 @@ class HyperliquidInfoClient:
         self._retries = int(retries)
 
     # ------------------------------------------------------------------ 内部
-    def _post(self, payload: dict[str, Any]) -> Any:
+    def _post(self, payload: dict[str, Any], *, url: str | None = None) -> Any:
         last: Exception | None = None
         for attempt in range(self._retries):
             try:
-                return self._transport(payload, self._base_url, self._timeout)
+                return self._transport(payload, url or self._base_url, self._timeout)
             except urllib.error.HTTPError as exc:
                 detail = exc.read()[:200].decode("utf-8", "replace")
                 last = HLError(f"HTTP {exc.code}: {detail}")
@@ -205,6 +216,43 @@ class HyperliquidInfoClient:
             "spread_bps": (ask - bid) / mid * 10_000.0,
             "half_spread_bps": (ask - bid) / 2.0 / mid * 10_000.0,
         }
+
+    def fetch_daily_bars(
+        self, day: str, coin: str = "BTC", *, network: str = "mainnet"
+    ) -> list[Any]:
+        """対象UTC日の1d candleSnapshot生応答を返す。公開Info読み取り専用。"""
+        start, end = _utc_day_bounds_ms(day)
+        return self._history(
+            {
+                "type": "candleSnapshot",
+                "req": {
+                    "coin": coin,
+                    "interval": "1d",
+                    "startTime": start,
+                    "endTime": end,
+                },
+            },
+            network,
+            "candleSnapshot",
+        )
+
+    def fetch_funding_history(
+        self, day: str, coin: str = "BTC", *, network: str = "mainnet"
+    ) -> list[Any]:
+        """対象UTC日のfundingHistory生応答（毎時1件）を返す。"""
+        start, end = _utc_day_bounds_ms(day)
+        return self._history(
+            {"type": "fundingHistory", "coin": coin, "startTime": start, "endTime": end - 1},
+            network,
+            "fundingHistory",
+        )
+
+    def _history(self, payload: dict[str, Any], network: str, what: str) -> list[Any]:
+        if network not in {"mainnet", "testnet"}:
+            raise ValueError("network must be 'mainnet' or 'testnet'")
+        url = INFO_URL_MAINNET if network == "mainnet" else INFO_URL_TESTNET
+        raw = self._post(payload, url=url)
+        return self._require_list(raw, what=what)
 
     # --------------------------------------------------- 送信系（恒久的に未実装）
     def submit_order(self, *_args: Any, **_kwargs: Any) -> Any:
