@@ -5,6 +5,7 @@
 (実測で約11時間分) なので、行が無いことは警報にならない (補助根拠に降格)。
 在る行の status=failed と「output も executions 行も無い日」は今まで通り警報する。
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -36,8 +37,15 @@ def _make_db(path: Path, rows: list[dict]) -> Path:
             "INSERT INTO executions (id, job_id, source, process_id, pid, status,"
             " claimed_at, started_at, finished_at, error)"
             " VALUES (?, ?, 'cron', 'p', 1, ?, ?, ?, ?, ?)",
-            (row["id"], row["job_id"], row["status"], row["claimed_at"],
-             row["claimed_at"], row["claimed_at"], None),
+            (
+                row["id"],
+                row["job_id"],
+                row["status"],
+                row["claimed_at"],
+                row["claimed_at"],
+                row["claimed_at"],
+                None,
+            ),
         )
     con.commit()
     con.close()
@@ -45,23 +53,41 @@ def _make_db(path: Path, rows: list[dict]) -> Path:
 
 
 def _old_completed_row() -> dict:
-    return {"id": "old1", "job_id": c2_gap_watch.JOB_ID, "status": "completed",
-            "claimed_at": OLD_CLAIMED}
+    return {
+        "id": "old1",
+        "job_id": c2_gap_watch.JOB_ID,
+        "status": "completed",
+        "claimed_at": OLD_CLAIMED,
+    }
 
 
 def _build_data_dir(root: Path) -> Path:
     data_dir = root / "paper_c2"
     data_dir.mkdir(parents=True)
-    (data_dir / "state.json").write_text(json.dumps({
-        "last_mtm_date": SESSION,
-        "last_mtm_bar_date": SESSION,
-        "completed_trading_days": [SESSION],
-        "kill_switch_triggered": False,
-    }), encoding="utf-8")
-    (data_dir / "mtm_history.jsonl").write_text(json.dumps({
-        "date": SESSION, "last_bar_date": SESSION, "daily_return_15": 0.001,
-        "positions_source": "fresh", "gross_exposure_15": 0.5,
-    }) + "\n", encoding="utf-8")
+    (data_dir / "state.json").write_text(
+        json.dumps(
+            {
+                "last_mtm_date": SESSION,
+                "last_mtm_bar_date": SESSION,
+                "completed_trading_days": [SESSION],
+                "kill_switch_triggered": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (data_dir / "mtm_history.jsonl").write_text(
+        json.dumps(
+            {
+                "date": SESSION,
+                "last_bar_date": SESSION,
+                "daily_return_15": 0.001,
+                "positions_source": "fresh",
+                "gross_exposure_15": 0.5,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return data_dir
 
 
@@ -71,7 +97,8 @@ def _build_ohlcv(root: Path) -> Path:
         sym_dir = ohlcv / sym
         sym_dir.mkdir(parents=True)
         (sym_dir / "ohlcv.jsonl").write_text(
-            json.dumps({"as_of": SESSION, "c": 1.0}) + "\n", encoding="utf-8")
+            json.dumps({"as_of": SESSION, "c": 1.0}) + "\n", encoding="utf-8"
+        )
     return ohlcv
 
 
@@ -86,8 +113,12 @@ def _build_output_dir(root: Path, *, with_today: bool, content: str = "C2_DAILY_
 
 def _collect(root: Path, *, output_dir: Path, db: Path, now: datetime = NOW):
     return c2_gap_watch.collect_problems(
-        _build_data_dir(root), _build_ohlcv(root), db,
-        c2_gap_watch.JOB_ID, c2_gap_watch.PHASE_START, now,
+        _build_data_dir(root),
+        _build_ohlcv(root),
+        db,
+        c2_gap_watch.JOB_ID,
+        c2_gap_watch.PHASE_START,
+        now,
         output_dir=output_dir,
     )
 
@@ -117,8 +148,7 @@ def test_truly_missing_day_still_alarms(tmp_path: Path) -> None:
     problems, facts = _collect(tmp_path, output_dir=out_dir, db=db)
 
     assert problems == [
-        f"daily exec {c2_gap_watch.JOB_ID} missing for {TODAY.isoformat()}"
-        " (no cron output file)"
+        f"daily exec {c2_gap_watch.JOB_ID} missing for {TODAY.isoformat()} (no cron output file)"
     ], problems
     assert "daily_run_evidence" not in facts
     assert facts["exec_aux"] == "row absent"
@@ -127,11 +157,18 @@ def test_truly_missing_day_still_alarms(tmp_path: Path) -> None:
 def test_failed_row_alarms_even_with_output_file(tmp_path: Path) -> None:
     """失敗行は本物の信号なので、output 証跡が在っても警報する (旧動作を維持)。"""
     out_dir = _build_output_dir(tmp_path, with_today=True)
-    db = _make_db(tmp_path / "executions.db", [
-        _old_completed_row(),
-        {"id": "today1", "job_id": c2_gap_watch.JOB_ID, "status": "failed",
-         "claimed_at": TODAY_CLAIMED},
-    ])
+    db = _make_db(
+        tmp_path / "executions.db",
+        [
+            _old_completed_row(),
+            {
+                "id": "today1",
+                "job_id": c2_gap_watch.JOB_ID,
+                "status": "failed",
+                "claimed_at": TODAY_CLAIMED,
+            },
+        ],
+    )
 
     problems, facts = _collect(tmp_path, output_dir=out_dir, db=db)
 
@@ -160,8 +197,7 @@ def test_db_absent_fails_closed_when_no_output(tmp_path: Path) -> None:
     problems, _facts = _collect(tmp_path, output_dir=out_dir, db=db)
 
     assert problems == [
-        f"daily exec {c2_gap_watch.JOB_ID} missing for {TODAY.isoformat()}"
-        " (no cron output file)"
+        f"daily exec {c2_gap_watch.JOB_ID} missing for {TODAY.isoformat()} (no cron output file)"
     ], problems
 
 
@@ -189,8 +225,12 @@ def test_gate_verdict_recorded_as_facts_only(tmp_path: Path) -> None:
     ohlcv = _build_ohlcv(tmp_path)
 
     problems, facts = c2_gap_watch.collect_problems(
-        data_dir, ohlcv, db,
-        c2_gap_watch.JOB_ID, c2_gap_watch.PHASE_START, NOW,
+        data_dir,
+        ohlcv,
+        db,
+        c2_gap_watch.JOB_ID,
+        c2_gap_watch.PHASE_START,
+        NOW,
         output_dir=out_dir,
     )
 
@@ -201,8 +241,12 @@ def test_gate_verdict_recorded_as_facts_only(tmp_path: Path) -> None:
     # 判定書が無くても問題行にはしない (gate ジョブ自身の failure channel の領分)。
     data_dir2 = _build_data_dir(tmp_path / "no_verdict")
     problems2, facts2 = c2_gap_watch.collect_problems(
-        data_dir2, ohlcv, db,
-        c2_gap_watch.JOB_ID, c2_gap_watch.PHASE_START, NOW,
+        data_dir2,
+        ohlcv,
+        db,
+        c2_gap_watch.JOB_ID,
+        c2_gap_watch.PHASE_START,
+        NOW,
         output_dir=out_dir,
     )
     assert problems2 == [], problems2
@@ -216,33 +260,59 @@ def test_saturday_run_is_silent(tmp_path: Path) -> None:
     expected_session = "2026-11-06"  # 金曜 session (土曜 09:30 時点で既に閉じた)
     data_dir = tmp_path / "paper_c2"
     data_dir.mkdir(parents=True)
-    (data_dir / "state.json").write_text(json.dumps({
-        "last_mtm_date": expected_session,
-        "last_mtm_bar_date": expected_session,
-        "completed_trading_days": [expected_session],
-        "kill_switch_triggered": False,
-    }), encoding="utf-8")
-    (data_dir / "mtm_history.jsonl").write_text(json.dumps({
-        "date": expected_session, "last_bar_date": expected_session,
-        "daily_return_15": 0.001, "positions_source": "fresh",
-        "gross_exposure_15": 0.5,
-    }) + "\n", encoding="utf-8")
+    (data_dir / "state.json").write_text(
+        json.dumps(
+            {
+                "last_mtm_date": expected_session,
+                "last_mtm_bar_date": expected_session,
+                "completed_trading_days": [expected_session],
+                "kill_switch_triggered": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (data_dir / "mtm_history.jsonl").write_text(
+        json.dumps(
+            {
+                "date": expected_session,
+                "last_bar_date": expected_session,
+                "daily_return_15": 0.001,
+                "positions_source": "fresh",
+                "gross_exposure_15": 0.5,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     out_dir = tmp_path / "cron_output" / c2_gap_watch.JOB_ID
     out_dir.mkdir(parents=True)
     (out_dir / "2026-11-07_09-01-09.md").write_text("C2_DAILY_OK\n", encoding="utf-8")
-    db = _make_db(tmp_path / "executions.db", [
-        {"id": "fri", "job_id": c2_gap_watch.JOB_ID, "status": "completed",
-         "claimed_at": "2026-11-06T09:00:57+09:00"},
-    ])
+    db = _make_db(
+        tmp_path / "executions.db",
+        [
+            {
+                "id": "fri",
+                "job_id": c2_gap_watch.JOB_ID,
+                "status": "completed",
+                "claimed_at": "2026-11-06T09:00:57+09:00",
+            },
+        ],
+    )
     ohlcv = tmp_path / "stock-ohlcv"
     for sym in c2_gap_watch.UNIVERSE:
         sym_dir = ohlcv / sym
         sym_dir.mkdir(parents=True)
         (sym_dir / "ohlcv.jsonl").write_text(
-            json.dumps({"as_of": expected_session, "c": 1.0}) + "\n", encoding="utf-8")
+            json.dumps({"as_of": expected_session, "c": 1.0}) + "\n", encoding="utf-8"
+        )
 
     problems, facts = c2_gap_watch.collect_problems(
-        data_dir, ohlcv, db, c2_gap_watch.JOB_ID, c2_gap_watch.PHASE_START, sat_now,
+        data_dir,
+        ohlcv,
+        db,
+        c2_gap_watch.JOB_ID,
+        c2_gap_watch.PHASE_START,
+        sat_now,
         output_dir=out_dir,
     )
 
