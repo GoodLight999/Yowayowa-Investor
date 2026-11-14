@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 from datetime import UTC, date, datetime, timedelta
 from datetime import time as dt_time
 from pathlib import Path
@@ -93,8 +94,16 @@ MAX_REFERENCE_DEVIATION_BPS = 2000.0  # 20%
 # Fallback window: 10:00 ET (30 minutes after the open) up to the close.
 MARKET_FALLBACK_CUTOFF_ET = dt_time(10, 0)
 MARKET_CLOSE_ET = dt_time(16, 0)
+MARKET_PREMARKET_ET = dt_time(4, 0)
 EASTERN = ZoneInfo("America/New_York")
 OPEN_ORDER_STATUSES = {"new", "accepted", "pending_new", "partially_filled", "open", "held"}
+
+# ``c2_<sym>_<side>_<session>[_<version>]``; version is ``a1``.. for lifecycle
+# re-sends and ``fb`` for a market-fallback replacement.
+_C2_CLIENT_ORDER_RE = re.compile(
+    r"^c2_(?P<symbol>[A-Z]+)_(?P<side>buy|sell)_(?P<session>\d{4}-\d{2}-\d{2})"
+    r"(?P<version>_[a-z0-9]+)?$"
+)
 
 
 def load_state() -> dict[str, Any]:
@@ -192,6 +201,40 @@ def _run_order_lifecycle_step(
     return result
 
 
+def _parse_utc_timestamp(value: Any) -> datetime | None:
+    """Parse an Alpaca RFC3339 print timestamp into an aware UTC datetime."""
+    if not value:
+        return None
+    try:
+        stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if stamp.tzinfo is None:
+        return stamp.replace(tzinfo=UTC)
+    return stamp.astimezone(UTC)
+
+
+def _last_session_open_utc(now_utc: datetime) -> datetime:
+    """UTC instant of the most recent pre-market open (04:00 ET, Mon-Fri).
+
+    Freshness floor for reference prices: a print from before the current
+    pre-market is, by definition, the previous session's data -- the same
+    information as the stale close, so calling it a live quote would hide the
+    very staleness this step exists to remove. Exchange holidays are not in this
+    calendar; on a holiday the floor lands later than the real open, which only
+    makes the caller fall back to the stale close (fail-soft) instead of
+    trusting a doubtful print.
+    """
+    now_et = now_utc.astimezone(EASTERN)
+    day = now_et.date()
+    for _ in range(10):
+        open_et = datetime.combine(day, MARKET_PREMARKET_ET, tzinfo=EASTERN)
+        if open_et.weekday() < 5 and open_et <= now_et:
+            return open_et.astimezone(UTC)
+        day -= timedelta(days=1)
+    return (now_et - timedelta(days=7)).astimezone(UTC)
+
+
 def resolve_reference_prices(
     client: AlpacaPaperClient,
     symbols: list[str],
@@ -199,14 +242,16 @@ def resolve_reference_prices(
 ) -> dict[str, dict[str, Any]]:
     """Re-base limit-order references on the freshest price available now.
 
-    Priority per symbol: latest trade -> latest quote mid -> previous session
-    close. This is the fix for the 2026-11-02 batch, whose limit prices were
-    computed off a reference one session old: SPY opened +49.4bps against a
-    +50bps cap (0.66bps of headroom) and IWM never filled at the open at all.
+    Per symbol the reference is the freshest of the latest trade and the latest
+    quote mid, on one condition: its own timestamp must be later than the
+    current pre-market open. A Friday-close print read on Monday pre-market is
+    not a live quote -- labelling it live would silently reproduce the 11-02
+    defect (limit built off a session-old price, SPY +0.66bps under the cap,
+    IWM never filled) while claiming the fix was applied.
 
-    A live print more than ``MAX_REFERENCE_DEVIATION_BPS`` away from the close
-    is treated as bad data: the close is kept and the reason is recorded, so a
-    single bogus print cannot move an order ~50% away from the market.
+    A print more than ``MAX_REFERENCE_DEVIATION_BPS`` away from the close is
+    treated as bad data: the close is kept and the reason recorded, so one bogus
+    print cannot move an order ~50% away from the market.
 
     Returns ``{symbol: {price, source, as_of_utc, stale_close, detail}}`` where
     ``source`` is ``REFERENCE_PRICE_SOURCE_LIVE`` or ``..._STALE``.
@@ -224,7 +269,17 @@ def resolve_reference_prices(
     except Exception as exc:
         trade_error = str(exc)
 
-    missing = [s for s in symbols if s not in trades]
+    # Anything printed before the current pre-market open is the same
+    # information the stale reference already carries.
+    fresh_after = _last_session_open_utc(datetime.now(UTC))
+
+    def _is_fresh(row: dict[str, Any] | None) -> bool:
+        if not row:
+            return False
+        stamp = _parse_utc_timestamp(row.get("timestamp"))
+        return stamp is not None and stamp > fresh_after
+
+    missing = [s for s in symbols if not _is_fresh(trades.get(s))]
     if missing:
         try:
             quotes = client.get_latest_quotes(missing)
@@ -234,11 +289,19 @@ def resolve_reference_prices(
     for sym in symbols:
         stale_raw = stale_closes.get(sym)
         stale = float(stale_raw) if stale_raw else 0.0
-        live = trades.get(sym)
-        live_kind = "trade"
-        if live is None and sym in quotes:
-            live = quotes[sym]
-            live_kind = "quote_mid"
+
+        candidates: list[tuple[str, dict[str, Any]]] = []
+        if _is_fresh(trades.get(sym)):
+            candidates.append(("trade", trades[sym]))
+        if _is_fresh(quotes.get(sym)):
+            candidates.append(("quote_mid", quotes[sym]))
+        live_kind = ""
+        live: dict[str, Any] | None = None
+        newest: datetime | None = None
+        for kind, row in candidates:
+            stamp = _parse_utc_timestamp(row.get("timestamp"))
+            if stamp is not None and (newest is None or stamp > newest):
+                live, live_kind, newest = row, kind, stamp
 
         if live is None or stale <= 0:
             resolved[sym] = {
@@ -296,11 +359,18 @@ def _latest_trade_price(client: AlpacaPaperClient, symbol: str) -> tuple[float |
 def _is_c2_order_for_session(order: dict[str, Any], seq_date: str) -> bool:
     """True for an open C2 parent order belonging to the given session.
 
-    Fallback replacements are named ``..._<session>_fb`` and therefore never
-    match, which keeps the step idempotent.
+    The id carries the session it was sized for: ``c2_<sym>_<side>_<session>``
+    plus an optional version suffix — ``_a1`` when the daily lifecycle
+    re-versioned a dead order (the 2026-11-10 book shipped exactly that shape),
+    ``_fb`` for a market-fallback replacement. Matching on the session segment
+    rather than ``str.endswith`` keeps lifecycle-retried orders in scope while
+    excluding the fallback's own replacements, so the step stays idempotent.
     """
     cid = str(order.get("client_order_id") or "")
-    return cid.startswith("c2_") and cid.endswith(seq_date)
+    match = _C2_CLIENT_ORDER_RE.match(cid)
+    if match is None or match.group("session") != seq_date:
+        return False
+    return match.group("version") != "_fb"
 
 
 def _existing_fallback_symbols(seq_date: str) -> set[str]:
@@ -1001,12 +1071,17 @@ def run_weekly_cycle(
                     queued_for_session.setdefault(
                         (str(existing.get("symbol")), str(existing.get("side"))), []
                     ).append(existing)
+
             # Re-base the limit reference on the price quoted now, not on the last
             # session close. On 2026-11-02 the stale-close reference left SPY only
             # 0.66bps under the +50bps cap and IWM never filled at the open.
-            reference_prices = resolve_reference_prices(
-                client, list(C2_UNIVERSE), context.universe_closes
-            )
+            # Resolved only when the submission gate is clear: a gated run sends
+            # nothing, so it must not spend a data call on pricing.
+            reference_prices: dict[str, dict[str, Any]] = {}
+            if session_gate is None:
+                reference_prices = resolve_reference_prices(
+                    client, list(C2_UNIVERSE), context.universe_closes
+                )
 
             # Submit rebalance orders targeting final_w_15 with limit slippage guard
             for sym in C2_UNIVERSE:

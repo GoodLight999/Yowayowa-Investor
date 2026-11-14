@@ -102,12 +102,16 @@ class _WeeklyBroker:
         quotes: dict[str, float] | None = None,
         trade_error: str | None = None,
         quote_error: str | None = None,
+        trade_ts: str = "2026-11-03T13:00:00Z",
+        quote_ts: str = "2026-11-03T13:00:00Z",
     ) -> None:
         self.base_url = "https://paper-api.alpaca.markets/v2"
         self.trades = trades or {}
         self.quotes = quotes or {}
         self.trade_error = trade_error
         self.quote_error = quote_error
+        self.trade_ts = trade_ts
+        self.quote_ts = quote_ts
         self.submitted: list[dict] = []
 
     def get_account(self) -> AlpacaAccountSummary:
@@ -132,7 +136,7 @@ class _WeeklyBroker:
         if self.trade_error:
             raise RuntimeError(self.trade_error)
         return {
-            s: {"price": self.trades[s], "timestamp": "2026-11-03T13:00:00Z"}
+            s: {"price": self.trades[s], "timestamp": self.trade_ts}
             for s in symbols
             if s in self.trades
         }
@@ -141,7 +145,7 @@ class _WeeklyBroker:
         if self.quote_error:
             raise RuntimeError(self.quote_error)
         return {
-            s: {"price": self.quotes[s], "timestamp": "2026-11-03T13:00:00Z"}
+            s: {"price": self.quotes[s], "timestamp": self.quote_ts}
             for s in symbols
             if s in self.quotes
         }
@@ -285,6 +289,70 @@ def test_weekly_reference_ignores_absurd_print(
         assert row["reference_price"] == pytest.approx(closes[row["symbol"]])
 
 
+def test_weekly_reference_rejects_a_print_from_before_the_current_premarket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A previous-close print read on Monday pre-market is not a live quote.
+
+    The weekly batch runs 08:00 ET, before the open. If its freshest print is
+    still the previous session's, re-basing on it reproduces the 11-02 defect
+    while labelling the order ``live_quote`` -- the one thing this card's
+    evidence must not allow.
+    """
+    _isolate(tmp_path, monkeypatch)
+    closes = _stale_closes()
+    # the 2026-11-02 session close (16:00 ET == 21:00Z, EST)
+    broker = _WeeklyBroker(
+        trades={sym: round(c * 1.008, 2) for sym, c in closes.items()},
+        trade_ts="2026-11-02T21:00:00Z",
+    )
+
+    res = _run_weekly(monkeypatch, broker, tmp_path)
+
+    assert res["status"] == "success"
+    for row in _read_orders(tmp_path / "orders.jsonl"):
+        assert row["reference_price_source"] == "stale_close"
+        assert row["reference_detail"] == "no_live_print"
+        assert row["reference_price"] == pytest.approx(closes[row["symbol"]])
+
+
+def test_weekly_reference_prefers_the_newer_quote_over_a_stale_trade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pre-market: the quote is later than the last trade, so the quote wins."""
+    _isolate(tmp_path, monkeypatch)
+    closes = _stale_closes()
+    quotes = {sym: round(c * 1.006, 2) for sym, c in closes.items()}
+    broker = _WeeklyBroker(
+        trades={sym: round(c * 1.001, 2) for sym, c in closes.items()},
+        trade_ts="2026-11-02T21:00:00Z",
+        quotes=quotes,
+        quote_ts="2026-11-03T12:55:00Z",
+    )
+
+    res = _run_weekly(monkeypatch, broker, tmp_path)
+
+    assert res["status"] == "success"
+    for row in _read_orders(tmp_path / "orders.jsonl"):
+        assert row["reference_price_source"] == "live_quote"
+        assert row["reference_detail"] == "live_quote_mid"
+        assert row["reference_price"] == pytest.approx(quotes[row["symbol"]])
+
+
+def test_last_session_open_utc_uses_the_current_premarket() -> None:
+    def utc(*args: int) -> datetime.datetime:
+        return datetime.datetime(*args, tzinfo=datetime.UTC)
+
+    # Monday 08:00 ET pre-market -> Monday 04:00 ET (09:00Z, EST)
+    assert c2_runner._last_session_open_utc(utc(2026, 11, 9, 13, 0)) == utc(2026, 11, 9, 9, 0)
+    # Tuesday 08:00 ET -> Tuesday's pre-market, not Monday's session prints
+    assert c2_runner._last_session_open_utc(utc(2026, 11, 10, 13, 0)) == utc(2026, 11, 10, 9, 0)
+    # Saturday 02:00Z == Friday 21:00 ET -> Friday's pre-market
+    assert c2_runner._last_session_open_utc(utc(2026, 11, 7, 2, 0)) == utc(2026, 11, 6, 9, 0)
+    # Monday 03:00 ET (before that pre-market) -> Friday's pre-market
+    assert c2_runner._last_session_open_utc(utc(2026, 11, 9, 8, 0)) == utc(2026, 11, 6, 9, 0)
+
+
 # --------------------------------------------------------------------------- #
 # 2. 10:00 ET market fallback
 # --------------------------------------------------------------------------- #
@@ -407,6 +475,44 @@ def test_market_fallback_replaces_unfilled_then_fills(
 
     state = c2_runner.load_state()
     assert state["last_market_fallback_date"] == SESSION_STR
+
+
+def test_market_fallback_covers_lifecycle_versioned_orders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lifecycle re-send (``_a1``) is still the session's C2 order.
+
+    The live 2026-11-10 book was submitted by the daily lifecycle pass, so every
+    id ended in ``_a1``; matching only bare ids would leave those legs unfilled.
+    """
+    _isolate(tmp_path, monkeypatch)
+    broker = _SessionBroker()
+    for sym in c2_runner.C2_UNIVERSE:
+        broker.orders[f"oid-{sym}"]["client_order_id"] = f"c2_{sym}_buy_{SESSION_STR}_a1"
+
+    res = _run_fallback(monkeypatch, broker)
+
+    assert res["status"] == "success"
+    assert res["replaced_count"] == 4
+    for row in res["replaced"]:
+        assert row["replaces_client_order_id"].endswith("_a1")
+        assert row["client_order_id"] == f"c2_{row['symbol']}_buy_{SESSION_STR}_fb"
+
+
+def test_fallback_session_matcher_scopes_ids_exactly() -> None:
+    def order(cid: str) -> dict:
+        return {"client_order_id": cid}
+
+    assert c2_runner._is_c2_order_for_session(order(f"c2_SPY_buy_{SESSION_STR}"), SESSION_STR)
+    assert c2_runner._is_c2_order_for_session(order(f"c2_SPY_sell_{SESSION_STR}_a1"), SESSION_STR)
+    # the fallback's own replacement must not be re-targeted
+    assert not c2_runner._is_c2_order_for_session(
+        order(f"c2_SPY_buy_{SESSION_STR}_fb"), SESSION_STR
+    )
+    # a different session, a longer date and a manual id are all out of scope
+    assert not c2_runner._is_c2_order_for_session(order("c2_SPY_buy_2026-11-02"), SESSION_STR)
+    assert not c2_runner._is_c2_order_for_session(order(f"c2_SPY_buy_{SESSION_STR}0"), SESSION_STR)
+    assert not c2_runner._is_c2_order_for_session(order("manual_spy_buy"), SESSION_STR)
 
 
 def test_market_fallback_dry_run_touches_nothing(
