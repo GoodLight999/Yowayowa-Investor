@@ -94,7 +94,7 @@ def test_non_sqlite_alter_failure_is_fail_closed(monkeypatch) -> None:
 
     db_module._reset_positions_constraint_blocker()
     try:
-        with pytest.raises(RuntimeError, match="simulated migration failure"):
+        with pytest.raises(RuntimeError, match="constraint application failed: RuntimeError"):
             db_module._ensure_positions_unique_constraint(engine)
         status = db_module.positions_unique_constraint_status()
         assert status["applied"] is False
