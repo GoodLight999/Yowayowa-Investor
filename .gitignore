@@ -13,3 +13,8 @@ build/
 data/
 openapi.json
 .DS_Store
+# 実行時データ・エージェント作業ディレクトリ（リポジトリの成果物ではない）
+var/
+.worktrees/
+.coverage.*
+*.tmp
