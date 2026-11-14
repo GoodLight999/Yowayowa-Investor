@@ -15,10 +15,21 @@ Contract
   line and still exits 0 (the cron delivery is the alarm, not a failure).
 * Appends one JSON line per run to its own log
   (/root/.hermes/logs/c2_gap_watch.jsonl) for post-hoc diagnosis.
+* "Did the daily job run today?" is judged on durable evidence (t_cb7127a7):
+  the per-run stdout capture under /root/.hermes/cron/output/<job_id>/
+  (one file per finished run, kept newest-50 per job) is the primary basis.
+  executions.db is auxiliary only: the table keeps the newest 1000 terminal
+  rows across ALL jobs (cron/executions.py MAX_TERMINAL_EXECUTIONS=1000,
+  ~11h at the current fire rate), so an absent row proves nothing and must
+  not alarm; a present row still feeds the status checks (failed alarms).
+  The 09:35 JST gate verdict (mtime + sha256) is recorded in facts, no alarm.
 * Also (card t_c5e394b0) detects a silent stop of the S-07 item-5 forward
   measurement (`data/s07_paper/funding_top20/fwd_item5/`): stale `days/` file,
   stale `cumulative.json`, no new forward episode for 48h after the cutover,
-  and an unsuppressed line as soon as `kill_ledger.json` says KILLED.
+  and an unsuppressed line as soon as `kill_ledger.json` says KILLED — while the
+  kill decision document (docs/S07_ITEM5_KILL_DECISION_20261112.md, card
+  t_f2c6f343) is missing, that one line also says to file a card; once the
+  document exists the KILLED line is no longer repeated every day.
   Keys are appended to the same log line (backward compatible); nothing in the
   forward directories is written.
 """
@@ -27,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import sqlite3
 import sys
@@ -43,6 +55,11 @@ DEFAULT_OHLCV_DIR = Path("/root/current-work/yowayowa-investor/data/stock-ohlcv"
 DEFAULT_DB = Path("/root/.hermes/cron/executions.db")
 DEFAULT_LOG = Path("/root/.hermes/logs/c2_gap_watch.jsonl")
 JOB_ID = "9f57d9154cfb"
+# Per-run stdout captures written by cron.jobs.save_job_output (one file per
+# finished run, filename <YYYY-MM-DD>_HH-MM-SS.md in server-local = JST days;
+# pruned to the newest cron.output_retention = 50 files per job). This is the
+# durable "did it run today" evidence, unlike the executions.db rolling window.
+DEFAULT_OUTPUT_DIR = Path("/root/.hermes/cron/output") / JOB_ID
 PHASE_START = date(2026, 11, 3)
 UNIVERSE = ("SPY", "IWM", "JNJ", "PG")
 
@@ -71,6 +88,10 @@ CUTOVER = datetime(2026, 11, 8, 0, 0, tzinfo=UTC)
 # 最初の前方 day（UTC 11-08）が書かれるのは 2026-11-09 10:00 JST の日次run。
 # それまでは「forward 0」を異常扱いしない（カード条件3）。
 FORWARD_GRACE_END = datetime(2026, 11, 9, 10, 0, tzinfo=JST)
+# キル成立の判定文書（カード t_f2c6f343）。存在すれば「判定済み」とみなし、
+# 毎日「起票しろ」を出さない（実装は既存スクリプト内の最小変更に限る）。
+KILL_DECISION_DOC = (Path(__file__).resolve().parents[2]
+                     / "docs" / "S07_ITEM5_KILL_DECISION_20261112.md")
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -208,6 +229,65 @@ def _today_execution(db: Path, job_id: str, today_jst: date) -> dict[str, Any] |
     return None
 
 
+def _today_output_file(output_dir: Path, today_jst: date) -> dict[str, Any] | None:
+    """Newest per-run stdout capture (``<YYYY-MM-DD>_HH-MM-SS.md``) written today (JST).
+
+    The cron runner writes one file per finished run (cron.jobs.save_job_output) and
+    prunes only beyond the newest ``cron.output_retention`` files per job (default 50
+    — about 50 days for a daily job), so today's capture cannot slide out of reach the
+    way an executions.db row can. Filename dates are server-local days (JST here:
+    hermes_time.now has no timezone override on this host).
+    """
+    if not output_dir.is_dir():
+        return None
+    best: dict[str, Any] | None = None
+    best_mtime = -1.0
+    with contextlib.suppress(OSError):
+        for path in output_dir.glob("*.md"):
+            try:
+                run_day = date.fromisoformat(path.name[:10])
+            except ValueError:
+                continue  # not a per-run capture (foreign/legacy layout)
+            if run_day != today_jst:
+                continue
+            try:
+                stat = path.stat()
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            except OSError:
+                continue
+            row = {
+                "name": path.name,
+                "mtime_utc": datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(),
+                "sha256": digest,
+            }
+            if stat.st_mtime > best_mtime:
+                best, best_mtime = row, stat.st_mtime
+    return best
+
+
+def _gate_verdict_facts(data_dir: Path, now: datetime) -> dict[str, Any]:
+    """Record the 09:35 JST gate verdict (c2_gate --cron-mode rewrites it on every
+    daily gate run) as durable corroboration of the day chain: mtime, sha256, age.
+
+    Facts only, never a problem: the gate job has its own failure channel
+    (cron incidents / ``cron list`` failure_streak), and this watchdog's alarm
+    surface must not grow beyond the daily-run evidence check (t_cb7127a7).
+    """
+    facts: dict[str, Any] = {}
+    path = data_dir / "c2_gate_verdict.md"
+    try:
+        stat = path.stat()
+    except OSError:
+        facts["gate_verdict_mtime_utc"] = None
+        return facts
+    mtime_utc = datetime.fromtimestamp(stat.st_mtime, UTC)
+    facts["gate_verdict_mtime_utc"] = mtime_utc.isoformat()
+    facts["gate_verdict_age_hours"] = round(_age_hours(now.astimezone(UTC), mtime_utc), 2)
+    with contextlib.suppress(OSError):
+        facts["gate_verdict_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return facts
+
+
 def collect_problems(
     data_dir: Path,
     ohlcv_dir: Path,
@@ -215,6 +295,7 @@ def collect_problems(
     job_id: str,
     phase_start: date,
     now: datetime,
+    output_dir: Path | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     today = now.astimezone(JST).date()
     problems: list[str] = []
@@ -237,20 +318,53 @@ def collect_problems(
             problems.append("mtm_history row without date")
     facts["mtm_rows"] = len(mtm_rows)
 
-    if (db.exists()) and today >= phase_start:
-        try:
-            exec_row = _today_execution(db, job_id, today)
-        except Exception as exc:
-            exec_row = None
-            problems.append(f"executions.db unreadable ({exc})")
-        if exec_row is None:
-            problems.append(f"daily exec {job_id} missing for {today}")
-        else:
+    if output_dir is None:
+        output_dir = DEFAULT_OUTPUT_DIR
+    if today >= phase_start:
+        # --- 本日実行の判定根拠（t_cb7127a7）-----------------------------------
+        # 主根拠: cron runner 自身の per-run stdout 証跡
+        # (/root/.hermes/cron/output/<job_id>/<YYYY-MM-DD>_HH-MM-SS.md)。各 run の
+        # 終了時に1本書かれ、保持は「1ジョブあたり直近 cron.output_retention=50 本」
+        # （cron/jobs.py）なので日次ジョブでは約50日分残る = 消えない証跡。
+        # 補助根拠: executions.db。全ジョブ合計で端末状態の直近1000行だけのローリング
+        # 窓（cron/executions.py MAX_TERMINAL_EXECUTIONS=1000、書込ごとに _prune_unlocked）
+        # で、現在の発火レートでは窓は約11時間分。行が無いことは「本日実行なし」を
+        # 意味しないので、行の欠落だけでは警報しない。在る行の status=failed 等は
+        # 本物の失敗信号として今まで通り警報する。
+        out_row = _today_output_file(output_dir, today)
+        if out_row is not None:
+            facts["daily_run_evidence"] = "cron_output"
+            facts["daily_output_file"] = out_row["name"]
+            facts["daily_output_mtime_utc"] = out_row["mtime_utc"]
+            facts["daily_output_sha256"] = out_row["sha256"]
+        exec_row: dict[str, Any] | None = None
+        if db.exists():
+            try:
+                exec_row = _today_execution(db, job_id, today)
+            except Exception as exc:
+                facts["exec_db_error"] = str(exc)
+        if exec_row is not None:
             facts["exec_status"] = exec_row.get("status")
             if exec_row.get("status") in ("running", "claimed"):
                 pass  # still in flight; a real miss surfaces via the MTM bar check
             elif exec_row.get("status") != "completed":
                 problems.append(f"daily exec status={exec_row.get('status')}")
+        else:
+            facts["exec_status"] = None
+            facts["exec_aux"] = (
+                "row pruned from 1000-row rolling window" if out_row is not None
+                else "row absent"
+            )
+        if out_row is None and exec_row is None:
+            # 主根拠が無いときだけ executions.db を存在証拠として使う（補助根拠）。
+            # どちらの証跡も無い = 本当に実行が無い可能性が高いので警報（fail-closed）。
+            detail = (
+                f"; executions.db unreadable ({facts['exec_db_error']})"
+                if "exec_db_error" in facts else ""
+            )
+            problems.append(
+                f"daily exec {job_id} missing for {today} (no cron output file{detail})"
+            )
 
     bar_dates: list[str] = []
     for row in mtm_rows:
@@ -375,6 +489,7 @@ def collect_problems(
             f"{state.get('last_mtm_bar_date')})"
         )
 
+    facts.update(_gate_verdict_facts(data_dir, now))
     return problems, facts
 
 
@@ -527,11 +642,19 @@ def collect_forward_problems(
             facts["fwd_kill_status"] = status
             facts["fwd_kill_killed_at_utc"] = ledger.get("killed_at_utc")
             if status == "KILLED":
-                problems.append(
-                    "fwd_item5 キル条件成立: status=KILLED"
-                    f"（killed_at_utc={ledger.get('killed_at_utc')}・"
-                    f"閾値 {ledger.get('threshold_usd')} USD）"
-                )
+                # キル成立の1行が「流れて終わる」のを防ぐ（カード t_f2c6f343）。
+                # 判定文書が無い間は、起票を促す文言まで同じ1行に含めて出す。
+                if KILL_DECISION_DOC.is_file():
+                    facts["fwd_kill_decision_doc"] = str(KILL_DECISION_DOC)
+                else:
+                    facts["fwd_kill_decision_doc"] = None
+                    problems.append(
+                        "fwd_item5 キル条件成立: status=KILLED"
+                        f"（killed_at_utc={ledger.get('killed_at_utc')}・"
+                        f"閾値 {ledger.get('threshold_usd')} USD）"
+                        "→ 判定を文書化し、実資金・判定の候補から除外して再挑戦禁止を固定すること"
+                        "（未起票なら /root/.hermes/scripts/kanban-create.sh で起票）"
+                    )
 
     return problems, facts
 
@@ -547,6 +670,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--ohlcv-dir", type=Path, default=DEFAULT_OHLCV_DIR)
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--job-id", default=JOB_ID)
     parser.add_argument("--phase-start", type=date.fromisoformat, default=PHASE_START)
     parser.add_argument("--log", type=Path, default=DEFAULT_LOG)
@@ -578,7 +702,8 @@ def main(argv: list[str] | None = None) -> int:
     facts: dict[str, Any] = {}
     try:
         problems, facts = collect_problems(
-            args.data_dir, args.ohlcv_dir, args.db, args.job_id, args.phase_start, now
+            args.data_dir, args.ohlcv_dir, args.db, args.job_id, args.phase_start, now,
+            output_dir=args.output_dir,
         )
     except Exception as exc:  # never fail silently
         problems = [f"watchdog error: {exc}"]
